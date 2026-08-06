@@ -4,3 +4,6 @@
 [submodule "third_party/libero"]
 	path = third_party/libero
 	url = https://github.com/Lifelong-Robot-Learning/LIBERO.git
+[submodule "third_party/rby1-sdk"]
+	path = third_party/rby1-sdk
+	url = https://github.com/RainbowRobotics/rby1-sdk.git
