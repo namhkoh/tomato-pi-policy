@@ -1,0 +1,370 @@
+"""Author the supplied deleafing knife and D405 hardware on RBY1-A v1.0.
+
+All mount transforms in this module are explicit and testable.  CAD is kept in
+millimetres in ``greenhouse/robot_assets`` and converted to metres only while
+authoring USD.  The flat knife plate is the sole cutting surface; the curved
+piece is support geometry and can never trigger a cut.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import json
+import math
+import pathlib
+import struct
+
+import numpy as np
+
+from greenhouse_sim import usd_env
+
+usd_env.ensure_pxr()
+
+from pxr import Gf  # noqa: E402
+from pxr import Sdf  # noqa: E402
+from pxr import Usd  # noqa: E402
+from pxr import UsdGeom  # noqa: E402
+from pxr import UsdPhysics  # noqa: E402
+
+
+REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[3]
+ASSET_DIR = REPOSITORY_ROOT / "greenhouse" / "robot_assets"
+DERIVED_DIR = ASSET_DIR / "derived"
+MANIFEST_PATH = DERIVED_DIR / "hardware.json"
+
+ROBOT_ROOT = "/RBY1_A_v1_0"
+END_EFFECTOR_LINKS = {"left": "ee_left", "right": "ee_right"}
+HEAD_LINK = "link_head_2"
+
+# Local mounts in the corresponding RBY1 link frame.  RBY1 tools extend along
+# -Z.  Wrist cameras sit on the outside of each gripper and look mostly down the
+# tool axis.  The knife is mounted at the right gripper's distal face.
+LEFT_CAMERA_TRANSLATION_M = np.array([0.0, 0.0325, -0.060], dtype=np.float64)
+RIGHT_CAMERA_TRANSLATION_M = np.array([0.0, -0.0325, -0.060], dtype=np.float64)
+KNIFE_TRANSLATION_M = np.array([0.0, 0.0, -0.073], dtype=np.float64)
+HEAD_BRACKET_TRANSLATION_M = np.array([0.022, 0.0, 0.040], dtype=np.float64)
+
+
+@dataclasses.dataclass(frozen=True)
+class TriangleMesh:
+    """A compact triangle mesh in metres."""
+
+    points: np.ndarray
+    triangles: np.ndarray
+
+    @property
+    def bounds(self) -> tuple[np.ndarray, np.ndarray]:
+        return self.points.min(axis=0), self.points.max(axis=0)
+
+
+@dataclasses.dataclass(frozen=True)
+class HardwareReport:
+    """Stable paths produced by :func:`attach_robot_hardware`."""
+
+    cameras: tuple[str, ...]
+    cutting_surfaces: tuple[str, ...]
+    non_cutting_supports: tuple[str, ...]
+    attachments: tuple[str, ...]
+
+
+def rotation_x(degrees: float) -> np.ndarray:
+    angle = math.radians(degrees)
+    c, s = math.cos(angle), math.sin(angle)
+    return np.array([[1.0, 0.0, 0.0], [0.0, c, -s], [0.0, s, c]], dtype=np.float64)
+
+
+def rotation_z(degrees: float) -> np.ndarray:
+    angle = math.radians(degrees)
+    c, s = math.cos(angle), math.sin(angle)
+    return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
+
+
+LEFT_CAMERA_ROTATION = np.eye(3, dtype=np.float64)
+RIGHT_CAMERA_ROTATION = rotation_z(180.0)
+KNIFE_ROTATION = rotation_z(180.0) @ rotation_x(90.0)
+HEAD_BRACKET_ROTATION = rotation_z(90.0)
+HEAD_CAMERA_TRANSLATION_M = np.array([0.0, 0.00123, 0.025], dtype=np.float64)
+HEAD_CAMERA_ROTATION = rotation_z(180.0)
+
+
+def compose_rotation_xyz(rpy_radians: tuple[float, float, float] | list[float]) -> np.ndarray:
+    """URDF roll-pitch-yaw rotation, ``Rz(yaw) @ Ry(pitch) @ Rx(roll)``."""
+    roll, pitch, yaw = rpy_radians
+    cr, sr = math.cos(roll), math.sin(roll)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    rx = np.array([[1.0, 0.0, 0.0], [0.0, cr, -sr], [0.0, sr, cr]])
+    ry = np.array([[cp, 0.0, sp], [0.0, 1.0, 0.0], [-sp, 0.0, cp]])
+    rz = np.array([[cy, -sy, 0.0], [sy, cy, 0.0], [0.0, 0.0, 1.0]])
+    return rz @ ry @ rx
+
+
+def transform_direction(rotation: np.ndarray, direction: tuple[float, float, float] | np.ndarray) -> np.ndarray:
+    """Apply a conventional column-vector rotation to a direction."""
+    return np.asarray(rotation, dtype=np.float64) @ np.asarray(direction, dtype=np.float64)
+
+
+def read_binary_stl(path: pathlib.Path, *, scale: float = 0.001) -> TriangleMesh:
+    """Read a binary STL without adding a runtime CAD/trimesh dependency."""
+    data = path.read_bytes()
+    if len(data) < 84:
+        raise ValueError(f"STL is too short: {path}")
+    triangle_count = struct.unpack_from("<I", data, 80)[0]
+    expected = 84 + 50 * triangle_count
+    if len(data) != expected:
+        raise ValueError(f"expected a binary STL of {expected} bytes, found {len(data)}: {path}")
+
+    record = np.dtype(
+        [
+            ("normal", "<f4", (3,)),
+            ("vertices", "<f4", (3, 3)),
+            ("attribute", "<u2"),
+        ]
+    )
+    facets = np.frombuffer(data, dtype=record, count=triangle_count, offset=84)
+    raw_points = np.asarray(facets["vertices"], dtype=np.float64).reshape(-1, 3)
+    points, inverse = np.unique(raw_points, axis=0, return_inverse=True)
+    return TriangleMesh(points=points * scale, triangles=inverse.reshape(-1, 3).astype(np.int64))
+
+
+def _gf_matrix(rotation: np.ndarray, translation: np.ndarray) -> Gf.Matrix4d:
+    values = np.asarray(rotation, dtype=np.float64).reshape(3, 3)
+    matrix = Gf.Matrix4d(1.0)
+    # NumPy/CAD rotations here use column vectors. Gf transforms row vectors,
+    # so the numeric matrix must be transposed at this boundary.
+    matrix.SetRotate(Gf.Matrix3d(*values.T.reshape(-1).tolist()))
+    matrix.SetTranslateOnly(Gf.Vec3d(*np.asarray(translation, dtype=np.float64).tolist()))
+    return matrix
+
+
+def _set_transform(prim: Usd.Prim, rotation: np.ndarray, translation: np.ndarray) -> None:
+    transformable = UsdGeom.Xformable(prim)
+    transformable.ClearXformOpOrder()
+    transformable.AddTransformOp().Set(_gf_matrix(rotation, translation))
+
+
+def _hardware_attr(prim: Usd.Prim, name: str, value) -> None:
+    if isinstance(value, bool):
+        value_type = Sdf.ValueTypeNames.Bool
+    elif isinstance(value, float):
+        value_type = Sdf.ValueTypeNames.Float
+    else:
+        value_type = Sdf.ValueTypeNames.String
+    prim.CreateAttribute(f"tomato:{name}", value_type, custom=True).Set(value)
+
+
+def _author_mesh(
+    stage: Usd.Stage,
+    path: str,
+    source: pathlib.Path,
+    color: tuple[float, float, float],
+) -> UsdGeom.Mesh:
+    data = read_binary_stl(source)
+    mesh = UsdGeom.Mesh.Define(stage, path)
+    mesh.CreatePointsAttr([Gf.Vec3f(*point) for point in data.points])
+    mesh.CreateFaceVertexCountsAttr([3] * len(data.triangles))
+    mesh.CreateFaceVertexIndicesAttr(data.triangles.reshape(-1).tolist())
+    mesh.CreateSubdivisionSchemeAttr(UsdGeom.Tokens.none)
+    mesh.CreateDisplayColorAttr([Gf.Vec3f(*color)])
+    return mesh
+
+
+def _author_box_collider(
+    stage: Usd.Stage,
+    path: str,
+    minimum: np.ndarray,
+    maximum: np.ndarray,
+) -> str:
+    minimum = np.asarray(minimum, dtype=np.float64)
+    maximum = np.asarray(maximum, dtype=np.float64)
+    cube = UsdGeom.Cube.Define(stage, path)
+    cube.CreateSizeAttr(1.0)
+    xform = UsdGeom.Xformable(cube.GetPrim())
+    xform.AddTranslateOp().Set(Gf.Vec3d(*(0.5 * (minimum + maximum))))
+    xform.AddScaleOp().Set(Gf.Vec3f(*(maximum - minimum)))
+    cube.CreatePurposeAttr(UsdGeom.Tokens.guide)
+    UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+    return path
+
+
+def _author_convex_collider(stage: Usd.Stage, path: str, source: pathlib.Path) -> str:
+    mesh = _author_mesh(stage, path, source, (0.2, 0.2, 0.2))
+    mesh.CreatePurposeAttr(UsdGeom.Tokens.guide)
+    UsdPhysics.CollisionAPI.Apply(mesh.GetPrim())
+    UsdPhysics.MeshCollisionAPI.Apply(mesh.GetPrim()).CreateApproximationAttr().Set("convexHull")
+    return path
+
+
+def _part(manifest: dict, name: str) -> dict:
+    return next(part for part in manifest["parts"] if part["part"] == name)
+
+
+def load_manifest(path: pathlib.Path = MANIFEST_PATH) -> dict:
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    if manifest.get("schema_version") != 2:
+        raise ValueError(f"unsupported robot hardware manifest: {path}")
+    return manifest
+
+
+def _bounds_m(part: dict) -> tuple[np.ndarray, np.ndarray]:
+    return np.asarray(part["min_mm"], dtype=np.float64) * 0.001, np.asarray(part["max_mm"], dtype=np.float64) * 0.001
+
+
+def _author_d405(
+    stage: Usd.Stage,
+    root_path: str,
+    manifest: dict,
+    rotation: np.ndarray,
+    translation: np.ndarray,
+    role: str,
+    sensor_roll_degrees: float = 0.0,
+) -> str:
+    root = UsdGeom.Xform.Define(stage, root_path)
+    _set_transform(root.GetPrim(), rotation, translation)
+    _hardware_attr(root.GetPrim(), "hardwareRole", f"d405_{role}")
+
+    body_part = _part(manifest, "d405_body")
+    _author_mesh(stage, f"{root_path}/BodyVisual", DERIVED_DIR / "d405_body.stl", (0.08, 0.08, 0.09))
+    minimum, maximum = _bounds_m(body_part)
+    _author_box_collider(stage, f"{root_path}/BodyCollision", minimum, maximum)
+
+    optical_mm = np.asarray(body_part["optical_origin_mm"], dtype=np.float64)
+    camera_path = f"{root_path}/DepthCamera"
+    camera = UsdGeom.Camera.Define(stage, camera_path)
+    # USD cameras look down local -Z with +Y up.  Rx(+90) maps those axes to
+    # D405 +Y (forward) and +Z (up), respectively.
+    # The right camera body is mirrored across the robot. Keep the physical
+    # body and bracket mirrored, but roll its optical frame so policy images
+    # have the same upright convention as the head and left-wrist cameras.
+    sensor_rotation = rotation_x(90.0) @ rotation_z(sensor_roll_degrees)
+    _set_transform(camera.GetPrim(), sensor_rotation, optical_mm * 0.001)
+    horizontal, vertical = body_part["depth_fov_degrees"]
+    focal_length_mm = 10.0
+    camera.CreateFocalLengthAttr(focal_length_mm)
+    camera.CreateHorizontalApertureAttr(2.0 * focal_length_mm * math.tan(math.radians(horizontal / 2.0)))
+    camera.CreateVerticalApertureAttr(2.0 * focal_length_mm * math.tan(math.radians(vertical / 2.0)))
+    camera.CreateClippingRangeAttr(Gf.Vec2f(0.04, 10.0))
+    _hardware_attr(camera.GetPrim(), "cameraModel", "Intel RealSense D405")
+    _hardware_attr(camera.GetPrim(), "cameraRole", role)
+    _hardware_attr(camera.GetPrim(), "horizontalFovDegrees", float(horizontal))
+    _hardware_attr(camera.GetPrim(), "verticalFovDegrees", float(vertical))
+    _hardware_attr(camera.GetPrim(), "sensorRollDegrees", float(sensor_roll_degrees))
+    return camera_path
+
+
+def _author_wrist_camera(
+    stage: Usd.Stage,
+    link_path: str,
+    side: str,
+    manifest: dict,
+    rotation: np.ndarray,
+    translation: np.ndarray,
+) -> tuple[str, str]:
+    assembly_path = f"{link_path}/attachments/{side.title()}WristCamera"
+    assembly = UsdGeom.Xform.Define(stage, assembly_path)
+    _set_transform(assembly.GetPrim(), rotation, translation)
+    _hardware_attr(assembly.GetPrim(), "hardwareRole", "wrist_camera_assembly")
+
+    bracket_part = _part(manifest, "camera_bracket_d405")
+    _author_mesh(stage, f"{assembly_path}/BracketVisual", DERIVED_DIR / "camera_bracket_d405.stl", (0.12, 0.12, 0.14))
+    minimum, maximum = _bounds_m(bracket_part)
+    _author_box_collider(stage, f"{assembly_path}/BracketCollision", minimum, maximum)
+
+    mount = manifest["mounts"]["camera_bracket_to_d405"]
+    camera_path = _author_d405(
+        stage,
+        f"{assembly_path}/D405",
+        manifest,
+        np.asarray(mount["rotation_matrix"], dtype=np.float64),
+        np.asarray(mount["translation_mm"], dtype=np.float64) * 0.001,
+        f"{side}_wrist",
+        180.0 if side == "right" else 0.0,
+    )
+    return assembly_path, camera_path
+
+
+def _author_head_camera(stage: Usd.Stage, link_path: str, manifest: dict) -> tuple[str, str]:
+    assembly_path = f"{link_path}/attachments/HeadCamera"
+    assembly = UsdGeom.Xform.Define(stage, assembly_path)
+    _set_transform(assembly.GetPrim(), HEAD_BRACKET_ROTATION, HEAD_BRACKET_TRANSLATION_M)
+    _hardware_attr(assembly.GetPrim(), "hardwareRole", "head_camera_assembly")
+
+    part = _part(manifest, "head_camera_bracket_d405")
+    _author_mesh(stage, f"{assembly_path}/BracketVisual", ASSET_DIR / "HeadCam_Bracket_D405-Body.stl", (0.12, 0.12, 0.14))
+    minimum, maximum = _bounds_m(part)
+    _author_box_collider(stage, f"{assembly_path}/BracketCollision", minimum, maximum)
+    camera_path = _author_d405(
+        stage,
+        f"{assembly_path}/D405",
+        manifest,
+        HEAD_CAMERA_ROTATION,
+        HEAD_CAMERA_TRANSLATION_M,
+        "head",
+    )
+    return assembly_path, camera_path
+
+
+def _author_knife(stage: Usd.Stage, link_path: str, manifest: dict) -> tuple[str, str, str]:
+    root_path = f"{link_path}/attachments/DeleafKnife"
+    root = UsdGeom.Xform.Define(stage, root_path)
+    _set_transform(root.GetPrim(), KNIFE_ROTATION, KNIFE_TRANSLATION_M)
+    _hardware_attr(root.GetPrim(), "hardwareRole", "deleafing_knife")
+
+    knife = _part(manifest, "deleaf_knife")
+    components = {component["name"]: component for component in knife["components"]}
+    blade = components["deleaf_knife_blade"]
+    arc = components["deleaf_knife_arc"]
+
+    blade_path = f"{root_path}/Blade"
+    blade_mesh = _author_mesh(stage, blade_path, DERIVED_DIR / "deleaf_knife_blade.stl", (0.58, 0.61, 0.64))
+    _hardware_attr(blade_mesh.GetPrim(), "hardwareRole", "blade")
+    _hardware_attr(blade_mesh.GetPrim(), "cuttingSurface", True)
+    blade_min = np.asarray(blade["min_mm"], dtype=np.float64) * 0.001
+    blade_max = np.asarray(blade["max_mm"], dtype=np.float64) * 0.001
+    blade_collision = _author_box_collider(stage, f"{root_path}/BladeCollision", blade_min, blade_max)
+    blade_collision_prim = stage.GetPrimAtPath(blade_collision)
+    _hardware_attr(blade_collision_prim, "hardwareRole", "blade")
+    _hardware_attr(blade_collision_prim, "cuttingSurface", True)
+
+    arc_path = f"{root_path}/Arc"
+    arc_mesh = _author_mesh(stage, arc_path, DERIVED_DIR / "deleaf_knife_arc.stl", (0.16, 0.18, 0.20))
+    _hardware_attr(arc_mesh.GetPrim(), "hardwareRole", "knife_support")
+    _hardware_attr(arc_mesh.GetPrim(), "cuttingSurface", False)
+    arc_collision = _author_convex_collider(stage, f"{root_path}/ArcCollision", DERIVED_DIR / "deleaf_knife_arc.stl")
+    arc_collision_prim = stage.GetPrimAtPath(arc_collision)
+    _hardware_attr(arc_collision_prim, "hardwareRole", "knife_support")
+    _hardware_attr(arc_collision_prim, "cuttingSurface", False)
+    return root_path, blade_path, arc_path
+
+
+def attach_robot_hardware(stage: Usd.Stage, robot_root: str = ROBOT_ROOT) -> HardwareReport:
+    """Attach all requested hardware to an imported RBY1-A v1.0 stage."""
+    required = [END_EFFECTOR_LINKS["left"], END_EFFECTOR_LINKS["right"], HEAD_LINK]
+    missing = [name for name in required if not stage.GetPrimAtPath(f"{robot_root}/{name}").IsValid()]
+    if missing:
+        raise ValueError(f"RBY1-A v1.0 attachment links are missing: {', '.join(missing)}")
+
+    manifest = load_manifest()
+    attachments: list[str] = []
+    cameras: list[str] = []
+    for side, rotation, translation in (
+        ("left", LEFT_CAMERA_ROTATION, LEFT_CAMERA_TRANSLATION_M),
+        ("right", RIGHT_CAMERA_ROTATION, RIGHT_CAMERA_TRANSLATION_M),
+    ):
+        link_path = f"{robot_root}/{END_EFFECTOR_LINKS[side]}"
+        attachment, camera = _author_wrist_camera(stage, link_path, side, manifest, rotation, translation)
+        attachments.append(attachment)
+        cameras.append(camera)
+
+    head_attachment, head_camera = _author_head_camera(stage, f"{robot_root}/{HEAD_LINK}", manifest)
+    attachments.append(head_attachment)
+    cameras.append(head_camera)
+
+    knife_root, blade, arc = _author_knife(stage, f"{robot_root}/{END_EFFECTOR_LINKS['right']}", manifest)
+    attachments.append(knife_root)
+    return HardwareReport(
+        cameras=tuple(cameras),
+        cutting_surfaces=(blade, f"{knife_root}/BladeCollision"),
+        non_cutting_supports=(arc, f"{knife_root}/ArcCollision"),
+        attachments=tuple(attachments),
+    )

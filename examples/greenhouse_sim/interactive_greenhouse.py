@@ -1,4 +1,4 @@
-"""Run physics-enabled tomato vines inside the composed greenhouse.
+"""Run the fitted RB-Y1 and physics-enabled tomato vines in the greenhouse.
 
 The generated greenhouse scene stays immutable. Selected static vine references
 are hidden in the USD session layer and replaced at the same bed transforms by
@@ -28,6 +28,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 _DEFAULT_SCENE = pathlib.Path("data/greenhouse_sim/scenes/deleafing_bench.usd")
 _DEFAULT_VINE_DIR = pathlib.Path("greenhouse/tomato_glb_20")
+_DEFAULT_ROBOT = pathlib.Path("data/greenhouse_sim/robots/rby1a_v1.0.usd")
 _DEFAULT_REPORT = pathlib.Path("data/greenhouse_sim/interactive_greenhouse.json")
 
 
@@ -51,6 +52,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--scene", type=pathlib.Path, default=_DEFAULT_SCENE)
     parser.add_argument("--vine-dir", type=pathlib.Path, default=_DEFAULT_VINE_DIR)
+    parser.add_argument("--robot", type=pathlib.Path, default=_DEFAULT_ROBOT)
+    parser.add_argument("--no-robot", action="store_true", help="run the accepted vine-only environment")
+    parser.add_argument("--robot-position", type=float, nargs=3, default=(6.8691, 2.0, -0.3050817))
+    parser.add_argument("--robot-yaw", type=float, default=90.0)
     parser.add_argument("--physics-vines", type=int, default=1)
     parser.add_argument("--segment", type=float, default=0.02)
     parser.add_argument("--clip-spacing", type=float, default=0.30)
@@ -69,6 +74,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--visual-pull-probe", action="store_true")
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--screenshot", type=pathlib.Path, default=None)
+    parser.add_argument(
+        "--capture-camera",
+        choices=("inspection", "head", "left_wrist", "right_wrist"),
+        default="inspection",
+        help="camera used by --screenshot",
+    )
     parser.add_argument("--settle-steps", type=int, default=240)
     parser.add_argument("--pull-probe", type=str, default=None, metavar="SUBSTEM")
     parser.add_argument("--pull-accel", type=float, default=500.0)
@@ -94,6 +105,7 @@ def main() -> int:
     args = parse_args()
     scene_path = args.scene.resolve()
     vine_dir = args.vine_dir.resolve()
+    robot_path = args.robot.resolve()
     if not scene_path.exists():
         print(f"scene not found: {scene_path}; run build_scene.py first")
         return 1
@@ -104,12 +116,16 @@ def main() -> int:
     if args.physics_vines < 1:
         print("--physics-vines must be at least 1")
         return 1
+    if not args.no_robot and not robot_path.exists():
+        print(f"fitted robot not found: {robot_path}; run build_robot.py first or pass --no-robot")
+        return 1
 
     report: dict = {
         "stage": "starting",
         "scene": str(scene_path),
         "physics_vines_requested": args.physics_vines,
         "collision_mode": args.collision_mode,
+        "robot_requested": not args.no_robot,
     }
     _emit(report, args.report)
 
@@ -121,6 +137,7 @@ def main() -> int:
     from greenhouse_sim import cutting
     from greenhouse_sim import glb
     from greenhouse_sim import organs
+    from greenhouse_sim import robot_scene
     from greenhouse_sim import skeleton as skeleton_module
     from greenhouse_sim import vine_interaction
     from greenhouse_sim import vine_physics
@@ -138,6 +155,16 @@ def main() -> int:
         app.update()
     stage = omni.usd.get_context().get_stage()
     stage.SetEditTarget(stage.GetSessionLayer())
+
+    robot_placement = None
+    if not args.no_robot:
+        robot_placement = robot_scene.add_fitted_robot(
+            stage,
+            robot_path,
+            position_m=args.robot_position,
+            yaw_degrees=args.robot_yaw,
+        )
+        report["robot"] = dataclasses.asdict(robot_placement)
 
     static_scope = stage.GetPrimAtPath("/World/Vines")
     static_vines = list(static_scope.GetChildren()) if static_scope and static_scope.IsValid() else []
@@ -249,8 +276,15 @@ def main() -> int:
     if headless:
         success = _run_headless_checks(stage, context, runtimes, args, report)
         if args.screenshot is not None:
-            _capture(camera_path, args, app)
+            capture_camera = camera_path
+            if args.capture_camera != "inspection":
+                if robot_placement is None:
+                    raise ValueError("a fitted robot is required to capture a D405 camera")
+                camera_indices = {"head": 0, "left_wrist": 1, "right_wrist": 2}
+                capture_camera = robot_placement.cameras[camera_indices[args.capture_camera]]
+            _capture(capture_camera, args, app)
             report["screenshot"] = str(args.screenshot)
+            report["capture_camera"] = capture_camera
         report.update(stage="done", succeeded=bool(success))
         _emit(report, args.report)
         context.stop()
@@ -607,6 +641,11 @@ def _run_headless_checks(stage, context, runtimes, args, report: dict) -> bool:
         success = success and finite and runaways == 0
     report["stability"] = stability
 
+    if report.get("robot_requested"):
+        robot_stability = _robot_stability(stage, args)
+        report["robot_stability"] = robot_stability
+        success = success and bool(robot_stability["succeeded"])
+
     if args.airflow_probe_steps > 0:
         from greenhouse_sim import vine_interaction
 
@@ -631,6 +670,49 @@ def _run_headless_checks(stage, context, runtimes, args, report: dict) -> bool:
         report["cut_probe"] = cut
         success = success and bool(cut["succeeded"])
     return success
+
+
+def _robot_stability(stage, args) -> dict:
+    import numpy as np
+    from pxr import Gf
+    from pxr import Usd
+    from pxr import UsdGeom
+    from pxr import UsdPhysics
+
+    root_path = "/World/RBY1"
+    rigid_paths = [
+        str(prim.GetPath())
+        for prim in stage.Traverse()
+        if str(prim.GetPath()).startswith(f"{root_path}/") and prim.HasAPI(UsdPhysics.RigidBodyAPI)
+    ]
+    positions = _positions(stage, rigid_paths)
+    base = stage.GetPrimAtPath(f"{root_path}/base")
+    if not rigid_paths or not base.IsValid():
+        return {"succeeded": False, "error": "fitted robot rigid bodies are missing"}
+
+    base_matrix = UsdGeom.Xformable(base).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+    base_position = np.asarray(base_matrix.ExtractTranslation(), dtype=np.float64)
+    expected = np.asarray(args.robot_position, dtype=np.float64)
+    displacement = base_position - expected
+    up = np.asarray(base_matrix.TransformDir(Gf.Vec3d(0.0, 0.0, 1.0)), dtype=np.float64)
+    up /= max(float(np.linalg.norm(up)), 1e-12)
+    tilt_degrees = float(np.degrees(np.arccos(np.clip(up[2], -1.0, 1.0))))
+    finite = bool(np.isfinite(positions).all() and np.isfinite(up).all())
+    succeeded = bool(
+        finite
+        and len(rigid_paths) == 34
+        and np.linalg.norm(displacement[:2]) < 0.05
+        and abs(displacement[2]) < 0.10
+        and tilt_degrees < 10.0
+    )
+    return {
+        "rigid_bodies": len(rigid_paths),
+        "finite": finite,
+        "base_position_m": base_position.tolist(),
+        "base_displacement_mm": (displacement * 1000.0).tolist(),
+        "base_tilt_degrees": tilt_degrees,
+        "succeeded": succeeded,
+    }
 
 
 def _airflow_probe(stage, context, airflow, steps: int) -> dict:

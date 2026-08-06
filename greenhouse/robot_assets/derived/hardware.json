@@ -1,16 +1,204 @@
 {
- "parts": [
-  {
-   "part": "camera_bracket_d405",
-   "source": "C_CameraBracket_Bent(HighSpeedGripper(R1.1&1.2)).stp",
-   "size_mm": [
-    27.0,
-    59.92,
-    34.62
-   ],
-   "volume_mm3": 5747.9,
-   "facets": 1108,
-   "faces": 20
+  "schema_version": 2,
+  "parts": [
+    {
+      "part": "camera_bracket_d405",
+      "source": "C_CameraBracket_Bent(HighSpeedGripper(R1.1&1.2)).stp",
+      "min_mm": [
+        -13.5,
+        0.0,
+        0.0
+      ],
+      "max_mm": [
+        13.5,
+        59.91954,
+        34.61918
+      ],
+      "size_mm": [
+        27.0,
+        59.91954,
+        34.61918
+      ],
+      "volume_mm3": 5747.9,
+      "facets": 1108,
+      "faces": 20,
+      "frame": "origin at mounting-face centre; +Y away from face; +Z above face"
+    },
+    {
+      "part": "d405_body",
+      "source": "C_CameraBracket_Bent(HighSpeedGripper(R1.1&1.2)).stp",
+      "min_mm": [
+        -21.0,
+        -0.0,
+        -21.0
+      ],
+      "max_mm": [
+        21.09,
+        23.0,
+        21.0
+      ],
+      "size_mm": [
+        42.09,
+        23.0,
+        42.0
+      ],
+      "volume_mm3": 38161.1,
+      "facets": 8520,
+      "faces": 146,
+      "frame": "D405 assembly part frame; camera forward is +Y",
+      "depth_baseline_mm": 18.0,
+      "optical_origin_mm": [
+        0.0,
+        19.23,
+        0.0
+      ],
+      "depth_fov_degrees": [
+        84.0,
+        58.0
+      ],
+      "color_fov_degrees": [
+        84.0,
+        58.0
+      ],
+      "specification": "RealSense D400 Series Datasheet, July 2023"
+    },
+    {
+      "part": "head_camera_bracket_d405",
+      "source": "HeadCam_Bracket_D405-Body.stl",
+      "min_mm": [
+        -23.0,
+        -18.0,
+        -0.0
+      ],
+      "max_mm": [
+        23.0,
+        18.0,
+        50.0
+      ],
+      "size_mm": [
+        46.0,
+        36.0,
+        50.0
+      ],
+      "facets": 14052,
+      "frame": "origin on the 46 x 36 mm head mounting face; +Z through bracket height"
+    },
+    {
+      "part": "deleaf_knife",
+      "source": "deleaf_knife.stl",
+      "source_sha256": "0237eb46c8980cec4cd9b09623f72d55e6f2491928e673a67172294c3a5f8dbd",
+      "source_bounds": {
+        "blade": {
+          "min_mm": [
+            106.41612,
+            122.99123,
+            0.0
+          ],
+          "max_mm": [
+            136.77817,
+            194.47121,
+            13.0
+          ],
+          "size_mm": [
+            30.36205,
+            71.47998,
+            13.0
+          ]
+        },
+        "arc": {
+          "min_mm": [
+            118.59715,
+            70.69926,
+            0.0
+          ],
+          "max_mm": [
+            124.59715,
+            133.0,
+            50.91788
+          ],
+          "size_mm": [
+            6.0,
+            62.30074,
+            50.91788
+          ]
+        }
+      },
+      "mount_origin_in_source_mm": [
+        121.59715,
+        194.47121,
+        6.5
+      ],
+      "frame": "origin at centre of blade distal mounting face; blade projects along -Y",
+      "components": [
+        {
+          "name": "deleaf_knife_blade",
+          "min_mm": [
+            -15.18102,
+            -71.47998,
+            -6.5
+          ],
+          "max_mm": [
+            15.18102,
+            0.0,
+            6.5
+          ],
+          "size_mm": [
+            30.36205,
+            71.47998,
+            13.0
+          ],
+          "facets": 1029,
+          "cutting_surface": true
+        },
+        {
+          "name": "deleaf_knife_arc",
+          "min_mm": [
+            -3.0,
+            -123.77194,
+            -6.5
+          ],
+          "max_mm": [
+            3.0,
+            -61.47121,
+            44.41788
+          ],
+          "size_mm": [
+            6.0,
+            62.30074,
+            50.91788
+          ],
+          "facets": 3811,
+          "cutting_surface": false
+        }
+      ],
+      "cut_semantics": "flat straight blade only; U-shaped arc is non-cutting support"
+    }
+  ],
+  "mounts": {
+    "camera_bracket_to_d405": {
+      "translation_mm": [
+        0.0,
+        14.61202,
+        5.19634
+      ],
+      "rotation_matrix": [
+        [
+          -0.0,
+          0.0,
+          1.0
+        ],
+        [
+          -0.933580426,
+          0.35836795,
+          0.0
+        ],
+        [
+          -0.35836795,
+          -0.933580426,
+          -0.0
+        ]
+      ],
+      "source": "authored D405 App::Part transform in the supplied STEP"
+    }
   }
- ]
 }

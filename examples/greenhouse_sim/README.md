@@ -63,7 +63,8 @@ Substitute your own install path throughout — the examples below use
 | pip install (`pip install isaacsim`) | the `python` of that virtualenv |
 
 Only the scripts that **start a simulator** — `launch_greenhouse.py`,
-`interactive_greenhouse.py`, and `cut_demo.py` — actually require it.
+`interactive_greenhouse.py`, `build_robot.py`, `inspect_robot.py`, and
+`cut_demo.py` — actually require it.
 
 The **asset scripts** (`convert_vines_to_usd.py`, `build_scene.py`) need USD but
 no simulator, and `usd_env.py` loads USD out of an Isaac Sim install directly.
@@ -117,16 +118,18 @@ Useful flags: `--beds` / `--plants-per-bed` / `--spacing` / `--seed` on
 
 ## Interactive greenhouse physics
 
-Launch the composed greenhouse with the first static vine replaced, at the same
-bed transform, by the stable articulated vine. The replacement is authored only
-in the USD session layer, so the built scene and source assets are not modified:
+Launch the composed greenhouse with the fitted RB-Y1 and the first static vine
+replaced, at the same bed transform, by the stable articulated vine. The
+replacement and robot reference are authored only in the USD session layer, so
+the built scene and source assets are not modified:
 
 ```bash
 $ISAACSIM/python.sh examples/greenhouse_sim/interactive_greenhouse.py
 ```
 
 The other seven vines remain static by default to keep viewport performance
-practical. Use `--physics-vines N` to upgrade more placements.
+practical. Use `--physics-vines N` to upgrade more placements, or `--no-robot`
+to return to the accepted vine-only environment.
 
 While the simulation is running:
 
@@ -167,8 +170,50 @@ $ISAACSIM/python.sh examples/greenhouse_sim/interactive_greenhouse.py \
 ```
 
 Real Shift-drag, stationary airflow motion, and cutting were manually accepted
-in the viewport on 2026-08-06. Robot/tool/camera integration is the next gate
-before benchmark and RL work begins.
+in the viewport on 2026-08-06.
+
+## RB-Y1, cameras, and deleafing knife
+
+Build the exact RB-Y1 Model A v1.0 asset from the bundled official SDK URDF:
+
+```bash
+$ISAACSIM/python.sh examples/greenhouse_sim/build_robot.py
+```
+
+The builder keeps the mobile base dynamic, restores all 17 active custom URDF
+capsules omitted by Isaac's importer, adds conservative base/gripper contact
+proxies, and fits the supplied hardware under `greenhouse/robot_assets/`:
+
+- one Intel RealSense D405 and bracket on the head;
+- one D405 and bent bracket on each end effector;
+- the supplied deleafing knife on the right end effector.
+
+For the knife, only the flat straight plate is tagged as a cutting surface. The
+U-shaped arc is support geometry and cannot trigger a cut.
+
+Inspect each fitted assembly without greenhouse occlusion:
+
+```bash
+$ISAACSIM/python.sh examples/greenhouse_sim/inspect_robot.py --view head_camera
+$ISAACSIM/python.sh examples/greenhouse_sim/inspect_robot.py --view left_wrist
+$ISAACSIM/python.sh examples/greenhouse_sim/inspect_robot.py --view right_tool
+```
+
+Run the integrated non-contact stability check and capture a fitted D405:
+
+```bash
+$ISAACSIM/python.sh examples/greenhouse_sim/interactive_greenhouse.py \
+    --headless --settle-steps 480 \
+    --capture-camera right_wrist \
+    --screenshot data/greenhouse_sim/d405_right_wrist.png \
+    --report data/greenhouse_sim/robot_fit_acceptance.json
+```
+
+The accepted ready pose is stable and all three optical frames are validated.
+The wrist cameras look down and outward; task views will become useful when the
+arms move from their stowed ready pose into pre-contact poses. Robot-to-vine
+contact, reachability, gripper friction, and knife-driven cuts remain the next
+gate before benchmark and RL work.
 
 ## Cutting demo
 
@@ -242,7 +287,12 @@ depends on), and never falls back to grafting.
 | `greenhouse_sim/vine_interaction.py` | Visible-mesh pulling and foliage-area airflow forces |
 | `greenhouse_sim/cutting.py` | Runtime joint release, tear monitoring, and cut grading |
 | `greenhouse_sim/greenhouse_scene.py` | Vine placement over the greenhouse stage |
+| `greenhouse_sim/robot_hardware.py` | D405/bracket mounts and flat-blade cut semantics |
+| `greenhouse_sim/robot_scene.py` | RBY1 placement, ready pose, and fit validation |
 | `greenhouse_sim/usd_env.py` | Makes USD importable without booting Kit |
+| `extract_robot_hardware.py` | Reproducible supplied-CAD extraction and manifest |
+| `build_robot.py` | RBY1 v1.0 import, collision restoration, and hardware build |
+| `inspect_robot.py` | Isolated fitted-hardware close-up renderer |
 | `convert_vines_to_usd.py` | Asset build + invariant checks |
 | `build_scene.py` | Scene composition |
 | `launch_greenhouse.py` | Static viewer / headless capture |
@@ -261,7 +311,9 @@ $ISAACSIM/python.sh -m pytest examples/greenhouse_sim/greenhouse_sim
 Built and verified: asset pipeline, scene composition, stable
 articulated vine physics, task-directed robot contacts, visible-mesh pulling,
 foliage-area airflow, greenhouse integration, pull/recovery, and flush cutting.
-Manual Shift-drag, airflow-motion, and cut acceptance is complete. Next: 32.5 N
-tear calibration and RB-Y1 tool/camera integration, then task definition,
-benchmarking, and RL.
+Manual Shift-drag, airflow-motion, and cut acceptance is complete. Exact RB-Y1
+v1.0 import, ready-pose stability, three D405 fits/optical frames, and right
+flat-blade semantics are also verified. Next: robot-to-vine reach/contact/cut
+acceptance and 32.5 N tear calibration, then task definition, benchmarking,
+and RL.
 See `dev.md` at the repository root for evidence and remaining work.

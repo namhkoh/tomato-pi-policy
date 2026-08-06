@@ -22,7 +22,9 @@ at `D:\isaac-sim`, Windows 11. Branch `koh-dev/simulator-base` (fork of openpi).
 - [x] Visible-mesh mouse pulling + explicit foliage-area airflow
 - [x] Manual viewport acceptance: real Shift-drag grab/release and UI/keyboard cut
 - [ ] Sustained pull/tear validation against the 32.5 N threshold
-- [ ] RB-Y1 URDF v1.0 integration + gripper/contact validation
+- [x] RB-Y1 Model A v1.0 import, greenhouse placement, and stable ready pose
+- [x] Supplied D405 head/wrist brackets and right deleafing knife fitted
+- [ ] Robot-to-vine gripper/blade contact and cut validation
 - [ ] Benchmark task definition + metrics
 
 ## Findings
@@ -519,11 +521,92 @@ body compliance and the cut joint. Direct viewport acceptance was completed on
 released, airflow produced acceptable stationary motion, and the cut mechanism
 worked. This clears the interaction gate for RB-Y1 integration. Benchmarking
 and RL remain gated on stable robot/tool/camera integration and contact testing.
-Regression status: 26 of 27 existing hermetic greenhouse tests pass. The only
-failure is the unchanged `test_arc_length_sampling_is_continuous`, whose 10 mm
+Regression status: 34 passed, 1 failed, and 1 skipped in the complete hermetic
+greenhouse suite. The only failure is the unchanged
+`test_arc_length_sampling_is_continuous`, whose 10 mm
 absolute tolerance is exceeded by 0.17 mm; no skeleton code changed in this
 milestone, so that numerical test issue is tracked separately rather than hidden
-inside the interaction implementation.
+inside the robot integration. The skipped test requires `PhysxSchema` from a
+running `SimulationApp`; the integrated live soak exercises that path.
+
+### RB-Y1 Model A v1.0, D405, and knife integration (2026-08-06)
+
+The fitted robot is rebuilt reproducibly by `build_robot.py` from the exact
+physical-robot URDF,
+`third_party/rby1-sdk/models/rby1a/urdf/model_v1.0.urdf` (SHA-256
+`33cb8cd34abc0f58f0e65f8dc7b59acabf3fd62cb820b1be1f40d513578a65ae`).
+The v1.2 simulator asset is intentionally not substituted. Import keeps the
+mobile base dynamic, preserves fixed joints and URDF inertia, disables
+self-collision, and changes only the two wheel drives to velocity mode.
+
+Collision reconstruction corrected an earlier source audit: v1.0 contains
+**17 active custom capsule elements**, not 26. The other nine matches are inside
+XML comments and must not become live colliders. Isaac's URDF importer drops
+the active non-standard capsules, so the builder restores those 17 as sibling
+prims under each link. The source also omits standard collisions for the base,
+wheels, gripper bodies, and fingers; conservative proxies add 3 base/wheel and
+6 end-effector/finger shapes. Eight more shapes cover the three fitted
+camera/bracket assemblies and two knife components, for **34 collision shapes**
+on the generated robot.
+
+`extract_robot_hardware.py` makes the supplied CAD reproducible without a
+runtime FreeCAD dependency. The external
+`D:\research\freecad-mcp\deleaf_knife.stl` was copied byte-for-byte to
+`greenhouse/robot_assets/deleaf_knife.stl` (SHA-256
+`0237eb46c8980cec4cd9b09623f72d55e6f2491928e673a67172294c3a5f8dbd`)
+and split into its two disconnected components:
+
+- the 30.362 x 71.480 x 13.000 mm **flat straight plate**, the only prims
+  carrying `tomato:cuttingSurface=true`;
+- the 6.000 x 62.301 x 50.918 mm **U-shaped arc**, explicitly non-cutting
+  support geometry.
+
+The plate projects along the right tool's -Z axis from the gripper distal face.
+The U arc is never accepted as a cutting surface. Both pieces retain collision
+geometry, so support contact remains physical without corrupting cut semantics.
+
+The supplied bent D405 bracket STEP was decomposed into the exact 27 x 59.920 x
+34.619 mm bracket and 42.090 x 23 x 42 mm camera body while preserving the
+authored bracket-to-camera transform. One assembly is mounted on the outer face
+of each end effector. The supplied head bracket carries the same D405 body on
+`link_head_2`. All three USD cameras use the D405's 84 by 58 degree depth FOV
+and 40 mm near clip. Head optical forward/up are +robot-X/+robot-Z; wrist
+cameras look down the tool and outward. The mirrored right physical mount gets
+a sensor-only 180 degree roll so left and right policy images share an upright
+convention.
+
+A real transform bug was caught during rendered-camera validation: the CAD and
+NumPy matrices use column vectors, but `Gf.Matrix4d` transforms row vectors.
+Transposing at the Gf boundary corrected the initially inverted head view,
+horizontal wrist views, and wrong blade direction. The authored-stage
+regression now checks the actual Gf camera forward/up axes and actual blade
+projection, not only the source NumPy matrices.
+
+`interactive_greenhouse.py` now composes the robot by default at
+`(6.8691, 2.0, -0.3050817)` m with 90 degree yaw, where the Z value is the
+measured cultivation-zone collision floor. `--no-robot` retains the accepted
+vine-only launcher. All 22 torso, arm, and head joint targets and initial
+PhysX joint states are authored to the official SDK ready pose before physics
+starts; this prevents a zero-pose startup sweep through the greenhouse.
+
+**Automated fit and stability acceptance (Isaac Sim 5.1):**
+
+| Check | Result | Evidence |
+|---|---|---|
+| Hardware semantics | 3 D405 cameras; 1 visual/collision blade pair marked cutting; U arc visual/collision pair non-cutting | `robot_hardware_test.py`, `data/greenhouse_sim/robots/rby1a_v1.0.json` |
+| Authored transforms | head forward/up correct; wrists down/outward with common upright convention; flat plate projects along tool -Z | 8 passed, 1 PhysX-only test skipped outside SimulationApp |
+| Visual fit | head bracket, left wrist bracket/D405, and right bracket/D405/knife all render seated on the intended links | `robot_fit_head_camera_final.png`, `robot_fit_left_wrist_final.png`, `robot_fit_right_tool.png` |
+| Integrated 480-step soak | 34/34 rigid bodies finite; base settled 9.391 mm laterally and 8.203 mm vertically; 2.078 degree tilt; succeeded=true | `data/greenhouse_sim/robot_fit_acceptance_final.json` |
+| Vine during robot soak | 121/121 tracked organs finite; 0 runaway organs | same report |
+| Live camera path | right wrist D405 rendered from its fitted USD optical frame after the soak | `data/greenhouse_sim/d405_right_wrist_final.png` |
+
+This clears the **asset import, hardware fit, optical-frame, and non-contact
+stability** gate. It does not yet claim robot deleafing success: arm
+reachability, gripper contact/friction, blade-to-petiole contact, robot-driven
+cut triggering, and sustained-force tearing remain the next explicit gate.
+Default ready-pose wrist images mainly see the floor/nearby structure because
+the arms are stowed; task camera coverage must be evaluated in reachable
+pre-contact poses rather than misreported as a mounting failure.
 
 ## Research findings, 2026-08-06 (pre-implementation)
 
@@ -613,8 +696,9 @@ wrist and gripper flange (wrist→EE 154.8 mm vs 126.1 mm).
 
 Import settings that matter: `fix_base=False`, `merge_fixed_joints=False`,
 self-collision off, inertia from URDF, position drives with wheels overridden to
-velocity. The importer drops the URDF's non-standard `<capsule>` tags, so 26
-capsule colliders need re-adding post-import.
+velocity. The importer drops the URDF's non-standard `<capsule>` tags. A
+comment-aware implementation audit found 17 active capsules to restore; the
+earlier count of 26 incorrectly included nine capsules inside XML comments.
 
 ## Novelty position
 
@@ -631,3 +715,8 @@ One logical change per commit; no AI attribution trailers.
 - 2026-08-06 — Stabilised vine physics with per-organ articulations, explicit
   contact-independent inertia, task-directed interaction colliders, cut/ground
   validation, and a clean 10-second stability soak.
+- 2026-08-06 — Added visible-mesh mouse pulling, explicit foliage airflow,
+  integrated greenhouse pull/cut probes, and manual viewport acceptance.
+- 2026-08-06 — Imported exact RB-Y1 Model A v1.0, restored active collisions,
+  fitted three supplied D405 assemblies and the right flat-plate knife, corrected
+  optical/tool transforms, and passed the integrated robot-plus-vine soak.
