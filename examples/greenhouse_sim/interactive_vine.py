@@ -39,7 +39,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plants", type=int, default=1)
     parser.add_argument("--segment", type=float, default=0.02, help="capsule length, in metres")
     parser.add_argument("--clip-spacing", type=float, default=0.30)
+    parser.add_argument("--stiffness-scale", type=float, default=1.0, help="multiplier on beam stiffness")
     parser.add_argument("--gravity", type=float, default=9.81, help="0 isolates constraint problems from load")
+    parser.add_argument("--no-ground", dest="ground", action="store_false", default=True,
+                        help="omit the floor, to test whether basal organs are born inside it")
     parser.add_argument("--no-collision", dest="collide", action="store_false", default=True,
                         help="drop colliders, to separate contact problems from constraint problems")
     parser.add_argument(
@@ -121,7 +124,9 @@ def main() -> int:
             root,
             skeletons,
             lambda p, o=offset: vine_usd.gltf_to_usd(p) + o,
-            properties=vine_physics.TissueProperties(tear_force_n=args.tear_force),
+            properties=vine_physics.TissueProperties(
+                tear_force_n=args.tear_force, stiffness_scale=args.stiffness_scale
+            ),
             visible_colliders=args.show_colliders,
             collidable=args.collide,
         )
@@ -133,7 +138,8 @@ def main() -> int:
             all_clips += vine_physics.add_trellis_clips(stage, rig, plant.root, spacing=args.clip_spacing)
 
     floor = min(link.start[2] for rig in rigs for link in rig.links)
-    vine_physics.add_ground_plane(stage, height=floor)
+    if args.ground:
+        vine_physics.add_ground_plane(stage, height=floor)
 
     _add_lighting(stage)
     report.update(
@@ -152,6 +158,10 @@ def main() -> int:
 
     context = SimulationContext(physics_dt=1.0 / 240.0, rendering_dt=1.0 / 60.0, stage_units_in_meters=1.0)
     context.initialize_physics()
+    # SimulationContext overrides the scene's gravity attribute, so set it here
+    # or a requested value is silently ignored.
+    context.get_physics_context().set_gravity(-abs(args.gravity))
+    report["gravity"] = args.gravity
 
     stem_paths = [link.path for link in rigs[0].links if link.organ == plant.root]
     rest = _sample(stage, stem_paths)

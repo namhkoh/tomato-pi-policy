@@ -98,6 +98,15 @@ class TissueProperties:
     cut_force_n: float = 66.3
     tear_force_n: float = 32.5
 
+    # Calibration between beam-theory stiffness and what the angular drive
+    # actually delivers. Determined by a controlled cantilever test rather than
+    # from the documented units: a link of this scale needs a drive stiffness
+    # near 1e2 to hold itself up, while E*I/L for a petiole yields ~1e-2, and
+    # sweeping the factor showed the plant only becomes coherent around 1e4.
+    # Below that the joints behave as free hinges and the canopy collapses no
+    # matter how the trellis or tissue properties are set.
+    stiffness_scale: float = 1.0e4
+
     def modulus_at(self, height_fraction: float) -> float:
         """Young's modulus along the main stem, base (0.0) to growing tip (1.0).
 
@@ -214,6 +223,15 @@ def _define_capsule(
     transformable.AddOrientOp().Set(_orient_to(link.end - link.start))
 
     UsdPhysics.RigidBodyAPI.Apply(body.GetPrim())
+    # A long chain of stiff constraints needs far more position iterations than
+    # the default; too few and the chain cannot resolve, so links drift apart
+    # and organs detach from the plant.
+    from pxr import PhysxSchema  # noqa: PLC0415
+
+    physx_body = PhysxSchema.PhysxRigidBodyAPI.Apply(body.GetPrim())
+    physx_body.CreateSolverPositionIterationCountAttr(64)
+    physx_body.CreateSolverVelocityIterationCountAttr(4)
+    physx_body.CreateMaxDepenetrationVelocityAttr(0.5)
     mass_api = UsdPhysics.MassAPI.Apply(body.GetPrim())
     mass_api.CreateMassAttr(capsule_mass(link.radius, link.length, properties.density_kg_m3))
 
@@ -295,9 +313,11 @@ def _define_joint(
         drive = UsdPhysics.DriveAPI.Apply(joint.GetPrim(), axis)
         drive.CreateTypeAttr("force")
         drive.CreateTargetPositionAttr(0.0)
-        # USD angular drives are per-degree; beam stiffness is per-radian.
-        drive.CreateStiffnessAttr(float(stiffness * math.pi / 180.0))
-        drive.CreateDampingAttr(float(damping * math.pi / 180.0))
+        # USD angular drives are documented per-degree while beam stiffness is
+        # per-radian, hence the conversion; stiffness_scale exists to test that.
+        scale = properties.stiffness_scale * math.pi / 180.0
+        drive.CreateStiffnessAttr(float(stiffness * scale))
+        drive.CreateDampingAttr(float(damping * scale))
 
     del breakable  # Tearing is force-monitored, not breakForce; see `cutting`.
     # Authored now, while the scene is still being built, so that severing at
