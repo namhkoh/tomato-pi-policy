@@ -39,6 +39,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plants", type=int, default=1)
     parser.add_argument("--segment", type=float, default=0.02, help="capsule length, in metres")
     parser.add_argument("--clip-spacing", type=float, default=0.30)
+    parser.add_argument("--gravity", type=float, default=9.81, help="0 isolates constraint problems from load")
+    parser.add_argument("--no-collision", dest="collide", action="store_false", default=True,
+                        help="drop colliders, to separate contact problems from constraint problems")
     parser.add_argument(
         "--tear-force",
         type=float,
@@ -101,7 +104,7 @@ def main() -> int:
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
     UsdGeom.Xform.Define(stage, "/World")
     stage.SetDefaultPrim(stage.GetPrimAtPath("/World"))
-    vine_physics.apply_scene_physics(stage)
+    vine_physics.apply_scene_physics(stage, gravity=args.gravity)
     UsdGeom.Xform.Define(stage, "/World/Row")
 
     rigs, all_clips = [], []
@@ -120,6 +123,7 @@ def main() -> int:
             lambda p, o=offset: vine_usd.gltf_to_usd(p) + o,
             properties=vine_physics.TissueProperties(tear_force_n=args.tear_force),
             visible_colliders=args.show_colliders,
+            collidable=args.collide,
         )
         vine_visuals.attach_organ_visuals(
             stage, rig, plant, asset, lambda p, o=offset: vine_usd.gltf_to_usd(p) + o
@@ -191,11 +195,22 @@ def main() -> int:
     moved = np.linalg.norm(organ_now - organ_rest, axis=1)
     labels = {o.index: o.label for o in plant.organs}
     order = sorted(base_links)
+    link_counts = {}
+    for link in rigs[0].links:
+        link_counts[link.organ] = link_counts.get(link.organ, 0) + 1
     runaways = [
-        {"organ": labels.get(order[i], str(order[i])), "moved_mm": round(float(moved[i]) * 1000, 1)}
+        {
+            "organ": labels.get(order[i], str(order[i])),
+            "moved_mm": round(float(moved[i]) * 1000, 1),
+            "nlinks": link_counts.get(order[i], 0),
+        }
         for i in np.argsort(-moved)[:10]
         if moved[i] > 0.1
     ]
+    single = [i for i, o in enumerate(order) if link_counts.get(o, 0) == 1]
+    multi = [i for i, o in enumerate(order) if link_counts.get(o, 0) > 1]
+    report["runaway_single_link"] = f"{int((moved[single] > 0.1).sum())}/{len(single)}"
+    report["runaway_multi_link"] = f"{int((moved[multi] > 0.1).sum())}/{len(multi)}"
     report["organs_tracked"] = len(order)
     report["organs_runaway"] = int((moved > 0.1).sum())
     report["worst_organs"] = runaways

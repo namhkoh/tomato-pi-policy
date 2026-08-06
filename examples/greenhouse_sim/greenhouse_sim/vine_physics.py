@@ -46,7 +46,6 @@ from greenhouse_sim import usd_env
 usd_env.ensure_pxr()
 
 from pxr import Gf  # noqa: E402
-from pxr import PhysxSchema  # noqa: E402
 from pxr import Sdf  # noqa: E402
 from pxr import Usd  # noqa: E402
 from pxr import UsdGeom  # noqa: E402
@@ -192,7 +191,13 @@ def _orient_to(axis: np.ndarray) -> Gf.Quatf:
 
 
 def _define_capsule(
-    stage: Usd.Stage, path: Sdf.Path, link: Link, properties: TissueProperties, *, visible: bool = False
+    stage: Usd.Stage,
+    path: Sdf.Path,
+    link: Link,
+    properties: TissueProperties,
+    *,
+    visible: bool = False,
+    collidable: bool = True,
 ) -> Sdf.Path:
     """A rigid body carrying its collider as a child, returning the collider.
 
@@ -215,9 +220,17 @@ def _define_capsule(
     collider_path = path.AppendChild("Collider")
     capsule = UsdGeom.Capsule.Define(stage, collider_path)
     capsule.CreateAxisAttr(UsdGeom.Tokens.z)
-    capsule.CreateRadiusAttr(float(link.radius))
-    capsule.CreateHeightAttr(max(link.length - 2.0 * link.radius, 1e-4))
-    UsdPhysics.CollisionAPI.Apply(capsule.GetPrim())
+    # A capsule is its cylinder plus two hemispherical caps, so its true length
+    # is height + 2*radius. Using the fitted radius unclamped makes a short,
+    # thick segment collide as a ball several times longer than the link it
+    # stands for -- on these assets up to 4.2x -- which silently engulfs
+    # neighbouring organs and leaves PhysX resolving overlaps that should never
+    # exist. Clamping keeps every collider inside its own segment.
+    radius = min(float(link.radius), 0.5 * link.length)
+    capsule.CreateRadiusAttr(radius)
+    capsule.CreateHeightAttr(max(link.length - 2.0 * radius, 1e-4))
+    if collidable:
+        UsdPhysics.CollisionAPI.Apply(capsule.GetPrim())
     if visible:
         capsule.CreateDisplayColorAttr([Gf.Vec3f(0.22, 0.42, 0.14)])
     else:
@@ -242,14 +255,32 @@ def _define_joint(
         joint.CreateBody0Rel().SetTargets([parent])
     joint.CreateBody1Rel().SetTargets([child])
 
-    for body, target in ((parent, "LocalPos0"), (child, "LocalPos1")):
-        if body is None:
-            joint.CreateLocalPos0Attr().Set(Gf.Vec3f(*anchor))
-            continue
-        prim = stage.GetPrimAtPath(body)
-        world = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
-        local = world.GetInverse().Transform(Gf.Vec3d(*anchor))
-        getattr(joint, f"Create{target}Attr")().Set(Gf.Vec3f(local))
+    # Both the anchor *and* the frame orientation have to be authored. The joint
+    # frames default to identity, so with only positions set the angular drives
+    # target zero relative rotation between two identity frames -- which asks
+    # every link to lie parallel to its parent and snaps the whole plant
+    # straight the instant simulation starts, with or without gravity. Anchoring
+    # the joint frame to the child's rest orientation makes "zero" mean "the
+    # pose the plant was authored in".
+    child_world = UsdGeom.Xformable(stage.GetPrimAtPath(child)).ComputeLocalToWorldTransform(
+        Usd.TimeCode.Default()
+    )
+    child_rotation = child_world.ExtractRotationQuat()
+    joint.CreateLocalPos1Attr().Set(Gf.Vec3f(child_world.GetInverse().Transform(Gf.Vec3d(*anchor))))
+    joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
+
+    if parent is None:
+        # Parent is the world, so the joint frame is the child's rest pose
+        # expressed directly in world coordinates.
+        joint.CreateLocalPos0Attr().Set(Gf.Vec3f(*anchor))
+        joint.CreateLocalRot0Attr().Set(Gf.Quatf(child_rotation))
+    else:
+        parent_world = UsdGeom.Xformable(stage.GetPrimAtPath(parent)).ComputeLocalToWorldTransform(
+            Usd.TimeCode.Default()
+        )
+        joint.CreateLocalPos0Attr().Set(Gf.Vec3f(parent_world.GetInverse().Transform(Gf.Vec3d(*anchor))))
+        relative = parent_world.ExtractRotationQuat().GetInverse() * child_rotation
+        joint.CreateLocalRot0Attr().Set(Gf.Quatf(relative))
 
     # Translation is rigid; the organ bends, it does not stretch.
     for axis in ("transX", "transY", "transZ"):
@@ -285,6 +316,7 @@ def author_plant_physics(
     properties: TissueProperties | None = None,
     visible_colliders: bool = False,
     articulated: bool = False,
+    collidable: bool = True,
 ) -> PlantRig:
     """Build capsule chains and joints for one plant under `root_path`.
 
@@ -309,7 +341,12 @@ def author_plant_physics(
     # benefit here -- the rest pose is authored art, not something to resolve.
     group = UsdPhysics.CollisionGroup.Define(stage, scope.AppendChild("SelfCollisionFilter"))
     group.CreateFilteredGroupsRel().AddTarget(group.GetPath())
-    members = group.GetCollidersCollectionAPI()
+    # Include the whole physics scope and let the collection expand to every
+    # collider beneath it. Adding several hundred targets one at a time did not
+    # take effect, and a filter that silently fails is worse than none: the
+    # plant then spends every frame resolving interpenetrations it should never
+    # have been asked about.
+    group.GetCollidersCollectionAPI().CreateIncludesRel().SetTargets([scope])
 
     links: list[Link] = []
     joints: dict[str, str] = {}
@@ -344,9 +381,14 @@ def author_plant_physics(
                 radius=radius,
             )
             collider = _define_capsule(
-                stage, Sdf.Path(link.path), link, properties, visible=visible_colliders
+                stage,
+                Sdf.Path(link.path),
+                link,
+                properties,
+                visible=visible_colliders,
+                collidable=collidable,
             )
-            members.CreateIncludesRel().AddTarget(collider)
+            del collider
             chain.append(link)
             links.append(link)
 
@@ -577,6 +619,12 @@ def apply_scene_physics(stage: Usd.Stage, path: str = "/World/PhysicsScene", *, 
     scene = UsdPhysics.Scene.Define(stage, Sdf.Path(path))
     scene.CreateGravityDirectionAttr(Gf.Vec3f(0.0, 0.0, -1.0))
     scene.CreateGravityMagnitudeAttr(gravity)
+
+    # Imported here rather than at module scope: PhysxSchema ships in a
+    # different extension than the USD bootstrap loads, so a top-level import
+    # would make this module unusable outside a running Kit app -- and the rest
+    # of it is pure geometry that is worth being able to audit offline.
+    from pxr import PhysxSchema  # noqa: PLC0415
 
     physx_scene = PhysxSchema.PhysxSceneAPI.Apply(stage.GetPrimAtPath(path))
     # Thin, stiff, strongly driven chains need iterations rather than a smaller

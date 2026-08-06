@@ -247,6 +247,47 @@ not pick up a `breakForce` change at runtime.
 **Lesson worth keeping:** render the physics, do not trust aggregate numbers.
 Both the fold-over and the tearing were invisible in the metrics.
 
+### Runaway organs: diagnosis so far (2026-08-06)
+
+Organs fly apart on start-up. Ruled out by measurement, not argument:
+
+| Hypothesis | Test | Verdict |
+|---|---|---|
+| `breakForce` firing on transients | set tear force to 0 | not the cause |
+| Stiff chain unintegrable at 240 Hz | — | **wrong**; see below |
+| Gravity / collapse under load | run at `--gravity 0` | **not the cause** — identical |
+| Self-collision | run with `--no-collision` | **the driver**: 73 → 21 runaways |
+
+Gravity-independence is the key result: with zero gravity nothing should move at
+all, so this was never collapse, load, or the stiff-chain integration limit
+blamed earlier. That earlier diagnosis was wrong and is retracted.
+
+**Fixed along the way (correct regardless):**
+
+- *Joint frames.* Only local *positions* were authored, never local rotations.
+  The angular drives therefore targeted zero relative rotation between two
+  identity frames, asking every link to lie parallel to its parent and snapping
+  the plant straight on frame one. Joint frames are now anchored to the child's
+  rest orientation, so "zero" means the authored pose.
+- *Collider size.* A capsule's true length is `height + 2·radius`, so a short,
+  thick segment collided as a ball up to **4.2×** longer than its link, engulfing
+  neighbours. Clamped to stay within its own segment.
+- *Offline auditability.* `PhysxSchema` is imported lazily, so `vine_physics` can
+  be inspected without booting Kit.
+
+**Still open.** `UsdPhysics.CollisionGroup` self-filtering has no measurable
+effect here — neither adding several hundred collider targets individually nor
+including the physics scope and letting the collection expand. Since collision
+is demonstrably the driver, the next step is the mechanism Isaac supports
+reliably for this: `PhysxArticulationAPI` with `enabledSelfCollisions = False`.
+That needs the articulation to build, which needs the chain decimated well below
+~400 links — worth doing anyway for throughput, since demo collection wants many
+plants per scene.
+
+An offline rig audit (`scratchpad/rig_audit2.py` pattern) confirmed the rig
+itself is sound: exactly one organ attaches to the world (the main stem), and
+every joint anchor lies within 30 mm of its parent link.
+
 ### Visual meshes now ride the physics
 
 `vine_visuals.py` parents each organ's GLB mesh to the rigid body carrying it, so
