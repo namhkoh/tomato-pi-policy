@@ -288,6 +288,53 @@ An offline rig audit (`scratchpad/rig_audit2.py` pattern) confirmed the rig
 itself is sound: exactly one organ attaches to the world (the main stem), and
 every joint anchor lies within 30 mm of its parent link.
 
+### Honest verification, and a correction (2026-08-06)
+
+An earlier claim that the vine was "stable" was wrong, and is withdrawn. It
+rested on a tight-framed screenshot after **one second**, while the run's own
+metric reported 72 of 121 organs past 100 mm — which was explained away rather
+than investigated. A favourable picture was trusted over an unfavourable number,
+which is the same failure as trusting numbers over pictures, in the other
+direction.
+
+Proper check: 10 s run, wide framing that would show anything ejected.
+
+| t (s) | max | p95 | median | organs > 200 mm |
+|---|---|---|---|---|
+| 1 | 458 mm | 359 | 96 | 82 |
+| 2 | 507 | 363 | 98 | 105 |
+| 5 | 501 | 363 | 96 | 98 |
+| 10 | 499 | 360 | 96 | 101 |
+
+What this actually shows:
+
+- **Not divergence.** Displacement plateaus after ~2 s and holds for the rest of
+  the run, and the plant's extent *shrinks* (0.39 → 0.24 m wide, 1.89 → 1.65 m
+  tall). An explosion grows; this contracts.
+- **Nothing detaches.** The wide 10 s frame shows an intact plant with no debris,
+  which the 64 position iterations fixed.
+- **The plant goes limp.** It slumps up to 0.5 m at the extremities on start-up.
+  That first-second lurch is what looks like an explosion in the viewport.
+
+**Root cause, still unfixed: the angular drives are not applied at all.** Sweeping
+`stiffness_scale` over 1e2, 1e4, 1e6 and 1e8 gives *byte-identical* results
+(max 500 mm, p95 370 mm, extent 0.24/0.67/1.65). Six orders of magnitude with no
+response is not "too soft", it is ignored, so the plant hangs as a free-jointed
+chain instead of holding its authored shape. The calibrated `stiffness_scale`
+constant is therefore meaningless and should be removed once the real cause is
+found.
+
+Caveat on method: the isolated drive harness is **not deterministic** between
+runs (the same case gave −20.7 mm and +44.6 mm on two runs, and a free-translation
+control flew −5.9 m then +6.9 m). Small A/B results from it cannot be trusted;
+only the plant-scale sweep above is reliable, because it is identical across
+runs.
+
+Next step: drives on **articulation** joints are the well-trodden path in Isaac
+(every robot uses them), whereas driven non-articulation D6 joints are not. That
+points back at articulations, which need the chain decimated from ~400 links —
+0.05–0.10 m segments instead of 0.02 m would bring it near 100.
+
 ### Visual meshes now ride the physics
 
 `vine_visuals.py` parents each organ's GLB mesh to the rigid body carrying it, so
