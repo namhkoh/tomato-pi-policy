@@ -156,6 +156,14 @@ def main() -> int:
             "up": list(sensor_up),
         }
 
+    blade_matrix = UsdGeom.Xformable(stage.GetPrimAtPath(placement.knife_blade)).ComputeLocalToWorldTransform(
+        Usd.TimeCode.Default()
+    )
+    knife_axes = {
+        "blade_extension": list(blade_matrix.TransformDir(Gf.Vec3d(0.0, -1.0, 0.0)).GetNormalized()),
+        "arc_facing": list(blade_matrix.TransformDir(Gf.Vec3d(0.0, 0.0, 1.0)).GetNormalized()),
+    }
+
     report = {
         "succeeded": image_finite,
         "robot": str(robot_path),
@@ -164,6 +172,7 @@ def main() -> int:
         "ready_joints": len(placement.initialized_joints),
         "cameras": list(placement.cameras),
         "camera_poses": camera_poses,
+        "knife_axes": knife_axes,
         "knife_blade": placement.knife_blade,
         "knife_support": placement.knife_support,
         "world_bounds_m": {

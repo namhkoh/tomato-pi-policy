@@ -137,6 +137,9 @@ While the simulation is running:
 - Press `[` / `]` to select the previous / next deleafing petiole.
 - Press `C` (or the window's **CUT target** button) to sever the selected petiole.
 - Press `V` to select the next dynamic vine when more than one is enabled.
+- Press `1` for the inspection view, `2` for the head D405, `3` for the left
+  wrist D405, or `4` for the right wrist D405. The same choices are buttons in
+  the **Vine Interaction** window.
 
 Mouse pulling raycasts the original rendered GLB mesh and maps the hit to its
 supporting rigid body. It therefore works across broad leaf blades as well as
@@ -189,7 +192,15 @@ proxies, and fits the supplied hardware under `greenhouse/robot_assets/`:
 - the supplied deleafing knife on the right end effector.
 
 For the knife, only the flat straight plate is tagged as a cutting surface. The
-U-shaped arc is support geometry and cannot trigger a cut.
+U-shaped arc is support geometry and cannot trigger a cut. The knife is rolled
+about its unchanged blade axis so that arc faces upward in the ready pose and
+the flat plate is presented cleanly toward the cut.
+
+The default base pose is `(6.6191, 2.4200, -0.3050817)` m at 90 degrees yaw.
+It offsets the chassis left by the ready right-tool displacement, placing the
+right tool directly in front of dynamic `Vine_0000`, and keeps the chassis
+clear of the trough. Override it with `--robot-position X Y Z` when testing a
+different vine or arm posture.
 
 Inspect each fitted assembly without greenhouse occlusion:
 
@@ -214,6 +225,11 @@ The wrist cameras look down and outward; task views will become useful when the
 arms move from their stowed ready pose into pre-contact poses. Robot-to-vine
 contact, reachability, gripper friction, and knife-driven cuts remain the next
 gate before benchmark and RL work.
+
+For live video, launch without `--headless` and use the interaction-window
+camera buttons or keys `1`-`4`; the selected D405 becomes the active viewport.
+For an image without the GUI, use `--capture-camera head`, `left_wrist`, or
+`right_wrist` together with `--screenshot` as shown above.
 
 ## Cutting demo
 

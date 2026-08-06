@@ -35,7 +35,7 @@ def test_knife_projects_along_the_right_tool_axis() -> None:
     support_side = robot_hardware.transform_direction(robot_hardware.KNIFE_ROTATION, (0.0, 0.0, 1.0))
 
     np.testing.assert_allclose(projection, [0.0, 0.0, -1.0], atol=1e-12)
-    np.testing.assert_allclose(support_side, [0.0, 1.0, 0.0], atol=1e-12)
+    np.testing.assert_allclose(support_side, [1.0, 0.0, 0.0], atol=1e-12)
 
 
 def test_wrist_cameras_look_down_and_outward() -> None:

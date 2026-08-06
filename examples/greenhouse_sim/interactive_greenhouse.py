@@ -54,7 +54,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vine-dir", type=pathlib.Path, default=_DEFAULT_VINE_DIR)
     parser.add_argument("--robot", type=pathlib.Path, default=_DEFAULT_ROBOT)
     parser.add_argument("--no-robot", action="store_true", help="run the accepted vine-only environment")
-    parser.add_argument("--robot-position", type=float, nargs=3, default=(6.8691, 2.0, -0.3050817))
+    parser.add_argument("--robot-position", type=float, nargs=3, default=(6.6191, 2.42, -0.3050817))
     parser.add_argument("--robot-yaw", type=float, default=90.0)
     parser.add_argument("--physics-vines", type=int, default=1)
     parser.add_argument("--segment", type=float, default=0.02)
@@ -295,8 +295,15 @@ def main() -> int:
     # projection matrices. All settling frames above are deliberately headless.
     for _ in range(4):
         context.step(render=True)
+    camera_views = {"inspection": camera_path}
+    if robot_placement is not None:
+        camera_views.update(
+            head=robot_placement.cameras[0],
+            left_wrist=robot_placement.cameras[1],
+            right_wrist=robot_placement.cameras[2],
+        )
     controller = InteractionController(
-        stage, runtimes, report, args.report, args, vine_interaction
+        stage, runtimes, report, args.report, args, vine_interaction, camera_views
     )
     report.update(stage="running", controls=controller.controls)
     _emit(report, args.report)
@@ -309,7 +316,7 @@ def main() -> int:
         context.stop()
         app.close()
         return 0 if visual_probe["succeeded"] else 1
-    print("Shift + left-drag to pull; [ / ] select a petiole; C cuts; V changes vine")
+    print("Shift-drag pulls; [ / ] selects; C cuts; V changes vine; 1-4 switches cameras")
     try:
         while app.is_running():
             context.step(render=True)
@@ -397,6 +404,7 @@ class InteractionController:
         "next_target": "]",
         "next_vine": "V",
         "cut": "C",
+        "camera_views": "1 inspection, 2 head, 3 left wrist, 4 right wrist",
     }
 
     def __init__(
@@ -407,6 +415,7 @@ class InteractionController:
         report_path: pathlib.Path,
         args,
         vine_interaction,
+        camera_views: dict[str, str],
     ):
         import carb
         import omni.appwindow
@@ -419,9 +428,11 @@ class InteractionController:
         self._vine = 0
         self._target = 0
         self._pending: list[str] = []
+        self._camera_views = camera_views
+        self._active_camera = "inspection"
         self._targets = [self._target_labels(runtime) for runtime in runtimes]
 
-        self._window = ui.Window("Vine Interaction", width=420, height=250)
+        self._window = ui.Window("Vine Interaction", width=420, height=350)
         with self._window.frame:
             with ui.VStack(spacing=6):
                 ui.Label("Pull: Shift + left-drag visible vine geometry", height=24)
@@ -433,6 +444,13 @@ class InteractionController:
                 with ui.HStack(spacing=6, height=34):
                     ui.Button("Next vine V", clicked_fn=lambda: self._queue("vine"))
                     ui.Button("CUT target C", clicked_fn=lambda: self._queue("cut"))
+                ui.Label("Viewport camera / video observation", height=22)
+                with ui.HStack(spacing=6, height=34):
+                    ui.Button("Inspection 1", clicked_fn=lambda: self._queue("camera:inspection"))
+                    ui.Button("Head D405 2", clicked_fn=lambda: self._queue("camera:head"))
+                with ui.HStack(spacing=6, height=34):
+                    ui.Button("Left D405 3", clicked_fn=lambda: self._queue("camera:left_wrist"))
+                    ui.Button("Right D405 4", clicked_fn=lambda: self._queue("camera:right_wrist"))
 
         appwindow = omni.appwindow.get_default_app_window()
         self._input = carb.input.acquire_input_interface()
@@ -483,6 +501,10 @@ class InteractionController:
             "RIGHT_BRACKET": "next",
             "V": "vine",
             "C": "cut",
+            "KEY_1": "camera:inspection",
+            "KEY_2": "camera:head",
+            "KEY_3": "camera:left_wrist",
+            "KEY_4": "camera:right_wrist",
         }.get(event.input.name)
         if action is not None:
             self._queue(action)
@@ -494,6 +516,9 @@ class InteractionController:
         self._visual_pull.step()
         while self._pending:
             action = self._pending.pop(0)
+            if action.startswith("camera:"):
+                self._set_camera(action.partition(":")[2])
+                continue
             targets = self._targets[self._vine]
             if not targets:
                 self._status_label.text = "No deleafing targets on this vine"
@@ -508,6 +533,19 @@ class InteractionController:
             elif action == "cut":
                 self._cut(context)
             self._refresh()
+
+    def _set_camera(self, name: str) -> None:
+        camera_path = self._camera_views.get(name)
+        if camera_path is None:
+            self._status_label.text = f"Camera view is unavailable: {name}"
+            return
+        self._visual_pull.end()
+        _focus_viewport(camera_path)
+        self._active_camera = name
+        self._report["active_camera_view"] = name
+        self._report["active_camera_path"] = camera_path
+        self._status_label.text = f"Viewport: {name} ({camera_path})"
+        _emit(self._report, self._report_path)
 
     def run_visual_pull_probe(self, context, stage, runtime: VineRuntime) -> dict:
         import numpy as np

@@ -583,8 +583,11 @@ regression now checks the actual Gf camera forward/up axes and actual blade
 projection, not only the source NumPy matrices.
 
 `interactive_greenhouse.py` now composes the robot by default at
-`(6.8691, 2.0, -0.3050817)` m with 90 degree yaw, where the Z value is the
-measured cultivation-zone collision floor. `--no-robot` retains the accepted
+`(6.6191, 2.4200, -0.3050817)` m with 90 degree yaw, where the Z value is the
+measured cultivation-zone collision floor. The 250 mm negative-X offset
+accounts for the ready right tool's lateral offset, aligning that tool with
+dynamic `Vine_0000` at X=6.86912 m. The closer Y stance leaves approximately
+213 mm between the chassis proxy and the trough front. `--no-robot` retains the accepted
 vine-only launcher. All 22 torso, arm, and head joint targets and initial
 PhysX joint states are authored to the official SDK ready pose before physics
 starts; this prevents a zero-pose startup sweep through the greenhouse.
@@ -594,9 +597,9 @@ starts; this prevents a zero-pose startup sweep through the greenhouse.
 | Check | Result | Evidence |
 |---|---|---|
 | Hardware semantics | 3 D405 cameras; 1 visual/collision blade pair marked cutting; U arc visual/collision pair non-cutting | `robot_hardware_test.py`, `data/greenhouse_sim/robots/rby1a_v1.0.json` |
-| Authored transforms | head forward/up correct; wrists down/outward with common upright convention; flat plate projects along tool -Z | 8 passed, 1 PhysX-only test skipped outside SimulationApp |
-| Visual fit | head bracket, left wrist bracket/D405, and right bracket/D405/knife all render seated on the intended links | `robot_fit_head_camera_final.png`, `robot_fit_left_wrist_final.png`, `robot_fit_right_tool.png` |
-| Integrated 480-step soak | 34/34 rigid bodies finite; base settled 9.391 mm laterally and 8.203 mm vertically; 2.078 degree tilt; succeeded=true | `data/greenhouse_sim/robot_fit_acceptance_final.json` |
+| Authored transforms | head forward/up correct; wrists down/outward with common upright convention; flat plate projects along tool -Z; U arc faces tool +X/upward | 8 passed, 1 PhysX-only test skipped outside SimulationApp |
+| Visual fit | head bracket, left wrist bracket/D405, and upward-arc right bracket/D405/knife all render seated on the intended links | `robot_fit_head_camera_final.png`, `robot_fit_left_wrist_final.png`, `robot_fit_right_tool_up.png` |
+| Integrated closer-stance 480-step soak | 34/34 rigid bodies finite; base settled 3.675 mm laterally and 8.203 mm vertically; 2.078 degree tilt; succeeded=true | `data/greenhouse_sim/robot_front_acceptance.json` |
 | Vine during robot soak | 121/121 tracked organs finite; 0 runaway organs | same report |
 | Live camera path | right wrist D405 rendered from its fitted USD optical frame after the soak | `data/greenhouse_sim/d405_right_wrist_final.png` |
 
@@ -607,6 +610,15 @@ cut triggering, and sustained-force tearing remain the next explicit gate.
 Default ready-pose wrist images mainly see the floor/nearby structure because
 the arms are stowed; task camera coverage must be evaluated in reachable
 pre-contact poses rather than misreported as a mounting failure.
+
+A follow-up visual review requested that the U arc face upward so the flat plate
+is presented cleanly for cutting. Rolling the knife 90 degrees about its
+unchanged blade axis moved CAD +Z from tool +Y to tool +X. The rendered ready
+pose measures the arc-facing vector at Z=+0.77984 while preserving the blade
+extension. The same review requested direct camera access: the interaction
+window and keys `1`-`4` now switch the active viewport between inspection,
+head D405, left-wrist D405, and right-wrist D405 video respectively. Headless
+captures remain available through `--capture-camera`.
 
 ## Research findings, 2026-08-06 (pre-implementation)
 
@@ -720,3 +732,6 @@ One logical change per commit; no AI attribution trailers.
 - 2026-08-06 — Imported exact RB-Y1 Model A v1.0, restored active collisions,
   fitted three supplied D405 assemblies and the right flat-plate knife, corrected
   optical/tool transforms, and passed the integrated robot-plus-vine soak.
+- 2026-08-06 — Rolled the knife arc upward without changing blade extension,
+  aligned the ready right tool with Vine_0000 from a collision-clear closer
+  stance, and added live inspection/head/wrist camera switching.

@@ -81,7 +81,10 @@ def rotation_z(degrees: float) -> np.ndarray:
 
 LEFT_CAMERA_ROTATION = np.eye(3, dtype=np.float64)
 RIGHT_CAMERA_ROTATION = rotation_z(180.0)
-KNIFE_ROTATION = rotation_z(180.0) @ rotation_x(90.0)
+# Preserve CAD -Y along tool -Z, but roll the plate around that blade axis so
+# the U-shaped support on CAD +Z faces tool +X. In the greenhouse ready pose,
+# tool +X is the most upward transverse direction.
+KNIFE_ROTATION = rotation_z(90.0) @ rotation_x(90.0)
 HEAD_BRACKET_ROTATION = rotation_z(90.0)
 HEAD_CAMERA_TRANSLATION_M = np.array([0.0, 0.00123, 0.025], dtype=np.float64)
 HEAD_CAMERA_ROTATION = rotation_z(180.0)

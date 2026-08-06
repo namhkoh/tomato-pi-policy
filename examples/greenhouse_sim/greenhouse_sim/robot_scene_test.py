@@ -40,7 +40,10 @@ def test_default_pose_faces_the_robot_toward_the_vine_row() -> None:
     yaw = np.deg2rad(robot_scene.DEFAULT_YAW_DEGREES)
     rotation = np.array([[np.cos(yaw), -np.sin(yaw), 0.0], [np.sin(yaw), np.cos(yaw), 0.0], [0.0, 0.0, 1.0]])
     np.testing.assert_allclose(rotation @ [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], atol=1e-12)
-    assert robot_scene.DEFAULT_POSITION_M[1] < 3.0922
+    vine_0000 = np.array([6.869119584, 3.092212007, 0.888307640])
+    np.testing.assert_allclose(robot_scene.DEFAULT_POSITION_M[:2], [vine_0000[0] - 0.250019584, 2.42])
+    assert 0.65 < vine_0000[1] - robot_scene.DEFAULT_POSITION_M[1] < 0.70
+    assert robot_scene.DEFAULT_POSITION_M[1] + 0.295 < 2.928362846
 
 
 def test_generated_robot_references_with_ready_state_and_hardware() -> None:

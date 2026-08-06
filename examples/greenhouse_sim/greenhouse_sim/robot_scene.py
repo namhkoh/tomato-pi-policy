@@ -21,8 +21,11 @@ from pxr import UsdPhysics  # noqa: E402
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[3]
 DEFAULT_ROBOT_ASSET = REPOSITORY_ROOT / "data" / "greenhouse_sim" / "robots" / "rby1a_v1.0.usd"
 DEFAULT_ROBOT_PATH = "/World/RBY1"
+# The right tool is about 0.25 m to the robot's right in the SDK ready pose.
+# Offset the base left of Vine_0000 and move it toward the bed so that the tool,
+# rather than only the chassis centre, is directly in front of the dynamic vine.
 # Main_Cultivation_Zone's authored collision floor is z=-0.3050817 m.
-DEFAULT_POSITION_M = np.array([6.8691, 2.0, -0.3050817], dtype=np.float64)
+DEFAULT_POSITION_M = np.array([6.6191, 2.4200, -0.3050817], dtype=np.float64)
 DEFAULT_YAW_DEGREES = 90.0
 
 # The official Model A ready pose used by the SDK's multi-control and leader-arm
