@@ -46,6 +46,9 @@ def parse_args() -> argparse.Namespace:
         help="petiole break force in N; 0 disables tearing (transients at start-up trip a low threshold)",
     )
     parser.add_argument("--no-clips", dest="clips", action="store_false", default=True)
+    parser.add_argument(
+        "--show-colliders", action="store_true", help="draw the capsule bodies instead of hiding them under the art"
+    )
     parser.add_argument("--cut", type=str, default=None, help="sever this organ shortly after start-up")
     parser.add_argument("--screenshot", type=pathlib.Path, default=None, help="render one frame and exit")
     parser.add_argument("--settle-steps", type=int, default=240, help="steps before the screenshot")
@@ -76,10 +79,12 @@ def main() -> int:
     app = SimulationApp({"headless": args.screenshot is not None})
 
     from greenhouse_sim import cutting
+    from greenhouse_sim import glb
     from greenhouse_sim import organs
     from greenhouse_sim import skeleton as skeleton_module
     from greenhouse_sim import vine_physics
     from greenhouse_sim import vine_usd
+    from greenhouse_sim import vine_visuals
     import numpy as np
     import omni.usd
     from pxr import Gf
@@ -87,6 +92,7 @@ def main() -> int:
     from pxr import UsdGeom
 
     plant = organs.load_plant(args.vine)
+    asset = glb.read_glb(args.vine)
     skeletons = skeleton_module.skeletonise_plant(plant, segment_length=args.segment)
 
     omni.usd.get_context().new_stage()
@@ -113,7 +119,10 @@ def main() -> int:
             skeletons,
             lambda p, o=offset: vine_usd.gltf_to_usd(p) + o,
             properties=vine_physics.TissueProperties(tear_force_n=args.tear_force),
-            visible_colliders=True,
+            visible_colliders=args.show_colliders,
+        )
+        vine_visuals.attach_organ_visuals(
+            stage, rig, plant, asset, lambda p, o=offset: vine_usd.gltf_to_usd(p) + o
         )
         rigs.append(rig)
         if args.clips:

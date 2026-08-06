@@ -247,6 +247,44 @@ not pick up a `breakForce` change at runtime.
 **Lesson worth keeping:** render the physics, do not trust aggregate numbers.
 Both the fold-over and the tearing were invisible in the metrics.
 
+### Visual meshes now ride the physics
+
+`vine_visuals.py` parents each organ's GLB mesh to the rigid body carrying it, so
+the rendered plant is the original art and the capsules stay hidden. Foliage and
+fruit have no bodies of their own, so they ride the nearest ancestor that does —
+which is what makes a severed leaf travel with its petiole.
+
+Two USD traps found here:
+
+- **Purpose is inherited by the whole subtree.** Parenting art under a
+  `guide`-purpose capsule hides the art too, and authoring `default` on the child
+  does *not* override it. Bodies are therefore plain Xforms with the collider and
+  the art as siblings — which is the conventional structure anyway.
+- `Gf.Vec3f(*p)` rejects numpy scalars; array attributes must go through
+  `Vt.*Array.FromNumpy`, which is also far faster at these mesh sizes.
+
+### Blocking problem — stiff chains are unstable in maximal coordinates
+
+With physically correct stiffness the chain explodes. Beam theory at the floored
+3.2 mm radius and 250 MPa gives ~1030 N·m/rad per joint, while a link masses
+~1e-4 kg, so the natural frequency is enormous and 240 Hz cannot integrate it.
+The stability ceiling is roughly `K < 0.25·I/dt²` ≈ 6e-4 N·m/rad — about **six
+orders of magnitude** below the physical value. A real tomato stem is stiff and
+light, and that combination is exactly what maximal-coordinate joints handle
+worst.
+
+Lowering stiffness to fit is not an option: it reintroduces the collapse.
+
+**The fix is to move the plant into a PhysX articulation** (reduced coordinates),
+which handles stiff serial chains stably. That was ruled out earlier because
+`breakForce` is ignored on articulation joints — but that only matters if
+tearing depends on `breakForce`. It does not have to: severance already works by
+disabling a joint, and tearing can be implemented by monitoring joint force in
+Python and disabling past the 32.5 N threshold. That yields both stability and a
+tear model, and it removes the spurious-tearing bug at the same time.
+
+This supersedes the "no articulation root" decision in D2.
+
 ## Research findings, 2026-08-06 (pre-implementation)
 
 ### Stiffness — the current E is 5–15× too low

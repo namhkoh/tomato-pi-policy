@@ -165,27 +165,36 @@ def _orient_to(axis: np.ndarray) -> Gf.Quatf:
 
 def _define_capsule(
     stage: Usd.Stage, path: Sdf.Path, link: Link, properties: TissueProperties, *, visible: bool = False
-) -> None:
-    capsule = UsdGeom.Capsule.Define(stage, path)
-    capsule.CreateAxisAttr(UsdGeom.Tokens.z)
-    capsule.CreateRadiusAttr(float(link.radius))
-    capsule.CreateHeightAttr(max(link.length - 2.0 * link.radius, 1e-4))
-    # Normally collision-only, with the render meshes living in the visual
-    # asset. Made visible when the point is to see and grab the physics itself.
-    if not visible:
-        UsdGeom.Imageable(capsule).CreatePurposeAttr(UsdGeom.Tokens.guide)
-    else:
-        capsule.CreateDisplayColorAttr([Gf.Vec3f(0.22, 0.42, 0.14)])
+) -> Sdf.Path:
+    """A rigid body carrying its collider as a child, returning the collider.
 
+    Body and collider are separate prims rather than one capsule because USD
+    purpose is inherited by an entire subtree: hiding a capsule with the "guide"
+    purpose would also hide any render mesh parented to it, and the whole point
+    is that the vine's own art rides on these bodies. Keeping the body a plain
+    Xform lets the collider be hidden and the art stay visible as siblings.
+    """
+    body = UsdGeom.Xform.Define(stage, path)
     centre = 0.5 * (link.start + link.end)
-    transformable = UsdGeom.Xformable(capsule.GetPrim())
+    transformable = UsdGeom.Xformable(body.GetPrim())
     transformable.AddTranslateOp().Set(Gf.Vec3d(*centre))
     transformable.AddOrientOp().Set(_orient_to(link.end - link.start))
 
-    UsdPhysics.CollisionAPI.Apply(capsule.GetPrim())
-    UsdPhysics.RigidBodyAPI.Apply(capsule.GetPrim())
-    mass_api = UsdPhysics.MassAPI.Apply(capsule.GetPrim())
+    UsdPhysics.RigidBodyAPI.Apply(body.GetPrim())
+    mass_api = UsdPhysics.MassAPI.Apply(body.GetPrim())
     mass_api.CreateMassAttr(capsule_mass(link.radius, link.length, properties.density_kg_m3))
+
+    collider_path = path.AppendChild("Collider")
+    capsule = UsdGeom.Capsule.Define(stage, collider_path)
+    capsule.CreateAxisAttr(UsdGeom.Tokens.z)
+    capsule.CreateRadiusAttr(float(link.radius))
+    capsule.CreateHeightAttr(max(link.length - 2.0 * link.radius, 1e-4))
+    UsdPhysics.CollisionAPI.Apply(capsule.GetPrim())
+    if visible:
+        capsule.CreateDisplayColorAttr([Gf.Vec3f(0.22, 0.42, 0.14)])
+    else:
+        UsdGeom.Imageable(capsule).CreatePurposeAttr(UsdGeom.Tokens.guide)
+    return collider_path
 
 
 def _define_joint(
@@ -261,6 +270,16 @@ def author_plant_physics(
     scope = Sdf.Path(root_path).AppendChild("Physics")
     UsdGeom.Scope.Define(stage, scope)
 
+    # A plant's organs interpenetrate at rest: every petiole's first capsule
+    # sits inside the stem it grows from, and leaves rest against each other.
+    # Jointed pairs already ignore each other, but non-adjacent ones do not, so
+    # without this PhysX spends frame one violently separating hundreds of
+    # overlapping bodies and the vine bursts apart. Self-collision is also of no
+    # benefit here -- the rest pose is authored art, not something to resolve.
+    group = UsdPhysics.CollisionGroup.Define(stage, scope.AppendChild("SelfCollisionFilter"))
+    group.CreateFilteredGroupsRel().AddTarget(group.GetPath())
+    members = group.GetCollidersCollectionAPI()
+
     links: list[Link] = []
     joints: dict[str, str] = {}
     cut_joints: dict[str, str] = {}
@@ -292,7 +311,10 @@ def author_plant_physics(
                 end=points[segment + 1],
                 radius=radius,
             )
-            _define_capsule(stage, Sdf.Path(link.path), link, properties, visible=visible_colliders)
+            collider = _define_capsule(
+                stage, Sdf.Path(link.path), link, properties, visible=visible_colliders
+            )
+            members.CreateIncludesRel().AddTarget(collider)
             chain.append(link)
             links.append(link)
 
