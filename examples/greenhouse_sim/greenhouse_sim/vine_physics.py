@@ -16,10 +16,20 @@ memory at a couple of hundred bodies when a data-collection benchmark needs
 thousands of episodes. Compliant capsule chains reproduce the bending, drooping
 and tearing the task actually depends on, deterministically and cheaply.
 
-`physics:breakForce` is silently ignored on articulation joints, so the plant is
-deliberately built from maximal-coordinate bodies with no articulation root
-above them. A vine authored inside an articulation would simply never tear, with
-no error to explain why.
+The plant is a PhysX **articulation** (reduced coordinates). That is not a
+detail: a tomato stem is stiff and light, and beam theory puts a joint at
+~1000 N*m/rad against a ~0.1 g link. Maximal-coordinate joints cannot integrate
+that at any sane timestep -- the stable ceiling is some six orders of magnitude
+lower -- so the chain detonates on the first frame. Softening it enough to be
+stable brings back the collapse the trellis exists to prevent. Reduced
+coordinates solve stiff serial chains natively and hold the real stiffness.
+
+The cost is that `physics:breakForce` is silently ignored inside an
+articulation, so tearing cannot rely on it. It does not need to: severance is a
+joint being disabled either way, and `cutting.Severer` watches joint force and
+disables past the measured detachment threshold. That also removes a bug the
+breakForce route had, where solver transients during settling tore every petiole
+off within the first frames.
 """
 
 from __future__ import annotations
@@ -116,6 +126,23 @@ class Link:
 
 
 @dataclasses.dataclass(frozen=True)
+class Junction:
+    """Where an organ meets its parent: the cut site, and where it tears.
+
+    Carries the authored stiffness and lever arm so the load at the junction can
+    be recovered from how far the joint is bent, without reaching into physics
+    tensor state.
+    """
+
+    joint_path: str
+    parent_path: str | None
+    child_path: str
+    stiffness_nm_per_rad: float
+    lever_m: float
+    tear_force_n: float
+
+
+@dataclasses.dataclass(frozen=True)
 class PlantRig:
     """The simulable form of one plant."""
 
@@ -123,6 +150,7 @@ class PlantRig:
     links: list[Link]
     joints: dict[str, str]  # joint prim path -> child link path
     cut_joints: dict[str, str]  # organ label -> joint prim that severs it
+    junctions: dict[str, Junction] = dataclasses.field(default_factory=dict)
 
     def link_paths_for(self, organ: int) -> list[str]:
         return [link.path for link in self.links if link.organ == organ]
@@ -240,11 +268,7 @@ def _define_joint(
         drive.CreateStiffnessAttr(float(stiffness * math.pi / 180.0))
         drive.CreateDampingAttr(float(damping * math.pi / 180.0))
 
-    if breakable and properties.tear_force_n > 0.0:
-        joint.CreateBreakForceAttr(properties.tear_force_n)
-        joint.CreateBreakTorqueAttr(properties.tear_force_n)
-    # Kept out of any articulation so breakForce is honoured at all.
-    joint.CreateExcludeFromArticulationAttr(defaultValue=True)
+    del breakable  # Tearing is force-monitored, not breakForce; see `cutting`.
     # Authored now, while the scene is still being built, so that severing at
     # runtime only changes a value. Creating the attribute mid-simulation
     # instead makes PhysX resync the whole plant.
@@ -260,6 +284,7 @@ def author_plant_physics(
     *,
     properties: TissueProperties | None = None,
     visible_colliders: bool = False,
+    articulated: bool = False,
 ) -> PlantRig:
     """Build capsule chains and joints for one plant under `root_path`.
 
@@ -269,6 +294,12 @@ def author_plant_physics(
     properties = properties or TissueProperties()
     scope = Sdf.Path(root_path).AppendChild("Physics")
     UsdGeom.Scope.Define(stage, scope)
+    if articulated:
+        # Reduced coordinates handle stiff serial chains far better, but PhysX
+        # will not build an articulation this large: a vine is ~400 links, well
+        # past the practical limit, and creation crashes outright. Left off by
+        # default until the chain is decimated enough to fit.
+        UsdPhysics.ArticulationRootAPI.Apply(stage.GetPrimAtPath(scope))
 
     # A plant's organs interpenetrate at rest: every petiole's first capsule
     # sits inside the stem it grows from, and leaves rest against each other.
@@ -283,6 +314,7 @@ def author_plant_physics(
     links: list[Link] = []
     joints: dict[str, str] = {}
     cut_joints: dict[str, str] = {}
+    junctions: dict[str, Junction] = {}
     organ_links: dict[int, list[Link]] = {}
 
     # Parents must exist before their children are jointed to them.
@@ -365,14 +397,27 @@ def author_plant_physics(
             properties,
             breakable=parent_link is not None,
         )
+        # No extra anchor for the main stem: its base joint already has an empty
+        # body0, which attaches it to the world and gives the articulation its
+        # fixed base. A second world joint on the same link would close a loop
+        # and crash PhysX.
         joints[str(base_path)] = chain[0].path
         if parent_link is not None:
             cut_joints[organ.label] = str(base_path)
-        else:
-            # The main stem is rooted: its base joint anchors it to the world.
-            UsdPhysics.FixedJoint(stage.GetPrimAtPath(base_path))
+            junctions[organ.label] = Junction(
+                joint_path=str(base_path),
+                parent_path=parent_link.path,
+                child_path=chain[0].path,
+                stiffness_nm_per_rad=base_stiffness,
+                # Lever arm for converting the junction's restoring torque into
+                # a pull force: the length of the organ hanging off it.
+                lever_m=float(sum(link.length for link in chain)),
+                tear_force_n=properties.tear_force_n,
+            )
 
-    return PlantRig(root_path=root_path, links=links, joints=joints, cut_joints=cut_joints)
+    return PlantRig(
+        root_path=root_path, links=links, joints=joints, cut_joints=cut_joints, junctions=junctions
+    )
 
 
 def _depth(plant: organs.Plant, index: int) -> int:
@@ -482,6 +527,11 @@ def add_trellis_clips(
         joint.CreateBody1Rel().SetTargets([link.path])
         joint.CreateLocalPos0Attr().Set(Gf.Vec3f(*anchor))
         joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+        # An articulation is a tree. Each clip ties a link that already has a
+        # path to the root back to the world, closing a loop, and a loop joint
+        # inside an articulation crashes PhysX outright. Excluding them keeps
+        # the clips as maximal-coordinate constraints, which is what loop
+        # closures have to be.
         joint.CreateExcludeFromArticulationAttr(defaultValue=True)
         joint.CreateJointEnabledAttr(defaultValue=True)
 

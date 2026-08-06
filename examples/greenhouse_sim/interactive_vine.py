@@ -151,6 +151,14 @@ def main() -> int:
 
     stem_paths = [link.path for link in rigs[0].links if link.organ == plant.root]
     rest = _sample(stage, stem_paths)
+    # Every organ's base body, to find which parts of the plant fly away.
+    base_links = {}
+    for link in rigs[0].links:
+        current = base_links.get(link.organ)
+        if current is None or link.index < current.index:
+            base_links[link.organ] = link
+    organ_paths = [base_links[i].path for i in sorted(base_links)]
+    organ_rest = _sample(stage, organ_paths)
 
     context.play()
 
@@ -178,6 +186,19 @@ def main() -> int:
 
     settled = _sample(stage, stem_paths)
     drop = _sag(rest, settled, stem_paths, report)
+
+    organ_now = _sample(stage, organ_paths)
+    moved = np.linalg.norm(organ_now - organ_rest, axis=1)
+    labels = {o.index: o.label for o in plant.organs}
+    order = sorted(base_links)
+    runaways = [
+        {"organ": labels.get(order[i], str(order[i])), "moved_mm": round(float(moved[i]) * 1000, 1)}
+        for i in np.argsort(-moved)[:10]
+        if moved[i] > 0.1
+    ]
+    report["organs_tracked"] = len(order)
+    report["organs_runaway"] = int((moved > 0.1).sum())
+    report["worst_organs"] = runaways
     _emit(report, args.report)
     print(f"stem sag {drop:.1f} mm")
 

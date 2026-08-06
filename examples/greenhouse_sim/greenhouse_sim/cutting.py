@@ -10,8 +10,14 @@ outcomes, not two spellings of the same one:
 
 * a **cut** is commanded, when a blade shears the petiole; the joint is released
   wherever the blade crossed.
-* a **tear** happens on its own, when a pull exceeds the joint's break force;
-  PhysX breaks it and the episode reports damage.
+* a **tear** happens on its own, when a pull exceeds what the junction can hold.
+
+Tearing is detected by watching joint force, not by `physics:breakForce`. The
+plant is an articulation -- it has to be, or its stiff light chain cannot be
+integrated -- and breakForce is silently ignored inside one. Monitoring is
+better anyway: breakForce fires on solver transients during settling and tore
+every petiole off in the first frames, whereas a threshold applied to a measured
+force can require the load to persist before it counts.
 
 Physics releases at the nearest joint, but the score is measured against the
 blade plane's true position along the centreline. Those differ by up to half a
@@ -33,6 +39,7 @@ from greenhouse_sim import vine_physics
 usd_env.ensure_pxr()
 
 from pxr import Usd  # noqa: E402
+from pxr import UsdGeom  # noqa: E402
 from pxr import UsdPhysics  # noqa: E402
 
 # Agronomic bins for residual petiole stub length. Pruning flush to the stem
@@ -57,6 +64,8 @@ class Cut:
     requested_stub_m: float
     # Where the joint that actually released sits, along the same centreline.
     realised_stub_m: float
+    # Load at the junction when it let go; only meaningful for a tear.
+    load_n: float = 0.0
 
     @property
     def quantisation_error_m(self) -> float:
@@ -88,6 +97,14 @@ class Severer:
         self._skeletons = skeletons
         self._organ_indices = organ_indices
         self._cuts: list[Cut] = []
+        self._sustained: dict[str, int] = {}
+        # Captured before the simulation runs, while the plant is in its
+        # authored rest pose, so joint deflection is measured from zero.
+        self._rest_rotations: dict[str, np.ndarray] = {}
+        for label, junction in rig.junctions.items():
+            rotation = self._relative_rotation(junction)
+            if rotation is not None:
+                self._rest_rotations[label] = rotation
 
     @property
     def cuts(self) -> list[Cut]:
@@ -120,29 +137,82 @@ class Severer:
         self._cuts.append(record)
         return record
 
-    def poll_tears(self) -> list[Cut]:
-        """Record organs PhysX has broken off since the last poll.
+    def poll_tears(self, *, sustain_steps: int = 3) -> list[Cut]:
+        """Sever organs whose junction is being pulled past what it can hold.
 
-        A joint that breaks under load reports itself through the same
-        attribute the cut path drives, so a pull-off and a blade cut are read
-        back the same way and cannot be confused at scoring time.
+        Call once per simulation step. A junction must exceed its threshold for
+        `sustain_steps` consecutive steps before it lets go, which stops a
+        single solver spike from stripping the plant -- the exact failure mode
+        that made `physics:breakForce` unusable here.
         """
         torn = []
-        for label, joint_path in self._rig.cut_joints.items():
-            if any(cut.organ_label == label for cut in self._cuts):
+        for label, junction in self._rig.junctions.items():
+            if junction.tear_force_n <= 0.0 or self._is_severed(label):
+                self._sustained.pop(label, None)
                 continue
-            if self._joint_enabled(joint_path):
+
+            force = self._junction_load(label, junction)
+            if force is None or force < junction.tear_force_n:
+                self._sustained[label] = 0
                 continue
+
+            self._sustained[label] = self._sustained.get(label, 0) + 1
+            if self._sustained[label] < sustain_steps:
+                continue
+
+            self._set_joint_enabled(junction.joint_path, enabled=False)
             record = Cut(
                 organ_label=label,
-                joint_path=joint_path,
+                joint_path=junction.joint_path,
                 torn=True,
                 requested_stub_m=0.0,
                 realised_stub_m=0.0,
+                load_n=force,
             )
             self._cuts.append(record)
             torn.append(record)
         return torn
+
+    def _junction_load(self, label: str, junction) -> float | None:
+        """Force at a junction, from how far its joint is bent.
+
+        The joint's angular drive is authored with a known stiffness, so its
+        restoring torque is stiffness times deflection, and the equivalent force
+        is that torque over the organ's lever arm. Reading it from transforms
+        keeps this independent of physics-tensor internals, which are invalidated
+        by the very scene edits severing performs.
+        """
+        rest = self._rest_rotations.get(label)
+        if rest is None:
+            return None
+        current = self._relative_rotation(junction)
+        if current is None:
+            return None
+
+        # Angle between the rest and current relative orientations.
+        delta = current @ rest.T
+        cosine = float(np.clip((np.trace(delta) - 1.0) * 0.5, -1.0, 1.0))
+        deflection = float(np.arccos(cosine))
+        torque = junction.stiffness_nm_per_rad * deflection
+        return torque / max(junction.lever_m, 1e-4)
+
+    def _relative_rotation(self, junction) -> np.ndarray | None:
+        """Child orientation expressed in the parent's frame."""
+        parent = self._rotation_of(junction.parent_path) if junction.parent_path else np.eye(3)
+        child = self._rotation_of(junction.child_path)
+        if parent is None or child is None:
+            return None
+        return parent.T @ child
+
+    def _rotation_of(self, path: str) -> np.ndarray | None:
+        prim = self._stage.GetPrimAtPath(path)
+        if not prim.IsValid():
+            return None
+        matrix = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+        rows = np.array([[matrix[r][c] for c in range(3)] for r in range(3)])
+        # Strip any scale so the result is a pure rotation.
+        norms = np.linalg.norm(rows, axis=1, keepdims=True)
+        return rows / np.where(norms > 0, norms, 1.0)
 
     def _is_severed(self, organ_label: str) -> bool:
         return any(cut.organ_label == organ_label for cut in self._cuts)
