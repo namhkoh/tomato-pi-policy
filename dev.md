@@ -15,8 +15,10 @@ at `D:\isaac-sim`, Windows 11. Branch `koh-dev/simulator-base` (fork of openpi).
 - [x] Verified: fused vine GLBs decompose into per-organ connected components
 - [x] Asset pipeline: GLB → organ graph → structured USD (all 20 vines)
 - [x] Greenhouse composition + launch (renders headless; see below)
-- [ ] Compliant vine physics (bend/droop)
-- [ ] Cut + pull severance
+- [x] Compliant vine physics — rig builds and simulates (calibration pending)
+- [x] Cut severance — verified: severed organ detaches, plant stays connected
+- [ ] Trellis support + stiffness calibration (**blocks** meaningful physics)
+- [ ] Pull/tear validation against the 32.5 N threshold
 - [ ] RB-Y1 URDF v1.0 integration
 - [ ] Benchmark task definition + metrics
 
@@ -190,6 +192,29 @@ Open question for later: the source vines lean substantially (canopy extends
 ~0.75 m to one side). Real high-wire tomato is trained near-vertical up a string
 and only leaned along the wire. Whether to correct this at placement time is a
 fidelity decision that should be made deliberately, not by accident.
+
+### Cut mechanism (2026-08-06)
+
+`cut_demo.py` rigs `tomato_000` as **396 capsule links / 396 joints / 120
+severable organs**, settles it under gravity, and cuts the lowest sub-stem.
+Result: the severed organ detaches and falls while the rest of the plant stays
+connected. The severance primitive is proven.
+
+Engine behaviour worth remembering:
+
+- Authoring `physics:jointEnabled` **at build time** and only setting its value
+  at runtime avoids forcing a PhysX resync of the whole plant on every cut.
+- Kit swallows stdout and `--/app/fastShutdown=True` masks non-zero exits, so
+  simulator scripts must write a machine-readable report file. Several apparent
+  "crashes" during development were simply the final result never being written.
+
+**Open problem — the vine is not self-supporting.** It sags ~0.43 m and settles
+below its own base. This is not primarily a solver-tuning issue: a 2 m tomato
+vine physically cannot stand on its own, which is exactly why commercial
+high-wire tomato is clipped to a support string every ~30 cm. The rig must model
+those clips (and the greenhouse already has trellis-string geometry to anchor
+to) before any stiffness calibration means anything. There is also no ground
+plane yet, so severed organs fall indefinitely.
 
 ## Novelty position
 
