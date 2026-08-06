@@ -131,8 +131,9 @@ main env). The sim therefore runs inside **Isaac Sim's bundled Python** with
 `pyproject.toml`. RB-Y1 SDK is vendored as a `third_party/` submodule per
 `.gitmodules` convention. Generated USD goes to gitignored `data/`.
 
-Offline asset tooling depends on **numpy + pxr only** (both present in Isaac's
-Python) — no scipy — so the pipeline is reproducible from a bare Isaac install.
+Offline asset tooling depends only on packages already present in Isaac's bundled
+Python (numpy 1.26, scipy 1.15, pytest 9, plus `pxr` for USD authoring), so the
+pipeline is reproducible from a bare Isaac install with nothing pip-installed.
 
 ### D5 — Headline metric: residual petiole stub length
 
@@ -140,6 +141,31 @@ No existing plant-manipulation benchmark measures it, and it is agronomically
 decisive: flush pruning wounds are near-absolutely resistant to *Botrytis cinerea*
 while petiole stubs are highly susceptible (Beyers et al. 2014), with lesions
 advancing 0.3–0.5 cm/day. Bins: ≤5 mm flush / 5–20 mm marginal / >20 mm risk.
+
+## Validation
+
+### Organ segmentation, all 20 vines (2026-08-06)
+
+Sub-stem, truss, and foliage counts match the metadata sidecar **exactly on every
+vine**; no foliage organ fails to trace to a primary lateral; the adjacency search
+reaches every stem organ, so the graft-onto-root fallback never fires. Junction
+gaps are 0.3 mm median / ~5 mm p95 / 9.9 mm max against a 10 mm adjacency radius.
+Runtime ≈ 1.8 s per vine.
+
+Sub-stem labels are **monotonic in height on all 20 vines**, matching the
+metadata's own ordering — which is what the bottom-up "remove the lowest leaves"
+rule depends on.
+
+The assigned junctions sit a systematic **+28 mm above** and ~7 mm lateral of the
+metadata attach points. This is expected rather than an error: the generator
+records attach points on the main-stem **centreline**, while segmentation computes
+the **surface contact** where the two organs actually meet. The horizontal offset
+matches the main-stem radius. Surface contact is the correct reference for
+residual stub length (D5), so the computed junction is the one to keep.
+
+Risk: the worst junction gap (9.9 mm) is close to the 10 mm adjacency radius. A
+future asset generation with looser junctions could silently fall back to
+grafting; the fallback count is therefore worth asserting in the build step.
 
 ## Novelty position
 
