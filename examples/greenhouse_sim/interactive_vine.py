@@ -142,7 +142,12 @@ def main() -> int:
             collision_mode=args.collision_mode,
         )
         vine_visuals.attach_organ_visuals(
-            stage, rig, plant, asset, lambda p, o=offset: vine_usd.gltf_to_usd(p) + o
+            stage,
+            rig,
+            plant,
+            asset,
+            lambda p, o=offset: vine_usd.gltf_to_usd(p) + o,
+            to_stage_directions=vine_usd.gltf_to_usd,
         )
         rigs.append(rig)
         if args.clips:

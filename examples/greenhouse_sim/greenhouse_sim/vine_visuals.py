@@ -64,11 +64,13 @@ def attach_organ_visuals(
     plant: organs.Plant,
     asset: glb.Glb,
     to_stage_frame,
+    to_stage_directions=None,
 ) -> int:
     """Parent each organ's render mesh to the body that carries it.
 
     Returns the number of organs given visible geometry.
     """
+    to_stage_directions = to_stage_directions or to_stage_frame
     looks = Sdf.Path(rig.root_path).AppendChild("Looks")
     UsdGeom.Scope.Define(stage, looks)
     materials: dict[int, UsdShade.Material] = {}
@@ -110,7 +112,7 @@ def attach_organ_visuals(
             Vt.Vec3fArray.FromNumpy(np.vstack([local.min(axis=0), local.max(axis=0)]).astype(np.float32))
         )
         if organ.component.normals is not None:
-            normals = to_stage_frame(organ.component.normals) @ rotation
+            normals = to_stage_directions(organ.component.normals) @ rotation
             mesh.CreateNormalsAttr(Vt.Vec3fArray.FromNumpy(normals.astype(np.float32)))
             mesh.SetNormalsInterpolation(UsdGeom.Tokens.vertex)
         if organ.component.uvs is not None:

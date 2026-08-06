@@ -707,13 +707,20 @@ def add_trellis_clips(
 
 
 def add_ground_plane(
-    stage: Usd.Stage, path: str = "/World/GroundPlane", *, height: float = 0.0, size: float = 20.0
+    stage: Usd.Stage,
+    path: str = "/World/GroundPlane",
+    *,
+    height: float = 0.0,
+    size: float = 20.0,
+    centre_xy: tuple[float, float] = (0.0, 0.0),
 ) -> None:
     """A static floor, so severed organs land instead of falling forever."""
     plane = UsdGeom.Cube.Define(stage, Sdf.Path(path))
     plane.CreateSizeAttr(1.0)
     transformable = UsdGeom.Xformable(plane.GetPrim())
-    transformable.AddTranslateOp().Set(Gf.Vec3d(0.0, 0.0, height - 0.5 * size * 0.01))
+    transformable.AddTranslateOp().Set(
+        Gf.Vec3d(float(centre_xy[0]), float(centre_xy[1]), height - 0.5 * size * 0.01)
+    )
     transformable.AddScaleOp().Set(Gf.Vec3f(size, size, size * 0.01))
     UsdPhysics.CollisionAPI.Apply(plane.GetPrim())
     UsdGeom.Imageable(plane).CreatePurposeAttr(UsdGeom.Tokens.guide)

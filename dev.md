@@ -18,7 +18,10 @@ at `D:\isaac-sim`, Windows 11. Branch `koh-dev/simulator-base` (fork of openpi).
 - [x] Compliant vine physics — stable per-organ articulations (biological calibration pending)
 - [x] Cut severance — verified: severed organ detaches, plant stays connected
 - [x] Trellis support + stable interaction-contact physics (evidence below)
-- [ ] Pull/tear validation against the 32.5 N threshold
+- [x] Physics-enabled greenhouse integration + automated pull/cut acceptance
+- [x] Visible-mesh mouse pulling + explicit foliage-area airflow
+- [x] Manual viewport acceptance: real Shift-drag grab/release and UI/keyboard cut
+- [ ] Sustained pull/tear validation against the 32.5 N threshold
 - [ ] RB-Y1 URDF v1.0 integration + gripper/contact validation
 - [ ] Benchmark task definition + metrics
 
@@ -436,6 +439,92 @@ finger geometry; calibrate the effective inertia distribution against tracked
 real-vine deflection; and validate sustained-force tearing at 32.5 N. Full
 leaf-blade collision proxies may be added only after producing a collision-clean
 proxy asset, never by re-enabling the raw dense structural capsules.
+### Physics-enabled greenhouse and mouse interaction (2026-08-06)
+
+`interactive_greenhouse.py` is now the acceptance launcher between isolated-vine
+physics and robot integration. It opens the generated greenhouse, switches to
+the USD session layer, deactivates the selected static vine references there,
+and rebuilds the corresponding source GLBs as articulated rigs at the exact
+same bed transforms. The generated scene and source assets remain unchanged.
+One of eight placements is dynamic by default; `--physics-vines` can increase
+that only when the GPU/performance cost is intentional.
+
+Integration exposed and fixed three non-solver errors:
+
+1. Greenhouse translation was correctly applied to geometry points but was also
+   being added to mesh normals. `vine_visuals.attach_organ_visuals` now accepts a
+   separate direction transform, and both launchers pass translation-free
+   `TransformDir`/GLB direction conversion for normals.
+2. The severed-organ catch plane was still centred at world XY = (0, 0).
+   `add_ground_plane` now accepts `centre_xy`, and each plane is centred beneath
+   its greenhouse vine placement.
+3. The first automated pull used `apply_force_at_pos(..., "Acceleration")`, a
+   mode PhysX 5.1 rejects for off-centre force application. The probe now reads
+   the selected rigid body's authored mass and applies `mass × requested
+   acceleration` in supported `Force` mode. This also makes the requested pull
+   reproducible across link masses.
+
+The first manual acceptance exposed that native PhysX mouse grabbing was not a
+usable interaction surface. Five UI cuts were recorded correctly, but no
+`POINT_GRABBED` event appeared. Each SubStem exposed only one hidden structural
+capsule: typically about 20 mm long and 5 mm across, just a few pixels at the
+inspection-camera distance. Leaf blades had no colliders at all. Shift-clicking
+the missed/hidden target also drove Isaac 5.1's transform selector into repeated
+`KeyError: <class 'NoneType'>` callbacks. Raising the native coefficient alone
+would not solve the missing pick surface (though Isaac's own rope demo uses 10.0
+rather than the original 1.0).
+
+The corrected GUI backend disables that native collider-only grab. A viewport
+Shift-drag now raycasts the **actual rendered GLB triangles**, walks from the hit
+Visual prim to its supporting rigid body, holds the hit at its original camera
+depth, and applies a damped spring force at that material point. Defaults are
+10 N/m stiffness, 0.02 N*s/m damping, and a hard 1 N force cap. This permits
+pulling broad leaf blades, petioles, and the visible stem without inflating the
+28 robot-contact proxies or reintroducing rest-pose contact. A four-frame camera
+warm-up removes a startup race where the overlay could read the previous
+viewport projection. Grab/release count, selected Visual/body, peak target
+offset, and peak force are persisted in the report.
+
+The answer to "should a stationary vine move?" is conditional: once damping has
+removed transients, a vine in still air should settle, not jitter forever. To
+model greenhouse motion honestly, `vine_interaction.Airflow` adds an explicit
+aerodynamic load. For every compound petiole with foliage, it sums the actual
+one-sided triangle area, finds the foliage centroid, and applies
+`F = 0.5*rho*Cd*A*v^2` there with deterministic low-frequency speed and direction
+variation. The current GUI default is 1.0 m/s at 0.18 Hz over 14 populated
+petioles (0.1593 m2 total measured foliage area); `--airflow-speed 0` restores
+still air. The speed is an initial interactive default and remains a calibration
+and domain-randomisation parameter, not a measured condition of this greenhouse.
+
+`[` / `]` still select deleafing petioles, `V` selects a dynamic vine, and `C` or
+the interaction window releases the selected base joint.
+
+**Revised integrated acceptance (Isaac Sim 5.1, 240 Hz):**
+
+| Check | Result | Evidence |
+|---|---|---|
+| Greenhouse composition | 8 source placements found; Vine_0000 replaced in-session by 396 links, 6 clips, 120 severable joints, and 28 robot-contact colliders | `data/greenhouse_sim/interactive_greenhouse_airflow_pull_cut_10s.json` |
+| Visible-mesh raycast pull | renderer selected a foliage Visual and mapped it to its supporting body; 0.7551 N peak force produced 29.95 mm motion and 1.80 mm residual under airflow; grab/release counters both 1; finite=true | `data/greenhouse_sim/interactive_greenhouse_visual_pull_probe.json` |
+| Airflow, 10 s / 2400 steps | 14 foliage targets; 2.343 mm peak-to-peak axis motion; 2.515 mm maximum displacement; finite=true; 0 runaway organs | `data/greenhouse_sim/interactive_greenhouse_airflow_pull_cut_10s.json` |
+| Bounded body-force pull after airflow | 0.1674 N produced 3.723 mm peak deflection; after recovery residual was 0.632 mm; finite=true | same report |
+| Flush cut after airflow and recovery | exact BaseJoint changed enabled=true -> false; detached organ dropped 238.27 mm and travelled 247.82 mm; finite=true | same report |
+| Error scan | no Python tracebacks, PhysX errors, invalid transforms, broadphase faults, NaNs, or explosion signatures | both reports' `.log` files |
+| Rendered composition | greenhouse beds/trellis and the updated vine render together from the inspection camera | `data/greenhouse_sim/interactive_greenhouse_acceptance.png` |
+| Manual viewport acceptance | user accepted visible Shift-drag pull/release, stationary airflow motion, and cutting in the relaunched greenhouse session | direct acceptance, 2026-08-06 |
+
+The automated GUI probe reaches the same renderer raycast, Visual-to-body map,
+and bounded-force path as Shift-drag; the headless probe independently checks
+body compliance and the cut joint. Direct viewport acceptance was completed on
+2026-08-06 after a clean relaunch: visible foliage could be Shift-dragged and
+released, airflow produced acceptable stationary motion, and the cut mechanism
+worked. This clears the interaction gate for RB-Y1 integration. Benchmarking
+and RL remain gated on stable robot/tool/camera integration and contact testing.
+Regression status: 26 of 27 existing hermetic greenhouse tests pass. The only
+failure is the unchanged `test_arc_length_sampling_is_continuous`, whose 10 mm
+absolute tolerance is exceeded by 0.17 mm; no skeleton code changed in this
+milestone, so that numerical test issue is tracked separately rather than hidden
+inside the interaction implementation.
+
 ## Research findings, 2026-08-06 (pre-implementation)
 
 ### Stiffness — the current E is 5–15× too low

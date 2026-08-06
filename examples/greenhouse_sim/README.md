@@ -62,8 +62,8 @@ Substitute your own install path throughout — the examples below use
 | Windows | `%ISAACSIM%\python.bat` |
 | pip install (`pip install isaacsim`) | the `python` of that virtualenv |
 
-Only the scripts that **start a simulator** — `launch_greenhouse.py` and
-`cut_demo.py` — actually require it.
+Only the scripts that **start a simulator** — `launch_greenhouse.py`,
+`interactive_greenhouse.py`, and `cut_demo.py` — actually require it.
 
 The **asset scripts** (`convert_vines_to_usd.py`, `build_scene.py`) need USD but
 no simulator, and `usd_env.py` loads USD out of an Isaac Sim install directly.
@@ -114,6 +114,61 @@ $ISAACSIM/python.sh examples/greenhouse_sim/launch_greenhouse.py \
 Useful flags: `--beds` / `--plants-per-bed` / `--spacing` / `--seed` on
 `build_scene.py`; `--eye` and `--target` to move the inspection camera on
 `launch_greenhouse.py`.
+
+## Interactive greenhouse physics
+
+Launch the composed greenhouse with the first static vine replaced, at the same
+bed transform, by the stable articulated vine. The replacement is authored only
+in the USD session layer, so the built scene and source assets are not modified:
+
+```bash
+$ISAACSIM/python.sh examples/greenhouse_sim/interactive_greenhouse.py
+```
+
+The other seven vines remain static by default to keep viewport performance
+practical. Use `--physics-vines N` to upgrade more placements.
+
+While the simulation is running:
+
+- Hold **Shift** and left-drag any visible stem, petiole, or leaf blade.
+- Press `[` / `]` to select the previous / next deleafing petiole.
+- Press `C` (or the window's **CUT target** button) to sever the selected petiole.
+- Press `V` to select the next dynamic vine when more than one is enabled.
+
+Mouse pulling raycasts the original rendered GLB mesh and maps the hit to its
+supporting rigid body. It therefore works across broad leaf blades as well as
+thin stems without enlarging the 28 robot-contact proxies. The pull is a bounded
+spring; `--drag-stiffness`, `--drag-damping`, and `--drag-max-force` tune it.
+The live report at `data/greenhouse_sim/interactive_greenhouse.json` records
+`visual_mouse_grabs`, releases, peak force, and cuts.
+
+A 1.0 m/s deterministic airflow field is enabled by default so the foliage has
+subtle stationary sway. It applies `0.5*rho*Cd*A*v^2` at each compound leaf's
+measured foliage centroid; this is a physical external load, not render
+animation. Use `--airflow-speed 0` for still air, or tune `--airflow-speed`,
+`--airflow-frequency`, and `--airflow-direction` for the episode.
+
+Run the automated renderer-picked GUI pull acceptance:
+
+```bash
+$ISAACSIM/python.sh examples/greenhouse_sim/interactive_greenhouse.py \
+    --visual-pull-probe \
+    --report data/greenhouse_sim/interactive_greenhouse_visual_pull_probe.json
+```
+
+Run the combined 10-second airflow, bounded pull/recovery, and flush-cut
+acceptance without a display:
+
+```bash
+$ISAACSIM/python.sh examples/greenhouse_sim/interactive_greenhouse.py \
+    --headless --settle-steps 240 --airflow-probe-steps 2400 \
+    --pull-probe SubStem_00 --cut SubStem_00 \
+    --report data/greenhouse_sim/interactive_greenhouse_airflow_pull_cut_10s.json
+```
+
+Real Shift-drag, stationary airflow motion, and cutting were manually accepted
+in the viewport on 2026-08-06. Robot/tool/camera integration is the next gate
+before benchmark and RL work begins.
 
 ## Cutting demo
 
@@ -182,11 +237,17 @@ depends on), and never falls back to grafting.
 | `greenhouse_sim/glb.py` | Minimal glTF/GLB reader (geometry, materials, embedded textures) |
 | `greenhouse_sim/organs.py` | Organ segmentation and plant topology reconstruction |
 | `greenhouse_sim/vine_usd.py` | Per-organ USD authoring |
+| `greenhouse_sim/vine_physics.py` | Stable articulated links, contact zones, trellis clips, and floor |
+| `greenhouse_sim/vine_visuals.py` | Original GLB visuals attached to physics links |
+| `greenhouse_sim/vine_interaction.py` | Visible-mesh pulling and foliage-area airflow forces |
+| `greenhouse_sim/cutting.py` | Runtime joint release, tear monitoring, and cut grading |
 | `greenhouse_sim/greenhouse_scene.py` | Vine placement over the greenhouse stage |
 | `greenhouse_sim/usd_env.py` | Makes USD importable without booting Kit |
 | `convert_vines_to_usd.py` | Asset build + invariant checks |
 | `build_scene.py` | Scene composition |
-| `launch_greenhouse.py` | Viewer / headless capture |
+| `launch_greenhouse.py` | Static viewer / headless capture |
+| `interactive_vine.py` | Isolated physics-vine inspection |
+| `interactive_greenhouse.py` | Physics greenhouse, mouse pulling, cutting UI, and acceptance probes |
 
 Run the tests with Isaac's interpreter (they are hermetic and use synthetic
 assets, so they need no GLB files):
@@ -197,7 +258,10 @@ $ISAACSIM/python.sh -m pytest examples/greenhouse_sim/greenhouse_sim
 
 ## Status
 
-Built: asset pipeline, scene composition, launcher.
-Next: compliant vine physics, the cut/pull severance mechanism, RB-Y1
-integration, then task definition and metrics. See `dev.md` at the repository
-root for the design decisions and their rationale.
+Built and verified: asset pipeline, scene composition, stable
+articulated vine physics, task-directed robot contacts, visible-mesh pulling,
+foliage-area airflow, greenhouse integration, pull/recovery, and flush cutting.
+Manual Shift-drag, airflow-motion, and cut acceptance is complete. Next: 32.5 N
+tear calibration and RB-Y1 tool/camera integration, then task definition,
+benchmarking, and RL.
+See `dev.md` at the repository root for evidence and remaining work.
