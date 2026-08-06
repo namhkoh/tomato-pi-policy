@@ -111,6 +111,70 @@ def test_honours_byte_stride(tmp_path: pathlib.Path) -> None:
     np.testing.assert_allclose(asset.primitives[0].positions, positions)
 
 
+def test_reads_normals_and_uvs(tmp_path: pathlib.Path) -> None:
+    positions = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=np.float64)
+    normals = np.array([[0, 0, 1], [0, 0, 1], [0, 0, 1]], dtype=np.float32)
+    uvs = np.array([[0, 0], [1, 0], [0, 1]], dtype=np.float32)
+    gltf, buffer = _two_triangle_gltf(positions, np.array([0, 1, 2], dtype=np.uint32))
+
+    offset = len(buffer)
+    buffer = buffer + normals.tobytes() + uvs.tobytes()
+    gltf["bufferViews"] += [
+        {"buffer": 0, "byteOffset": offset, "byteLength": normals.nbytes},
+        {"buffer": 0, "byteOffset": offset + normals.nbytes, "byteLength": uvs.nbytes},
+    ]
+    gltf["accessors"] += [
+        {"bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC3"},
+        {"bufferView": 3, "componentType": 5126, "count": 3, "type": "VEC2"},
+    ]
+    gltf["meshes"][0]["primitives"][0]["attributes"].update({"NORMAL": 2, "TEXCOORD_0": 3})
+
+    primitive = glb.read_glb(_write(tmp_path, gltf, buffer)).primitives[0]
+    np.testing.assert_allclose(primitive.normals, normals)
+    np.testing.assert_allclose(primitive.uvs, uvs)
+
+
+def test_reads_materials_and_embedded_textures(tmp_path: pathlib.Path) -> None:
+    positions = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=np.float64)
+    gltf, buffer = _two_triangle_gltf(positions, np.array([0, 1, 2], dtype=np.uint32))
+
+    texture = b"\x89PNG\r\n\x1a\n" + b"pretend-png-bytes"
+    offset = len(buffer)
+    buffer = buffer + texture
+    gltf["bufferViews"].append({"buffer": 0, "byteOffset": offset, "byteLength": len(texture)})
+    gltf["images"] = [{"name": "leaf", "mimeType": "image/png", "bufferView": 2}]
+    gltf["textures"] = [{"source": 0}]
+    gltf["materials"] = [
+        {
+            "name": "Leaf",
+            "doubleSided": True,
+            "pbrMetallicRoughness": {
+                "baseColorTexture": {"index": 0},
+                "metallicFactor": 0.0,
+                "roughnessFactor": 0.8,
+            },
+        }
+    ]
+
+    asset = glb.read_glb(_write(tmp_path, gltf, buffer))
+    material = asset.materials[0]
+    assert material.name == "Leaf"
+    assert material.base_color_image == 0
+    assert material.roughness == pytest.approx(0.8)
+    assert material.double_sided
+    assert asset.images[0].data == texture
+    assert asset.images[0].suffix == ".png"
+    assert asset.primitives[0].material_index == 0
+
+
+def test_rejects_external_texture(tmp_path: pathlib.Path) -> None:
+    positions = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=np.float64)
+    gltf, buffer = _two_triangle_gltf(positions, np.array([0, 1, 2], dtype=np.uint32))
+    gltf["images"] = [{"uri": "leaf.png"}]
+    with pytest.raises(glb.GlbError, match="external"):
+        glb.read_glb(_write(tmp_path, gltf, buffer))
+
+
 def test_rejects_bad_magic(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "bad.glb"
     path.write_bytes(b"NOPE" + b"\0" * 20)

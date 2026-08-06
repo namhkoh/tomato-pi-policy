@@ -46,6 +46,33 @@ class GlbError(Exception):
 
 
 @dataclasses.dataclass(frozen=True)
+class Image:
+    """A texture image embedded in the binary chunk."""
+
+    index: int
+    name: str
+    mime_type: str
+    data: bytes
+
+    @property
+    def suffix(self) -> str:
+        return ".jpg" if self.mime_type == "image/jpeg" else ".png"
+
+
+@dataclasses.dataclass(frozen=True)
+class Material:
+    """The subset of a glTF PBR material that survives into UsdPreviewSurface."""
+
+    index: int
+    name: str
+    base_color: tuple[float, float, float, float]
+    metallic: float
+    roughness: float
+    base_color_image: int | None
+    double_sided: bool
+
+
+@dataclasses.dataclass(frozen=True)
 class Primitive:
     """One material-homogeneous triangle batch of a mesh.
 
@@ -57,6 +84,9 @@ class Primitive:
     material: str
     positions: np.ndarray  # (n_vertices, 3) float64, glTF Y-up metres
     triangles: np.ndarray  # (n_triangles, 3) int64 into positions
+    material_index: int | None = None
+    normals: np.ndarray | None = None  # (n_vertices, 3) float64
+    uvs: np.ndarray | None = None  # (n_vertices, 2) float64
 
     @property
     def num_triangles(self) -> int:
@@ -70,6 +100,8 @@ class Glb:
     path: pathlib.Path
     primitives: list[Primitive]
     generator: str
+    materials: list[Material] = dataclasses.field(default_factory=list)
+    images: list[Image] = dataclasses.field(default_factory=list)
 
     @property
     def num_triangles(self) -> int:
@@ -142,6 +174,46 @@ def _read_accessor(gltf: dict[str, Any], buffer: bytes, accessor_index: int, pat
     return raw[:, :element_size].copy().view(dtype).reshape(count, num_components)
 
 
+def _read_images(gltf: dict[str, Any], buffer: bytes, path: pathlib.Path) -> list[Image]:
+    images = []
+    for index, image in enumerate(gltf.get("images", [])):
+        if "uri" in image:
+            raise GlbError(f"{path}: image {index} is external; only embedded textures are supported")
+        view = gltf["bufferViews"][image["bufferView"]]
+        start = view.get("byteOffset", 0)
+        data = buffer[start : start + view["byteLength"]]
+        images.append(
+            Image(
+                index=index,
+                name=image.get("name", f"image_{index}"),
+                mime_type=image.get("mimeType", "image/png"),
+                data=data,
+            )
+        )
+    return images
+
+
+def _read_materials(gltf: dict[str, Any]) -> list[Material]:
+    textures = gltf.get("textures", [])
+    materials = []
+    for index, material in enumerate(gltf.get("materials", [])):
+        pbr = material.get("pbrMetallicRoughness", {})
+        texture_index = pbr.get("baseColorTexture", {}).get("index")
+        image_index = textures[texture_index].get("source") if texture_index is not None else None
+        materials.append(
+            Material(
+                index=index,
+                name=material.get("name", f"material_{index}"),
+                base_color=tuple(pbr.get("baseColorFactor", [1.0, 1.0, 1.0, 1.0])),
+                metallic=float(pbr.get("metallicFactor", 1.0)),
+                roughness=float(pbr.get("roughnessFactor", 1.0)),
+                base_color_image=image_index,
+                double_sided=bool(material.get("doubleSided", False)),
+            )
+        )
+    return materials
+
+
 def read_glb(path: str | pathlib.Path) -> Glb:
     """Parse a GLB file into its material-split triangle primitives.
 
@@ -168,7 +240,9 @@ def read_glb(path: str | pathlib.Path) -> Glb:
             if key in node:
                 raise GlbError(f"{path}: node {node.get('name', '?')} has an unsupported {key} transform")
 
-    materials = gltf.get("materials", [])
+    materials = _read_materials(gltf)
+    images = _read_images(gltf, buffer, path)
+
     primitives = []
     for index, primitive in enumerate(meshes[0].get("primitives", [])):
         if primitive.get("mode", _MODE_TRIANGLES) != _MODE_TRIANGLES:
@@ -178,22 +252,44 @@ def read_glb(path: str | pathlib.Path) -> Glb:
         if "indices" not in primitive:
             raise GlbError(f"{path}: primitive {index} is not indexed")
 
-        positions = _read_accessor(gltf, buffer, primitive["attributes"]["POSITION"], path).astype(np.float64)
+        attributes = primitive["attributes"]
+        positions = _read_accessor(gltf, buffer, attributes["POSITION"], path).astype(np.float64)
         indices = _read_accessor(gltf, buffer, primitive["indices"], path).ravel().astype(np.int64)
         if indices.size % 3:
             raise GlbError(f"{path}: primitive {index} index count {indices.size} is not a multiple of 3")
 
+        normals = None
+        if "NORMAL" in attributes:
+            normals = _read_accessor(gltf, buffer, attributes["NORMAL"], path).astype(np.float64)
+        uvs = None
+        if "TEXCOORD_0" in attributes:
+            uvs = _read_accessor(gltf, buffer, attributes["TEXCOORD_0"], path).astype(np.float64)
+
         material_index = primitive.get("material")
-        material = (
-            materials[material_index].get("name", f"material_{material_index}")
+        name = (
+            materials[material_index].name
             if material_index is not None and material_index < len(materials)
             else "<none>"
         )
         primitives.append(
-            Primitive(index=index, material=material, positions=positions, triangles=indices.reshape(-1, 3))
+            Primitive(
+                index=index,
+                material=name,
+                positions=positions,
+                triangles=indices.reshape(-1, 3),
+                material_index=material_index,
+                normals=normals,
+                uvs=uvs,
+            )
         )
 
     if not primitives:
         raise GlbError(f"{path}: mesh has no primitives")
 
-    return Glb(path=path, primitives=primitives, generator=gltf.get("asset", {}).get("generator", ""))
+    return Glb(
+        path=path,
+        primitives=primitives,
+        generator=gltf.get("asset", {}).get("generator", ""),
+        materials=materials,
+        images=images,
+    )

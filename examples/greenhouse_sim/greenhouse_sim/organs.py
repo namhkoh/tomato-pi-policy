@@ -74,6 +74,9 @@ class Component:
     tissue: Tissue
     vertices: np.ndarray  # (n_vertices, 3) float64, glTF Y-up metres
     triangles: np.ndarray  # (n_triangles, 3) int64 into vertices
+    material_index: int | None = None
+    normals: np.ndarray | None = None  # (n_vertices, 3) float64
+    uvs: np.ndarray | None = None  # (n_vertices, 2) float64
 
     @property
     def num_triangles(self) -> int:
@@ -183,6 +186,9 @@ def split_components(primitive: glb.Primitive, tolerance: float = WELD_TOLERANCE
                 tissue=tissue,
                 vertices=primitive.positions[used],
                 triangles=remap[local_triangles],
+                material_index=primitive.material_index,
+                normals=None if primitive.normals is None else primitive.normals[used],
+                uvs=None if primitive.uvs is None else primitive.uvs[used],
             )
         )
     return components
