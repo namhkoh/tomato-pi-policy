@@ -208,13 +208,44 @@ Engine behaviour worth remembering:
   simulator scripts must write a machine-readable report file. Several apparent
   "crashes" during development were simply the final result never being written.
 
-**Open problem — the vine is not self-supporting.** It sags ~0.43 m and settles
-below its own base. This is not primarily a solver-tuning issue: a 2 m tomato
-vine physically cannot stand on its own, which is exactly why commercial
-high-wire tomato is clipped to a support string every ~30 cm. The rig must model
-those clips (and the greenhouse already has trellis-string geometry to anchor
-to) before any stiffness calibration means anything. There is also no ground
-plane yet, so severed organs fall indefinitely.
+### Trellis support, resolved (2026-08-06)
+
+Clips implemented as compliant world anchors every 0.30 m, plus a ground plane.
+Stem sag over the clipped span fell from **435 mm to under 24 mm**. Four things
+had to be right, and each was found by measurement rather than guessed:
+
+1. **Springs alone are not enough.** A clip needs a *travel limit*, because any
+   sustained load walks a pure spring out indefinitely however stiff it is. A
+   clip is a collar (±5 mm of play, then the wall), not a spring.
+2. **Clip to the growing point.** Advancing a running counter by `spacing`
+   silently drops the topmost clip whenever the remaining run is shorter than
+   one interval — which is exactly the stretch whose deflection matters, since
+   cantilever droop grows with the *cube* of free length. Leaving 0.3 m
+   unclipped cost 0.45 m of fold-over. Now targets explicit heights up to
+   `top − 0.15 m`.
+3. **The fitted tip radius is a trap.** The render mesh tapers the stem to a
+   point (0.5 mm fitted radius), and stiffness goes as r⁴, so the top of the
+   stem came out ~10⁴× too floppy. Floored at 3.2 mm, the measured tomato apex
+   radius (Gao et al. 2024). Collision geometry still uses the fitted value.
+4. **Anchoring itself was never the problem.** An isolated test confirmed all
+   four joint types behave: locked-D6-to-world and FixedJoint both hold exactly,
+   a ±5 mm limited joint sags exactly 5 mm, a free body falls. Worth knowing
+   before blaming the engine.
+
+Residual: the top ~0.15 m of unclipped growing head still nods ~0.18 m. It sits
+outside the deleafing work zone and is the floppiest part of a real plant, so it
+is acceptable for now but should be revisited.
+
+**Open bug — spurious tearing at start-up.** Authoring `breakForce` at the
+measured 32.5 N detachment force makes *every* petiole snap off within the first
+frames: solver transients during settling far exceed 32.5 N. Visualising the
+colliders is what exposed this; every scalar metric had looked plausible while
+the plant was quietly shedding its leaves. Tearing is therefore disabled by
+default until it can be armed after settling, which needs care because PhysX may
+not pick up a `breakForce` change at runtime.
+
+**Lesson worth keeping:** render the physics, do not trust aggregate numbers.
+Both the fold-over and the tearing were invisible in the metrics.
 
 ## Research findings, 2026-08-06 (pre-implementation)
 
@@ -296,8 +327,8 @@ the assets' 0.75–1.11 m one-sided lean. Real high-wire in-row spacing is
 
 ### RB-Y1 asset path
 
-Import `models/rby1a/urdf/model_v1.0.urdf` ourselves (Apache-2.0, actively
-maintained). The official `rby1-sim-isaac` USD is **v1.2 kinematics** — 28.7 mm
+**Confirmed 2026-08-06: the physical robot is RB-Y1 Model A v1.0.** Target
+`models/rby1a/urdf/model_v1.0.urdf` (Apache-2.0, actively maintained). The official `rby1-sim-isaac` USD is **v1.2 kinematics** — 28.7 mm
 end-effector offset and 6 cm head offset versus v1.0 — and ships with no licence
 grant. v1.0 is identifiable on real hardware by a discrete FT-sensor puck between
 wrist and gripper flange (wrist→EE 154.8 mm vs 126.1 mm).

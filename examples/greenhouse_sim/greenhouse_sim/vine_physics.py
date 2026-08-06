@@ -47,14 +47,40 @@ from pxr import UsdPhysics  # noqa: E402
 class TissueProperties:
     """Mechanical properties of living vine tissue.
 
-    Young's modulus for herbaceous tomato stem tissue is orders of magnitude
-    below the ~7 GPa of the green wood used for orchard-tree simulation, which
-    is why stiffness is parameterised rather than borrowed.
+    No Young's modulus has been published for the fresh tomato main stem, so
+    these values rest on three converging lines, all landing at 100-300 MPa:
+    fresh greenhouse cucumber cane in tension at 281/199/137 MPa base-to-apex
+    (Xu et al. 2016, the nearest high-wire analogue), petioles measured at valid
+    span in four species at 110-192 MPa (Langer et al. 2021), and a self-weight
+    cantilever check on a tomato leaf back-solving to ~148 MPa.
+
+    The one direct tomato measurement (pedicel, 2.8-7.1 MPa, Weng et al. 2024)
+    is far lower but was taken at a span/depth ratio of 1.5-2.4, where mid-span
+    deflection is shear-dominated; its own data gives this away, reporting
+    modulus falling with specimen diameter at r = -0.893, which no real material
+    does. Corrected for shear it reconciles to 11-60 MPa.
+
+    The sanity check that settles it: at 5 MPa a tomato leaf would deflect 2.9 m
+    on a 0.12 m petiole. Tomato leaves visibly hold themselves up, so any
+    modulus below ~50 MPa is falsified by observation.
     """
 
-    youngs_modulus_pa: float = 2.0e7
-    density_kg_m3: float = 900.0
+    # Petioles and the young upper stem.
+    youngs_modulus_pa: float = 1.5e8
+    # The lignified stem base, which is roughly twice as stiff.
+    lignified_youngs_modulus_pa: float = 2.5e8
+    # Inferred from the directly measured 73-79% moisture content.
+    density_kg_m3: float = 950.0
     damping_ratio: float = 0.1
+
+    # Floor on the radius used for stiffness. The render mesh tapers the stem to
+    # a modelling point (fitted radius reaches 0.5 mm at the tip), but a real
+    # tomato apex is ~6.4 mm across, i.e. 3.2 mm in radius (Gao et al. 2024).
+    # Bending stiffness goes as r^4, so an unclamped fitted radius makes the top
+    # of the stem four orders of magnitude too floppy and the vine folds over
+    # no matter how the trellis is tuned. Collision geometry still uses the
+    # measured radius; only the structural value is clamped.
+    min_structural_radius_m: float = 0.0032
 
     # Severance thresholds, from measured tomato leaf-pruning forces: a blade
     # shears the petiole at ~66 N, while pulling detaches it at ~33 N. Keeping
@@ -62,6 +88,15 @@ class TissueProperties:
     # tear, which is an agronomically real distinction.
     cut_force_n: float = 66.3
     tear_force_n: float = 32.5
+
+    def modulus_at(self, height_fraction: float) -> float:
+        """Young's modulus along the main stem, base (0.0) to growing tip (1.0).
+
+        Tapering the modulus as well as the radius reproduces the measured
+        base-to-apex stiffness gradient, which a single value cannot.
+        """
+        blend = min(max(height_fraction, 0.0), 1.0)
+        return self.lignified_youngs_modulus_pa + blend * (self.youngs_modulus_pa - self.lignified_youngs_modulus_pa)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -128,13 +163,19 @@ def _orient_to(axis: np.ndarray) -> Gf.Quatf:
     return Gf.Quatf(half / 2.0, Gf.Vec3f(*(cross / half)))
 
 
-def _define_capsule(stage: Usd.Stage, path: Sdf.Path, link: Link, properties: TissueProperties) -> None:
+def _define_capsule(
+    stage: Usd.Stage, path: Sdf.Path, link: Link, properties: TissueProperties, *, visible: bool = False
+) -> None:
     capsule = UsdGeom.Capsule.Define(stage, path)
     capsule.CreateAxisAttr(UsdGeom.Tokens.z)
     capsule.CreateRadiusAttr(float(link.radius))
     capsule.CreateHeightAttr(max(link.length - 2.0 * link.radius, 1e-4))
-    # Collision geometry only; the render meshes stay in the visual asset.
-    UsdGeom.Imageable(capsule).CreatePurposeAttr(UsdGeom.Tokens.guide)
+    # Normally collision-only, with the render meshes living in the visual
+    # asset. Made visible when the point is to see and grab the physics itself.
+    if not visible:
+        UsdGeom.Imageable(capsule).CreatePurposeAttr(UsdGeom.Tokens.guide)
+    else:
+        capsule.CreateDisplayColorAttr([Gf.Vec3f(0.22, 0.42, 0.14)])
 
     centre = 0.5 * (link.start + link.end)
     transformable = UsdGeom.Xformable(capsule.GetPrim())
@@ -190,7 +231,7 @@ def _define_joint(
         drive.CreateStiffnessAttr(float(stiffness * math.pi / 180.0))
         drive.CreateDampingAttr(float(damping * math.pi / 180.0))
 
-    if breakable:
+    if breakable and properties.tear_force_n > 0.0:
         joint.CreateBreakForceAttr(properties.tear_force_n)
         joint.CreateBreakTorqueAttr(properties.tear_force_n)
     # Kept out of any articulation so breakForce is honoured at all.
@@ -209,6 +250,7 @@ def author_plant_physics(
     to_stage_frame,
     *,
     properties: TissueProperties | None = None,
+    visible_colliders: bool = False,
 ) -> PlantRig:
     """Build capsule chains and joints for one plant under `root_path`.
 
@@ -250,14 +292,22 @@ def author_plant_physics(
                 end=points[segment + 1],
                 radius=radius,
             )
-            _define_capsule(stage, Sdf.Path(link.path), link, properties)
+            _define_capsule(stage, Sdf.Path(link.path), link, properties, visible=visible_colliders)
             chain.append(link)
             links.append(link)
 
+        # The main stem stiffens toward its lignified base; every other organ is
+        # young tissue at a single modulus.
+        is_main_stem = organ.index == plant.root
+        span = max(len(chain) - 1, 1)
+
         # Internal joints hold the organ together along its own length.
         for segment in range(1, len(chain)):
+            modulus = properties.modulus_at(segment / span) if is_main_stem else properties.youngs_modulus_pa
             stiffness = beam_stiffness(
-                properties.youngs_modulus_pa, chain[segment].radius, max(chain[segment].length, 1e-4)
+                modulus,
+                max(chain[segment].radius, properties.min_structural_radius_m),
+                max(chain[segment].length, 1e-4),
             )
             path = organ_scope.AppendChild(f"Joint_{segment:03d}")
             _define_joint(
@@ -277,7 +327,12 @@ def author_plant_physics(
         # The joint attaching this organ to its parent is the severance point.
         parent_link = _nearest_link(organ_links.get(organ.parent, []), chain[0].start)
         base_path = organ_scope.AppendChild("BaseJoint")
-        base_stiffness = beam_stiffness(properties.youngs_modulus_pa, chain[0].radius, max(chain[0].length, 1e-4))
+        base_modulus = properties.modulus_at(0.0) if is_main_stem else properties.youngs_modulus_pa
+        base_stiffness = beam_stiffness(
+            base_modulus,
+            max(chain[0].radius, properties.min_structural_radius_m),
+            max(chain[0].length, 1e-4),
+        )
         _define_joint(
             stage,
             base_path,
@@ -311,6 +366,138 @@ def _nearest_link(chain: list[Link], point: np.ndarray) -> Link | None:
     if not chain:
         return None
     return min(chain, key=lambda link: float(np.linalg.norm(0.5 * (link.start + link.end) - point)))
+
+
+# High-wire tomato is clipped to its support string roughly every 25-35 cm.
+DEFAULT_CLIP_SPACING_M = 0.30
+
+# Along the string the clip is nearly inextensible; across it there is a few
+# millimetres of free play in the clip before it bears.
+CLIP_AXIAL_STIFFNESS_N_M = 5000.0
+CLIP_LATERAL_STIFFNESS_N_M = 250.0
+
+# A clip is a collar: the stem can shift a few millimetres inside it and then
+# meets the collar wall. Modelling that travel as a hard limit is what actually
+# carries the vine -- a spring alone lets the stem drift arbitrarily far under a
+# sustained load, however stiff it is.
+CLIP_CLEARANCE_M = 0.005
+
+# Growers clip just below the growing point, not a full spacing short of it.
+# Leaving a longer head unsupported is not a small error: an unclipped 0.3 m of
+# stem tip folds over by half a metre, because cantilever deflection grows with
+# the cube of free length.
+HEAD_CLEARANCE_M = 0.15
+
+
+@dataclasses.dataclass(frozen=True)
+class Clip:
+    """One trellis attachment between the main stem and its support string."""
+
+    joint_path: str
+    link_path: str
+    height_m: float
+
+
+def add_trellis_clips(
+    stage: Usd.Stage,
+    rig: PlantRig,
+    root_organ: int,
+    *,
+    spacing: float = DEFAULT_CLIP_SPACING_M,
+    head_clearance: float = HEAD_CLEARANCE_M,
+    properties: TissueProperties | None = None,
+) -> list[Clip]:
+    """Clip the main stem to its support string at regular heights.
+
+    A tomato vine is not self-supporting: a stem self-buckles well before 2 m,
+    which is exactly why commercial high-wire tomato is clipped to a string
+    every 25-35 cm. Without this the plant collapses under its own weight no
+    matter how the tissue stiffness is tuned, so the clips are load-bearing
+    structure and not set dressing.
+
+    They are springs rather than fixed joints deliberately. Welding the stem to
+    the world would over-stiffen it laterally by orders of magnitude and reduce
+    the vine to a static prop, destroying the plant-disturbance signal the
+    benchmark scores. With compliant clips the stem still sways a few
+    centimetres under contact, which is what a real one does.
+    """
+    properties = properties or TissueProperties()
+    chain = sorted((link for link in rig.links if link.organ == root_organ), key=lambda link: link.index)
+    if not chain:
+        return []
+
+    scope = Sdf.Path(rig.root_path).AppendChild("Trellis")
+    UsdGeom.Scope.Define(stage, scope)
+
+    base_height = float(chain[0].start[2])
+    heights = np.array([float(0.5 * (link.start + link.end)[2]) - base_height for link in chain])
+    # Clip up to just below the growing point, and no further.
+    highest_clip = float(heights.max()) - head_clearance
+
+    # Explicit target heights, then the nearest link to each. Advancing a
+    # running counter instead silently drops the topmost clip whenever the
+    # remaining run is shorter than one spacing -- which is exactly the stretch
+    # whose deflection matters most.
+    targets = list(np.arange(spacing, max(highest_clip, spacing), spacing))
+    if highest_clip > 0 and (not targets or highest_clip - targets[-1] > 0.25 * spacing):
+        targets.append(highest_clip)
+
+    clips: list[Clip] = []
+    used: set[int] = set()
+    for target in targets:
+        index = int(np.argmin(np.abs(heights - target)))
+        if index in used:
+            continue
+        used.add(index)
+        link = chain[index]
+        anchor = 0.5 * (link.start + link.end)
+        height = float(heights[index])
+
+        path = scope.AppendChild(f"Clip_{len(clips):02d}")
+        joint = UsdPhysics.Joint.Define(stage, path)
+        # No body0 relationship: the clip anchors to the world, standing in for
+        # the support string, which is far stiffer than the stem.
+        joint.CreateBody1Rel().SetTargets([link.path])
+        joint.CreateLocalPos0Attr().Set(Gf.Vec3f(*anchor))
+        joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+        joint.CreateExcludeFromArticulationAttr(defaultValue=True)
+        joint.CreateJointEnabledAttr(defaultValue=True)
+
+        mass = capsule_mass(link.radius, link.length, properties.density_kg_m3)
+        for axis, stiffness in (
+            ("transX", CLIP_LATERAL_STIFFNESS_N_M),
+            ("transY", CLIP_LATERAL_STIFFNESS_N_M),
+            ("transZ", CLIP_AXIAL_STIFFNESS_N_M),
+        ):
+            # The collar wall. Without this the spring alone cannot hold a 2 m
+            # vine: any sustained load walks the stem out indefinitely.
+            limit = UsdPhysics.LimitAPI.Apply(joint.GetPrim(), axis)
+            limit.CreateLowAttr(-CLIP_CLEARANCE_M)
+            limit.CreateHighAttr(CLIP_CLEARANCE_M)
+
+            drive = UsdPhysics.DriveAPI.Apply(joint.GetPrim(), axis)
+            drive.CreateTypeAttr("force")
+            drive.CreateTargetPositionAttr(0.0)
+            drive.CreateStiffnessAttr(stiffness)
+            drive.CreateDampingAttr(2.0 * properties.damping_ratio * math.sqrt(stiffness * max(mass, 1e-6)))
+
+        # Rotation is left free: a clip is a loose collar, not a weld, and the
+        # stem must still be able to pivot within it.
+        clips.append(Clip(joint_path=str(path), link_path=link.path, height_m=height))
+    return clips
+
+
+def add_ground_plane(
+    stage: Usd.Stage, path: str = "/World/GroundPlane", *, height: float = 0.0, size: float = 20.0
+) -> None:
+    """A static floor, so severed organs land instead of falling forever."""
+    plane = UsdGeom.Cube.Define(stage, Sdf.Path(path))
+    plane.CreateSizeAttr(1.0)
+    transformable = UsdGeom.Xformable(plane.GetPrim())
+    transformable.AddTranslateOp().Set(Gf.Vec3d(0.0, 0.0, height - 0.5 * size * 0.01))
+    transformable.AddScaleOp().Set(Gf.Vec3f(size, size, size * 0.01))
+    UsdPhysics.CollisionAPI.Apply(plane.GetPrim())
+    UsdGeom.Imageable(plane).CreatePurposeAttr(UsdGeom.Tokens.guide)
 
 
 def apply_scene_physics(stage: Usd.Stage, path: str = "/World/PhysicsScene", *, gravity: float = 9.81) -> None:

@@ -35,6 +35,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stub", type=float, default=0.0, help="stub length to leave, in metres")
     parser.add_argument("--organ", type=str, default=None, help="sub-stem label to cut")
     parser.add_argument("--segment", type=float, default=0.02, help="capsule length, in metres")
+    parser.add_argument("--clip-spacing", type=float, default=0.30, help="trellis clip spacing, in metres")
+    parser.add_argument(
+        "--no-clips",
+        dest="clips",
+        action="store_false",
+        default=True,
+        help="omit trellis support, to show the vine collapse without it",
+    )
     # Kit floods stdout, so the machine-readable result goes to a file.
     parser.add_argument("--report", type=pathlib.Path, default=pathlib.Path("data/greenhouse_sim/cut_report.json"))
     return parser.parse_args()
@@ -88,9 +96,20 @@ def main() -> int:
     vine_physics.apply_scene_physics(stage)
 
     rig = vine_physics.author_plant_physics(stage, plant, "/World/Vine", skeletons, vine_usd.gltf_to_usd)
-    print(f"  {len(rig.links)} capsule links, {len(rig.joints)} joints, {len(rig.cut_joints)} severable organs")
-    report.update(links=len(rig.links), joints=len(rig.joints), severable=len(rig.cut_joints), stage="rigged")
+    clips = vine_physics.add_trellis_clips(stage, rig, plant.root, spacing=args.clip_spacing) if args.clips else []
+    vine_physics.add_ground_plane(stage, height=min(link.start[2] for link in rig.links))
+    print(
+        f"  {len(rig.links)} capsule links, {len(rig.joints)} joints, "
+        f"{len(rig.cut_joints)} severable organs, {len(clips)} trellis clips"
+    )
+    report.update(
+        links=len(rig.links), joints=len(rig.joints), severable=len(rig.cut_joints), clips=len(clips), stage="rigged"
+    )
     _emit(report, args.report)
+
+    # Rest pose, before gravity: the reference for how far the plant sags.
+    stem_links = [link.path for link in rig.links if link.organ == plant.root]
+    rest_stem = _positions(stage, stem_links)
 
     for _ in range(10):
         app.update()
@@ -118,6 +137,10 @@ def main() -> int:
 
     settled = _positions(stage, tracked)
     reference = _positions(stage, _reference_links(rig, organ_indices[target]))
+    settled_stem = _positions(stage, stem_links)
+    sag = float(np.nanmax(np.abs(settled_stem - rest_stem))) if rest_stem.size else 0.0
+    print(f"  main stem sagged {sag * 1000:.1f} mm under gravity")
+    report.update(stem_sag_mm=sag * 1000.0)
     print(f"  target organ settled at z={np.nanmean(settled[:, 2]):.4f} m")
     report.update(target=target, settled_z=float(np.nanmean(settled[:, 2])), stage="settled")
     _emit(report, args.report)
