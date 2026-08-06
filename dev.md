@@ -13,8 +13,8 @@ at `D:\isaac-sim`, Windows 11. Branch `koh-dev/simulator-base` (fork of openpi).
 - [x] Verified: Isaac Sim launches headless; greenhouse stage opens (7667 prims,
       3433 meshes); `breakForce`/`breakTorque`/`excludeFromArticulation` author OK
 - [x] Verified: fused vine GLBs decompose into per-organ connected components
-- [ ] Asset pipeline: GLB → organ graph → structured USD
-- [ ] Greenhouse composition + launch
+- [x] Asset pipeline: GLB → organ graph → structured USD (all 20 vines)
+- [x] Greenhouse composition + launch (renders headless; see below)
 - [ ] Compliant vine physics (bend/droop)
 - [ ] Cut + pull severance
 - [ ] RB-Y1 URDF v1.0 integration
@@ -165,7 +165,31 @@ residual stub length (D5), so the computed junction is the one to keep.
 
 Risk: the worst junction gap (9.9 mm) is close to the 10 mm adjacency radius. A
 future asset generation with looser junctions could silently fall back to
-grafting; the fallback count is therefore worth asserting in the build step.
+grafting. `convert_vines_to_usd.py` now asserts every one of these invariants
+and exits non-zero, so this cannot regress unnoticed.
+
+### Scene composition (2026-08-06)
+
+Greenhouse layout as measured, not assumed: beds are 5 m troughs whose planting
+surface is at **Z = 0.888 m**, spaced 5.7 m apart, with two 5 m trellis strings
+at each bed's ends (not per-plant strings). 256 BedSets across two zones.
+
+Vines compose in at 0.25 m in-row spacing with seeded yaw jitter, and organ
+prims stay addressable through the reference
+(`/World/Vines/Vine_0000/MainStem/SubStem_06`), with materials bound. A headless
+render confirms textured foliage, fruit trusses, and plants seated in the gutter.
+
+**Asset defect found and worked around**: the greenhouse `DomeLight` references
+`/home/jhlee/Desktop/...`, an absolute path from the machine the asset was
+authored on. It fails to load on any other machine and leaves lighting to a
+renderer fallback — unacceptable variation for a vision benchmark. The scene
+layer now clears unresolvable light textures, leaving a uniform sky at the
+authored colour and intensity. Worth fixing in the source asset too.
+
+Open question for later: the source vines lean substantially (canopy extends
+~0.75 m to one side). Real high-wire tomato is trained near-vertical up a string
+and only leaned along the wire. Whether to correct this at placement time is a
+fidelity decision that should be made deliberately, not by accident.
 
 ## Novelty position
 
