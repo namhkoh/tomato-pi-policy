@@ -1,7 +1,10 @@
 """Open the greenhouse deleafing scene in Isaac Sim.
 
-    D:\\isaac-sim\\python.bat examples/greenhouse_sim/launch_greenhouse.py
-    D:\\isaac-sim\\python.bat examples/greenhouse_sim/launch_greenhouse.py --headless --screenshot shot.png
+Run from the repository root with Isaac Sim's bundled interpreter. $ISAACSIM
+stands for your Isaac Sim install; on Windows use %ISAACSIM%\\python.bat:
+
+    $ISAACSIM/python.sh examples/greenhouse_sim/launch_greenhouse.py
+    $ISAACSIM/python.sh examples/greenhouse_sim/launch_greenhouse.py --headless --screenshot shot.png
 
 Interactively this holds the viewport open until the window is closed. Headless
 with --screenshot it renders one frame from an inspection camera and exits,

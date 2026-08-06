@@ -186,6 +186,7 @@ We provide more examples for how to fine-tune and run inference with our models 
 - [ALOHA Simulator](examples/aloha_sim)
 - [ALOHA Real](examples/aloha_real)
 - [UR5](examples/ur5)
+- [Greenhouse Deleafing Benchmark (Isaac Sim)](examples/greenhouse_sim) — tomato deleafing on a Rainbow Robotics RB-Y1
 
 ## PyTorch Support
 

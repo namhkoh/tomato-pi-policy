@@ -1,8 +1,10 @@
 """Compose a deleafing benchmark scene from the greenhouse and the vine assets.
 
-Run with Isaac Sim's bundled interpreter, after convert_vines_to_usd.py:
+Run from the repository root with Isaac Sim's bundled interpreter, after
+convert_vines_to_usd.py. $ISAACSIM stands for your Isaac Sim install; on
+Windows use %ISAACSIM%\\python.bat instead:
 
-    D:\\isaac-sim\\python.bat examples/greenhouse_sim/build_scene.py
+    $ISAACSIM/python.sh examples/greenhouse_sim/build_scene.py
 
 The written scene sublayers the greenhouse and adds only vine placements, so
 the source art is never modified and scenes can be regenerated freely.

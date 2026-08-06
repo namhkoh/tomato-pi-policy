@@ -1,6 +1,9 @@
 """Demonstrate and measure vine cutting physics on a single plant.
 
-    D:\\isaac-sim\\python.bat examples/greenhouse_sim/cut_demo.py
+Run from the repository root with Isaac Sim's bundled interpreter. $ISAACSIM
+stands for your Isaac Sim install; on Windows use %ISAACSIM%\\python.bat:
+
+    $ISAACSIM/python.sh examples/greenhouse_sim/cut_demo.py
 
 Rigs one vine as compliant capsule chains, lets it settle under gravity, cuts a
 petiole, and reports whether the severed leaf actually fell away while the rest

@@ -1,8 +1,10 @@
 """Convert the tomato vine GLB assets into per-organ USD.
 
-Run with Isaac Sim's bundled interpreter, which supplies USD and numpy:
+Run from the repository root with Isaac Sim's bundled interpreter, which
+supplies USD and numpy. $ISAACSIM stands for your Isaac Sim install; on
+Windows use %ISAACSIM%\\python.bat instead:
 
-    D:\\isaac-sim\\python.bat examples/greenhouse_sim/convert_vines_to_usd.py
+    $ISAACSIM/python.sh examples/greenhouse_sim/convert_vines_to_usd.py
 
 Output goes to a gitignored directory; the GLBs under greenhouse/ stay the
 source of truth. Every vine is checked against its metadata sidecar as it is
