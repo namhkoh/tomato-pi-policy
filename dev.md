@@ -216,6 +216,97 @@ those clips (and the greenhouse already has trellis-string geometry to anchor
 to) before any stiffness calibration means anything. There is also no ground
 plane yet, so severed organs fall indefinitely.
 
+## Research findings, 2026-08-06 (pre-implementation)
+
+### Stiffness — the current E is 5–15× too low
+
+`TissueProperties.youngs_modulus_pa = 2.0e7` (20 MPa) is not defensible. Three
+independent lines converge on **100–300 MPa** for fresh turgid vine tissue:
+fresh greenhouse cucumber cane in tension, 280/199/137 MPa base→apex
+(Xu et al. 2016, the nearest high-wire analogue); petioles measured at valid
+span in four species, 110–192 MPa (Langer et al. 2021); and a self-weight
+cantilever check on a tomato leaf back-solving to ~148 MPa.
+
+Adopt **150 MPa** for petioles and young upper stem, **250 MPa** for the
+lignified lower stem. The reviewer-proof sentence: at 5 MPa a tomato leaf would
+deflect 2.9 m on a 0.12 m petiole, so any modulus below ~50 MPa is falsified by
+the observable fact that tomato leaves hold themselves up.
+
+The only direct tomato measurement (pedicel, 2.8–7.1 MPa, Weng et al. 2024) must
+be cited but with its caveat: span/depth of 1.5–2.4 means it is shear-dominated
+and is an *apparent* modulus; the Timoshenko correction reconciles it to
+11–60 MPa. Its own data gives it away — modulus correlates with specimen
+diameter at r = −0.893, which no real material does.
+
+**No published Young's modulus exists for the fresh tomato main stem.** Say so
+rather than imply otherwise. Other gaps: no tomato stem density (use 950 kg/m³
+inferred from the measured 73–79% moisture), no tomato droop data.
+
+Geometry defaults: stem 6.4 mm apex / 9.8 mm mid / 7.5 mm base (Gao et al. 2024,
+2.1 m plants); petiole 4–8 mm (Sun et al. 2024). Detachment 32.5–40.3 N and
+cutting 62–66 N, now corroborated across two independent groups.
+
+### Trellis — clips every 0.30 m, compliant not fixed
+
+Recommended: one fixed joint at the base elbow, then **D6 joints to world anchors
+at 0.30 m spacing** (randomise 0.25–0.35 m per episode), 2–10 kN/m along the
+string axis, ±5 mm lateral free play then ~250 N/m. Leave the stem joints
+compliant — a real tomato stem self-buckles beyond 0.6–1.1 m, and the clips are
+what carry it. Fixed joints over-stiffen laterally by 2–3 orders of magnitude;
+a kinematic lower stem has infinite effective mass so the robot cannot perturb
+it and contact forces become unbounded.
+
+Consequence for metrics: with correct support the stem barely moves (1–3 cm
+mid-span). **Essentially all real canopy disturbance comes from leaves and
+trusses**, so the disturbance metric must be defined on leaf/truss motion, not
+stem displacement, or it will stop discriminating between policies.
+
+### Severance — manual snapping is standard commercial practice
+
+The decisive finding. Growers routinely **snap** tomato leaves off by hand, and
+that produces a *stub-free, faster-healing* wound than a knife (Decognet et al.
+2010). The real acceptance criterion is "flush, no stub", not "cut". So the
+RB-Y1's stock parallel gripper is sufficient and no custom tool is required —
+the pull track is not a shortcut, it is the human baseline.
+
+There is also **no COTS cobot leaf cutter to buy**; requiring one would mean
+every replicating lab starts with a machining job and their blade geometry
+becomes an uncontrolled cross-lab confound.
+
+### The task as specified is shortcut-solvable
+
+As authored the grower rule yields **the same answer on 20 of 20 vines**. Fixes,
+in order of cost: the `N_retain = 15` term (free, agronomically real, alone
+spreads the answer distribution); randomised pre-deleaf depth (uses the existing
+joint-release primitive); ripeness rebinding. Together: 611 configurations.
+
+Fruit ripeness **is** recoverable — the `FruitRipe_r_c` material's `c` index is
+the ripeness stage, validated exact across all 155 fruits in the asset set. Bake
+it as a `greenhouse:ripenessStage` attribute at conversion time.
+
+Episode parameters must live **only in the instruction string**, with a
+generation-time assertion that no observation→target mapping is a function.
+
+### Occlusion is likely the binding constraint
+
+Predicted to fail before reachability at the current 0.25 m spacing combined with
+the assets' 0.75–1.11 m one-sided lean. Real high-wire in-row spacing is
+0.40–0.50 m. Both spacing and lean are one-line changes in
+`greenhouse_scene.py` and far cheaper to fix now than after thousands of demos.
+
+### RB-Y1 asset path
+
+Import `models/rby1a/urdf/model_v1.0.urdf` ourselves (Apache-2.0, actively
+maintained). The official `rby1-sim-isaac` USD is **v1.2 kinematics** — 28.7 mm
+end-effector offset and 6 cm head offset versus v1.0 — and ships with no licence
+grant. v1.0 is identifiable on real hardware by a discrete FT-sensor puck between
+wrist and gripper flange (wrist→EE 154.8 mm vs 126.1 mm).
+
+Import settings that matter: `fix_base=False`, `merge_fixed_joints=False`,
+self-collision off, inertia from URDF, position drives with wheels overridden to
+velocity. The importer drops the URDF's non-standard `<capsule>` tags, so 26
+capsule colliders need re-adding post-import.
+
 ## Novelty position
 
 Nearest neighbour is **OrchardBench** (GPU-parallel apple orchard, compliant
