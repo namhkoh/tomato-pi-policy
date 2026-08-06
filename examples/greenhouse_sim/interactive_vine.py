@@ -39,12 +39,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plants", type=int, default=1)
     parser.add_argument("--segment", type=float, default=0.02, help="capsule length, in metres")
     parser.add_argument("--clip-spacing", type=float, default=0.30)
-    parser.add_argument("--stiffness-scale", type=float, default=1.0, help="multiplier on beam stiffness")
+    parser.add_argument("--stiffness-scale", type=float, default=1.0e4, help="multiplier on beam stiffness")
     parser.add_argument("--gravity", type=float, default=9.81, help="0 isolates constraint problems from load")
     parser.add_argument("--no-ground", dest="ground", action="store_false", default=True,
                         help="omit the floor, to test whether basal organs are born inside it")
-    parser.add_argument("--no-collision", dest="collide", action="store_false", default=True,
-                        help="drop colliders, to separate contact problems from constraint problems")
+    parser.add_argument(
+        "--collision-mode",
+        choices=("interaction", "none", "all"),
+        default="interaction",
+        help="interaction uses only main-stem/deleafing contact; all is an unstable diagnostic",
+    )
+    parser.add_argument(
+        "--no-collision",
+        dest="collision_mode",
+        action="store_const",
+        const="none",
+        help="alias for --collision-mode none",
+    )
     parser.add_argument(
         "--tear-force",
         type=float,
@@ -128,7 +139,7 @@ def main() -> int:
                 tear_force_n=args.tear_force, stiffness_scale=args.stiffness_scale
             ),
             visible_colliders=args.show_colliders,
-            collidable=args.collide,
+            collision_mode=args.collision_mode,
         )
         vine_visuals.attach_organ_visuals(
             stage, rig, plant, asset, lambda p, o=offset: vine_usd.gltf_to_usd(p) + o
@@ -148,6 +159,8 @@ def main() -> int:
         links=sum(len(r.links) for r in rigs),
         clips=len(all_clips),
         severable=len(rigs[0].cut_joints),
+        collision_mode=args.collision_mode,
+        contact_colliders=sum(len(r.collider_paths) for r in rigs),
     )
     _emit(report, args.report)
 

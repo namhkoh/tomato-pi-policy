@@ -15,11 +15,11 @@ at `D:\isaac-sim`, Windows 11. Branch `koh-dev/simulator-base` (fork of openpi).
 - [x] Verified: fused vine GLBs decompose into per-organ connected components
 - [x] Asset pipeline: GLB → organ graph → structured USD (all 20 vines)
 - [x] Greenhouse composition + launch (renders headless; see below)
-- [x] Compliant vine physics — rig builds and simulates (calibration pending)
+- [x] Compliant vine physics — stable per-organ articulations (biological calibration pending)
 - [x] Cut severance — verified: severed organ detaches, plant stays connected
-- [ ] Trellis support + stiffness calibration (**blocks** meaningful physics)
+- [x] Trellis support + stable interaction-contact physics (evidence below)
 - [ ] Pull/tear validation against the 32.5 N threshold
-- [ ] RB-Y1 URDF v1.0 integration
+- [ ] RB-Y1 URDF v1.0 integration + gripper/contact validation
 - [ ] Benchmark task definition + metrics
 
 ## Findings
@@ -102,7 +102,7 @@ the FEM solver specifically. FEM in Isaac 5.1 cannot cut, cannot hold a grasp
 data-collection benchmark. Compliant chains give the same observable physics.
 FEM is kept only as an optional visual/validation comparison.
 
-### D2 — Cut primitive: in-place joint release, outside any articulation
+### D2 — Cut primitive: in-place joint release (superseded architecture)
 
 Sever by releasing the petiole's base joint (zeroing drive gains and freeing the
 constraint) when the tool's blade plane intersects the link and the jaws close;
@@ -247,7 +247,7 @@ not pick up a `breakForce` change at runtime.
 **Lesson worth keeping:** render the physics, do not trust aggregate numbers.
 Both the fold-over and the tearing were invisible in the metrics.
 
-### Runaway organs: diagnosis so far (2026-08-06)
+### Runaway organs: diagnosis (superseded by the resolution below, 2026-08-06)
 
 Organs fly apart on start-up. Ruled out by measurement, not argument:
 
@@ -351,7 +351,7 @@ Two USD traps found here:
 - `Gf.Vec3f(*p)` rejects numpy scalars; array attributes must go through
   `Vt.*Array.FromNumpy`, which is also far faster at these mesh sizes.
 
-### Blocking problem — stiff chains are unstable in maximal coordinates
+### Blocking problem — stiff chains are unstable in maximal coordinates (resolved below)
 
 With physically correct stiffness the chain explodes. Beam theory at the floored
 3.2 mm radius and 250 MPa gives ~1030 N·m/rad per joint, while a link masses
@@ -373,6 +373,69 @@ tear model, and it removes the spurious-tearing bug at the same time.
 
 This supersedes the "no articulation root" decision in D2.
 
+### Runaway vine physics and contact: resolved (2026-08-06)
+
+The default simulator no longer explodes. The original tomato GLB visuals and
+all **396 structural links / 396 joints** are retained; the fix changes how those
+links enter PhysX, not which vine is shown or which organs can bend and sever.
+
+The failure was three coupled implementation problems:
+
+1. **Articulation topology/API mismatch.** A single ~400-link plant articulation
+   exceeds the practical Isaac 5.1 limit, while maximal-coordinate chains cannot
+   carry the calibrated stiffness. The stable topology is one reduced-coordinate
+   articulation per organ, rooted on an Xform, with cross-organ base joints
+   explicitly excluded from both articulations. Isaac 5.1 also has no
+   PhysxArticulationAPI fixBase attribute; the invalid call was removed and the
+   main-stem world joint provides the fixed base.
+2. **Dense rest-pose collision was physically invalid.** The artistic vine pose
+   contains intentional intersections at petiole/stem junctions and among
+   foliage. Giving every structural capsule CollisionAPI created hundreds of
+   endpoint-touching/interpenetrating shapes and made PhysX resolve the authored
+   plant itself as penetration. CollisionGroup and pairwise FilteredPairs did not
+   make that mixed articulation graph reliable and were removed.
+3. **Inertia depended on whether a link happened to have a collider.** PhysX
+   used fallback inertia for non-contact links and shape-derived inertia for
+   contact links, so adding robot contact changed the plant dynamics and could
+   invalidate every transform. Each link now authors mass and diagonal inertia
+   independently of contact. The minimum diagonal inertia is 1e-5 kg*m^2: the
+   stable petiole-probe scale and a conservative lump for unresolved leaf/flower
+   art riding the structural links. This is a numerical/effective inertia and
+   must remain a domain-randomisation/calibration parameter, not be cited as a
+   measured tomato material property.
+
+The public collision modes now make the separation explicit:
+
+| Mode | Purpose | tomato_000 result |
+|---|---|---|
+| interaction (default) | Ten non-overlapping main-stem zones at 0.20 m spacing plus one midpoint zone on each of the 18 real SubStem deleafing petioles | 28 contact colliders, stable |
+| none | Constraint/inertia isolation | 0 contact colliders, same structural motion |
+| all | Negative-control diagnostic for the raw dense capsule set | reproduces invalid transforms; do not use for episodes |
+
+This is task-directed collision geometry, not deletion of vine physics. Every
+organ still has mass, inertia, compliant joints, gravity response, visuals, and
+a severable attachment. Contact is authored only where the RB-Y1 should touch
+the plant for deleafing; internal foliage self-collision is intentionally absent
+because the source rest pose is not collision-clean.
+
+**Validation evidence (Isaac Sim 5.1, 240 Hz):**
+
+| Check | Result | Report |
+|---|---|---|
+| Contact off vs default contact, 120 steps | identical 7.2 mm maximum stem sag; 0/121 runaway organs in both; no invalid-transform or broadphase log entries | data/greenhouse_sim/interactive_inertia_floor_none.json and interactive_inertia_floor_contact.json |
+| Default contact, 10 s / 2400 steps | 7.2 mm maximum stem sag; 0/121 runaway organs; no PhysX errors | data/greenhouse_sim/interactive_final_10s.json |
+| Flush cut with ground contact | SubStem_00 dropped 233.22 mm; rest of plant moved 2.44 mm; 0 mm stub/quantisation; succeeded=true; no PhysX errors | data/greenhouse_sim/cut_contact_final.json |
+
+The cut run proves the stable mode is dynamic rather than frozen: the severed
+petiole falls and contacts the ground while the clipped parent vine remains
+compliant and connected.
+
+Remaining calibration work is deliberately not hidden by the stability result:
+validate gripper forces and friction on the 28 interaction zones with the RB-Y1
+finger geometry; calibrate the effective inertia distribution against tracked
+real-vine deflection; and validate sustained-force tearing at 32.5 N. Full
+leaf-blade collision proxies may be added only after producing a collision-clean
+proxy asset, never by re-enabling the raw dense structural capsules.
 ## Research findings, 2026-08-06 (pre-implementation)
 
 ### Stiffness — the current E is 5–15× too low
@@ -475,3 +538,7 @@ deployment (which OrchardBench explicitly disclaims).
 ## Commit log
 
 One logical change per commit; no AI attribution trailers.
+
+- 2026-08-06 — Stabilised vine physics with per-organ articulations, explicit
+  contact-independent inertia, task-directed interaction colliders, cut/ground
+  validation, and a clean 10-second stability soak.

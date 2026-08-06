@@ -37,6 +37,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--segment", type=float, default=0.02, help="capsule length, in metres")
     parser.add_argument("--clip-spacing", type=float, default=0.30, help="trellis clip spacing, in metres")
     parser.add_argument(
+        "--collision-mode",
+        choices=("interaction", "none", "all"),
+        default="interaction",
+        help="interaction uses the stable deleafing contact shell; all is diagnostic only",
+    )
+    parser.add_argument(
         "--no-clips",
         dest="clips",
         action="store_false",
@@ -95,7 +101,14 @@ def main() -> int:
     stage.SetDefaultPrim(stage.GetPrimAtPath("/World"))
     vine_physics.apply_scene_physics(stage)
 
-    rig = vine_physics.author_plant_physics(stage, plant, "/World/Vine", skeletons, vine_usd.gltf_to_usd)
+    rig = vine_physics.author_plant_physics(
+        stage,
+        plant,
+        "/World/Vine",
+        skeletons,
+        vine_usd.gltf_to_usd,
+        collision_mode=args.collision_mode,
+    )
     clips = vine_physics.add_trellis_clips(stage, rig, plant.root, spacing=args.clip_spacing) if args.clips else []
     vine_physics.add_ground_plane(stage, height=min(link.start[2] for link in rig.links))
     print(
@@ -103,7 +116,13 @@ def main() -> int:
         f"{len(rig.cut_joints)} severable organs, {len(clips)} trellis clips"
     )
     report.update(
-        links=len(rig.links), joints=len(rig.joints), severable=len(rig.cut_joints), clips=len(clips), stage="rigged"
+        links=len(rig.links),
+        joints=len(rig.joints),
+        severable=len(rig.cut_joints),
+        clips=len(clips),
+        collision_mode=args.collision_mode,
+        contact_colliders=len(rig.collider_paths),
+        stage="rigged",
     )
     _emit(report, args.report)
 

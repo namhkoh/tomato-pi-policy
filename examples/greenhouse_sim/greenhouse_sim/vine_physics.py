@@ -82,6 +82,13 @@ class TissueProperties:
     density_kg_m3: float = 950.0
     damping_ratio: float = 0.1
 
+    # Minimum rotational inertia per capsule axis. The analytical stem-only
+    # inertia is too small for the stiff mixed-coordinate graph and omits the
+    # leaf/flower art that rides these links. 1e-5 kg*m^2 matches the stable
+    # 10 cm petiole probe and was verified to give identical motion with zero
+    # and 28 active contact shapes.
+    min_diagonal_inertia_kg_m2: float = 1.0e-5
+
     # Floor on the radius used for stiffness. The render mesh tapers the stem to
     # a modelling point (fitted radius reaches 0.5 mm at the tip), but a real
     # tomato apex is ~6.4 mm across, i.e. 3.2 mm in radius (Gao et al. 2024).
@@ -159,6 +166,8 @@ class PlantRig:
     joints: dict[str, str]  # joint prim path -> child link path
     cut_joints: dict[str, str]  # organ label -> joint prim that severs it
     junctions: dict[str, Junction] = dataclasses.field(default_factory=dict)
+    collider_paths: tuple[str, ...] = ()
+    collision_mode: str = "interaction"
 
     def link_paths_for(self, organ: int) -> list[str]:
         return [link.path for link in self.links if link.organ == organ]
@@ -233,7 +242,24 @@ def _define_capsule(
     physx_body.CreateSolverVelocityIterationCountAttr(4)
     physx_body.CreateMaxDepenetrationVelocityAttr(0.5)
     mass_api = UsdPhysics.MassAPI.Apply(body.GetPrim())
-    mass_api.CreateMassAttr(capsule_mass(link.radius, link.length, properties.density_kg_m3))
+    mass = capsule_mass(link.radius, link.length, properties.density_kg_m3)
+    mass_api.CreateMassAttr(mass)
+    # Author inertia independently of collision geometry. Otherwise PhysX uses
+    # fallback inertia for non-contact links but derives capsule inertia for
+    # links that own a contact proxy, so merely enabling robot contact changes
+    # the plant's structural response. A slender solid-cylinder approximation
+    # is sufficient at this link resolution and keeps all bodies consistent.
+    inertia_radius = min(float(link.radius), 0.5 * link.length)
+    transverse = mass * (3.0 * inertia_radius**2 + link.length**2) / 12.0
+    axial = 0.5 * mass * inertia_radius**2
+    inertia_floor = properties.min_diagonal_inertia_kg_m2
+    mass_api.CreateDiagonalInertiaAttr(
+        Gf.Vec3f(
+            max(transverse, inertia_floor),
+            max(transverse, inertia_floor),
+            max(axial, inertia_floor),
+        )
+    )
 
     collider_path = path.AppendChild("Collider")
     capsule = UsdGeom.Capsule.Define(stage, collider_path)
@@ -266,6 +292,7 @@ def _define_joint(
     properties: TissueProperties,
     *,
     breakable: bool,
+    exclude_from_articulation: bool = False,
 ) -> None:
     """A compliant 3-DOF rotational joint anchored at an organ junction."""
     joint = UsdPhysics.Joint.Define(stage, path)
@@ -320,6 +347,11 @@ def _define_joint(
         drive.CreateDampingAttr(float(damping * scale))
 
     del breakable  # Tearing is force-monitored, not breakForce; see `cutting`.
+    if exclude_from_articulation:
+        # Joins two separate organ articulations, so it has to be solved in
+        # maximal coordinates: an articulation is a single tree and cannot span
+        # two roots.
+        joint.CreateExcludeFromArticulationAttr(defaultValue=True)
     # Authored now, while the scene is still being built, so that severing at
     # runtime only changes a value. Creating the attribute mid-simulation
     # instead makes PhysX resync the whole plant.
@@ -335,40 +367,52 @@ def author_plant_physics(
     *,
     properties: TissueProperties | None = None,
     visible_colliders: bool = False,
-    articulated: bool = False,
-    collidable: bool = True,
+    articulated: bool = True,
+    collision_mode: str = "interaction",
 ) -> PlantRig:
     """Build capsule chains and joints for one plant under `root_path`.
 
     `to_stage_frame` converts organ-space points into the stage's frame, so the
     caller owns the coordinate convention rather than this module guessing it.
+
+    Each organ becomes its **own** articulation, joined to its parent by a
+    maximal-coordinate joint. That split is forced by two measured limits, both
+    in `physics_probe.py`. Drives on a generic D6 joint bottom out at about 1 mm
+    of residual sag no matter how stiff they are, while an articulation joint
+    holds rigidly -- and 1 mm compounded through ninety-nine stem joints in
+    series is the half-metre slump the plant used to show. But a single
+    articulation holding the whole plant will not build either: PhysX manages
+    128 links and crashes at 256, against a vine's ~400.
+
+    Per-organ articulations satisfy both. The main stem's ~99 links fit inside
+    one, petioles are a handful each, and the D6 floor now applies once per
+    organ instead of accumulating along the stem. The connecting joint is also
+    the severance point, which is where a maximal-coordinate joint is wanted
+    anyway, since `breakForce` is ignored inside an articulation.
+
+    Structural links and contact geometry are deliberately separate concerns.
+    "interaction" (the default) enables contact only on the main stem and the
+    18 labelled SubStem petioles used by the deleafing benchmark. The remaining
+    capsules still carry mass, inertia, joints, and the original render mesh,
+    but do not enter the contact solver. This matters because the source asset
+    is an artistic rest pose with leaflets and trusses already intersecting;
+    making every structural capsule collide asks PhysX to violently resolve a
+    pose that is intentionally interpenetrating. "all" is retained only for
+    diagnosing that raw collider set, and "none" isolates constraints.
     """
     properties = properties or TissueProperties()
+    if collision_mode not in {"interaction", "none", "all"}:
+        raise ValueError(f"unknown collision mode: {collision_mode}")
     scope = Sdf.Path(root_path).AppendChild("Physics")
     UsdGeom.Scope.Define(stage, scope)
-    if articulated:
-        # Reduced coordinates handle stiff serial chains far better, but PhysX
-        # will not build an articulation this large: a vine is ~400 links, well
-        # past the practical limit, and creation crashes outright. Left off by
-        # default until the chain is decimated enough to fit.
-        UsdPhysics.ArticulationRootAPI.Apply(stage.GetPrimAtPath(scope))
 
-    # A plant's organs interpenetrate at rest: every petiole's first capsule
-    # sits inside the stem it grows from, and leaves rest against each other.
-    # Jointed pairs already ignore each other, but non-adjacent ones do not, so
-    # without this PhysX spends frame one violently separating hundreds of
-    # overlapping bodies and the vine bursts apart. Self-collision is also of no
-    # benefit here -- the rest pose is authored art, not something to resolve.
-    group = UsdPhysics.CollisionGroup.Define(stage, scope.AppendChild("SelfCollisionFilter"))
-    group.CreateFilteredGroupsRel().AddTarget(group.GetPath())
-    # Include the whole physics scope and let the collection expand to every
-    # collider beneath it. Adding several hundred targets one at a time did not
-    # take effect, and a filter that silently fails is worse than none: the
-    # plant then spends every frame resolving interpenetrations it should never
-    # have been asked about.
-    group.GetCollidersCollectionAPI().CreateIncludesRel().SetTargets([scope])
+    # Each organ articulation has native self-collision disabled below. Do not
+    # add an all-to-all USD CollisionGroup here: in Isaac 5.1 the collection is
+    # expanded during articulation parsing and invalidates this mixed
+    # articulation/maximal-coordinate graph before the first step.
 
     links: list[Link] = []
+    collider_paths: list[Sdf.Path] = []
     joints: dict[str, str] = {}
     cut_joints: dict[str, str] = {}
     junctions: dict[str, Junction] = {}
@@ -387,10 +431,41 @@ def author_plant_physics(
             continue
 
         organ_scope = scope.AppendChild(f"Organ_{organ.index:04d}")
-        UsdGeom.Scope.Define(stage, organ_scope)
+        UsdGeom.Xform.Define(stage, organ_scope)
+        if articulated:
+            # One articulation per organ, small enough for PhysX to build and
+            # rigid enough that its internal joints do not sag.
+            organ_prim = stage.GetPrimAtPath(organ_scope)
+            UsdPhysics.ArticulationRootAPI.Apply(organ_prim)
+
+            from pxr import PhysxSchema  # noqa: PLC0415
+
+            physx_articulation = PhysxSchema.PhysxArticulationAPI.Apply(organ_prim)
+            physx_articulation.CreateArticulationEnabledAttr(defaultValue=True)
+            # Organs are authored interpenetrating their neighbours; resolving
+            # that inside the articulation serves no purpose.
+            physx_articulation.CreateEnabledSelfCollisionsAttr(defaultValue=False)
         chain: list[Link] = []
+        contact_segments: set[int] = set()
+        if collision_mode == "all":
+            contact_segments.update(range(points.shape[0] - 1))
+        elif collision_mode == "interaction":
+            arcs = centreline.arc_lengths()
+            centres = 0.5 * (arcs[:-1] + arcs[1:])
+            if organ.index == plant.root:
+                # Ten separated main-stem contact zones on a two-metre vine.
+                # Dense endpoint-touching capsules are exactly what invalidated
+                # PhysX; physical spacing keeps the result independent of the
+                # requested structural segment length.
+                for target in np.arange(0.10, float(arcs[-1]), 0.20):
+                    contact_segments.add(int(np.argmin(np.abs(centres - target))))
+            elif organ.label.startswith("SubStem_"):
+                # One graspable zone at the middle of each of the 18 real
+                # deleafing petioles, clear of its interpenetrating stem base.
+                contact_segments.add(int(np.argmin(np.abs(centres - 0.5 * arcs[-1]))))
 
         for segment in range(points.shape[0] - 1):
+            contactable = segment in contact_segments
             radius = float(max(0.5 * (centreline.radii[segment] + centreline.radii[segment + 1]), 1e-4))
             link = Link(
                 path=str(organ_scope.AppendChild(f"Link_{segment:03d}")),
@@ -406,9 +481,10 @@ def author_plant_physics(
                 link,
                 properties,
                 visible=visible_colliders,
-                collidable=collidable,
+                collidable=contactable,
             )
-            del collider
+            if contactable:
+                collider_paths.append(collider)
             chain.append(link)
             links.append(link)
 
@@ -458,6 +534,9 @@ def author_plant_physics(
             base_stiffness,
             properties,
             breakable=parent_link is not None,
+            # This joint spans two organ articulations, so it must be solved in
+            # maximal coordinates. That is also what makes it severable.
+            exclude_from_articulation=articulated and parent_link is not None,
         )
         # No extra anchor for the main stem: its base joint already has an empty
         # body0, which attaches it to the world and gives the articulation its
@@ -478,7 +557,13 @@ def author_plant_physics(
             )
 
     return PlantRig(
-        root_path=root_path, links=links, joints=joints, cut_joints=cut_joints, junctions=junctions
+        root_path=root_path,
+        links=links,
+        joints=joints,
+        cut_joints=cut_joints,
+        junctions=junctions,
+        collider_paths=tuple(str(path) for path in collider_paths),
+        collision_mode=collision_mode,
     )
 
 
