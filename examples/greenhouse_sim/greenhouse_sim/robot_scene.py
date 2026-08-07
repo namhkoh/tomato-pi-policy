@@ -21,16 +21,17 @@ from pxr import UsdPhysics  # noqa: E402
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[3]
 DEFAULT_ROBOT_ASSET = REPOSITORY_ROOT / "data" / "greenhouse_sim" / "robots" / "rby1a_v1.0.usd"
 DEFAULT_ROBOT_PATH = "/World/RBY1"
-# The right tool is about 0.25 m to the robot's right in the SDK ready pose.
-# Offset the base left of Vine_0000 and move it toward the bed so that the tool,
-# rather than only the chassis centre, is directly in front of the dynamic vine.
+# Offset the base left of Vine_0000 and move it toward the bed so that the
+# greenhouse pre-contact right-arm pose reaches the lower petiole workspace.
+# The chassis front remains 133 mm clear of the authored trough collision.
 # Main_Cultivation_Zone's authored collision floor is z=-0.3050817 m.
-DEFAULT_POSITION_M = np.array([6.6191, 2.4200, -0.3050817], dtype=np.float64)
+DEFAULT_POSITION_M = np.array([6.6191, 2.5000, -0.3050817], dtype=np.float64)
 DEFAULT_YAW_DEGREES = 90.0
+DEFAULT_POSE_NAME = "greenhouse_precontact_substem_00"
 
 # The official Model A ready pose used by the SDK's multi-control and leader-arm
 # examples.  Angular drive and PhysX joint-state attributes are in degrees.
-READY_POSE_DEGREES = {
+SDK_READY_POSE_DEGREES = {
     **{name: value for name, value in zip(
         (f"torso_{index}" for index in range(6)),
         (0.0, 45.0, -90.0, 45.0, 0.0, 0.0),
@@ -50,6 +51,31 @@ READY_POSE_DEGREES = {
     "head_1": 0.0,
 }
 
+# Numerical IK from the exact RB-Y1 Model A v1.0 URDF.  With the default base
+# pose this places the right flat blade in front of Vine_0000/SubStem_00 while
+# retaining an air gap, so neither the blade nor its U support spawns in
+# contact with the plant.  The torso, left arm, and head retain the SDK vector.
+GREENHOUSE_PRECONTACT_RIGHT_ARM_DEGREES = (
+    -98.832,
+    -54.099,
+    53.447,
+    -70.536,
+    -34.738,
+    52.698,
+    -53.615,
+)
+READY_POSE_DEGREES = {
+    **SDK_READY_POSE_DEGREES,
+    **{
+        name: value
+        for name, value in zip(
+            (f"right_arm_{index}" for index in range(7)),
+            GREENHOUSE_PRECONTACT_RIGHT_ARM_DEGREES,
+            strict=True,
+        )
+    },
+}
+
 
 @dataclasses.dataclass(frozen=True)
 class RobotPlacement:
@@ -57,6 +83,7 @@ class RobotPlacement:
     asset: pathlib.Path
     position_m: tuple[float, float, float]
     yaw_degrees: float
+    pose_name: str
     initialized_joints: tuple[str, ...]
     cameras: tuple[str, ...]
     knife_blade: str
@@ -139,6 +166,7 @@ def add_fitted_robot(
         asset=asset,
         position_m=tuple(float(value) for value in position),
         yaw_degrees=float(yaw_degrees),
+        pose_name=DEFAULT_POSE_NAME,
         initialized_joints=initialized,
         cameras=cameras,
         knife_blade=blade,

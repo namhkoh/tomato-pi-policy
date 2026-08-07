@@ -713,8 +713,14 @@ def add_ground_plane(
     height: float = 0.0,
     size: float = 20.0,
     centre_xy: tuple[float, float] = (0.0, 0.0),
+    filtered_paths: tuple[str, ...] = (),
 ) -> None:
-    """A static floor, so severed organs land instead of falling forever."""
+    """A static floor, so severed organs land instead of falling forever.
+
+    ``filtered_paths`` excludes synthetic catch trays from actors such as the
+    robot.  The tray is bookkeeping for detached foliage, not greenhouse
+    structure, and must not become an invisible obstacle to an approaching arm.
+    """
     plane = UsdGeom.Cube.Define(stage, Sdf.Path(path))
     plane.CreateSizeAttr(1.0)
     transformable = UsdGeom.Xformable(plane.GetPrim())
@@ -723,6 +729,11 @@ def add_ground_plane(
     )
     transformable.AddScaleOp().Set(Gf.Vec3f(size, size, size * 0.01))
     UsdPhysics.CollisionAPI.Apply(plane.GetPrim())
+    if filtered_paths:
+        filtered = UsdPhysics.FilteredPairsAPI.Apply(plane.GetPrim())
+        relationship = filtered.CreateFilteredPairsRel()
+        for filtered_path in filtered_paths:
+            relationship.AddTarget(Sdf.Path(filtered_path))
     UsdGeom.Imageable(plane).CreatePurposeAttr(UsdGeom.Tokens.guide)
 
 

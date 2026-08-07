@@ -45,6 +45,7 @@ class VineRuntime:
     clips: list
     severer: object
     organ_indices: dict[str, int]
+    cut_sites: dict[str, tuple[float, float, float]]
     rest_positions: object | None = None
 
 
@@ -54,7 +55,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vine-dir", type=pathlib.Path, default=_DEFAULT_VINE_DIR)
     parser.add_argument("--robot", type=pathlib.Path, default=_DEFAULT_ROBOT)
     parser.add_argument("--no-robot", action="store_true", help="run the accepted vine-only environment")
-    parser.add_argument("--robot-position", type=float, nargs=3, default=(6.6191, 2.42, -0.3050817))
+    parser.add_argument("--robot-position", type=float, nargs=3, default=(6.6191, 2.50, -0.3050817))
     parser.add_argument("--robot-yaw", type=float, default=90.0)
     parser.add_argument("--physics-vines", type=int, default=1)
     parser.add_argument("--segment", type=float, default=0.02)
@@ -87,6 +88,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--recover-steps", type=int, default=240)
     parser.add_argument("--cut", type=str, default=None, metavar="SUBSTEM")
     parser.add_argument("--post-cut-steps", type=int, default=240)
+    parser.add_argument(
+        "--contact-diagnostics",
+        action="store_true",
+        help="record robot contact pairs and impulses during settling",
+    )
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--warmup", type=int, default=40)
@@ -220,9 +226,17 @@ def main() -> int:
             height=floor - 0.005,
             size=1.2,
             centre_xy=(float(placement_centre[0]), float(placement_centre[1])),
+            filtered_paths=(f"{robot_placement.root_path}/base",)
+            if robot_placement is not None
+            else (),
         )
 
         organ_indices = {organ.label: organ.index for organ in plant.organs}
+        cut_sites = {
+            organ.label: tuple(float(value) for value in points_to_stage([organ.attachment])[0])
+            for organ in plant.organs
+            if organ.label.startswith("SubStem_") and organ.attachment is not None
+        }
         runtimes.append(
             VineRuntime(
                 name=static_prim.GetName(),
@@ -234,6 +248,7 @@ def main() -> int:
                 clips=clips,
                 severer=cutting.Severer(stage, rig, skeletons, organ_indices),
                 organ_indices=organ_indices,
+                cut_sites=cut_sites,
             )
         )
 
@@ -255,23 +270,30 @@ def main() -> int:
 
     from isaacsim.core.api import SimulationContext
 
+    contact_diagnostics = RobotContactDiagnostics(stage) if args.contact_diagnostics else None
     context = SimulationContext(
         physics_dt=1.0 / 240.0,
         rendering_dt=1.0 / 60.0,
         stage_units_in_meters=1.0,
     )
     context.initialize_physics()
+    if contact_diagnostics is not None:
+        contact_diagnostics.subscribe()
     context.get_physics_context().set_gravity(-9.81)
     for runtime in runtimes:
         runtime.rest_positions = _positions(stage, _base_link_paths(runtime.rig))
 
     if not headless:
-        _disable_native_mouse_interaction(app)
+        report["native_transform_selector_disabled"] = _disable_native_mouse_interaction(app)
         _focus_viewport(camera_path)
 
     context.play()
     for _ in range(args.settle_steps):
         context.step(render=False)
+
+    if contact_diagnostics is not None:
+        report["robot_contacts"] = contact_diagnostics.summary
+        contact_diagnostics.close()
 
     if headless:
         success = _run_headless_checks(stage, context, runtimes, args, report)
@@ -372,16 +394,35 @@ def _author_camera(stage, placement, args, Gf, Sdf, UsdGeom) -> str:
     return str(path)
 
 
-def _disable_native_mouse_interaction(app) -> None:
-    """Avoid PhysX's collider-only grab path; visible-mesh pulling owns Shift-drag."""
+def _disable_native_mouse_interaction(app) -> bool:
+    """Give the benchmark's visible-mesh pull exclusive ownership of selection."""
     import carb.settings
     import omni.physx.bindings._physx as physx_bindings
 
     settings = carb.settings.get_settings()
     settings.set_bool(physx_bindings.SETTING_MOUSE_GRAB, False)
     settings.set_bool(physx_bindings.SETTING_MOUSE_INTERACTION_ENABLED, False)
+
+    # Isaac Sim 5.1's mixed USD/Fabric transform selector can forward a handled
+    # selection as None to the next manipulator.  prim.core then indexes that
+    # None as a path type and raises KeyError(NoneType).  This environment uses
+    # its own renderer raycast and never needs the native transform gizmo, so
+    # clear stale selection and unsubscribe only that selector's stage listener.
+    selector_disabled = False
+    try:
+        import omni.usd
+        from omni.kit.manipulator.selector import get_manipulator_selector
+
+        omni.usd.get_context().get_selection().set_selected_prim_paths([], False)
+        selector = get_manipulator_selector("")
+        if selector is not None:
+            selector.destroy()
+            selector_disabled = True
+    except Exception as exc:
+        print(f"could not disable native transform selector: {exc}")
     for _ in range(2):
         app.update()
+    return selector_disabled
 
 
 def _focus_viewport(camera_path: str) -> None:
@@ -393,6 +434,79 @@ def _focus_viewport(camera_path: str) -> None:
             viewport.set_active_camera(camera_path)
     except Exception as exc:
         print(f"could not focus inspection camera: {exc}")
+
+
+class RobotContactDiagnostics:
+    """Opt-in contact trace for locating unsafe task-pose intersections."""
+
+    def __init__(self, stage):
+        from pxr import PhysxSchema
+        from pxr import UsdPhysics
+
+        self._pairs: dict[tuple[str, str], dict] = {}
+        self._subscription = None
+        self._reported_bodies = 0
+        for prim in stage.Traverse():
+            path = str(prim.GetPath())
+            if path.startswith("/World/RBY1/") and prim.HasAPI(UsdPhysics.RigidBodyAPI):
+                api = PhysxSchema.PhysxContactReportAPI.Apply(prim)
+                api.CreateThresholdAttr().Set(0.0)
+                self._reported_bodies += 1
+
+    def subscribe(self) -> None:
+        from omni.physx import get_physx_simulation_interface
+
+        self._subscription = get_physx_simulation_interface().subscribe_contact_report_events(
+            self._on_contacts
+        )
+
+    @staticmethod
+    def _vector(value) -> list[float]:
+        return [float(value.x), float(value.y), float(value.z)]
+
+    def _on_contacts(self, headers, data) -> None:
+        import numpy as np
+        from pxr import PhysicsSchemaTools
+
+        for header in headers:
+            collider0 = str(PhysicsSchemaTools.intToSdfPath(header.collider0))
+            collider1 = str(PhysicsSchemaTools.intToSdfPath(header.collider1))
+            pair_key = tuple(sorted((collider0, collider1)))
+            pair = self._pairs.setdefault(
+                pair_key,
+                {
+                    "collider0": pair_key[0],
+                    "collider1": pair_key[1],
+                    "events": 0,
+                    "contacts": 0,
+                    "minimum_separation_mm": float("inf"),
+                    "maximum_impulse_ns": 0.0,
+                    "maximum_impulse_vector_ns": [0.0, 0.0, 0.0],
+                },
+            )
+            pair["events"] += 1
+            start = header.contact_data_offset
+            stop = start + header.num_contact_data
+            pair["contacts"] += header.num_contact_data
+            for contact in data[start:stop]:
+                impulse = np.asarray(self._vector(contact.impulse), dtype=np.float64)
+                magnitude = float(np.linalg.norm(impulse))
+                pair["minimum_separation_mm"] = min(
+                    pair["minimum_separation_mm"], float(contact.separation) * 1000.0
+                )
+                if magnitude > pair["maximum_impulse_ns"]:
+                    pair["maximum_impulse_ns"] = magnitude
+                    pair["maximum_impulse_vector_ns"] = impulse.tolist()
+
+    @property
+    def summary(self) -> dict:
+        pairs = sorted(
+            self._pairs.values(), key=lambda item: item["maximum_impulse_ns"], reverse=True
+        )
+        return {"reported_bodies": self._reported_bodies, "pairs": pairs}
+
+    def close(self) -> None:
+        self._subscription = None
 
 
 class InteractionController:
@@ -683,6 +797,9 @@ def _run_headless_checks(stage, context, runtimes, args, report: dict) -> bool:
         robot_stability = _robot_stability(stage, args)
         report["robot_stability"] = robot_stability
         success = success and bool(robot_stability["succeeded"])
+        robot_precontact = _robot_precontact(stage, runtimes[0])
+        report["robot_precontact"] = robot_precontact
+        success = success and bool(robot_precontact["succeeded"])
 
     if args.airflow_probe_steps > 0:
         from greenhouse_sim import vine_interaction
@@ -749,6 +866,85 @@ def _robot_stability(stage, args) -> dict:
         "base_position_m": base_position.tolist(),
         "base_displacement_mm": (displacement * 1000.0).tolist(),
         "base_tilt_degrees": tilt_degrees,
+        "succeeded": succeeded,
+    }
+
+
+def _robot_precontact(stage, runtime: VineRuntime) -> dict:
+    """Measure the settled knife pose against the first real lower petiole."""
+    import numpy as np
+    from pxr import Gf
+    from pxr import Usd
+    from pxr import UsdGeom
+
+    target_label = "SubStem_00"
+    target_position = runtime.cut_sites.get(target_label)
+    if target_position is None:
+        return {"succeeded": False, "error": f"missing cut site {target_label}"}
+
+    knife_root_path = "/World/RBY1/ee_right/attachments/DeleafKnife"
+    blade_path = f"{knife_root_path}/Blade"
+    arc_path = f"{knife_root_path}/Arc"
+    knife_root = stage.GetPrimAtPath(knife_root_path)
+    blade = stage.GetPrimAtPath(blade_path)
+    arc = stage.GetPrimAtPath(arc_path)
+    if not knife_root.IsValid() or not blade.IsValid() or not arc.IsValid():
+        return {"succeeded": False, "error": "fitted knife geometry is missing"}
+
+    target = np.asarray(target_position, dtype=np.float64)
+    cache = UsdGeom.BBoxCache(
+        Usd.TimeCode.Default(), [UsdGeom.Tokens.default_, UsdGeom.Tokens.render]
+    )
+
+    def bounds_and_distance(prim):
+        extent = cache.ComputeWorldBound(prim).ComputeAlignedRange()
+        minimum = np.asarray(extent.GetMin(), dtype=np.float64)
+        maximum = np.asarray(extent.GetMax(), dtype=np.float64)
+        outside = np.maximum(np.maximum(minimum - target, target - maximum), 0.0)
+        return minimum, maximum, float(np.linalg.norm(outside))
+
+    blade_min, blade_max, blade_distance = bounds_and_distance(blade)
+    arc_min, arc_max, arc_distance = bounds_and_distance(arc)
+    knife_matrix = UsdGeom.Xformable(knife_root).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+    blade_matrix = UsdGeom.Xformable(blade).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+    blade_extension = np.asarray(
+        blade_matrix.TransformDir(Gf.Vec3d(0.0, -1.0, 0.0)).GetNormalized(),
+        dtype=np.float64,
+    )
+    arc_facing = np.asarray(
+        blade_matrix.TransformDir(Gf.Vec3d(0.0, 0.0, 1.0)).GetNormalized(),
+        dtype=np.float64,
+    )
+    finite = bool(
+        np.isfinite(target).all()
+        and np.isfinite(blade_min).all()
+        and np.isfinite(blade_max).all()
+        and np.isfinite(arc_min).all()
+        and np.isfinite(arc_max).all()
+        and np.isfinite(blade_extension).all()
+        and np.isfinite(arc_facing).all()
+    )
+    # Both components must be within a short final approach but outside a 5 mm
+    # no-spawn-contact margin.  The blade points into the row and the U faces up.
+    succeeded = bool(
+        finite
+        and 0.005 < blade_distance < 0.200
+        and 0.005 < arc_distance < 0.200
+        and blade_extension[1] > 0.70
+        and arc_facing[2] > 0.70
+    )
+    return {
+        "vine": runtime.name,
+        "target": target_label,
+        "target_position_m": target.tolist(),
+        "knife_root_position_m": list(knife_matrix.ExtractTranslation()),
+        "blade_extension": blade_extension.tolist(),
+        "arc_facing": arc_facing.tolist(),
+        "blade_distance_to_target_mm": blade_distance * 1000.0,
+        "arc_distance_to_target_mm": arc_distance * 1000.0,
+        "blade_bounds_m": {"min": blade_min.tolist(), "max": blade_max.tolist()},
+        "arc_bounds_m": {"min": arc_min.tolist(), "max": arc_max.tolist()},
+        "finite": finite,
         "succeeded": succeeded,
     }
 

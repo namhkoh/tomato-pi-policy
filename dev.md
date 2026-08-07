@@ -583,14 +583,30 @@ regression now checks the actual Gf camera forward/up axes and actual blade
 projection, not only the source NumPy matrices.
 
 `interactive_greenhouse.py` now composes the robot by default at
-`(6.6191, 2.4200, -0.3050817)` m with 90 degree yaw, where the Z value is the
-measured cultivation-zone collision floor. The 250 mm negative-X offset
-accounts for the ready right tool's lateral offset, aligning that tool with
-dynamic `Vine_0000` at X=6.86912 m. The closer Y stance leaves approximately
-213 mm between the chassis proxy and the trough front. `--no-robot` retains the accepted
-vine-only launcher. All 22 torso, arm, and head joint targets and initial
-PhysX joint states are authored to the official SDK ready pose before physics
-starts; this prevents a zero-pose startup sweep through the greenhouse.
+`(6.6191, 2.5000, -0.3050817)` m with 90 degree yaw, where the Z value is the
+measured cultivation-zone collision floor. The 250 mm negative-X offset aligns
+the right workspace with dynamic `Vine_0000` at X=6.86912 m, while the Y stance
+leaves 133 mm between the chassis proxy and the trough front. `--no-robot`
+retains the accepted vine-only launcher. The official 22-joint SDK ready vector
+is retained as `SDK_READY_POSE_DEGREES`; the greenhouse launcher changes only
+the right arm to the exact v1.0-URDF IK vector
+`[-98.832, -54.099, 53.447, -70.536, -34.738, 52.698, -53.615]` degrees. The
+solution keeps the elbow on the aisle side and routes the forearm over the
+trough toward the real `SubStem_00` attachment, with no startup contact.
+
+The first nominal IK attempt exposed an independent fixture bug rather than a
+robot balance problem. Each dynamic vine owns a 1.2 m hidden `CatchPlane` cube
+at bed height to catch severed foliage. It is synthetic episode bookkeeping,
+not greenhouse structure, but it was colliding with the robot. A 10-step PhysX
+trace measured 76.21 mm initial penetration and up to 1123.16 N*s impulse
+between the tray and right-arm capsules, tipping the robot within 60 steps even
+at the previously stable base stance. `add_ground_plane` now accepts filtered
+actor paths, and each interactive catch tray filters the actual
+`/World/RBY1/base` articulation root. Targeting the reference root alone was
+insufficient; PhysX filtering requires the authored articulation-root prim.
+This preserves tray contact for detached vine organs while removing the
+invisible robot obstacle. `--contact-diagnostics` records collider pairs,
+separation, and maximum impulse for future task-pose acceptance.
 
 **Automated fit and stability acceptance (Isaac Sim 5.1):**
 
@@ -602,14 +618,19 @@ starts; this prevents a zero-pose startup sweep through the greenhouse.
 | Integrated closer-stance 480-step soak | 34/34 rigid bodies finite; base settled 3.675 mm laterally and 8.203 mm vertically; 2.078 degree tilt; succeeded=true | `data/greenhouse_sim/robot_front_acceptance.json` |
 | Vine during robot soak | 121/121 tracked organs finite; 0 runaway organs | same report |
 | Live camera path | right wrist D405 rendered from its fitted USD optical frame after the soak | `data/greenhouse_sim/d405_right_wrist_final.png` |
+| Pre-contact 480-step soak | 34/34 rigid bodies finite; base settled 11.499 mm forward and 8.203 mm vertically; 2.078 degree tilt; succeeded=true | `data/greenhouse_sim/robot_precontact_acceptance.json` |
+| Measured lower-petiole reach | settled flat blade 152.691 mm and upward U-support 100.548 mm from the actual `Vine_0000/SubStem_00` attachment; blade points into the row and arc faces +Z; no spawn contact | same report |
+| Contact trace | only normal chassis/wheel support against the cultivation-zone floor; no catch-tray, trough, vine, arm, or knife contact | same report |
+| Error scan | no Python traceback, selector `NoneType`, ill-formed `SdfPath`, PhysX error, invalid transform, broadphase fault, or explosion signature | `kit_20260806_220854.log` |
 
-This clears the **asset import, hardware fit, optical-frame, and non-contact
-stability** gate. It does not yet claim robot deleafing success: arm
-reachability, gripper contact/friction, blade-to-petiole contact, robot-driven
-cut triggering, and sustained-force tearing remain the next explicit gate.
-Default ready-pose wrist images mainly see the floor/nearby structure because
-the arms are stowed; task camera coverage must be evaluated in reachable
-pre-contact poses rather than misreported as a mounting failure.
+This clears the **asset import, hardware fit, optical-frame, collision-clear
+task reach, and pre-contact stability** gate. It does not yet claim robot
+deleafing success: the measured 100-153 mm air gap is intentional and still
+requires a controlled final approach. Gripper contact/friction,
+blade-to-petiole contact, robot-driven cut triggering, and sustained-force
+tearing remain the next explicit gate. The existing `C` command directly
+releases the selected cut joint; it is not evidence of physical blade-triggered
+severance.
 
 A follow-up visual review requested that the U arc face upward so the flat plate
 is presented cleanly for cutting. Rolling the knife 90 degrees about its
@@ -619,6 +640,18 @@ extension. The same review requested direct camera access: the interaction
 window and keys `1`-`4` now switch the active viewport between inspection,
 head D405, left-wrist D405, and right-wrist D405 video respectively. Headless
 captures remain available through `--capture-camera`.
+
+The reported `KeyError: <class 'NoneType'>` in
+`omni.kit.manipulator.selector` was isolated from physics. Isaac Sim 5.1's
+mixed USD/Fabric selector can mark a selection handled by setting it to `None`,
+then pass that value to the transform manipulator, which indexes it as an Sdf
+path type and emits the subsequent ill-formed empty-`SdfPath` warning. The
+greenhouse does not use the native transform gizmo: visible-mesh Shift-drag is
+owned by `VisualPull`. GUI startup now clears stale USD selection and destroys
+only the default transform selector's event subscription, while retaining
+viewport camera navigation and the custom pull path. The report records
+`native_transform_selector_disabled=true` when this targeted workaround is
+active.
 
 ## Research findings, 2026-08-06 (pre-implementation)
 
@@ -735,3 +768,7 @@ One logical change per commit; no AI attribution trailers.
 - 2026-08-06 — Rolled the knife arc upward without changing blade extension,
   aligned the ready right tool with Vine_0000 from a collision-clear closer
   stance, and added live inspection/head/wrist camera switching.
+- 2026-08-06 — Removed the synthetic foliage catcher's invisible collision
+  with the RB-Y1 articulation, added contact tracing and measured petiole-range
+  acceptance, staged a trough-clear right-arm pre-contact pose, and disabled
+  the faulty unused Isaac transform selector in the interactive GUI.

@@ -196,11 +196,19 @@ U-shaped arc is support geometry and cannot trigger a cut. The knife is rolled
 about its unchanged blade axis so that arc faces upward in the ready pose and
 the flat plate is presented cleanly toward the cut.
 
-The default base pose is `(6.6191, 2.4200, -0.3050817)` m at 90 degrees yaw.
-It offsets the chassis left by the ready right-tool displacement, placing the
-right tool directly in front of dynamic `Vine_0000`, and keeps the chassis
-clear of the trough. Override it with `--robot-position X Y Z` when testing a
-different vine or arm posture.
+The default base pose is `(6.6191, 2.5000, -0.3050817)` m at 90 degrees yaw,
+leaving 133 mm between the chassis proxy and the trough front. The official SDK
+ready vector is retained as a separate reference; the launcher replaces only
+the right arm with a collision-aware pre-contact IK pose for
+`Vine_0000/SubStem_00`. The elbow remains on the aisle side of the trough and
+the forearm crosses above it. Override the stance with
+`--robot-position X Y Z` when testing a different vine or posture.
+
+Each dynamic vine has a finite hidden catch tray so severed foliage does not
+fall forever. This is a synthetic episode fixture rather than greenhouse
+structure, so its collision pair with the `/World/RBY1/base` articulation is
+filtered. Without that filter, a low arm pose can intersect the tray and receive
+an immediate depenetration impulse even though no visible object was touched.
 
 Inspect each fitted assembly without greenhouse occlusion:
 
@@ -214,17 +222,19 @@ Run the integrated non-contact stability check and capture a fitted D405:
 
 ```bash
 $ISAACSIM/python.sh examples/greenhouse_sim/interactive_greenhouse.py \
-    --headless --settle-steps 480 \
+    --headless --settle-steps 480 --contact-diagnostics \
     --capture-camera right_wrist \
     --screenshot data/greenhouse_sim/d405_right_wrist.png \
-    --report data/greenhouse_sim/robot_fit_acceptance.json
+    --report data/greenhouse_sim/robot_precontact_acceptance.json
 ```
 
-The accepted ready pose is stable and all three optical frames are validated.
-The wrist cameras look down and outward; task views will become useful when the
-arms move from their stowed ready pose into pre-contact poses. Robot-to-vine
-contact, reachability, gripper friction, and knife-driven cuts remain the next
-gate before benchmark and RL work.
+The accepted pose is stable and all three optical frames are validated. The
+480-step report measures the settled flat blade 152.7 mm and upward U-support
+100.5 mm from the actual lower-petiole attachment. All 34 robot rigid bodies
+remain finite, the base settles with 2.08 degrees tilt, and the contact trace
+contains only wheel/chassis support against the greenhouse floor. A final
+approach controller, blade-to-petiole contact trigger, gripper friction, and
+robot-driven cut remain the next gate before benchmark and RL work.
 
 For live video, launch without `--headless` and use the interaction-window
 camera buttons or keys `1`-`4`; the selected D405 becomes the active viewport.
@@ -262,6 +272,14 @@ scene layer clears it automatically, so this should only appear if you open
 
 **The scene is slow or the GPU runs out of memory.** Reduce
 `--plants-per-bed`; each vine is ~750k triangles.
+
+**`KeyError: <class 'NoneType'>` from `manipulator_selector.py`, followed by an
+ill-formed empty `SdfPath`.** This is an Isaac Sim 5.1 transform-gizmo selector
+bug: mixed USD/Fabric selection can forward a handled selection as `None` to
+the next manipulator. It is not a PhysX or vine failure. The live greenhouse
+clears stale selection and unsubscribes that native selector because its own
+rendered-mesh raycast owns Shift-drag. Camera navigation and custom vine pulling
+remain enabled.
 
 ## How a vine becomes addressable
 
