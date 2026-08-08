@@ -39,7 +39,18 @@ def test_knife_projects_along_the_right_tool_axis() -> None:
     np.testing.assert_allclose(robot_hardware.KNIFE_TRANSLATION_M, [0.0, 0.0, 0.0], atol=0.0)
 
 
-def test_wrist_cameras_look_down_and_outward() -> None:
+def test_wrist_camera_brackets_align_the_reference_m3_pair() -> None:
+    for rotation, translation in (
+        (robot_hardware.LEFT_CAMERA_ROTATION, robot_hardware.LEFT_CAMERA_TRANSLATION_M),
+        (robot_hardware.RIGHT_CAMERA_ROTATION, robot_hardware.RIGHT_CAMERA_TRANSLATION_M),
+    ):
+        transformed = (rotation @ robot_hardware.WRIST_BRACKET_BOLT_CENTRES_M.T).T + translation
+        np.testing.assert_allclose(transformed, robot_hardware.WRIST_REFERENCE_BOLT_CENTRES_M, atol=1e-12)
+    np.testing.assert_allclose(robot_hardware.LEFT_CAMERA_ROTATION, np.eye(3), atol=0.0)
+    np.testing.assert_allclose(robot_hardware.RIGHT_CAMERA_ROTATION, np.eye(3), atol=0.0)
+
+
+def test_wrist_camera_cad_axes_match_the_reference_mount() -> None:
     manifest = robot_hardware.load_manifest()
     camera_rotation = np.asarray(manifest["mounts"]["camera_bracket_to_d405"]["rotation_matrix"])
     camera_forward = np.array([0.0, 1.0, 0.0])
@@ -47,8 +58,7 @@ def test_wrist_cameras_look_down_and_outward() -> None:
     right = robot_hardware.RIGHT_CAMERA_ROTATION @ camera_rotation @ camera_forward
 
     assert left[1] > 0.3 and left[2] < -0.9
-    assert right[1] < -0.3 and right[2] < -0.9
-    np.testing.assert_allclose(left[[0, 2]], right[[0, 2]], atol=1e-9)
+    np.testing.assert_allclose(left, right, atol=1e-12)
 
 
 def test_head_camera_faces_forward_through_bracket_window() -> None:
@@ -113,11 +123,15 @@ def test_authored_stage_has_three_cameras_and_one_cutting_part() -> None:
     np.testing.assert_allclose(head_forward, [1.0, 0.0, 0.0], atol=1e-9)
     np.testing.assert_allclose(head_up, [0.0, 0.0, 1.0], atol=1e-9)
     assert left_forward[1] > 0.3 and left_forward[2] < -0.9
-    assert right_forward[1] < -0.3 and right_forward[2] < -0.9
-    assert left_up[0] > 0.9 and right_up[0] > 0.9
-    np.testing.assert_allclose(left_up, right_up, atol=1e-9)
+    np.testing.assert_allclose(left_forward, right_forward, atol=1e-9)
+    assert left_up[0] > 0.9 and right_up[0] < -0.9
+    np.testing.assert_allclose(left_up, -right_up, atol=1e-9)
     assert stage.GetPrimAtPath(report.cameras[0]).GetAttribute("tomato:sensorRollDegrees").Get() == 0.0
     assert stage.GetPrimAtPath(report.cameras[1]).GetAttribute("tomato:sensorRollDegrees").Get() == 180.0
+    for attachment in report.attachments[:2]:
+        prim = stage.GetPrimAtPath(attachment)
+        assert prim.GetAttribute("tomato:mountInterface").Get() == "rby1_wrist_m3_pair"
+        assert prim.GetAttribute("tomato:mountBoltSpacingMillimeters").Get() == 18.0
 
     blade_matrix = UsdGeom.Xformable(stage.GetPrimAtPath(report.cutting_surfaces[0])).ComputeLocalToWorldTransform(
         Usd.TimeCode.Default()

@@ -193,7 +193,8 @@ capsules omitted by Isaac's importer, adds conservative base and left-gripper
 contact proxies, and fits the supplied hardware under `greenhouse/robot_assets/`:
 
 - one Intel RealSense D405 and bracket on the head;
-- one D405 and bent bracket on each end effector;
+- one D405 and bent bracket on the exact 18 mm-spaced M3 screw pair of each
+  end effector, using the mirrored RB-Y1 v1.1 CAD mounting datum;
 - the supplied deleafing knife directly on the right end-effector flange.
 
 The original right gripper body and both tongs are fully removed from rendering
@@ -232,12 +233,13 @@ Run the integrated non-contact stability check and capture a fitted D405:
 ```bash
 $ISAACSIM/python.sh examples/greenhouse_sim/interactive_greenhouse.py \
     --headless --settle-steps 480 --contact-diagnostics \
-    --capture-camera inspection \
-    --screenshot data/greenhouse_sim/robot_opposite_knife_only_acceptance.png \
-    --report data/greenhouse_sim/robot_opposite_knife_only_acceptance.json
+    --capture-camera right_wrist \
+    --screenshot data/greenhouse_sim/right_wrist_d405_acceptance.png \
+    --report data/greenhouse_sim/robot_wrist_screw_mount_acceptance.json
 ```
 
-The accepted pose is stable and all three optical frames remain present. The
+The accepted pose is stable, both wrist brackets coincide with the v1.1 CAD's
+actual screw pair, and all three optical frames remain present. The
 480-step report measures the settled flat blade 118.1 mm and upward U-support
 65.2 mm from the actual lower-petiole attachment. All 34 robot rigid bodies
 remain finite, the base settles with 2.08 degrees tilt, and the contact trace

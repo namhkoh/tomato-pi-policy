@@ -580,13 +580,24 @@ geometry, so support contact remains physical without corrupting cut semantics.
 
 The supplied bent D405 bracket STEP was decomposed into the exact 27 x 59.920 x
 34.619 mm bracket and 42.090 x 23 x 42 mm camera body while preserving the
-authored bracket-to-camera transform. One assembly is mounted on the outer face
-of each end effector. The supplied head bracket carries the same D405 body on
-`link_head_2`. All three USD cameras use the D405's 84 by 58 degree depth FOV
-and 40 mm near clip. Head optical forward/up are +robot-X/+robot-Z; wrist
-cameras look down the tool and outward. The mirrored right physical mount gets
-a sensor-only 180 degree roll so left and right policy images share an upright
-convention.
+authored bracket-to-camera transform. The first wrist fit incorrectly treated
+the re-origin of that extracted STL as its mounting face, so the assemblies
+were only approximately placed on the outer wrist surfaces. The authoritative
+RB-Y1 v1.1 assembly `RBY1_Example_setup.FCStd` fixes the actual interface at the
+18 mm-spaced M3 pair: bolt centres are `(x, y, z) = (+/-9, -39, 38.5)` mm in
+each mirrored end-effector frame. In the normalized bracket STL those same
+centres are `(+/-9, 56.919538, 30.119184)` mm, which gives the exact bracket-root
+translation `(0, -95.919538, 8.380816)` mm with identity assembly rotation on
+both wrists. Robot-chain mirroring supplies the left/right reflection; rotating
+the right bracket again would misalign the screw pair.
+
+The supplied head bracket carries the same D405 body on `link_head_2`. All three
+USD cameras use the D405's 84 by 58 degree depth FOV and 40 mm near clip. Head
+optical forward/up are +robot-X/+robot-Z; wrist cameras look down the tool and
+outward. A sensor-only 180 degree roll remains on the right optical prim to
+normalize policy-image orientation without rotating the physical CAD or its
+mounting holes. Authored metadata records `rby1_wrist_m3_pair` and the 18 mm
+bolt spacing on both wrist assemblies.
 
 A real transform bug was caught during rendered-camera validation: the CAD and
 NumPy matrices use column vectors, but `Gf.Matrix4d` transforms row vectors.
@@ -626,12 +637,12 @@ separation, and maximum impulse for future task-pose acceptance.
 
 | Check | Result | Evidence |
 |---|---|---|
-| Hardware semantics | 3 D405 cameras; original right EE/finger visuals and collisions inactive; 1 blade pair marked cutting; U arc pair non-cutting; 31 collision shapes | `robot_hardware_test.py`, `data/greenhouse_sim/robots/rby1a_v1.0.json` |
-| Authored transforms and placement | head forward/up correct; wrists retain a common upright convention; right tool faces world -Y with its U arc upward; opposite-aisle clearances are regression checked | 9 passed, 1 PhysX-only test skipped outside SimulationApp |
-| Visual fit | knife-only right end, upward arc, opposite-aisle stance, robot, greenhouse, and vine render together | `data/greenhouse_sim/robot_opposite_knife_only_acceptance.png` |
-| Opposite-aisle knife-only 480-step soak | 34/34 rigid bodies finite; base settled 11.524 mm toward the target row and 8.203 mm vertically; 2.078 degree tilt; succeeded=true | `data/greenhouse_sim/robot_opposite_knife_only_acceptance.json` |
-| Vine during robot soak | 121/121 tracked organs finite; 68.723 mm maximum compliant settling; 0 runaway organs | same report |
-| Live camera path | all three camera paths remain present after right-gripper removal; head/wrist viewport selection remains available | same report; `data/greenhouse_sim/robots/rby1a_v1.0.json` |
+| Hardware semantics | 3 D405 cameras; both wrist brackets aligned to the v1.1 18 mm M3 pair; original right EE/finger visuals and collisions inactive; 1 blade pair marked cutting; U arc pair non-cutting; 31 collision shapes | `robot_hardware_test.py`, `data/greenhouse_sim/robots/rby1a_v1.0.json` |
+| Authored transforms and placement | exact bracket and reference bolt centres coincide on both wrists; physical mount rotations are identity in mirrored EE frames; right tool faces world -Y with its U arc upward; opposite-aisle clearances are regression checked | 10 passed, 1 PhysX-only test skipped outside SimulationApp |
+| Visual fit | brackets seat against the actual wrist screw faces; the right end remains knife-only; opposite-aisle robot, greenhouse, and vine render together | `data/greenhouse_sim/wrist_mount_reference_left.png`, `data/greenhouse_sim/wrist_mount_reference_right.png` |
+| Opposite-aisle knife-only 480-step soak | 34/34 rigid bodies finite; base settled 11.524 mm toward the target row and 8.203 mm vertically; 2.078 degree tilt; succeeded=true | `data/greenhouse_sim/robot_wrist_screw_mount_acceptance.json` |
+| Vine during robot soak | 121/121 tracked organs finite; 68.710 mm maximum compliant settling; 0 runaway organs | same report |
+| Live camera path | all three camera paths remain present after right-gripper removal; explicit right-wrist D405 capture is non-black and sees the greenhouse/vines; head/wrist viewport selection remains available | `data/greenhouse_sim/right_wrist_d405_acceptance.png`; `data/greenhouse_sim/robots/rby1a_v1.0.json` |
 | Measured lower-petiole reach | settled flat blade 118.072 mm and upward U-support 65.175 mm from the actual `Vine_0000/SubStem_00` attachment; blade extension Y=-0.999876 and arc normal Z=+0.999845; no spawn contact | same report |
 | Contact trace | only normal chassis/wheel support against the cultivation-zone floor; no catch-tray, gutter, vine, arm, camera, or knife contact | same report |
 | Error scan | no Isaac `[Error]`, Python traceback, selector `NoneType`, ill-formed `SdfPath`, PhysX error, invalid transform, broadphase fault, or explosion signature | `kit_20260808_104554.log` |
@@ -790,3 +801,7 @@ One logical change per commit; no AI attribution trailers.
   moved RB-Y1 to the opposite aisle, fully removed the original right tongs from
   rendering/contact, mounted the knife directly to the retained EE flange, and
   passed a 480-step robot/vine/contact acceptance soak.
+- 2026-08-08 — Replaced the approximate wrist-camera offsets with the exact
+  RB-Y1 v1.1 FreeCAD screw-pair datum, corrected the extracted-STL origin error,
+  regression-checked both mirrored mounts, verified a live right D405 frame,
+  and repeated the 480-step robot/vine/contact acceptance soak.

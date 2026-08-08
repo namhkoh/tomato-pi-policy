@@ -38,10 +38,27 @@ HEAD_LINK = "link_head_2"
 RIGHT_GRIPPER_LINKS = ("ee_right", "ee_finger_r1", "ee_finger_r2")
 
 # Local mounts in the corresponding RBY1 link frame.  RBY1 tools extend along
-# -Z.  Wrist cameras sit on the outside of each end-effector frame and look
-# mostly down the tool axis.  The right frame is a knife-only configuration.
-LEFT_CAMERA_TRANSLATION_M = np.array([0.0, 0.0325, -0.060], dtype=np.float64)
-RIGHT_CAMERA_TRANSLATION_M = np.array([0.0, -0.0325, -0.060], dtype=np.float64)
+# -Z.  The wrist-camera transform is measured from the supplied
+# RBY1_Example_setup.FCStd reference, not fitted by eye.  In that assembly the
+# bracket's two M3 axes are at x=+/-9, y=-39, z=38.5 mm in either local gripper
+# frame.  The extracted STL was re-origined at the source bracket bounds, so its
+# same bolt axes are x=+/-9, y=56.919538, z=30.119184 mm.  This translation
+# aligns those axes exactly and seats the bracket against the wrist screw face.
+WRIST_REFERENCE_BOLT_CENTRES_M = np.array(
+    [[-0.009, -0.039, 0.0385], [0.009, -0.039, 0.0385]], dtype=np.float64
+)
+WRIST_BRACKET_BOLT_CENTRES_M = np.array(
+    [
+        [-0.009, 0.0569195383671445, 0.0301191835115545],
+        [0.009, 0.0569195383671445, 0.0301191835115545],
+    ],
+    dtype=np.float64,
+)
+WRIST_CAMERA_TRANSLATION_M = np.array(
+    [0.0, -0.0959195383671445, 0.0083808164884455], dtype=np.float64
+)
+LEFT_CAMERA_TRANSLATION_M = WRIST_CAMERA_TRANSLATION_M.copy()
+RIGHT_CAMERA_TRANSLATION_M = WRIST_CAMERA_TRANSLATION_M.copy()
 # The right gripper body is removed for the deleafing configuration.  The
 # knife's CAD origin is its mounting face, so it mounts directly at the
 # retained ee_right kinematic frame rather than at the old jaw tip.
@@ -84,8 +101,11 @@ def rotation_z(degrees: float) -> np.ndarray:
     return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
 
 
+# Both reference camera assemblies have the same transform relative to their
+# mirrored local gripper frames.  Mirroring is supplied by the robot kinematic
+# chain; adding another right-side 180-degree rotation misaligns the M3 pair.
 LEFT_CAMERA_ROTATION = np.eye(3, dtype=np.float64)
-RIGHT_CAMERA_ROTATION = rotation_z(180.0)
+RIGHT_CAMERA_ROTATION = np.eye(3, dtype=np.float64)
 # Preserve CAD -Y along tool -Z, but roll the plate around that blade axis so
 # the U-shaped support on CAD +Z faces tool +X. In the greenhouse ready pose,
 # tool +X is the most upward transverse direction.
@@ -272,6 +292,8 @@ def _author_wrist_camera(
     assembly = UsdGeom.Xform.Define(stage, assembly_path)
     _set_transform(assembly.GetPrim(), rotation, translation)
     _hardware_attr(assembly.GetPrim(), "hardwareRole", "wrist_camera_assembly")
+    _hardware_attr(assembly.GetPrim(), "mountInterface", "rby1_wrist_m3_pair")
+    _hardware_attr(assembly.GetPrim(), "mountBoltSpacingMillimeters", 18.0)
 
     bracket_part = _part(manifest, "camera_bracket_d405")
     _author_mesh(stage, f"{assembly_path}/BracketVisual", DERIVED_DIR / "camera_bracket_d405.stl", (0.12, 0.12, 0.14))
