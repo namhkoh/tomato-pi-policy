@@ -35,13 +35,17 @@ MANIFEST_PATH = DERIVED_DIR / "hardware.json"
 ROBOT_ROOT = "/RBY1_A_v1_0"
 END_EFFECTOR_LINKS = {"left": "ee_left", "right": "ee_right"}
 HEAD_LINK = "link_head_2"
+RIGHT_GRIPPER_LINKS = ("ee_right", "ee_finger_r1", "ee_finger_r2")
 
 # Local mounts in the corresponding RBY1 link frame.  RBY1 tools extend along
-# -Z.  Wrist cameras sit on the outside of each gripper and look mostly down the
-# tool axis.  The knife is mounted at the right gripper's distal face.
+# -Z.  Wrist cameras sit on the outside of each end-effector frame and look
+# mostly down the tool axis.  The right frame is a knife-only configuration.
 LEFT_CAMERA_TRANSLATION_M = np.array([0.0, 0.0325, -0.060], dtype=np.float64)
 RIGHT_CAMERA_TRANSLATION_M = np.array([0.0, -0.0325, -0.060], dtype=np.float64)
-KNIFE_TRANSLATION_M = np.array([0.0, 0.0, -0.073], dtype=np.float64)
+# The right gripper body is removed for the deleafing configuration.  The
+# knife's CAD origin is its mounting face, so it mounts directly at the
+# retained ee_right kinematic frame rather than at the old jaw tip.
+KNIFE_TRANSLATION_M = np.zeros(3, dtype=np.float64)
 HEAD_BRACKET_TRANSLATION_M = np.array([0.022, 0.0, 0.040], dtype=np.float64)
 
 
@@ -65,6 +69,7 @@ class HardwareReport:
     cutting_surfaces: tuple[str, ...]
     non_cutting_supports: tuple[str, ...]
     attachments: tuple[str, ...]
+    removed_right_gripper_prims: tuple[str, ...]
 
 
 def rotation_x(degrees: float) -> np.ndarray:
@@ -340,6 +345,25 @@ def _author_knife(stage: Usd.Stage, link_path: str, manifest: dict) -> tuple[str
     return root_path, blade_path, arc_path
 
 
+def _remove_original_right_gripper(stage: Usd.Stage, robot_root: str) -> tuple[str, ...]:
+    """Remove rendered/contact geometry while retaining inert articulation frames."""
+    removed: list[str] = []
+    for link_name in RIGHT_GRIPPER_LINKS:
+        link = stage.GetPrimAtPath(f"{robot_root}/{link_name}")
+        if not link.IsValid():
+            raise ValueError(f"RBY1-A v1.0 right gripper link is missing: {link_name}")
+        link.CreateAttribute("tomato:originalGripperRemoved", Sdf.ValueTypeNames.Bool, custom=True).Set(True)
+        for child_name in ("visuals", "collisions", "restored_collisions"):
+            child = stage.GetPrimAtPath(f"{link.GetPath()}/{child_name}")
+            if child.IsValid() and child.IsActive():
+                child.SetActive(False)
+                removed.append(str(child.GetPath()))
+    stage.GetPrimAtPath(f"{robot_root}/ee_right").CreateAttribute(
+        "tomato:toolConfiguration", Sdf.ValueTypeNames.String, custom=True
+    ).Set("knife_only")
+    return tuple(removed)
+
+
 def attach_robot_hardware(stage: Usd.Stage, robot_root: str = ROBOT_ROOT) -> HardwareReport:
     """Attach all requested hardware to an imported RBY1-A v1.0 stage."""
     required = [END_EFFECTOR_LINKS["left"], END_EFFECTOR_LINKS["right"], HEAD_LINK]
@@ -347,6 +371,7 @@ def attach_robot_hardware(stage: Usd.Stage, robot_root: str = ROBOT_ROOT) -> Har
     if missing:
         raise ValueError(f"RBY1-A v1.0 attachment links are missing: {', '.join(missing)}")
 
+    removed_right_gripper = _remove_original_right_gripper(stage, robot_root)
     manifest = load_manifest()
     attachments: list[str] = []
     cameras: list[str] = []
@@ -370,4 +395,5 @@ def attach_robot_hardware(stage: Usd.Stage, robot_root: str = ROBOT_ROOT) -> Har
         cutting_surfaces=(blade, f"{knife_root}/BladeCollision"),
         non_cutting_supports=(arc, f"{knife_root}/ArcCollision"),
         attachments=tuple(attachments),
+        removed_right_gripper_prims=removed_right_gripper,
     )

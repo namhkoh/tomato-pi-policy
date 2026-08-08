@@ -36,6 +36,7 @@ def test_knife_projects_along_the_right_tool_axis() -> None:
 
     np.testing.assert_allclose(projection, [0.0, 0.0, -1.0], atol=1e-12)
     np.testing.assert_allclose(support_side, [1.0, 0.0, 0.0], atol=1e-12)
+    np.testing.assert_allclose(robot_hardware.KNIFE_TRANSLATION_M, [0.0, 0.0, 0.0], atol=0.0)
 
 
 def test_wrist_cameras_look_down_and_outward() -> None:
@@ -73,8 +74,11 @@ def test_authored_stage_has_three_cameras_and_one_cutting_part() -> None:
     stage = Usd.Stage.CreateInMemory()
     root = UsdGeom.Xform.Define(stage, robot_hardware.ROBOT_ROOT)
     stage.SetDefaultPrim(root.GetPrim())
-    for link in ("ee_left", "ee_right", "link_head_2"):
+    for link in ("ee_left", "ee_right", "ee_finger_r1", "ee_finger_r2", "link_head_2"):
         UsdGeom.Xform.Define(stage, f"{robot_hardware.ROBOT_ROOT}/{link}")
+    for link in robot_hardware.RIGHT_GRIPPER_LINKS:
+        UsdGeom.Xform.Define(stage, f"{robot_hardware.ROBOT_ROOT}/{link}/visuals")
+        UsdGeom.Xform.Define(stage, f"{robot_hardware.ROBOT_ROOT}/{link}/collisions")
 
     report = robot_hardware.attach_robot_hardware(stage)
 
@@ -90,6 +94,11 @@ def test_authored_stage_has_three_cameras_and_one_cutting_part() -> None:
     assert all(stage.GetPrimAtPath(path).IsValid() for path in report.non_cutting_supports)
     assert all(not stage.GetPrimAtPath(path).GetAttribute("tomato:cuttingSurface").Get() for path in report.non_cutting_supports)
     assert Sdf.Path(report.attachments[-1]).IsAbsolutePath()
+    assert len(report.removed_right_gripper_prims) == 6
+    assert all(not stage.GetPrimAtPath(path).IsActive() for path in report.removed_right_gripper_prims)
+    assert stage.GetPrimAtPath(f"{robot_hardware.ROBOT_ROOT}/ee_right").GetAttribute(
+        "tomato:toolConfiguration"
+    ).Get() == "knife_only"
 
     camera_axes = {}
     for path in report.cameras:

@@ -23,7 +23,7 @@ at `D:\isaac-sim`, Windows 11. Branch `koh-dev/simulator-base` (fork of openpi).
 - [x] Manual viewport acceptance: real Shift-drag grab/release and UI/keyboard cut
 - [ ] Sustained pull/tear validation against the 32.5 N threshold
 - [x] RB-Y1 Model A v1.0 import, greenhouse placement, and stable ready pose
-- [x] Supplied D405 head/wrist brackets and right deleafing knife fitted
+- [x] Supplied D405 head/wrist brackets fitted; right tongs removed and replaced by the deleafing knife
 - [ ] Robot-to-vine gripper/blade contact and cut validation
 - [ ] Benchmark task definition + metrics
 
@@ -70,6 +70,15 @@ Z-up, meters, `defaultPrim=/World`. Two cultivation zones (`Main_Cultivation_Zon
 `..._01` offset +24.9 m in Y), each with 4 bed rows = **256 BedSet groups**. Each
 BedSet payloads `objects/Bed.usd` + 4 pipes and owns a local `Strings/Cylinder_0X`
 group of 6 trellis strings — the natural anchor points for vines.
+
+The generated benchmark scene loads this source without rescaling or rebuilding
+it: `data/greenhouse_sim/scenes/deleafing_bench.usd` has
+`../../../greenhouse/green_house.usd` as its root sublayer, and both layers are
+Z-up with `metersPerUnit=1.0`. A direct composed-vs-source bounds audit found the
+same 256 BedSets and identical first target gutter bounds: Z=0.671233–0.888308 m.
+The authored cultivation floor is Z=-0.305082 m, so the gutter top is **1.193390 m
+above the floor**. The gutters therefore do look high, but that height comes from
+the supplied original greenhouse rather than a loader transform or unit error.
 
 Physics present: only 3 ground `Plane` prims with `PhysicsCollisionAPI`. **No
 PhysicsScene, no rigid bodies, no colliders** on beds/pipes/walls. No cameras. No
@@ -521,7 +530,7 @@ body compliance and the cut joint. Direct viewport acceptance was completed on
 released, airflow produced acceptable stationary motion, and the cut mechanism
 worked. This clears the interaction gate for RB-Y1 integration. Benchmarking
 and RL remain gated on stable robot/tool/camera integration and contact testing.
-Regression status: 34 passed, 1 failed, and 1 skipped in the complete hermetic
+Regression status: 36 passed, 1 failed, and 1 skipped in the complete hermetic
 greenhouse suite. The only failure is the unchanged
 `test_arc_length_sampling_is_continuous`, whose 10 mm
 absolute tolerance is exceeded by 0.17 mm; no skeleton code changed in this
@@ -545,9 +554,12 @@ XML comments and must not become live colliders. Isaac's URDF importer drops
 the active non-standard capsules, so the builder restores those 17 as sibling
 prims under each link. The source also omits standard collisions for the base,
 wheels, gripper bodies, and fingers; conservative proxies add 3 base/wheel and
-6 end-effector/finger shapes. Eight more shapes cover the three fitted
-camera/bracket assemblies and two knife components, for **34 collision shapes**
-on the generated robot.
+3 retained left-end-effector/finger shapes. The original right end-effector body
+and both right fingers are a knife-only tool slot: their visual and collision
+scopes are inactive, while their invisible rigid links and joints remain so the
+exact URDF articulation and controller joint indexing are not changed. Eight
+more shapes cover the three fitted camera/bracket assemblies and two knife
+components, for **31 collision shapes** on the generated robot.
 
 `extract_robot_hardware.py` makes the supplied CAD reproducible without a
 runtime FreeCAD dependency. The external
@@ -561,7 +573,8 @@ and split into its two disconnected components:
 - the 6.000 x 62.301 x 50.918 mm **U-shaped arc**, explicitly non-cutting
   support geometry.
 
-The plate projects along the right tool's -Z axis from the gripper distal face.
+The plate projects along the right tool's -Z axis directly from the retained
+`ee_right` flange frame; the obsolete 73 mm gripper-tip offset is no longer used.
 The U arc is never accepted as a cutting surface. Both pieces retain collision
 geometry, so support contact remains physical without corrupting cut semantics.
 
@@ -582,17 +595,18 @@ horizontal wrist views, and wrong blade direction. The authored-stage
 regression now checks the actual Gf camera forward/up axes and actual blade
 projection, not only the source NumPy matrices.
 
-`interactive_greenhouse.py` now composes the robot by default at
-`(6.6191, 2.5000, -0.3050817)` m with 90 degree yaw, where the Z value is the
-measured cultivation-zone collision floor. The 250 mm negative-X offset aligns
-the right workspace with dynamic `Vine_0000` at X=6.86912 m, while the Y stance
-leaves 133 mm between the chassis proxy and the trough front. `--no-robot`
-retains the accepted vine-only launcher. The official 22-joint SDK ready vector
-is retained as `SDK_READY_POSE_DEGREES`; the greenhouse launcher changes only
-the right arm to the exact v1.0-URDF IK vector
-`[-98.832, -54.099, 53.447, -70.536, -34.738, 52.698, -53.615]` degrees. The
-solution keeps the elbow on the aisle side and routes the forearm over the
-trough toward the real `SubStem_00` attachment, with no startup contact.
+`interactive_greenhouse.py` now composes the robot on the **opposite side of the
+target gutter** at `(6.99114, 3.78000, -0.3050817)` m with -90 degree yaw, where
+the Z value is the measured cultivation-zone collision floor. This places the
+robot in the inter-row aisle facing world -Y toward dynamic `Vine_0000`, with
+about 229 mm initial chassis clearance to the target gutter and 35 mm to the
+neighbouring gutter. `--no-robot` retains the accepted vine-only launcher. The
+official 22-joint SDK ready vector is retained as `SDK_READY_POSE_DEGREES`; the
+greenhouse launcher changes only the right arm to the exact v1.0-URDF IK vector
+`[-101.724, -83.623, 34.196, -135.683, -57.431, 94.832, -74.920]` degrees. This
+alternate branch keeps the elbow in the aisle, preserves joint-limit margin,
+points the flat blade toward the real `SubStem_00` attachment, and keeps the
+upward arc clear at spawn.
 
 The first nominal IK attempt exposed an independent fixture bug rather than a
 robot balance problem. Each dynamic vine owns a 1.2 m hidden `CatchPlane` cube
@@ -612,22 +626,21 @@ separation, and maximum impulse for future task-pose acceptance.
 
 | Check | Result | Evidence |
 |---|---|---|
-| Hardware semantics | 3 D405 cameras; 1 visual/collision blade pair marked cutting; U arc visual/collision pair non-cutting | `robot_hardware_test.py`, `data/greenhouse_sim/robots/rby1a_v1.0.json` |
-| Authored transforms | head forward/up correct; wrists down/outward with common upright convention; flat plate projects along tool -Z; U arc faces tool +X/upward | 8 passed, 1 PhysX-only test skipped outside SimulationApp |
-| Visual fit | head bracket, left wrist bracket/D405, and upward-arc right bracket/D405/knife all render seated on the intended links | `robot_fit_head_camera_final.png`, `robot_fit_left_wrist_final.png`, `robot_fit_right_tool_up.png` |
-| Integrated closer-stance 480-step soak | 34/34 rigid bodies finite; base settled 3.675 mm laterally and 8.203 mm vertically; 2.078 degree tilt; succeeded=true | `data/greenhouse_sim/robot_front_acceptance.json` |
-| Vine during robot soak | 121/121 tracked organs finite; 0 runaway organs | same report |
-| Live camera path | right wrist D405 rendered from its fitted USD optical frame after the soak | `data/greenhouse_sim/d405_right_wrist_final.png` |
-| Pre-contact 480-step soak | 34/34 rigid bodies finite; base settled 11.499 mm forward and 8.203 mm vertically; 2.078 degree tilt; succeeded=true | `data/greenhouse_sim/robot_precontact_acceptance.json` |
-| Measured lower-petiole reach | settled flat blade 152.691 mm and upward U-support 100.548 mm from the actual `Vine_0000/SubStem_00` attachment; blade points into the row and arc faces +Z; no spawn contact | same report |
-| Contact trace | only normal chassis/wheel support against the cultivation-zone floor; no catch-tray, trough, vine, arm, or knife contact | same report |
-| Error scan | no Python traceback, selector `NoneType`, ill-formed `SdfPath`, PhysX error, invalid transform, broadphase fault, or explosion signature | `kit_20260806_220854.log` |
+| Hardware semantics | 3 D405 cameras; original right EE/finger visuals and collisions inactive; 1 blade pair marked cutting; U arc pair non-cutting; 31 collision shapes | `robot_hardware_test.py`, `data/greenhouse_sim/robots/rby1a_v1.0.json` |
+| Authored transforms and placement | head forward/up correct; wrists retain a common upright convention; right tool faces world -Y with its U arc upward; opposite-aisle clearances are regression checked | 9 passed, 1 PhysX-only test skipped outside SimulationApp |
+| Visual fit | knife-only right end, upward arc, opposite-aisle stance, robot, greenhouse, and vine render together | `data/greenhouse_sim/robot_opposite_knife_only_acceptance.png` |
+| Opposite-aisle knife-only 480-step soak | 34/34 rigid bodies finite; base settled 11.524 mm toward the target row and 8.203 mm vertically; 2.078 degree tilt; succeeded=true | `data/greenhouse_sim/robot_opposite_knife_only_acceptance.json` |
+| Vine during robot soak | 121/121 tracked organs finite; 68.723 mm maximum compliant settling; 0 runaway organs | same report |
+| Live camera path | all three camera paths remain present after right-gripper removal; head/wrist viewport selection remains available | same report; `data/greenhouse_sim/robots/rby1a_v1.0.json` |
+| Measured lower-petiole reach | settled flat blade 118.072 mm and upward U-support 65.175 mm from the actual `Vine_0000/SubStem_00` attachment; blade extension Y=-0.999876 and arc normal Z=+0.999845; no spawn contact | same report |
+| Contact trace | only normal chassis/wheel support against the cultivation-zone floor; no catch-tray, gutter, vine, arm, camera, or knife contact | same report |
+| Error scan | no Isaac `[Error]`, Python traceback, selector `NoneType`, ill-formed `SdfPath`, PhysX error, invalid transform, broadphase fault, or explosion signature | `kit_20260808_104554.log` |
 
 This clears the **asset import, hardware fit, optical-frame, collision-clear
 task reach, and pre-contact stability** gate. It does not yet claim robot
-deleafing success: the measured 100-153 mm air gap is intentional and still
-requires a controlled final approach. Gripper contact/friction,
-blade-to-petiole contact, robot-driven cut triggering, and sustained-force
+deleafing success: the measured 65-118 mm air gap is intentional and still
+requires a controlled final approach. Blade-to-petiole contact, robot-driven cut
+triggering, left-tool interaction if used, and sustained-force
 tearing remain the next explicit gate. The existing `C` command directly
 releases the selected cut joint; it is not evidence of physical blade-triggered
 severance.
@@ -635,8 +648,8 @@ severance.
 A follow-up visual review requested that the U arc face upward so the flat plate
 is presented cleanly for cutting. Rolling the knife 90 degrees about its
 unchanged blade axis moved CAD +Z from tool +Y to tool +X. The rendered ready
-pose measures the arc-facing vector at Z=+0.77984 while preserving the blade
-extension. The same review requested direct camera access: the interaction
+pose now measures the arc-facing vector at Z=+0.999845 while preserving a blade
+extension of Y=-0.999876 toward the target row. The same review requested direct camera access: the interaction
 window and keys `1`-`4` now switch the active viewport between inspection,
 head D405, left-wrist D405, and right-wrist D405 video respectively. Headless
 captures remain available through `--capture-camera`.
@@ -772,3 +785,8 @@ One logical change per commit; no AI attribution trailers.
   with the RB-Y1 articulation, added contact tracing and measured petiole-range
   acceptance, staged a trough-clear right-arm pre-contact pose, and disabled
   the faulty unused Isaac transform selector in the interactive GUI.
+- 2026-08-08 — Verified the benchmark sublayers the original greenhouse without
+  scale changes and documented its authored 1.193 m floor-to-gutter-top height;
+  moved RB-Y1 to the opposite aisle, fully removed the original right tongs from
+  rendering/contact, mounted the knife directly to the retained EE flange, and
+  passed a 480-step robot/vine/contact acceptance soak.

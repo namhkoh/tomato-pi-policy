@@ -55,8 +55,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vine-dir", type=pathlib.Path, default=_DEFAULT_VINE_DIR)
     parser.add_argument("--robot", type=pathlib.Path, default=_DEFAULT_ROBOT)
     parser.add_argument("--no-robot", action="store_true", help="run the accepted vine-only environment")
-    parser.add_argument("--robot-position", type=float, nargs=3, default=(6.6191, 2.50, -0.3050817))
-    parser.add_argument("--robot-yaw", type=float, default=90.0)
+    parser.add_argument("--robot-position", type=float, nargs=3, default=(6.99114, 3.78, -0.3050817))
+    parser.add_argument("--robot-yaw", type=float, default=-90.0)
     parser.add_argument("--physics-vines", type=int, default=1)
     parser.add_argument("--segment", type=float, default=0.02)
     parser.add_argument("--clip-spacing", type=float, default=0.30)
@@ -930,7 +930,7 @@ def _robot_precontact(stage, runtime: VineRuntime) -> dict:
         finite
         and 0.005 < blade_distance < 0.200
         and 0.005 < arc_distance < 0.200
-        and blade_extension[1] > 0.70
+        and blade_extension[1] < -0.70
         and arc_facing[2] > 0.70
     )
     return {

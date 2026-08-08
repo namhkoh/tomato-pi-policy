@@ -21,13 +21,14 @@ from pxr import UsdPhysics  # noqa: E402
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[3]
 DEFAULT_ROBOT_ASSET = REPOSITORY_ROOT / "data" / "greenhouse_sim" / "robots" / "rby1a_v1.0.usd"
 DEFAULT_ROBOT_PATH = "/World/RBY1"
-# Offset the base left of Vine_0000 and move it toward the bed so that the
-# greenhouse pre-contact right-arm pose reaches the lower petiole workspace.
-# The chassis front remains 133 mm clear of the authored trough collision.
+# Stand in the authored aisle on the opposite (+Y) side of Vine_0000, facing
+# back toward the row.  The chassis has 229 mm clearance to the target gutter
+# and 35 mm to the neighbouring gutter before settling; normal forward settling
+# moves it away from that tighter rear clearance.
 # Main_Cultivation_Zone's authored collision floor is z=-0.3050817 m.
-DEFAULT_POSITION_M = np.array([6.6191, 2.5000, -0.3050817], dtype=np.float64)
-DEFAULT_YAW_DEGREES = 90.0
-DEFAULT_POSE_NAME = "greenhouse_precontact_substem_00"
+DEFAULT_POSITION_M = np.array([6.99114, 3.7800, -0.3050817], dtype=np.float64)
+DEFAULT_YAW_DEGREES = -90.0
+DEFAULT_POSE_NAME = "opposite_aisle_knife_precontact_substem_00"
 
 # The official Model A ready pose used by the SDK's multi-control and leader-arm
 # examples.  Angular drive and PhysX joint-state attributes are in degrees.
@@ -56,13 +57,13 @@ SDK_READY_POSE_DEGREES = {
 # retaining an air gap, so neither the blade nor its U support spawns in
 # contact with the plant.  The torso, left arm, and head retain the SDK vector.
 GREENHOUSE_PRECONTACT_RIGHT_ARM_DEGREES = (
-    -98.832,
-    -54.099,
-    53.447,
-    -70.536,
-    -34.738,
-    52.698,
-    -53.615,
+    -101.724,
+    -83.623,
+    34.196,
+    -135.683,
+    -57.431,
+    94.832,
+    -74.920,
 )
 READY_POSE_DEGREES = {
     **SDK_READY_POSE_DEGREES,
@@ -88,6 +89,7 @@ class RobotPlacement:
     cameras: tuple[str, ...]
     knife_blade: str
     knife_support: str
+    right_gripper_removed: bool
 
 
 def _set_root_pose(prim: Usd.Prim, position_m: np.ndarray, yaw_degrees: float) -> None:
@@ -160,6 +162,25 @@ def add_fitted_robot(
         raise ValueError("the flat knife blade is not marked as a cutting surface")
     if stage.GetPrimAtPath(support).GetAttribute("tomato:cuttingSurface").Get() is not False:
         raise ValueError("the curved knife support must be explicitly non-cutting")
+    right_gripper_visuals_removed = all(
+        stage.GetPrimAtPath(f"{root_path}/{link}/visuals").IsValid()
+        and not stage.GetPrimAtPath(f"{root_path}/{link}/visuals").IsActive()
+        for link in ("ee_right", "ee_finger_r1", "ee_finger_r2")
+    )
+    right_collision_scopes = tuple(
+        stage.GetPrimAtPath(f"{root_path}/{link}/{scope}")
+        for link in ("ee_right", "ee_finger_r1", "ee_finger_r2")
+        for scope in ("collisions", "restored_collisions")
+        if stage.GetPrimAtPath(f"{root_path}/{link}/{scope}").IsValid()
+    )
+    right_gripper_removed = right_gripper_visuals_removed and all(
+        not prim.IsActive() for prim in right_collision_scopes
+    )
+    right_tool_configuration = stage.GetPrimAtPath(f"{root_path}/ee_right").GetAttribute(
+        "tomato:toolConfiguration"
+    ).Get()
+    if not right_gripper_removed or right_tool_configuration != "knife_only":
+        raise ValueError("the original right gripper geometry/contact is still active")
 
     return RobotPlacement(
         root_path=root_path,
@@ -171,4 +192,5 @@ def add_fitted_robot(
         cameras=cameras,
         knife_blade=blade,
         knife_support=support,
+        right_gripper_removed=right_gripper_removed,
     )

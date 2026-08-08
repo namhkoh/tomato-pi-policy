@@ -131,16 +131,13 @@ def _add_mobile_base_colliders(stage, Gf, Sdf, UsdGeom, UsdPhysics) -> list[str]
 
 
 def _add_gripper_colliders(stage, Gf, Sdf, UsdGeom, UsdPhysics) -> list[str]:
-    """Restore contact on EE bodies/fingers that have visuals but no URDF collision."""
+    """Restore contact on the retained left gripper only."""
     body_min = np.array([-0.0630, -0.0325, -0.0730])
     body_max = np.array([0.0630, 0.0325, 0.0])
     finger_min = np.array([-0.0030, -0.0160, -0.0605])
     finger_max = np.array([0.0130, 0.0160, 0.0015])
     links = {
-        "ee_right": (body_min, body_max, "gripper_body"),
         "ee_left": (body_min, body_max, "gripper_body"),
-        "ee_finger_r1": (finger_min, finger_max, "finger"),
-        "ee_finger_r2": (finger_min, finger_max, "finger"),
         "ee_finger_l1": (finger_min, finger_max, "finger"),
         "ee_finger_l2": (finger_min, finger_max, "finger"),
     }
@@ -280,6 +277,7 @@ def main() -> int:
         "gripper_colliders": gripper_colliders,
         "wheel_drives": wheel_drives,
         "hardware_attachments": list(hardware.attachments),
+        "removed_right_gripper_prims": list(hardware.removed_right_gripper_prims),
         "cameras": camera_paths,
         "cutting_surfaces": list(hardware.cutting_surfaces),
         "non_cutting_supports": list(hardware.non_cutting_supports),
@@ -293,6 +291,7 @@ def main() -> int:
     print(f"capsules:    {len(capsules)} restored from URDF")
     print(f"base shapes: {len(mobile_colliders)}")
     print(f"EE shapes:   {len(gripper_colliders)}")
+    print(f"right tool:  knife only ({len(hardware.removed_right_gripper_prims)} gripper scopes removed)")
     print(f"cameras:     {len(camera_paths)}")
     print(f"colliders:   {len(collision_paths)}")
     print(f"report:      {report_path}")

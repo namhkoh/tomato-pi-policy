@@ -48,10 +48,12 @@ def test_greenhouse_pose_replaces_only_the_right_arm_vector() -> None:
 def test_default_pose_faces_the_robot_toward_the_vine_row() -> None:
     yaw = np.deg2rad(robot_scene.DEFAULT_YAW_DEGREES)
     rotation = np.array([[np.cos(yaw), -np.sin(yaw), 0.0], [np.sin(yaw), np.cos(yaw), 0.0], [0.0, 0.0, 1.0]])
-    np.testing.assert_allclose(rotation @ [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], atol=1e-12)
-    vine_0000 = np.array([6.869119584, 3.092212007, 0.888307640])
-    np.testing.assert_allclose(robot_scene.DEFAULT_POSITION_M[:2], [vine_0000[0] - 0.250019584, 2.50])
-    assert robot_scene.DEFAULT_POSITION_M[1] + 0.295 < 2.928362846
+    np.testing.assert_allclose(rotation @ [1.0, 0.0, 0.0], [0.0, -1.0, 0.0], atol=1e-12)
+    np.testing.assert_allclose(robot_scene.DEFAULT_POSITION_M[:2], [6.99114, 3.78])
+    target_gutter_back = 3.256061
+    neighbouring_gutter_front = 4.140259
+    assert robot_scene.DEFAULT_POSITION_M[1] - 0.295 - target_gutter_back > 0.20
+    assert neighbouring_gutter_front - (robot_scene.DEFAULT_POSITION_M[1] + 0.325) > 0.03
 
 
 def test_generated_robot_references_with_ready_state_and_hardware() -> None:
@@ -68,6 +70,7 @@ def test_generated_robot_references_with_ready_state_and_hardware() -> None:
     placement = robot_scene.add_fitted_robot(stage)
 
     assert placement.pose_name == robot_scene.DEFAULT_POSE_NAME
+    assert placement.right_gripper_removed
     assert len(placement.initialized_joints) == 22
     assert len(placement.cameras) == 3
     assert all(stage.GetPrimAtPath(path).IsA(UsdGeom.Camera) for path in placement.cameras)

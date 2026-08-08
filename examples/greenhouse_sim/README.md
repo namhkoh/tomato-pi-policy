@@ -104,6 +104,11 @@ gitignored `data/greenhouse_sim/`. Step 1 re-checks each vine against its
 metadata sidecar and exits non-zero if any invariant breaks, so a regenerated
 asset set cannot quietly degrade the cut sites.
 
+The benchmark scene directly sublayers the supplied `greenhouse/green_house.usd`
+with the same Z-up, metre-scale stage metadata. It does not rescale or recreate
+the greenhouse. In that original asset, the target gutter spans Z=0.671–0.888 m
+over a cultivation floor at Z=-0.305 m, placing its top 1.193 m above the floor.
+
 To render a frame without a display (this is how the scene is checked in CI or
 over SSH):
 
@@ -184,24 +189,28 @@ $ISAACSIM/python.sh examples/greenhouse_sim/build_robot.py
 ```
 
 The builder keeps the mobile base dynamic, restores all 17 active custom URDF
-capsules omitted by Isaac's importer, adds conservative base/gripper contact
-proxies, and fits the supplied hardware under `greenhouse/robot_assets/`:
+capsules omitted by Isaac's importer, adds conservative base and left-gripper
+contact proxies, and fits the supplied hardware under `greenhouse/robot_assets/`:
 
 - one Intel RealSense D405 and bracket on the head;
 - one D405 and bent bracket on each end effector;
-- the supplied deleafing knife on the right end effector.
+- the supplied deleafing knife directly on the right end-effector flange.
+
+The original right gripper body and both tongs are fully removed from rendering
+and collision. Their invisible URDF links/joints remain only to preserve the
+exact v1.0 articulation and controller indexing; the right tool is knife-only.
 
 For the knife, only the flat straight plate is tagged as a cutting surface. The
 U-shaped arc is support geometry and cannot trigger a cut. The knife is rolled
 about its unchanged blade axis so that arc faces upward in the ready pose and
 the flat plate is presented cleanly toward the cut.
 
-The default base pose is `(6.6191, 2.5000, -0.3050817)` m at 90 degrees yaw,
-leaving 133 mm between the chassis proxy and the trough front. The official SDK
-ready vector is retained as a separate reference; the launcher replaces only
-the right arm with a collision-aware pre-contact IK pose for
-`Vine_0000/SubStem_00`. The elbow remains on the aisle side of the trough and
-the forearm crosses above it. Override the stance with
+The default base pose is `(6.99114, 3.78000, -0.3050817)` m at -90 degrees yaw,
+on the opposite side of the target gutter. It starts with about 229 mm chassis
+clearance to that gutter and faces world -Y toward `Vine_0000/SubStem_00`. The
+official SDK ready vector is retained as a separate reference; the launcher
+replaces only the right arm with a collision-aware pre-contact IK pose. The
+elbow stays in the inter-row aisle. Override the stance with
 `--robot-position X Y Z` when testing a different vine or posture.
 
 Each dynamic vine has a finite hidden catch tray so severed foliage does not
@@ -223,18 +232,18 @@ Run the integrated non-contact stability check and capture a fitted D405:
 ```bash
 $ISAACSIM/python.sh examples/greenhouse_sim/interactive_greenhouse.py \
     --headless --settle-steps 480 --contact-diagnostics \
-    --capture-camera right_wrist \
-    --screenshot data/greenhouse_sim/d405_right_wrist.png \
-    --report data/greenhouse_sim/robot_precontact_acceptance.json
+    --capture-camera inspection \
+    --screenshot data/greenhouse_sim/robot_opposite_knife_only_acceptance.png \
+    --report data/greenhouse_sim/robot_opposite_knife_only_acceptance.json
 ```
 
-The accepted pose is stable and all three optical frames are validated. The
-480-step report measures the settled flat blade 152.7 mm and upward U-support
-100.5 mm from the actual lower-petiole attachment. All 34 robot rigid bodies
+The accepted pose is stable and all three optical frames remain present. The
+480-step report measures the settled flat blade 118.1 mm and upward U-support
+65.2 mm from the actual lower-petiole attachment. All 34 robot rigid bodies
 remain finite, the base settles with 2.08 degrees tilt, and the contact trace
 contains only wheel/chassis support against the greenhouse floor. A final
-approach controller, blade-to-petiole contact trigger, gripper friction, and
-robot-driven cut remain the next gate before benchmark and RL work.
+approach controller, blade-to-petiole contact trigger, and robot-driven cut
+remain the next gate before benchmark and RL work.
 
 For live video, launch without `--headless` and use the interaction-window
 camera buttons or keys `1`-`4`; the selected D405 becomes the active viewport.
@@ -347,7 +356,7 @@ articulated vine physics, task-directed robot contacts, visible-mesh pulling,
 foliage-area airflow, greenhouse integration, pull/recovery, and flush cutting.
 Manual Shift-drag, airflow-motion, and cut acceptance is complete. Exact RB-Y1
 v1.0 import, ready-pose stability, three D405 fits/optical frames, and right
-flat-blade semantics are also verified. Next: robot-to-vine reach/contact/cut
+knife-only end-effector semantics are also verified. Next: robot-to-vine reach/contact/cut
 acceptance and 32.5 N tear calibration, then task definition, benchmarking,
 and RL.
 See `dev.md` at the repository root for evidence and remaining work.
