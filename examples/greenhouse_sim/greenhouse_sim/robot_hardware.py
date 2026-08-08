@@ -63,6 +63,7 @@ RIGHT_CAMERA_TRANSLATION_M = WRIST_CAMERA_TRANSLATION_M.copy()
 # knife's CAD origin is its mounting face, so it mounts directly at the
 # retained ee_right kinematic frame rather than at the old jaw tip.
 KNIFE_TRANSLATION_M = np.zeros(3, dtype=np.float64)
+CUTTING_EDGE_DEPTH_M = 0.002
 HEAD_BRACKET_TRANSLATION_M = np.array([0.022, 0.0, 0.040], dtype=np.float64)
 
 
@@ -202,6 +203,8 @@ def _author_box_collider(
     path: str,
     minimum: np.ndarray,
     maximum: np.ndarray,
+    *,
+    collidable: bool = True,
 ) -> str:
     minimum = np.asarray(minimum, dtype=np.float64)
     maximum = np.asarray(maximum, dtype=np.float64)
@@ -211,15 +214,25 @@ def _author_box_collider(
     xform.AddTranslateOp().Set(Gf.Vec3d(*(0.5 * (minimum + maximum))))
     xform.AddScaleOp().Set(Gf.Vec3f(*(maximum - minimum)))
     cube.CreatePurposeAttr(UsdGeom.Tokens.guide)
-    UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+    if collidable:
+        UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
     return path
 
 
-def _author_convex_collider(stage: Usd.Stage, path: str, source: pathlib.Path) -> str:
+def _author_decomposed_collider(stage: Usd.Stage, path: str, source: pathlib.Path) -> str:
+    """Author a dynamic concave part as multiple convex hulls.
+
+    A single convex hull around the supplied U support fills its opening and
+    turns the guide into a solid plate in PhysX. Convex decomposition keeps the
+    collider dynamic while preserving the passage through which a petiole must
+    reach the flat blade.
+    """
     mesh = _author_mesh(stage, path, source, (0.2, 0.2, 0.2))
     mesh.CreatePurposeAttr(UsdGeom.Tokens.guide)
     UsdPhysics.CollisionAPI.Apply(mesh.GetPrim())
-    UsdPhysics.MeshCollisionAPI.Apply(mesh.GetPrim()).CreateApproximationAttr().Set("convexHull")
+    UsdPhysics.MeshCollisionAPI.Apply(
+        mesh.GetPrim()
+    ).CreateApproximationAttr().Set(UsdPhysics.Tokens.convexDecomposition)
     return path
 
 
@@ -334,7 +347,11 @@ def _author_head_camera(stage: Usd.Stage, link_path: str, manifest: dict) -> tup
     return assembly_path, camera_path
 
 
-def _author_knife(stage: Usd.Stage, link_path: str, manifest: dict) -> tuple[str, str, str]:
+def _author_knife(
+    stage: Usd.Stage,
+    link_path: str,
+    manifest: dict,
+) -> tuple[str, str, str, str]:
     root_path = f"{link_path}/attachments/DeleafKnife"
     root = UsdGeom.Xform.Define(stage, root_path)
     _set_transform(root.GetPrim(), KNIFE_ROTATION, KNIFE_TRANSLATION_M)
@@ -347,24 +364,53 @@ def _author_knife(stage: Usd.Stage, link_path: str, manifest: dict) -> tuple[str
 
     blade_path = f"{root_path}/Blade"
     blade_mesh = _author_mesh(stage, blade_path, DERIVED_DIR / "deleaf_knife_blade.stl", (0.58, 0.61, 0.64))
-    _hardware_attr(blade_mesh.GetPrim(), "hardwareRole", "blade")
-    _hardware_attr(blade_mesh.GetPrim(), "cuttingSurface", True)
+    _hardware_attr(blade_mesh.GetPrim(), "hardwareRole", "blade_plate")
+    _hardware_attr(blade_mesh.GetPrim(), "cuttingSurface", False)
     blade_min = np.asarray(blade["min_mm"], dtype=np.float64) * 0.001
     blade_max = np.asarray(blade["max_mm"], dtype=np.float64) * 0.001
     blade_collision = _author_box_collider(stage, f"{root_path}/BladeCollision", blade_min, blade_max)
     blade_collision_prim = stage.GetPrimAtPath(blade_collision)
-    _hardware_attr(blade_collision_prim, "hardwareRole", "blade")
-    _hardware_attr(blade_collision_prim, "cuttingSurface", True)
+    _hardware_attr(blade_collision_prim, "hardwareRole", "blade_plate")
+    _hardware_attr(blade_collision_prim, "cuttingSurface", False)
+
+    # Only the distal two millimetres of the flat plate are the leading edge.
+    # This non-colliding semantic volume is evaluated against contact points
+    # from the full physical plate collider, avoiding duplicate/overlapping
+    # PhysX shapes while ensuring a face or arc scrape cannot sever a petiole.
+    edge_min = blade_min.copy()
+    edge_max = blade_max.copy()
+    edge_max[1] = min(edge_min[1] + CUTTING_EDGE_DEPTH_M, blade_max[1])
+    edge_path = _author_box_collider(
+        stage,
+        f"{root_path}/CuttingEdge",
+        edge_min,
+        edge_max,
+        collidable=False,
+    )
+    edge_prim = stage.GetPrimAtPath(edge_path)
+    _hardware_attr(edge_prim, "hardwareRole", "cutting_edge")
+    _hardware_attr(edge_prim, "cuttingSurface", True)
+    _hardware_attr(edge_prim, "edgeDepthMillimeters", CUTTING_EDGE_DEPTH_M * 1000.0)
+    edge_prim.CreateAttribute(
+        "tomato:cuttingDirection", Sdf.ValueTypeNames.Float3, custom=True
+    ).Set(Gf.Vec3f(0.0, -1.0, 0.0))
+    edge_prim.CreateAttribute(
+        "tomato:edgeAxis", Sdf.ValueTypeNames.Float3, custom=True
+    ).Set(Gf.Vec3f(1.0, 0.0, 0.0))
 
     arc_path = f"{root_path}/Arc"
     arc_mesh = _author_mesh(stage, arc_path, DERIVED_DIR / "deleaf_knife_arc.stl", (0.16, 0.18, 0.20))
     _hardware_attr(arc_mesh.GetPrim(), "hardwareRole", "knife_support")
     _hardware_attr(arc_mesh.GetPrim(), "cuttingSurface", False)
-    arc_collision = _author_convex_collider(stage, f"{root_path}/ArcCollision", DERIVED_DIR / "deleaf_knife_arc.stl")
+    arc_collision = _author_decomposed_collider(
+        stage,
+        f"{root_path}/ArcCollision",
+        DERIVED_DIR / "deleaf_knife_arc.stl",
+    )
     arc_collision_prim = stage.GetPrimAtPath(arc_collision)
     _hardware_attr(arc_collision_prim, "hardwareRole", "knife_support")
     _hardware_attr(arc_collision_prim, "cuttingSurface", False)
-    return root_path, blade_path, arc_path
+    return root_path, blade_path, edge_path, arc_path
 
 
 def _remove_original_right_gripper(stage: Usd.Stage, robot_root: str) -> tuple[str, ...]:
@@ -410,12 +456,21 @@ def attach_robot_hardware(stage: Usd.Stage, robot_root: str = ROBOT_ROOT) -> Har
     attachments.append(head_attachment)
     cameras.append(head_camera)
 
-    knife_root, blade, arc = _author_knife(stage, f"{robot_root}/{END_EFFECTOR_LINKS['right']}", manifest)
+    knife_root, blade, edge, arc = _author_knife(
+        stage,
+        f"{robot_root}/{END_EFFECTOR_LINKS['right']}",
+        manifest,
+    )
     attachments.append(knife_root)
     return HardwareReport(
         cameras=tuple(cameras),
-        cutting_surfaces=(blade, f"{knife_root}/BladeCollision"),
-        non_cutting_supports=(arc, f"{knife_root}/ArcCollision"),
+        cutting_surfaces=(edge,),
+        non_cutting_supports=(
+            blade,
+            f"{knife_root}/BladeCollision",
+            arc,
+            f"{knife_root}/ArcCollision",
+        ),
         attachments=tuple(attachments),
         removed_right_gripper_prims=removed_right_gripper,
     )

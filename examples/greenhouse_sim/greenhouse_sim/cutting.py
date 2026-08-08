@@ -29,6 +29,7 @@ cannot see would quietly flatter every policy.
 from __future__ import annotations
 
 import dataclasses
+import math
 
 import numpy as np
 
@@ -49,6 +50,270 @@ FLUSH_STUB_M = 0.005
 MARGINAL_STUB_M = 0.020
 
 
+@dataclasses.dataclass(frozen=True)
+class CutGateParameters:
+    """Numerically stable conditions for a blade-mediated petiole cut."""
+
+    minimum_forward_speed_m_s: float = 0.01
+    maximum_axis_dot: float = math.sin(math.radians(35.0))
+    cut_zone_before_m: float = 0.002
+    cut_zone_after_m: float = 0.025
+    radial_tolerance_m: float = 0.004
+    minimum_cut_travel_m: float = 0.003
+    force_cap_multiple: float = 3.0
+    contact_memory_steps: int = 4
+
+
+@dataclasses.dataclass(frozen=True)
+class CutTarget:
+    """A cylindrical petiole cut zone in world coordinates."""
+
+    key: str
+    organ_label: str
+    centre_m: np.ndarray
+    axis: np.ndarray
+    radius_m: float
+    cut_force_n: float
+
+    def __post_init__(self) -> None:
+        centre = np.asarray(self.centre_m, dtype=np.float64)
+        axis = np.asarray(self.axis, dtype=np.float64)
+        norm = float(np.linalg.norm(axis))
+        if centre.shape != (3,) or axis.shape != (3,) or norm <= 0.0:
+            raise ValueError("cut target centre and non-zero axis must be three-vectors")
+        if self.radius_m <= 0.0 or self.cut_force_n <= 0.0:
+            raise ValueError("cut target radius and force must be positive")
+        object.__setattr__(self, "centre_m", centre)
+        object.__setattr__(self, "axis", axis / norm)
+
+    def required_work_j(self, parameters: CutGateParameters) -> float:
+        """Work needed to carry a loaded edge through the petiole diameter."""
+        travel = max(2.0 * self.radius_m, parameters.minimum_cut_travel_m)
+        return float(self.cut_force_n * travel)
+
+
+@dataclasses.dataclass(frozen=True)
+class BladeContactSample:
+    """One physics step of aggregated cutting-edge contact."""
+
+    point_m: np.ndarray
+    impulse_ns: np.ndarray
+    edge_centre_m: np.ndarray
+    edge_axis: np.ndarray
+    cutting_direction: np.ndarray
+    edge_velocity_m_s: np.ndarray
+    dt_s: float
+
+
+@dataclasses.dataclass
+class CutProgress:
+    """State accumulated only while contact satisfies the cut geometry."""
+
+    work_j: float = 0.0
+    peak_force_n: float = 0.0
+    peak_speed_m_s: float = 0.0
+    forward_travel_m: float = 0.0
+    contact_steps: int = 0
+    valid_contact_steps: int = 0
+    gap_steps: int = 0
+    minimum_signed_side_m: float = float("inf")
+    maximum_signed_side_m: float = float("-inf")
+    last_edge_centre_m: np.ndarray | None = None
+    last_stub_m: float = 0.0
+    edge_axis_alignment: float = 0.0
+    motion_transverse_alignment: float = 0.0
+    rejections: dict[str, int] = dataclasses.field(default_factory=dict)
+
+    def reject(self, reason: str) -> None:
+        self.rejections[reason] = self.rejections.get(reason, 0) + 1
+
+    def reset_contact_window(self) -> None:
+        """Discard disconnected bumps; physical cutting must be sustained."""
+        self.work_j = 0.0
+        self.forward_travel_m = 0.0
+        self.valid_contact_steps = 0
+        self.minimum_signed_side_m = float("inf")
+        self.maximum_signed_side_m = float("-inf")
+        self.last_edge_centre_m = None
+
+
+@dataclasses.dataclass(frozen=True)
+class PhysicalCutDecision:
+    """Evidence that is persisted with a physically triggered severance."""
+
+    target_key: str
+    organ_label: str
+    requested_stub_m: float
+    cut_work_j: float
+    required_work_j: float
+    peak_force_n: float
+    peak_speed_m_s: float
+    forward_travel_m: float
+    contact_steps: int
+    valid_contact_steps: int
+    edge_axis_alignment: float
+    motion_transverse_alignment: float
+
+
+class DirectionalCutGate:
+    """Accept only sustained, forceful leading-edge sweeps through a petiole."""
+
+    def __init__(self, parameters: CutGateParameters | None = None) -> None:
+        self.parameters = parameters or CutGateParameters()
+        self._progress: dict[str, CutProgress] = {}
+        self._completed: set[str] = set()
+
+    def progress_for(self, target_key: str) -> CutProgress:
+        return self._progress.setdefault(target_key, CutProgress())
+
+    @staticmethod
+    def _unit(vector: np.ndarray) -> np.ndarray | None:
+        values = np.asarray(vector, dtype=np.float64)
+        norm = float(np.linalg.norm(values))
+        return values / norm if values.shape == (3,) and norm > 1e-12 else None
+
+    def observe(
+        self,
+        target: CutTarget,
+        sample: BladeContactSample,
+    ) -> PhysicalCutDecision | None:
+        """Consume one aggregated contact step and return a cut once qualified."""
+        if target.key in self._completed:
+            return None
+        progress = self.progress_for(target.key)
+        progress.contact_steps += 1
+        progress.gap_steps = 0
+
+        point = np.asarray(sample.point_m, dtype=np.float64)
+        impulse = np.asarray(sample.impulse_ns, dtype=np.float64)
+        edge_centre = np.asarray(sample.edge_centre_m, dtype=np.float64)
+        velocity = np.asarray(sample.edge_velocity_m_s, dtype=np.float64)
+        edge_axis = self._unit(sample.edge_axis)
+        cut_direction = self._unit(sample.cutting_direction)
+        velocity_direction = self._unit(velocity)
+        if (
+            point.shape != (3,)
+            or impulse.shape != (3,)
+            or edge_centre.shape != (3,)
+            or velocity.shape != (3,)
+            or edge_axis is None
+            or cut_direction is None
+            or velocity_direction is None
+            or sample.dt_s <= 0.0
+        ):
+            progress.reject("invalid_sample")
+            return None
+
+        offset = point - target.centre_m
+        stub_m = float(np.dot(offset, target.axis))
+        radial = offset - stub_m * target.axis
+        radial_distance = float(np.linalg.norm(radial))
+        edge_axis_dot = abs(float(np.dot(edge_axis, target.axis)))
+        motion_axis_dot = abs(float(np.dot(velocity_direction, target.axis)))
+        forward_speed = float(np.dot(velocity, cut_direction))
+        effective_force = abs(float(np.dot(impulse, cut_direction))) / sample.dt_s
+
+        progress.peak_force_n = max(progress.peak_force_n, effective_force)
+        progress.peak_speed_m_s = max(progress.peak_speed_m_s, max(forward_speed, 0.0))
+        progress.edge_axis_alignment = 1.0 - edge_axis_dot
+        progress.motion_transverse_alignment = 1.0 - motion_axis_dot
+        progress.last_stub_m = stub_m
+
+        checks = (
+            (
+                -self.parameters.cut_zone_before_m
+                <= stub_m
+                <= self.parameters.cut_zone_after_m,
+                "outside_axial_cut_zone",
+            ),
+            (
+                radial_distance <= target.radius_m + self.parameters.radial_tolerance_m,
+                "outside_radial_cut_zone",
+            ),
+            (edge_axis_dot <= self.parameters.maximum_axis_dot, "edge_not_transverse"),
+            (motion_axis_dot <= self.parameters.maximum_axis_dot, "motion_not_transverse"),
+            (
+                forward_speed >= self.parameters.minimum_forward_speed_m_s,
+                "wrong_or_slow_direction",
+            ),
+            (effective_force >= target.cut_force_n, "insufficient_force"),
+        )
+        failed = [reason for accepted, reason in checks if not accepted]
+        if failed:
+            for reason in failed:
+                progress.reject(reason)
+            progress.last_edge_centre_m = edge_centre.copy()
+            return None
+
+        forward_step = 0.0
+        if progress.last_edge_centre_m is not None:
+            forward_step = max(
+                float(np.dot(edge_centre - progress.last_edge_centre_m, cut_direction)),
+                0.0,
+            )
+        progress.last_edge_centre_m = edge_centre.copy()
+        progress.valid_contact_steps += 1
+        progress.forward_travel_m += forward_step
+        capped_force = min(
+            effective_force,
+            target.cut_force_n * self.parameters.force_cap_multiple,
+        )
+        progress.work_j += capped_force * forward_step
+        side = float(np.dot(edge_centre - target.centre_m, cut_direction))
+        progress.minimum_signed_side_m = min(progress.minimum_signed_side_m, side)
+        progress.maximum_signed_side_m = max(progress.maximum_signed_side_m, side)
+
+        crossed_centre = (
+            progress.minimum_signed_side_m <= -0.25 * target.radius_m
+            and progress.maximum_signed_side_m >= 0.0
+        )
+        required_work = target.required_work_j(self.parameters)
+        if progress.work_j < required_work or not crossed_centre:
+            return None
+
+        self._completed.add(target.key)
+        return PhysicalCutDecision(
+            target_key=target.key,
+            organ_label=target.organ_label,
+            requested_stub_m=float(
+                np.clip(stub_m, 0.0, self.parameters.cut_zone_after_m)
+            ),
+            cut_work_j=progress.work_j,
+            required_work_j=required_work,
+            peak_force_n=progress.peak_force_n,
+            peak_speed_m_s=progress.peak_speed_m_s,
+            forward_travel_m=progress.forward_travel_m,
+            contact_steps=progress.contact_steps,
+            valid_contact_steps=progress.valid_contact_steps,
+            edge_axis_alignment=progress.edge_axis_alignment,
+            motion_transverse_alignment=progress.motion_transverse_alignment,
+        )
+
+    def finish_step(self, contacted_target_keys: set[str]) -> None:
+        """Advance contact gaps and reject damage assembled from separate taps."""
+        for key, progress in self._progress.items():
+            if key in contacted_target_keys or key in self._completed:
+                continue
+            progress.gap_steps += 1
+            if progress.gap_steps > self.parameters.contact_memory_steps:
+                progress.reset_contact_window()
+
+    def summary(self) -> dict[str, dict]:
+        return {
+            key: {
+                "work_j": progress.work_j,
+                "peak_force_n": progress.peak_force_n,
+                "peak_speed_m_s": progress.peak_speed_m_s,
+                "forward_travel_mm": progress.forward_travel_m * 1000.0,
+                "contact_steps": progress.contact_steps,
+                "valid_contact_steps": progress.valid_contact_steps,
+                "rejections": dict(progress.rejections),
+                "completed": key in self._completed,
+            }
+            for key, progress in self._progress.items()
+        }
+
+
 class CutError(Exception):
     """Raised when a severance cannot be applied."""
 
@@ -66,6 +331,16 @@ class Cut:
     realised_stub_m: float
     # Load at the junction when it let go; only meaningful for a tear.
     load_n: float = 0.0
+    trigger: str = "debug_forced"
+    cut_work_j: float = 0.0
+    required_work_j: float = 0.0
+    peak_force_n: float = 0.0
+    peak_speed_m_s: float = 0.0
+    forward_travel_m: float = 0.0
+    contact_steps: int = 0
+    valid_contact_steps: int = 0
+    edge_axis_alignment: float = 0.0
+    motion_transverse_alignment: float = 0.0
 
     @property
     def quantisation_error_m(self) -> float:
@@ -114,15 +389,31 @@ class Severer:
         """Organ labels that can still be cut."""
         return [label for label in self._rig.cut_joints if not self._is_severed(label)]
 
-    def cut(self, organ_label: str, stub_length_m: float = 0.0) -> Cut:
+    def cut(
+        self,
+        organ_label: str,
+        stub_length_m: float = 0.0,
+        *,
+        trigger: str = "debug_forced",
+        decision: PhysicalCutDecision | None = None,
+    ) -> Cut:
         """Sever `organ_label`, leaving `stub_length_m` attached to the parent.
 
         A stub of zero is the agronomically correct flush cut at the junction.
+        Benchmark cuts pass a :class:`PhysicalCutDecision`; calls without one
+        are retained only as an explicit debug/acceptance shortcut.
         """
         if organ_label not in self._rig.cut_joints:
             raise CutError(f"{organ_label} has no severable joint")
         if self._is_severed(organ_label):
             raise CutError(f"{organ_label} is already severed")
+        if decision is not None:
+            if decision.organ_label != organ_label:
+                raise CutError(
+                    f"physical cut decision is for {decision.organ_label}, not {organ_label}"
+                )
+            stub_length_m = decision.requested_stub_m
+            trigger = "physical_blade"
 
         joint_path, realised = self._joint_for_stub(organ_label, stub_length_m)
         self._set_joint_enabled(joint_path, enabled=False)
@@ -133,6 +424,20 @@ class Severer:
             torn=False,
             requested_stub_m=float(max(stub_length_m, 0.0)),
             realised_stub_m=realised,
+            trigger=trigger,
+            cut_work_j=decision.cut_work_j if decision is not None else 0.0,
+            required_work_j=decision.required_work_j if decision is not None else 0.0,
+            peak_force_n=decision.peak_force_n if decision is not None else 0.0,
+            peak_speed_m_s=decision.peak_speed_m_s if decision is not None else 0.0,
+            forward_travel_m=decision.forward_travel_m if decision is not None else 0.0,
+            contact_steps=decision.contact_steps if decision is not None else 0,
+            valid_contact_steps=decision.valid_contact_steps if decision is not None else 0,
+            edge_axis_alignment=(
+                decision.edge_axis_alignment if decision is not None else 0.0
+            ),
+            motion_transverse_alignment=(
+                decision.motion_transverse_alignment if decision is not None else 0.0
+            ),
         )
         self._cuts.append(record)
         return record
@@ -168,6 +473,7 @@ class Severer:
                 requested_stub_m=0.0,
                 realised_stub_m=0.0,
                 load_n=force,
+                trigger="tear",
             )
             self._cuts.append(record)
             torn.append(record)

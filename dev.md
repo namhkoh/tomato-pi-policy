@@ -5,7 +5,8 @@ orphan/lower leaves from high-wire vines), targeting demo collection → π0.5
 finetuning → deployment on the Rainbow Robotics **RB-Y1** (sim and real).
 
 Environment: Isaac Sim **5.1.0-rc.19** (Kit 107.3.3, omni.physx 107.3.26, USD 0.24.5)
-at `D:\isaac-sim`, Windows 11. Branch `koh-dev/simulator-base` (fork of openpi).
+at `D:\isaac-sim`, Windows 11. Active deleafing branch `koh-dev/deleaf`
+(fork of openpi).
 
 ## Status
 
@@ -24,7 +25,12 @@ at `D:\isaac-sim`, Windows 11. Branch `koh-dev/simulator-base` (fork of openpi).
 - [ ] Sustained pull/tear validation against the 32.5 N threshold
 - [x] RB-Y1 Model A v1.0 import, greenhouse placement, and stable ready pose
 - [x] Supplied D405 head/wrist brackets fitted; right tongs removed and replaced by the deleafing knife
+- [x] Physical cut gate: real leading-edge contact, force/work, direction, and centre crossing
+- [x] Protected-contact ledger for main stem, non-target organs, neighbouring vines, structure, and robot
+- [x] Bi-manual task state/retention support: left grasp -> right cut -> transport -> floor deposit
+- [x] Stable non-contact robot/vine startup after collider deduplication and wrist-envelope correction
 - [ ] Robot-to-vine gripper/blade contact and cut validation
+- [ ] Collision-aware dual-arm approach and simulator command/teleoperation bridge
 - [ ] Benchmark task definition + metrics
 
 ## Findings
@@ -157,6 +163,23 @@ No existing plant-manipulation benchmark measures it, and it is agronomically
 decisive: flush pruning wounds are near-absolutely resistant to *Botrytis cinerea*
 while petiole stubs are highly susceptible (Beyers et al. 2014), with lesions
 advancing 0.3–0.5 cm/day. Bins: ≤5 mm flush / 5–20 mm marginal / >20 mm risk.
+
+### D6 — Benchmark cuts require physical leading-edge evidence and bi-manual order
+
+The full flat knife plate remains a physical collider, but it is not itself a
+cutting semantic. Only contact points inside the distal 2 mm straight-edge
+region can accumulate cut work. A valid severance requires the measured petiole
+cut zone, transverse edge and motion alignment, forward edge motion, at least the
+petiole's 66.3 N cut force, sustained work through its diameter, and a sweep
+across the target centre. Separate taps do not combine. The U support, blade
+face, direct `C` debug release, and tensile tear cannot produce a benchmark cut.
+
+The required task order is explicitly bi-manual: both left fingers establish a
+loaded grasp on the selected petiole, the right leading edge physically severs
+that same target without protected contact, the left grasp retains and moves the
+orphan at least 0.15 m, then releases it into the floor drop zone. A simulator
+cut still follows physics if the policy failed to grasp first, but that episode
+is recorded as a benchmark failure rather than silently counted as success.
 
 ## Validation
 
@@ -550,9 +573,12 @@ self-collision, and changes only the two wheel drives to velocity mode.
 
 Collision reconstruction corrected an earlier source audit: v1.0 contains
 **17 active custom capsule elements**, not 26. The other nine matches are inside
-XML comments and must not become live colliders. Isaac's URDF importer drops
-the active non-standard capsules, so the builder restores those 17 as sibling
-prims under each link. The source also omits standard collisions for the base,
+XML comments and must not become live colliders. Isaac's URDF importer handles
+the non-standard capsules inconsistently: ordinary stage traversal did not show
+usable shapes, but live contact traces later proved its instance proxies still
+participated in PhysX alongside the restored siblings. The builder therefore
+deactivates every importer-created `collisions` scope and restores the 17 source
+capsules exactly once under authorable sibling scopes. The source also omits standard collisions for the base,
 wheels, gripper bodies, and fingers; conservative proxies add 3 base/wheel and
 3 retained left-end-effector/finger shapes. The original right end-effector body
 and both right fingers are a knife-only tool slot: their visual and collision
@@ -676,6 +702,92 @@ only the default transform selector's event subscription, while retaining
 viewport camera navigation and the custom pull path. The report records
 `native_transform_selector_disabled=true` when this targeted workaround is
 active.
+
+### Physical blade and bi-manual deleafing foundation (2026-08-08)
+
+This work is isolated on `koh-dev/deleaf`. It implements the benchmark substrate
+without claiming that an autonomous or teleoperated robot trajectory has already
+completed the task.
+
+The exploding/violent-contact behaviour was traced to geometry and filtering,
+not hidden with extra damping:
+
+- Each new flush petiole cut-zone capsule begins at an artistic mesh junction
+  that can overlap the main stem or a sibling petiole at rest. These zones must
+  contact the robot but must not make PhysX depenetrate one part of the plant
+  from another. Every cut zone is therefore filtered from all other plant
+  interaction bodies while robot/tool contact remains enabled. The interaction
+  set now contains 43 sparse colliders: protected main-stem zones plus one cut
+  zone and one grasp zone for each of the 18 real petioles.
+- Two nearest visual vines receive 56 static semantic safety proxies. They do
+  not add articulated plant load, but make neighbouring-vine collision both
+  physical and measurable.
+- The URDF import had duplicate live instance proxies in addition to the 17
+  restored capsules. All 34 importer-created collision scopes, including empty
+  link scopes, are now inactive before the exact 17 source capsules are restored.
+- The active vendor `link_*_arm_5` capsule was a whole-tool planning envelope:
+  250 mm cylinder length with 75 mm end radii, centred 100 mm below the wrist.
+  The source URDF preserves a precise right-wrist endpoint capsule from
+  z=+2 mm to z=-50 mm. Both symmetric wrists now use that 52 mm cylinder centred
+  at z=-24 mm for contact simulation. The left palm proxy also stops at z=-25 mm
+  instead of filling the finger channel down to z=-73 mm.
+
+A closer numerical dual-arm IK spawn was tested and explicitly rejected. Contact
+traces showed the right U support touching the protected main stem and
+`SubStem_01`, while the broad old arm-5 and left-palm proxies overlapped the
+target area. The launcher was restored to the previously accepted non-contact
+right pre-contact pose and official SDK-ready left arm. Starting closer is not a
+substitute for collision-aware approach motion.
+
+The physical cut implementation now exposes all 18 `SubStem_XX` junctions as
+world-space targets with centre, axis, local biological radius, and cut force.
+The local radius is the first centreline sample at the junction, not the
+segment-average contact radius; for `SubStem_00` this is 4.189 mm rather than the
+incorrect 14.420 mm downstream-flare average. Required work is
+`66.3 N * max(2r, 3 mm)`. The default acceptance limits are 10 mm/s minimum
+forward speed, at most 35 degrees axial alignment for both edge and motion,
+2 mm before/25 mm after the junction, 4 mm radial tolerance, 3 mm minimum
+travel, and four physics steps of contact memory. Force is capped at 3x while
+integrating work so a single solver impulse cannot fake a full cut.
+
+Live contact monitoring distinguishes the straight leading edge from the plate
+face and U support, aggregates all contact points once per 240 Hz step, and logs
+main-stem, non-target-organ, neighbouring-vine, greenhouse-structure, and robot
+self-contact as blocking safety violations. A physical cut is benchmark-valid
+only when it is the selected target, the safety ledger is clear, and the
+bi-manual state machine accepts it. `C` remains an explicit debug-only joint
+release and is always invalid for benchmark scoring.
+
+The retained left tongs now have contact reporting on both fingers and one
+pre-authored, initially disabled fixed grasp joint per petiole. Three consecutive
+steps with both fingers and at least 1 N establish the grasp; enabling a
+pre-authored joint avoids runtime prim deletion and preserves the orphan after
+severance. The task state machine enforces `seek_grasp -> grasped ->
+orphan_retained -> transported -> released -> deposited`, including wrong-target
+cuts, protected contact, cut-before-grasp, early release, and premature orphan
+loss as explicit failure reasons. Deposit requires the orphan to be within the
+aisle floor zone, below the floor tolerance, and moving no faster than 0.15 m/s.
+
+**Current acceptance (Isaac Sim 5.1):**
+
+| Check | Result | Evidence |
+|---|---|---|
+| Hermetic regressions | cut force/direction/work, disconnected taps, protected-contact failure, complete bi-manual ordering, cut-zone filtering, knife semantics, and robot placement covered; 48 passed, 1 PhysX-only test skipped outside a running app | `python -m pytest examples/greenhouse_sim/greenhouse_sim -q` |
+| Robot collider rebuild | 34 imported collision scopes inactive; exactly 17 URDF capsules restored; both wrist contact capsules 52 mm; 31 authored robot colliders | `data/greenhouse_sim/robots/rby1a_v1.0.json` |
+| 480-step integrated soak | succeeded=true; 121/121 vine bodies finite; 0 runaway organs; 68.693 mm maximum compliant settling; 34/34 robot bodies finite; 2.078 degree base tilt | `data/greenhouse_sim/deleaf_collision_fix_stability_480.json` |
+| Rest safety | no robot-vine, knife-vine, gutter, camera, or arm contact; only chassis/wheel support contacts; safety_clear=true | same report |
+| Safe right pre-contact | blade 117.945 mm and U support 65.033 mm from settled `SubStem_00`; arc still faces upward | same report |
+| Error scan | no Python traceback, PhysX error, invalid joint, NaN, broadphase fault, or explosion signature | `kit_20260808_152754.log` |
+
+This clears the stable benchmark-physics and event-accounting milestone. It does
+**not** clear robot-to-vine execution: the left arm is intentionally 644.5 mm
+from the selected grasp body in its collision-clear SDK-ready pose, and the right
+blade intentionally retains an air gap. The next milestone is a collision-aware
+dual-arm command path that reaches pre-grasp/pre-cut, executes a slow force-limited
+grasp and transverse sweep, and proves one complete physical sequence in the
+engine. Only after that live sequence is repeatable should the lab RB-Y1 teleop
+bridge be connected for demonstration collection; RL/VLA environment batching
+and scoring remain downstream of that gate.
 
 ## Research findings, 2026-08-06 (pre-implementation)
 
@@ -805,3 +917,9 @@ One logical change per commit; no AI attribution trailers.
   RB-Y1 v1.1 FreeCAD screw-pair datum, corrected the extracted-STL origin error,
   regression-checked both mirrored mounts, verified a live right D405 frame,
   and repeated the 480-step robot/vine/contact acceptance soak.
+- 2026-08-08 — Added leading-edge force/direction/work cuts, protected-contact
+  accounting, 18 petiole cut/grasp targets, and the required left-grasp/right-cut/
+  retain/transport/floor-deposit state machine; removed plant self-depenetration,
+  duplicate imported robot colliders, oversized wrist planning envelopes, and
+  the left-palm jaw obstruction; passed 48 regressions and a clean 480-step
+  integrated robot/vine/contact soak on `koh-dev/deleaf`.

@@ -80,6 +80,7 @@ def test_authored_stage_has_three_cameras_and_one_cutting_part() -> None:
     from pxr import Sdf
     from pxr import Usd
     from pxr import UsdGeom
+    from pxr import UsdPhysics
 
     stage = Usd.Stage.CreateInMemory()
     root = UsdGeom.Xform.Define(stage, robot_hardware.ROBOT_ROOT)
@@ -100,9 +101,20 @@ def test_authored_stage_has_three_cameras_and_one_cutting_part() -> None:
         if prim.HasAttribute("tomato:cuttingSurface") and prim.GetAttribute("tomato:cuttingSurface").Get()
     ]
     assert {str(prim.GetPath()) for prim in cutting} == set(report.cutting_surfaces)
-    assert all(prim.GetAttribute("tomato:hardwareRole").Get() == "blade" for prim in cutting)
+    assert len(cutting) == 1
+    assert cutting[0].GetAttribute("tomato:hardwareRole").Get() == "cutting_edge"
+    assert cutting[0].GetAttribute("tomato:edgeDepthMillimeters").Get() == 2.0
+    assert cutting[0].GetAttribute("tomato:cuttingDirection").Get() == Gf.Vec3f(0.0, -1.0, 0.0)
+    assert cutting[0].GetAttribute("tomato:edgeAxis").Get() == Gf.Vec3f(1.0, 0.0, 0.0)
     assert all(stage.GetPrimAtPath(path).IsValid() for path in report.non_cutting_supports)
     assert all(not stage.GetPrimAtPath(path).GetAttribute("tomato:cuttingSurface").Get() for path in report.non_cutting_supports)
+    arc_collision = stage.GetPrimAtPath(
+        f"{robot_hardware.ROBOT_ROOT}/ee_right/attachments/DeleafKnife/ArcCollision"
+    )
+    assert (
+        UsdPhysics.MeshCollisionAPI(arc_collision).GetApproximationAttr().Get()
+        == UsdPhysics.Tokens.convexDecomposition
+    )
     assert Sdf.Path(report.attachments[-1]).IsAbsolutePath()
     assert len(report.removed_right_gripper_prims) == 6
     assert all(not stage.GetPrimAtPath(path).IsActive() for path in report.removed_right_gripper_prims)
@@ -133,8 +145,10 @@ def test_authored_stage_has_three_cameras_and_one_cutting_part() -> None:
         assert prim.GetAttribute("tomato:mountInterface").Get() == "rby1_wrist_m3_pair"
         assert prim.GetAttribute("tomato:mountBoltSpacingMillimeters").Get() == 18.0
 
-    blade_matrix = UsdGeom.Xformable(stage.GetPrimAtPath(report.cutting_surfaces[0])).ComputeLocalToWorldTransform(
+    edge_matrix = UsdGeom.Xformable(stage.GetPrimAtPath(report.cutting_surfaces[0])).ComputeLocalToWorldTransform(
         Usd.TimeCode.Default()
     )
-    blade_projection = np.asarray(blade_matrix.TransformDir(Gf.Vec3d(0.0, -1.0, 0.0)))
+    blade_projection = np.asarray(
+        edge_matrix.TransformDir(Gf.Vec3d(0.0, -1.0, 0.0)).GetNormalized()
+    )
     np.testing.assert_allclose(blade_projection, [0.0, 0.0, -1.0], atol=1e-9)

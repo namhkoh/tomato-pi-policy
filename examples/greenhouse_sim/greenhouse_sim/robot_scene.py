@@ -52,10 +52,12 @@ SDK_READY_POSE_DEGREES = {
     "head_1": 0.0,
 }
 
-# Numerical IK from the exact RB-Y1 Model A v1.0 URDF.  With the default base
+# Numerical IK from the exact RB-Y1 Model A v1.0 URDF. With the default base
 # pose this places the right flat blade in front of Vine_0000/SubStem_00 while
-# retaining an air gap, so neither the blade nor its U support spawns in
-# contact with the plant.  The torso, left arm, and head retain the SDK vector.
+# retaining a verified air gap. Deliberately do not spawn either arm at contact:
+# the failed closer candidate touched the main stem and a neighbouring petiole.
+# Collision-aware approach motion is the next control milestone. The torso,
+# left arm, and head retain the official SDK ready vector.
 GREENHOUSE_PRECONTACT_RIGHT_ARM_DEGREES = (
     -101.724,
     -83.623,
@@ -88,6 +90,7 @@ class RobotPlacement:
     initialized_joints: tuple[str, ...]
     cameras: tuple[str, ...]
     knife_blade: str
+    knife_cutting_edge: str
     knife_support: str
     right_gripper_removed: bool
 
@@ -157,9 +160,12 @@ def add_fitted_robot(
             raise ValueError(f"fitted D405 camera is missing: {camera}")
 
     blade = f"{root_path}/ee_right/attachments/DeleafKnife/Blade"
+    cutting_edge = f"{root_path}/ee_right/attachments/DeleafKnife/CuttingEdge"
     support = f"{root_path}/ee_right/attachments/DeleafKnife/Arc"
-    if stage.GetPrimAtPath(blade).GetAttribute("tomato:cuttingSurface").Get() is not True:
-        raise ValueError("the flat knife blade is not marked as a cutting surface")
+    if stage.GetPrimAtPath(blade).GetAttribute("tomato:cuttingSurface").Get() is not False:
+        raise ValueError("the knife plate body must not be treated as its leading edge")
+    if stage.GetPrimAtPath(cutting_edge).GetAttribute("tomato:cuttingSurface").Get() is not True:
+        raise ValueError("the flat knife leading edge is not marked as the cutting surface")
     if stage.GetPrimAtPath(support).GetAttribute("tomato:cuttingSurface").Get() is not False:
         raise ValueError("the curved knife support must be explicitly non-cutting")
     right_gripper_visuals_removed = all(
@@ -191,6 +197,7 @@ def add_fitted_robot(
         initialized_joints=initialized,
         cameras=cameras,
         knife_blade=blade,
+        knife_cutting_edge=cutting_edge,
         knife_support=support,
         right_gripper_removed=right_gripper_removed,
     )

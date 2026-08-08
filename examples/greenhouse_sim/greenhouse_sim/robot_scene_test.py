@@ -36,13 +36,16 @@ def test_ready_pose_matches_official_model_a_vector() -> None:
     ]
 
 
-def test_greenhouse_pose_replaces_only_the_right_arm_vector() -> None:
+def test_greenhouse_pose_replaces_only_right_arm_for_safe_precontact() -> None:
     for name, expected in robot_scene.SDK_READY_POSE_DEGREES.items():
         if not name.startswith("right_arm_"):
             assert robot_scene.READY_POSE_DEGREES[name] == expected
     assert [robot_scene.READY_POSE_DEGREES[f"right_arm_{index}"] for index in range(7)] == list(
         robot_scene.GREENHOUSE_PRECONTACT_RIGHT_ARM_DEGREES
     )
+    assert [robot_scene.READY_POSE_DEGREES[f"left_arm_{index}"] for index in range(7)] == [
+        robot_scene.SDK_READY_POSE_DEGREES[f"left_arm_{index}"] for index in range(7)
+    ]
 
 
 def test_default_pose_faces_the_robot_toward_the_vine_row() -> None:
@@ -78,5 +81,25 @@ def test_generated_robot_references_with_ready_state_and_hardware() -> None:
         joint = stage.GetPrimAtPath(f"{placement.root_path}/joints/{name}")
         state = PhysxSchema.JointStateAPI.Get(joint, "angular")
         assert state.GetPositionAttr().Get() == expected
-    assert stage.GetPrimAtPath(placement.knife_blade).GetAttribute("tomato:cuttingSurface").Get()
+    assert not stage.GetPrimAtPath(placement.knife_blade).GetAttribute("tomato:cuttingSurface").Get()
+    assert stage.GetPrimAtPath(placement.knife_cutting_edge).GetAttribute(
+        "tomato:cuttingSurface"
+    ).Get()
     assert not stage.GetPrimAtPath(placement.knife_support).GetAttribute("tomato:cuttingSurface").Get()
+
+    # Imported collision instance proxies must remain inactive; the sibling
+    # restored capsule is the single authoritative wrist contact shape.
+    for side in ("right", "left"):
+        link = f"{placement.root_path}/link_{side}_arm_5"
+        imported = stage.GetPrimAtPath(f"{link}/collisions")
+        assert imported.IsValid() and not imported.IsActive()
+        capsule = UsdGeom.Capsule.Get(stage, f"{link}/restored_collisions/capsule_00")
+        assert capsule.GetRadiusAttr().Get() == 0.075
+        assert capsule.GetHeightAttr().Get() == 0.052
+        assert stage.GetPrimAtPath(str(capsule.GetPath())).GetAttribute(
+            "xformOp:transform"
+        ).Get().ExtractTranslation()[2] == -0.024
+
+    palm = stage.GetPrimAtPath(f"{placement.root_path}/ee_left/restored_collisions/contact_proxy")
+    assert palm.GetAttribute("xformOp:scale").Get()[2] == 0.025
+    assert palm.GetAttribute("xformOp:translate").Get()[2] == -0.0125

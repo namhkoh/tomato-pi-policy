@@ -155,6 +155,32 @@ class Junction:
     stiffness_nm_per_rad: float
     lever_m: float
     tear_force_n: float
+    cut_position_m: np.ndarray
+    cut_axis: np.ndarray
+    cut_radius_m: float
+    cut_force_n: float
+
+
+@dataclasses.dataclass(frozen=True)
+class ColliderInfo:
+    """Semantic identity of one physical plant collision shape."""
+
+    path: str
+    body_path: str
+    organ: int
+    organ_label: str
+    segment: int
+    role: str
+
+
+@dataclasses.dataclass(frozen=True)
+class SafetyColliderInfo:
+    """Static semantic proxy for a neighbouring visual vine."""
+
+    path: str
+    vine_name: str
+    organ_label: str
+    role: str
 
 
 @dataclasses.dataclass(frozen=True)
@@ -167,6 +193,7 @@ class PlantRig:
     cut_joints: dict[str, str]  # organ label -> joint prim that severs it
     junctions: dict[str, Junction] = dataclasses.field(default_factory=dict)
     collider_paths: tuple[str, ...] = ()
+    colliders: tuple[ColliderInfo, ...] = ()
     collision_mode: str = "interaction"
 
     def link_paths_for(self, organ: int) -> list[str]:
@@ -358,6 +385,24 @@ def _define_joint(
     joint.CreateJointEnabledAttr(defaultValue=True)
 
 
+def _filter_cut_zones_from_plant(
+    stage: Usd.Stage,
+    collider_infos: list[ColliderInfo],
+) -> None:
+    """Keep flush blade zones physical without self-depenetrating the plant."""
+    interaction_bodies = tuple(info.body_path for info in collider_infos)
+    for info in collider_infos:
+        if "cut_zone" not in info.role:
+            continue
+        cut_collider = stage.GetPrimAtPath(info.path)
+        relation = UsdPhysics.FilteredPairsAPI.Apply(
+            cut_collider
+        ).CreateFilteredPairsRel()
+        for body_path in interaction_bodies:
+            if body_path != info.body_path:
+                relation.AddTarget(Sdf.Path(body_path))
+
+
 def author_plant_physics(
     stage: Usd.Stage,
     plant: organs.Plant,
@@ -413,6 +458,7 @@ def author_plant_physics(
 
     links: list[Link] = []
     collider_paths: list[Sdf.Path] = []
+    collider_infos: list[ColliderInfo] = []
     joints: dict[str, str] = {}
     cut_joints: dict[str, str] = {}
     junctions: dict[str, Junction] = {}
@@ -446,9 +492,11 @@ def author_plant_physics(
             # that inside the articulation serves no purpose.
             physx_articulation.CreateEnabledSelfCollisionsAttr(defaultValue=False)
         chain: list[Link] = []
-        contact_segments: set[int] = set()
+        contact_segments: dict[int, str] = {}
         if collision_mode == "all":
-            contact_segments.update(range(points.shape[0] - 1))
+            contact_segments.update(
+                {segment: "generic_plant" for segment in range(points.shape[0] - 1)}
+            )
         elif collision_mode == "interaction":
             arcs = centreline.arc_lengths()
             centres = 0.5 * (arcs[:-1] + arcs[1:])
@@ -458,11 +506,21 @@ def author_plant_physics(
                 # PhysX; physical spacing keeps the result independent of the
                 # requested structural segment length.
                 for target in np.arange(0.10, float(arcs[-1]), 0.20):
-                    contact_segments.add(int(np.argmin(np.abs(centres - target))))
+                    segment = int(np.argmin(np.abs(centres - target)))
+                    contact_segments[segment] = "protected_main_stem"
             elif organ.label.startswith("SubStem_"):
-                # One graspable zone at the middle of each of the 18 real
-                # deleafing petioles, clear of its interpenetrating stem base.
-                contact_segments.add(int(np.argmin(np.abs(centres - 0.5 * arcs[-1]))))
+                # Segment zero is the blade-contact zone at the real junction.
+                # A second midpoint collider remains available for mouse and
+                # left-gripper interaction. Self-collision inside this organ's
+                # articulation is disabled, so the endpoint capsule does not
+                # fight its own chain.
+                contact_segments[0] = "petiole_cut_zone"
+                midpoint = int(np.argmin(np.abs(centres - 0.5 * arcs[-1])))
+                contact_segments[midpoint] = (
+                    "petiole_cut_zone_grasp"
+                    if midpoint == 0
+                    else "petiole_grasp"
+                )
 
         for segment in range(points.shape[0] - 1):
             contactable = segment in contact_segments
@@ -485,6 +543,27 @@ def author_plant_physics(
             )
             if contactable:
                 collider_paths.append(collider)
+                role = contact_segments[segment]
+                collider_prim = stage.GetPrimAtPath(collider)
+                collider_prim.CreateAttribute(
+                    "tomato:organIndex", Sdf.ValueTypeNames.Int, custom=True
+                ).Set(int(organ.index))
+                collider_prim.CreateAttribute(
+                    "tomato:organLabel", Sdf.ValueTypeNames.String, custom=True
+                ).Set(organ.label)
+                collider_prim.CreateAttribute(
+                    "tomato:interactionRole", Sdf.ValueTypeNames.String, custom=True
+                ).Set(role)
+                collider_infos.append(
+                    ColliderInfo(
+                        path=str(collider),
+                        body_path=link.path,
+                        organ=organ.index,
+                        organ_label=organ.label,
+                        segment=segment,
+                        role=role,
+                    )
+                )
             chain.append(link)
             links.append(link)
 
@@ -554,7 +633,28 @@ def author_plant_physics(
                 # a pull force: the length of the organ hanging off it.
                 lever_m=float(sum(link.length for link in chain)),
                 tear_force_n=properties.tear_force_n,
+                cut_position_m=chain[0].start.copy(),
+                cut_axis=(chain[0].end - chain[0].start)
+                / max(float(np.linalg.norm(chain[0].end - chain[0].start)), 1e-12),
+                # Cutting happens at the organ's first centreline sample, not
+                # at the segment-average radius used by its contact capsule.
+                # Artistic petiole meshes flare farther downstream; averaging
+                # that flare overstated SubStem_00's cut diameter by ~2.6x and
+                # therefore overstated the work required to sever it.
+                cut_radius_m=float(
+                    min(max(float(centreline.radii[0]), 1e-4), 0.5 * chain[0].length)
+                ),
+                cut_force_n=properties.cut_force_n,
             )
+
+    # Flush cut-zone capsules begin exactly where a petiole enters the main
+    # stem. The source is an artistic rest mesh, so those endpoint shapes can
+    # also overlap an adjacent main-stem or sibling-petiole contact proxy by a
+    # few millimetres. They must collide with the knife and gripper, but they
+    # must never ask PhysX to depenetrate the plant from its own authored rest
+    # pose. Filter each cut zone from every other *plant* interaction body;
+    # external robot/tool contacts remain enabled.
+    _filter_cut_zones_from_plant(stage, collider_infos)
 
     return PlantRig(
         root_path=root_path,
@@ -563,6 +663,7 @@ def author_plant_physics(
         cut_joints=cut_joints,
         junctions=junctions,
         collider_paths=tuple(str(path) for path in collider_paths),
+        colliders=tuple(collider_infos),
         collision_mode=collision_mode,
     )
 
@@ -580,6 +681,99 @@ def _nearest_link(chain: list[Link], point: np.ndarray) -> Link | None:
     if not chain:
         return None
     return min(chain, key=lambda link: float(np.linalg.norm(0.5 * (link.start + link.end) - point)))
+
+
+def author_safety_proxies(
+    stage: Usd.Stage,
+    plant: organs.Plant,
+    root_path: str,
+    skeletons: dict[int, skeleton_module.Skeleton],
+    to_stage_frame,
+    *,
+    vine_name: str,
+    visible: bool = False,
+) -> tuple[SafetyColliderInfo, ...]:
+    """Give neighbouring visual vines lightweight physical/safety colliders.
+
+    These vines remain static references. Sparse main-stem and petiole capsules
+    make collision avoidance observable without introducing hundreds of
+    additional articulated bodies into each benchmark episode.
+    """
+    root = Sdf.Path(root_path)
+    UsdGeom.Scope.Define(stage, root)
+    authored: list[SafetyColliderInfo] = []
+    for organ in plant.organs:
+        centreline = skeletons.get(organ.index)
+        if centreline is None:
+            continue
+        points = to_stage_frame(centreline.points)
+        if points.shape[0] < 2:
+            continue
+        arcs = centreline.arc_lengths()
+        centres = 0.5 * (arcs[:-1] + arcs[1:])
+        if organ.index == plant.root:
+            targets = np.arange(0.10, float(arcs[-1]), 0.20)
+            segments = sorted(
+                {int(np.argmin(np.abs(centres - target))) for target in targets}
+            )
+            role = "neighbour_main_stem"
+        elif organ.label.startswith("SubStem_"):
+            segments = [int(np.argmin(np.abs(centres - 0.5 * arcs[-1])))]
+            role = "neighbour_petiole"
+        else:
+            continue
+
+        organ_scope = root.AppendChild(f"Organ_{organ.index:04d}")
+        UsdGeom.Scope.Define(stage, organ_scope)
+        for segment in segments:
+            start = points[segment]
+            end = points[segment + 1]
+            axis = end - start
+            length = float(np.linalg.norm(axis))
+            if length <= 0.0:
+                continue
+            fitted_radius = float(
+                max(
+                    0.5
+                    * (
+                        centreline.radii[segment]
+                        + centreline.radii[segment + 1]
+                    ),
+                    1e-4,
+                )
+            )
+            radius = min(fitted_radius, 0.5 * length)
+            path = organ_scope.AppendChild(f"Proxy_{segment:03d}")
+            capsule = UsdGeom.Capsule.Define(stage, path)
+            capsule.CreateAxisAttr(UsdGeom.Tokens.z)
+            capsule.CreateRadiusAttr(radius)
+            capsule.CreateHeightAttr(max(length - 2.0 * radius, 1e-4))
+            xform = UsdGeom.Xformable(capsule.GetPrim())
+            xform.AddTranslateOp().Set(Gf.Vec3d(*(0.5 * (start + end))))
+            xform.AddOrientOp().Set(_orient_to(axis))
+            UsdPhysics.CollisionAPI.Apply(capsule.GetPrim())
+            if visible:
+                capsule.CreateDisplayColorAttr([Gf.Vec3f(0.65, 0.15, 0.10)])
+            else:
+                capsule.CreatePurposeAttr(UsdGeom.Tokens.guide)
+            capsule.GetPrim().CreateAttribute(
+                "tomato:vineName", Sdf.ValueTypeNames.String, custom=True
+            ).Set(vine_name)
+            capsule.GetPrim().CreateAttribute(
+                "tomato:organLabel", Sdf.ValueTypeNames.String, custom=True
+            ).Set(organ.label)
+            capsule.GetPrim().CreateAttribute(
+                "tomato:interactionRole", Sdf.ValueTypeNames.String, custom=True
+            ).Set(role)
+            authored.append(
+                SafetyColliderInfo(
+                    path=str(path),
+                    vine_name=vine_name,
+                    organ_label=organ.label,
+                    role=role,
+                )
+            )
+    return tuple(authored)
 
 
 # High-wire tomato is clipped to its support string roughly every 25-35 cm.

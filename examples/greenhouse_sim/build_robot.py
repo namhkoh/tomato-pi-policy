@@ -1,9 +1,10 @@
 """Build the exact RB-Y1 Model A v1.0 USD with deleafing hardware.
 
 The Isaac URDF importer does not understand RB-Y1's non-standard ``capsule``
-elements.  This builder imports the licensed v1.0 model, restores all 17 active
-declared link capsules, adds conservative mobile-base contacts, changes the two
-wheel joints to velocity drives, and attaches the supplied knife/brackets/D405s.
+elements consistently. This builder imports the licensed v1.0 model, disables
+the importer's collision instances, restores all 17 active declared link
+capsules once, adds conservative mobile-base contacts, changes the two wheel
+joints to velocity drives, and attaches the supplied knife/brackets/D405s.
 
 Run from the repository root:
 
@@ -32,6 +33,17 @@ _DEFAULT_OUTPUT = pathlib.Path("data/greenhouse_sim/robots/rby1a_v1.0.usd")
 _DEFAULT_REPORT = pathlib.Path("data/greenhouse_sim/robots/rby1a_v1.0.json")
 _EXPECTED_ROOT = "/RBY1_A_v1_0"
 
+# The active arm-5 capsule in the vendor URDF is a conservative whole-tool
+# planning envelope (250 mm cylinder plus two 75 mm hemispheres). It extends
+# through the wrist tool and made valid vine approaches look like arm impacts.
+# The same source file preserves the precise right-wrist capsule endpoints in a
+# comment: sp=(0, 0, 0.002), ep=(0, 0, -0.050), radius=0.075. Use that 52 mm
+# cylinder, centred at -24 mm, on both symmetric wrists for contact simulation.
+_TASK_CONTACT_CAPSULE_OVERRIDES = {
+    "link_right_arm_5": {"xyz_m": (0.0, 0.0, -0.024), "cylinder_length_m": 0.052},
+    "link_left_arm_5": {"xyz_m": (0.0, 0.0, -0.024), "cylinder_length_m": 0.052},
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -50,6 +62,30 @@ def _numbers(value: str | None, default: tuple[float, float, float]) -> tuple[fl
     return parsed
 
 
+def _deactivate_imported_collision_scopes(stage, urdf_path: pathlib.Path, Sdf) -> list[str]:
+    """Disable importer-owned collision instances before restoring capsules.
+
+    Some imported capsule instance proxies still participate in PhysX even
+    though normal stage traversal does not list them. Leaving those scopes live
+    duplicates every restored capsule and doubles contact responses.
+    """
+    root = ET.parse(urdf_path).getroot()
+    disabled: list[str] = []
+    for link in root.findall("link"):
+        path = f"{_EXPECTED_ROOT}/{link.attrib['name']}/collisions"
+        prim = stage.GetPrimAtPath(path)
+        if not prim.IsValid() or not prim.IsActive():
+            continue
+        prim.CreateAttribute(
+            "tomato:replacedByRestoredColliders",
+            Sdf.ValueTypeNames.Bool,
+            custom=True,
+        ).Set(True)
+        prim.SetActive(False)
+        disabled.append(path)
+    return disabled
+
+
 def _restore_urdf_capsules(stage, urdf_path: pathlib.Path, robot_hardware, Gf, Sdf, UsdGeom, UsdPhysics) -> list[dict]:
     root = ET.parse(urdf_path).getroot()
     restored: list[dict] = []
@@ -63,10 +99,13 @@ def _restore_urdf_capsules(stage, urdf_path: pathlib.Path, robot_hardware, Gf, S
             if capsule_element is None:
                 continue
             radius = float(capsule_element.attrib["radius"])
-            length = float(capsule_element.attrib["length"])
+            source_length = float(capsule_element.attrib["length"])
             origin = collision.find("origin")
-            xyz = _numbers(None if origin is None else origin.get("xyz"), (0.0, 0.0, 0.0))
+            source_xyz = _numbers(None if origin is None else origin.get("xyz"), (0.0, 0.0, 0.0))
             rpy = _numbers(None if origin is None else origin.get("rpy"), (0.0, 0.0, 0.0))
+            override = _TASK_CONTACT_CAPSULE_OVERRIDES.get(link_name)
+            length = source_length if override is None else float(override["cylinder_length_m"])
+            xyz = source_xyz if override is None else tuple(float(value) for value in override["xyz_m"])
 
             # The importer's empty collision scope is an instanceable
             # reference, so children there would be instance proxies. A
@@ -93,6 +132,9 @@ def _restore_urdf_capsules(stage, urdf_path: pathlib.Path, robot_hardware, Gf, S
                     "cylinder_length_m": length,
                     "xyz_m": xyz,
                     "rpy_rad": rpy,
+                    "source_cylinder_length_m": source_length,
+                    "source_xyz_m": source_xyz,
+                    "task_contact_override": override is not None,
                 }
             )
     return restored
@@ -132,7 +174,10 @@ def _add_mobile_base_colliders(stage, Gf, Sdf, UsdGeom, UsdPhysics) -> list[str]
 
 def _add_gripper_colliders(stage, Gf, Sdf, UsdGeom, UsdPhysics) -> list[str]:
     """Restore contact on the retained left gripper only."""
-    body_min = np.array([-0.0630, -0.0325, -0.0730])
+    # Keep the palm proxy above the finger channel. The previous box filled the
+    # 48 mm gap down to the finger joints and collided with a petiole before
+    # either finger could establish a valid grasp.
+    body_min = np.array([-0.0630, -0.0325, -0.0250])
     body_max = np.array([0.0630, 0.0325, 0.0])
     finger_min = np.array([-0.0030, -0.0160, -0.0605])
     finger_max = np.array([0.0130, 0.0160, 0.0015])
@@ -240,6 +285,7 @@ def main() -> int:
         raise RuntimeError(f"unexpected imported root: {default_prim.GetPath() if default_prim else imported_root}")
     stage.SetEditTarget(stage.GetRootLayer())
 
+    disabled_imported_colliders = _deactivate_imported_collision_scopes(stage, urdf_path, Sdf)
     capsules = _restore_urdf_capsules(stage, urdf_path, robot_hardware, Gf, Sdf, UsdGeom, UsdPhysics)
     expected_capsules = sum(
         1
@@ -272,6 +318,7 @@ def main() -> int:
             "self_collision": False,
             "import_inertia_tensor": True,
         },
+        "disabled_imported_collision_scopes": disabled_imported_colliders,
         "restored_urdf_capsules": capsules,
         "mobile_base_colliders": mobile_colliders,
         "gripper_colliders": gripper_colliders,
@@ -289,6 +336,7 @@ def main() -> int:
     print(f"robot:       {output_path}")
     print(f"root:        {default_prim.GetPath()}")
     print(f"capsules:    {len(capsules)} restored from URDF")
+    print(f"disabled:    {len(disabled_imported_colliders)} imported collision scopes")
     print(f"base shapes: {len(mobile_colliders)}")
     print(f"EE shapes:   {len(gripper_colliders)}")
     print(f"right tool:  knife only ({len(hardware.removed_right_gripper_prims)} gripper scopes removed)")

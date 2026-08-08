@@ -140,7 +140,11 @@ While the simulation is running:
 
 - Hold **Shift** and left-drag any visible stem, petiole, or leaf blade.
 - Press `[` / `]` to select the previous / next deleafing petiole.
-- Press `C` (or the window's **CUT target** button) to sever the selected petiole.
+- Press `G` to close the retained left tongs and `O` to open/release them. A
+  valid grasp requires loaded contact from both fingers on the selected petiole.
+- Press `C` only for an explicit **DEBUG FORCE CUT**. It releases the selected
+  joint but is never benchmark-valid; a physical cut triggers automatically
+  from real straight-edge contact, force, direction, travel, and work.
 - Press `V` to select the next dynamic vine when more than one is enabled.
 - Press `1` for the inspection view, `2` for the head D405, `3` for the left
   wrist D405, or `4` for the right wrist D405. The same choices are buttons in
@@ -148,7 +152,7 @@ While the simulation is running:
 
 Mouse pulling raycasts the original rendered GLB mesh and maps the hit to its
 supporting rigid body. It therefore works across broad leaf blades as well as
-thin stems without enlarging the 28 robot-contact proxies. The pull is a bounded
+thin stems without enlarging the sparse robot-contact proxies. The pull is a bounded
 spring; `--drag-stiffness`, `--drag-damping`, and `--drag-max-force` tune it.
 The live report at `data/greenhouse_sim/interactive_greenhouse.json` records
 `visual_mouse_grabs`, releases, peak force, and cuts.
@@ -188,8 +192,9 @@ Build the exact RB-Y1 Model A v1.0 asset from the bundled official SDK URDF:
 $ISAACSIM/python.sh examples/greenhouse_sim/build_robot.py
 ```
 
-The builder keeps the mobile base dynamic, restores all 17 active custom URDF
-capsules omitted by Isaac's importer, adds conservative base and left-gripper
+The builder keeps the mobile base dynamic, disables all importer-created
+collision instance scopes, restores the 17 active custom URDF capsules exactly
+once, and adds conservative base and left-gripper
 contact proxies, and fits the supplied hardware under `greenhouse/robot_assets/`:
 
 - one Intel RealSense D405 and bracket on the head;
@@ -201,8 +206,10 @@ The original right gripper body and both tongs are fully removed from rendering
 and collision. Their invisible URDF links/joints remain only to preserve the
 exact v1.0 articulation and controller indexing; the right tool is knife-only.
 
-For the knife, only the flat straight plate is tagged as a cutting surface. The
-U-shaped arc is support geometry and cannot trigger a cut. The knife is rolled
+For the knife, only the distal 2 mm straight leading-edge region carries the
+cutting semantic. The full flat plate remains the physical contact collider but
+cannot trigger a cut from its broad face. The U-shaped arc is support geometry
+and cannot trigger a cut. The knife is rolled
 about its unchanged blade axis so that arc faces upward in the ready pose and
 the flat plate is presented cleanly toward the cut.
 
@@ -210,7 +217,7 @@ The default base pose is `(6.99114, 3.78000, -0.3050817)` m at -90 degrees yaw,
 on the opposite side of the target gutter. It starts with about 229 mm chassis
 clearance to that gutter and faces world -Y toward `Vine_0000/SubStem_00`. The
 official SDK ready vector is retained as a separate reference; the launcher
-replaces only the right arm with a collision-aware pre-contact IK pose. The
+replaces only the right arm with a verified collision-clear pre-contact IK pose. The
 elbow stays in the inter-row aisle. Override the stance with
 `--robot-position X Y Z` when testing a different vine or posture.
 
@@ -244,8 +251,13 @@ actual screw pair, and all three optical frames remain present. The
 65.2 mm from the actual lower-petiole attachment. All 34 robot rigid bodies
 remain finite, the base settles with 2.08 degrees tilt, and the contact trace
 contains only wheel/chassis support against the greenhouse floor. A final
-approach controller, blade-to-petiole contact trigger, and robot-driven cut
-remain the next gate before benchmark and RL work.
+approach controller and a robot-driven physical cut remain the next gate before
+benchmark and RL work. The physical trigger and bi-manual task accounting are
+already live: 18 petiole targets expose local cut geometry; qualifying requires
+at least 66.3 N, transverse forward motion, sustained work through the measured
+diameter, a clear protected-contact ledger, and a prior left two-finger grasp.
+After severance the left grasp must retain, transport, and release the orphan in
+the aisle floor zone. See `dev.md` for exact limits and validation evidence.
 
 For live video, launch without `--headless` and use the interaction-window
 camera buttons or keys `1`-`4`; the selected D405 becomes the active viewport.
@@ -330,7 +342,8 @@ depends on), and never falls back to grafting.
 | `greenhouse_sim/vine_physics.py` | Stable articulated links, contact zones, trellis clips, and floor |
 | `greenhouse_sim/vine_visuals.py` | Original GLB visuals attached to physics links |
 | `greenhouse_sim/vine_interaction.py` | Visible-mesh pulling and foliage-area airflow forces |
-| `greenhouse_sim/cutting.py` | Runtime joint release, tear monitoring, and cut grading |
+| `greenhouse_sim/cutting.py` | Directional force/work cut gate, joint release, tear monitoring, and cut grading |
+| `greenhouse_sim/deleaf_task.py` | Required bi-manual grasp/cut/transport/deposit state machine |
 | `greenhouse_sim/greenhouse_scene.py` | Vine placement over the greenhouse stage |
 | `greenhouse_sim/robot_hardware.py` | D405/bracket mounts and flat-blade cut semantics |
 | `greenhouse_sim/robot_scene.py` | RBY1 placement, ready pose, and fit validation |
@@ -356,9 +369,12 @@ $ISAACSIM/python.sh -m pytest examples/greenhouse_sim/greenhouse_sim
 Built and verified: asset pipeline, scene composition, stable
 articulated vine physics, task-directed robot contacts, visible-mesh pulling,
 foliage-area airflow, greenhouse integration, pull/recovery, and flush cutting.
-Manual Shift-drag, airflow-motion, and cut acceptance is complete. Exact RB-Y1
+Manual Shift-drag, airflow-motion, and debug-cut acceptance is complete. Exact RB-Y1
 v1.0 import, ready-pose stability, three D405 fits/optical frames, and right
-knife-only end-effector semantics are also verified. Next: robot-to-vine reach/contact/cut
-acceptance and 32.5 N tear calibration, then task definition, benchmarking,
-and RL.
+knife-only end-effector semantics are also verified. Physical leading-edge cut
+qualification, protected-contact accounting, and the bi-manual task state
+machine are implemented and unit-tested. Next: collision-aware dual-arm motion
+and one complete robot-to-vine grasp/contact/cut/transport/deposit acceptance,
+then the teleoperation/recording bridge, 32.5 N tear calibration, task metrics,
+benchmarking, and RL.
 See `dev.md` at the repository root for evidence and remaining work.
