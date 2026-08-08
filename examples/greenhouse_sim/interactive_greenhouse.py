@@ -56,7 +56,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vine-dir", type=pathlib.Path, default=_DEFAULT_VINE_DIR)
     parser.add_argument("--robot", type=pathlib.Path, default=_DEFAULT_ROBOT)
     parser.add_argument("--no-robot", action="store_true", help="run the accepted vine-only environment")
-    parser.add_argument("--robot-position", type=float, nargs=3, default=(6.99114, 3.78, -0.3050817))
+    parser.add_argument("--robot-position", type=float, nargs=3, default=(6.99114, 3.93, -0.3050817))
     parser.add_argument("--robot-yaw", type=float, default=-90.0)
     parser.add_argument("--physics-vines", type=int, default=1)
     parser.add_argument(
@@ -83,6 +83,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--airflow-direction", type=float, default=20.0)
     parser.add_argument("--airflow-probe-steps", type=int, default=0)
     parser.add_argument("--visual-pull-probe", action="store_true")
+    parser.add_argument(
+        "--bimanual-probe",
+        choices=("left_approach", "right_approach", "full"),
+        default=None,
+        help="run a staged headless robot approach or full deleafing acceptance",
+    )
+    parser.add_argument(
+        "--motion-steps",
+        type=int,
+        default=180,
+        help="240 Hz steps used for each smooth arm waypoint",
+    )
+    parser.add_argument(
+        "--drop-steps",
+        type=int,
+        default=1200,
+        help="steps allowed for the released orphan to settle on the aisle floor",
+    )
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--screenshot", type=pathlib.Path, default=None)
     parser.add_argument(
@@ -150,13 +168,15 @@ def main() -> int:
 
     from isaacsim import SimulationApp
 
-    headless = args.headless or args.screenshot is not None
+    headless = args.headless or args.screenshot is not None or args.bimanual_probe is not None
     app = SimulationApp({"headless": headless})
 
     from greenhouse_sim import cutting
     from greenhouse_sim import deleaf_task
     from greenhouse_sim import glb
     from greenhouse_sim import organs
+    from greenhouse_sim import robot_hardware
+    from greenhouse_sim import robot_kinematics
     from greenhouse_sim import robot_scene
     from greenhouse_sim import skeleton as skeleton_module
     from greenhouse_sim import vine_interaction
@@ -237,17 +257,9 @@ def main() -> int:
             to_stage_directions=directions_to_stage,
         )
         clips = vine_physics.add_trellis_clips(stage, rig, plant.root, spacing=args.clip_spacing)
-        floor = min(float(link.start[2]) for link in rig.links)
-        vine_physics.add_ground_plane(
-            stage,
-            path=f"{root_path}/CatchPlane",
-            height=floor - 0.005,
-            size=1.2,
-            centre_xy=(float(placement_centre[0]), float(placement_centre[1])),
-            filtered_paths=(f"{robot_placement.root_path}/base",)
-            if robot_placement is not None
-            else (),
-        )
+        # The supplied greenhouse already owns collision ground at the measured
+        # cultivation-floor height. A hidden tray at gutter height made an
+        # orphan appear deposited while it was still 1.19 m above the aisle.
 
         organ_indices = {organ.label: organ.index for organ in plant.organs}
         cut_sites = {
@@ -325,7 +337,11 @@ def main() -> int:
 
     from isaacsim.core.api import SimulationContext
 
-    contact_diagnostics = RobotContactDiagnostics(stage) if args.contact_diagnostics else None
+    contact_diagnostics = (
+        RobotContactDiagnostics(stage)
+        if args.contact_diagnostics or args.bimanual_probe is not None
+        else None
+    )
     blade_cutting = None
     grasp_manager = None
     if robot_placement is not None:
@@ -351,19 +367,20 @@ def main() -> int:
             robot_placement,
             deleaf_task.TaskParameters(
                 drop_zone_min_m=(
-                    float(args.robot_position[0]) - 0.45,
-                    float(args.robot_position[1]) - 0.35,
+                    float(args.robot_position[0]) - 1.20,
+                    float(args.robot_position[1]) - 1.00,
                     floor_z,
                 ),
                 drop_zone_max_m=(
-                    float(args.robot_position[0]) + 0.45,
-                    float(args.robot_position[1]) + 0.35,
+                    float(args.robot_position[0]) - 0.30,
+                    float(args.robot_position[1]) + 0.70,
                     floor_z + 0.60,
                 ),
             ),
         )
         if runtimes and "SubStem_00" in runtimes[0].rig.junctions:
             grasp_manager.set_active_target(runtimes[0].name, "SubStem_00")
+        blade_cutting.set_counterhold_provider(grasp_manager.holds_target)
         report["bimanual_task"] = grasp_manager.summary
     context = SimulationContext(
         physics_dt=1.0 / 240.0,
@@ -398,12 +415,26 @@ def main() -> int:
                 grasp_manager=grasp_manager,
             )
 
-    if contact_diagnostics is not None:
-        report["robot_contacts"] = contact_diagnostics.summary
-        contact_diagnostics.close()
-
     if headless:
         success = _run_headless_checks(stage, context, runtimes, args, report)
+        if args.bimanual_probe is not None:
+            probe = _bimanual_probe(
+                stage,
+                context,
+                runtimes[0],
+                args,
+                report,
+                blade_cutting,
+                grasp_manager,
+                contact_diagnostics,
+                robot_hardware,
+                robot_kinematics,
+            )
+            report["bimanual_probe"] = probe
+            success = success and bool(probe["succeeded"])
+        if contact_diagnostics is not None:
+            report["robot_contacts"] = contact_diagnostics.summary
+            contact_diagnostics.close()
         if args.screenshot is not None:
             capture_camera = camera_path
             if args.capture_camera != "inspection":
@@ -425,6 +456,10 @@ def main() -> int:
         context.stop()
         app.close()
         return 0 if success else 1
+
+    if contact_diagnostics is not None:
+        report["robot_contacts"] = contact_diagnostics.summary
+        contact_diagnostics.close()
 
     # Render the selected inspection camera before the overlay reads its
     # projection matrices. All settling frames above are deliberately headless.
@@ -576,6 +611,7 @@ class RobotContactDiagnostics:
         self._pairs: dict[tuple[str, str], dict] = {}
         self._subscription = None
         self._reported_bodies = 0
+        self._phase = "settling"
         for prim in stage.Traverse():
             path = str(prim.GetPath())
             if path.startswith("/World/RBY1/") and prim.HasAPI(UsdPhysics.RigidBodyAPI):
@@ -589,6 +625,9 @@ class RobotContactDiagnostics:
         self._subscription = get_physx_simulation_interface().subscribe_contact_report_events(
             self._on_contacts
         )
+
+    def set_phase(self, phase: str) -> None:
+        self._phase = str(phase)
 
     @staticmethod
     def _vector(value) -> list[float]:
@@ -612,8 +651,11 @@ class RobotContactDiagnostics:
                     "minimum_separation_mm": float("inf"),
                     "maximum_impulse_ns": 0.0,
                     "maximum_impulse_vector_ns": [0.0, 0.0, 0.0],
+                    "phases": [],
                 },
             )
+            if self._phase not in pair["phases"]:
+                pair["phases"].append(self._phase)
             pair["events"] += 1
             start = header.contact_data_offset
             stop = start + header.num_contact_data
@@ -655,7 +697,10 @@ class BladeContactMonitor:
     def __init__(self, stage, runtimes, robot_placement, parameters) -> None:
         from greenhouse_sim import cutting as cutting_module
         import numpy as np
+        from pxr import Gf
         from pxr import PhysxSchema
+        from pxr import Usd
+        from pxr import UsdGeom
 
         self._cutting = cutting_module
         self._np = np
@@ -667,12 +712,16 @@ class BladeContactMonitor:
         self._blade_collider = f"{knife_root}/BladeCollision"
         self._arc_collider = f"{knife_root}/ArcCollision"
         self._targets = {}
+        self._target_frames = {}
         self._target_colliders = {}
+        self._collider_target_frames = {}
         self._collider_info = {}
         self._pending: list[dict] = []
         self._subscription = None
         self._previous_edge_centre = None
+        self._commanded_edge_velocity = np.zeros(3, dtype=np.float64)
         self._active_target: str | None = None
+        self._counterhold_provider = lambda _key: False
         self._violations: dict[tuple[str, str, str], dict] = {}
         self._physical_cuts: list[dict] = []
 
@@ -689,18 +738,55 @@ class BladeContactMonitor:
                 if junction is None:
                     continue
                 key = f"{runtime.name}/{info.organ_label}"
-                self._targets[key] = (
-                    runtime,
-                    cutting_module.CutTarget(
-                        key=key,
-                        organ_label=info.organ_label,
-                        centre_m=junction.cut_position_m,
-                        axis=junction.cut_axis,
-                        radius_m=junction.cut_radius_m,
-                        cut_force_n=junction.cut_force_n,
-                    ),
-                )
                 self._target_colliders[info.path] = key
+                if key not in self._targets:
+                    self._targets[key] = (
+                        runtime,
+                        cutting_module.CutTarget(
+                            key=key,
+                            organ_label=info.organ_label,
+                            centre_m=junction.cut_position_m,
+                            axis=junction.cut_axis,
+                            radius_m=junction.cut_radius_m,
+                            cut_force_n=junction.cut_force_n,
+                        ),
+                    )
+                    body_matrix = UsdGeom.Xformable(
+                        stage.GetPrimAtPath(junction.child_path)
+                    ).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+                    self._target_frames[key] = {
+                        "body": junction.child_path,
+                        "centre_local": body_matrix.GetInverse().Transform(
+                            Gf.Vec3d(*junction.cut_position_m.tolist())
+                        ),
+                        "axis_local": body_matrix.GetInverse().TransformDir(
+                            Gf.Vec3d(*junction.cut_axis.tolist())
+                        ),
+                    }
+
+                # Planning uses the live proximal junction frame above.  Cut
+                # scoring follows the exact articulated capsule that produced
+                # contact, with projection still expressed as cumulative stub
+                # distance from the junction.  One shared frame for all links
+                # cannot represent a bent petiole; overwriting it per link is
+                # equally wrong because the final collider wins globally.
+                virtual_centre, segment_axis, arc_start_m = (
+                    runtime.rig.cut_segment_frame(info)
+                )
+                body_matrix = UsdGeom.Xformable(
+                    stage.GetPrimAtPath(info.body_path)
+                ).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+                self._collider_target_frames[info.path] = {
+                    "body": info.body_path,
+                    "centre_local": body_matrix.GetInverse().Transform(
+                        Gf.Vec3d(*virtual_centre.tolist())
+                    ),
+                    "axis_local": body_matrix.GetInverse().TransformDir(
+                        Gf.Vec3d(*segment_axis.tolist())
+                    ),
+                    "segment": info.segment,
+                    "arc_start_m": arc_start_m,
+                }
 
         ee_right = stage.GetPrimAtPath(f"{robot_placement.root_path}/ee_right")
         if not ee_right.IsValid():
@@ -718,6 +804,145 @@ class BladeContactMonitor:
 
     def set_active_target(self, vine_name: str, organ_label: str) -> None:
         self._active_target = f"{vine_name}/{organ_label}"
+
+    def set_counterhold_provider(self, provider) -> None:
+        """Supply verified physical-grasp state for rigid-tissue fracture."""
+        self._counterhold_provider = provider
+
+    def set_commanded_edge_velocity(self, velocity_m_s) -> None:
+        """Record policy-commanded edge motion for traction separation."""
+        velocity = self._np.asarray(velocity_m_s, dtype=self._np.float64)
+        if velocity.shape != (3,) or not self._np.isfinite(velocity).all():
+            raise ValueError("commanded edge velocity must be a finite three-vector")
+        self._commanded_edge_velocity = velocity.copy()
+
+    def _current_target(self, key: str, collider_path: str | None = None):
+        from pxr import Usd
+        from pxr import UsdGeom
+
+        runtime, authored = self._targets[key]
+        frame = (
+            self._collider_target_frames[collider_path]
+            if collider_path is not None
+            else self._target_frames[key]
+        )
+        matrix = UsdGeom.Xformable(
+            self._stage.GetPrimAtPath(frame["body"])
+        ).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+        centre = self._np.asarray(
+            matrix.Transform(frame["centre_local"]), dtype=self._np.float64
+        )
+        axis = self._np.asarray(
+            matrix.TransformDir(frame["axis_local"]).GetNormalized(),
+            dtype=self._np.float64,
+        )
+        return runtime, self._cutting.CutTarget(
+            key=authored.key,
+            organ_label=authored.organ_label,
+            centre_m=centre,
+            axis=axis,
+            radius_m=authored.radius_m,
+            cut_force_n=authored.cut_force_n,
+        )
+
+    @property
+    def target_geometry(self) -> dict | None:
+        key = self._active_target or ""
+        if key not in self._targets:
+            return None
+        _, target = self._current_target(key)
+        colliders = [
+            path
+            for path, key in self._target_colliders.items()
+            if key == self._active_target
+        ]
+        return {
+            "key": target.key,
+            "centre_m": target.centre_m.copy(),
+            "axis": target.axis.copy(),
+            "radius_m": target.radius_m,
+            "colliders": tuple(colliders),
+        }
+
+    @property
+    def active_cut_feedback(self) -> dict | None:
+        """Return the latest physical contact load for closed-loop motion."""
+        key = self._active_target or ""
+        if key not in self._targets:
+            return None
+        _, target = self._current_target(key)
+        progress = self._gate.progress_for(key)
+        return {
+            "target": key,
+            "required_force_n": target.cut_force_n,
+            "effective_force_n": progress.last_effective_force_n,
+            "forward_speed_m_s": progress.last_forward_speed_m_s,
+            "contact_valid": progress.last_contact_valid,
+            "work_j": progress.work_j,
+            "forward_travel_m": progress.forward_travel_m,
+            "gap_steps": progress.gap_steps,
+        }
+
+    def tool_point_geometry(self, local_point_m) -> dict:
+        """Return a knife-local point and tool axes in the live world frame."""
+        from pxr import Gf
+        from pxr import Usd
+        from pxr import UsdGeom
+
+        knife_root = self._edge_path.rsplit("/", 1)[0]
+        matrix = UsdGeom.Xformable(
+            self._stage.GetPrimAtPath(knife_root)
+        ).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+        point = self._np.asarray(
+            matrix.Transform(Gf.Vec3d(*local_point_m)), dtype=self._np.float64
+        )
+        edge_axis = self._np.asarray(
+            matrix.TransformDir(Gf.Vec3d(1.0, 0.0, 0.0)).GetNormalized(),
+            dtype=self._np.float64,
+        )
+        cut_direction = self._np.asarray(
+            matrix.TransformDir(Gf.Vec3d(0.0, -1.0, 0.0)).GetNormalized(),
+            dtype=self._np.float64,
+        )
+        return {
+            "point_m": point,
+            "edge_axis": edge_axis,
+            "cut_direction": cut_direction,
+        }
+
+    def target_path_geometry(self, stub_m: float) -> dict | None:
+        """Return the live articulated centreline point/tangent at a stub."""
+        key = self._active_target or ""
+        if key not in self._targets:
+            return None
+        candidates = [
+            (path, frame)
+            for path, frame in self._collider_target_frames.items()
+            if self._target_colliders.get(path) == key
+        ]
+        if not candidates:
+            return None
+        before = [
+            item
+            for item in candidates
+            if float(item[1]["arc_start_m"]) <= float(stub_m) + 1e-9
+        ]
+        collider_path, frame = max(
+            before or candidates,
+            key=lambda item: float(item[1]["arc_start_m"]),
+        )
+        _, target = self._current_target(key, collider_path)
+        point = target.centre_m + target.axis * float(stub_m)
+        return {
+            "key": key,
+            "point_m": point,
+            "axis": target.axis.copy(),
+            "radius_m": target.radius_m,
+            "collider": collider_path,
+            "segment": int(frame["segment"]),
+            "arc_start_m": float(frame["arc_start_m"]),
+            "virtual_junction_m": target.centre_m.copy(),
+        }
 
     def subscribe(self) -> None:
         from omni.physx import get_physx_simulation_interface
@@ -765,6 +990,11 @@ class BladeContactMonitor:
             for contact in data[start:stop]:
                 point = self._vector(contact.position)
                 impulse = self._vector(contact.impulse)
+                # PhysX also emits contact-offset proximity points with
+                # positive separation and exactly zero impulse. They remain in
+                # RobotContactDiagnostics, but are not physical tool contact.
+                if float(self._np.linalg.norm(impulse)) <= 1e-12:
+                    continue
                 self._pending.append(
                     {
                         "tool": tool,
@@ -860,12 +1090,17 @@ class BladeContactMonitor:
                         "point_sum": self._np.zeros(3),
                         "weight": 0.0,
                         "impulse": self._np.zeros(3),
+                        "collider_weights": {},
                     },
                 )
                 weight = max(float(self._np.linalg.norm(event["impulse"])), 1e-12)
                 aggregate["point_sum"] += weight * event["point"]
                 aggregate["weight"] += weight
                 aggregate["impulse"] += event["impulse"]
+                aggregate["collider_weights"][event["other"]] = (
+                    aggregate["collider_weights"].get(event["other"], 0.0)
+                    + weight
+                )
             else:
                 self._record_violation(event, dt_s)
         self._pending.clear()
@@ -873,7 +1108,11 @@ class BladeContactMonitor:
         decisions = []
         contacted = set(aggregates)
         for key, aggregate in aggregates.items():
-            runtime, target = self._targets[key]
+            dominant_collider = max(
+                aggregate["collider_weights"],
+                key=aggregate["collider_weights"].get,
+            )
+            runtime, target = self._current_target(key, dominant_collider)
             sample = self._cutting.BladeContactSample(
                 point_m=aggregate["point_sum"] / aggregate["weight"],
                 impulse_ns=aggregate["impulse"],
@@ -882,6 +1121,10 @@ class BladeContactMonitor:
                 cutting_direction=cut_direction,
                 edge_velocity_m_s=velocity,
                 dt_s=dt_s,
+                counterhold_active=bool(self._counterhold_provider(key)),
+                commanded_edge_velocity_m_s=(
+                    self._commanded_edge_velocity.copy()
+                ),
             )
             decision = self._gate.observe(target, sample)
             if decision is not None:
@@ -912,10 +1155,16 @@ class BladeContactMonitor:
 
     @property
     def summary(self) -> dict:
-        active = self._targets.get(self._active_target or "")
-        active_target = active[1] if active is not None else None
+        active_target = (
+            self._current_target(self._active_target)[1]
+            if self._active_target in self._targets
+            else None
+        )
         return {
-            "model": "directional leading-edge force/work gate",
+            "model": (
+                "directional leading-edge force/work gate with "
+                "physical-counterhold rigid-tissue fracture"
+            ),
             "cutting_edge": self._edge_path,
             "physical_blade_collider": self._blade_collider,
             "active_target": self._active_target,
@@ -961,6 +1210,7 @@ class LeftGraspManager:
         task_parameters,
         *,
         open_width_m: float = 0.025,
+        close_overtravel_m: float = 0.006,
     ) -> None:
         from greenhouse_sim import deleaf_task as task_module
         import numpy as np
@@ -981,18 +1231,25 @@ class LeftGraspManager:
         self._root_path = robot_placement.root_path
         self._task_parameters = task_parameters
         self._open_width_m = float(open_width_m)
+        self._close_overtravel_m = float(close_overtravel_m)
         self._close_requested = False
         self._pending: list[dict] = []
         self._subscription = None
         self._active_target: str | None = None
         self._task = None
         self._grasp_colliders: dict[str, dict] = {}
+        self._grasp_colliders_for_key: dict[str, list[str]] = {}
+        self._grasp_collider_for_key: dict[str, str] = {}
         self._grasp_bodies: dict[str, str] = {}
         self._joint_paths: dict[str, str] = {}
         self._orphan_paths: dict[str, list[str]] = {}
         self._active_joint_key: str | None = None
+        self._active_grasp_body: str | None = None
+        self._active_grasp_collider: str | None = None
+        self._active_grasp_point_local = None
         self._cut_grasp_position = None
         self._previous_orphan_centroid = None
+        self._latest_orphan_state = None
 
         self._finger_colliders = {
             f"{self._root_path}/ee_finger_l1/restored_collisions/contact_proxy":
@@ -1011,7 +1268,10 @@ class LeftGraspManager:
         UsdGeom.Scope.Define(stage, grasp_scope)
         for runtime in runtimes:
             for info in runtime.rig.colliders:
-                if "grasp" not in info.role:
+                if (
+                    "grasp" not in info.role
+                    and "petiole_cut_zone" not in info.role
+                ):
                     continue
                 key = f"{runtime.name}/{info.organ_label}"
                 self._grasp_colliders[info.path] = {
@@ -1019,8 +1279,14 @@ class LeftGraspManager:
                     "vine": runtime.name,
                     "organ": info.organ_label,
                     "body": info.body_path,
+                    "collider": info.path,
                 }
-                self._grasp_bodies.setdefault(key, info.body_path)
+                self._grasp_colliders_for_key.setdefault(key, []).append(
+                    info.path
+                )
+                if "grasp" in info.role or key not in self._grasp_collider_for_key:
+                    self._grasp_collider_for_key[key] = info.path
+                    self._grasp_bodies[key] = info.body_path
             for label in runtime.rig.junctions:
                 key = f"{runtime.name}/{label}"
                 body = self._grasp_bodies.get(key)
@@ -1083,11 +1349,33 @@ class LeftGraspManager:
         )
         if not all(drive for drive, _ in self._finger_drives):
             raise ValueError("left gripper linear drives are missing")
+        self._finger_drive_configuration = {
+            "type": "force",
+            "stiffness_n_m": 800.0,
+            "damping_n_s_m": 10.0,
+            "maximum_force_n": 40.0,
+        }
+        for drive, _ in self._finger_drives:
+            drive.CreateTypeAttr(self._finger_drive_configuration["type"])
+            drive.CreateStiffnessAttr(
+                self._finger_drive_configuration["stiffness_n_m"]
+            )
+            drive.CreateDampingAttr(
+                self._finger_drive_configuration["damping_n_s_m"]
+            )
+            drive.CreateMaxForceAttr(
+                self._finger_drive_configuration["maximum_force_n"]
+            )
         self._set_finger_targets(opened=True)
 
     def _set_finger_targets(self, *, opened: bool) -> None:
         for drive, open_target in self._finger_drives:
-            drive.CreateTargetPositionAttr(open_target if opened else 0.0)
+            closed_target = (
+                -self._np.sign(open_target) * self._close_overtravel_m
+            )
+            drive.CreateTargetPositionAttr(
+                open_target if opened else float(closed_target)
+            )
             drive.CreateTargetVelocityAttr(0.0)
 
     def set_active_target(self, vine_name: str, organ_label: str) -> None:
@@ -1103,6 +1391,71 @@ class LeftGraspManager:
             vine_name,
             organ_label,
             self._task_parameters,
+        )
+
+    @property
+    def target_geometry(self) -> dict | None:
+        from pxr import Gf
+        from pxr import Usd
+
+        key = self._active_target or ""
+        path = (
+            self._active_grasp_collider
+            or self._grasp_collider_for_key.get(key)
+        )
+        if path is None:
+            return None
+        body = self._active_grasp_body or self._grasp_bodies[key]
+        matrix = self._body_matrix(body)
+        centre = (
+            self._np.asarray(
+                matrix.Transform(self._active_grasp_point_local),
+                dtype=self._np.float64,
+            )
+            if self._active_grasp_point_local is not None
+            else self._np.asarray(
+                self._body_matrix(path).ExtractTranslation(),
+                dtype=self._np.float64,
+            )
+        )
+        axis = self._np.asarray(
+            matrix.TransformDir(Gf.Vec3d(0.0, 0.0, 1.0)).GetNormalized(),
+            dtype=self._np.float64,
+        )
+        tool_local_point = None
+        if self._active_grasp_point_local is not None:
+            ee_inverse = self._body_matrix(
+                f"{self._root_path}/ee_left"
+            ).GetInverse()
+            tool_local_point = self._np.asarray(
+                ee_inverse.Transform(Gf.Vec3d(*centre.tolist())),
+                dtype=self._np.float64,
+            )
+        return {
+            "key": key,
+            "collider": path,
+            "colliders": tuple(self._grasp_colliders_for_key.get(key, (path,))),
+            "body": body,
+            "centre_m": centre,
+            "axis": axis,
+            "tool_local_point_m": tool_local_point,
+        }
+
+    @property
+    def task_succeeded(self) -> bool:
+        return bool(self._task is not None and self._task.succeeded)
+
+    @property
+    def task_phase(self) -> str | None:
+        return self._task.phase.value if self._task is not None else None
+
+    def holds_target(self, key: str) -> bool:
+        """Report a live, opposed-finger physical hold on exactly ``key``."""
+        return bool(
+            key == self._active_target
+            and self._active_joint_key == key
+            and self._task is not None
+            and self._task.grasp_active
         )
 
     def subscribe(self) -> None:
@@ -1155,8 +1508,13 @@ class LeftGraspManager:
         self._close_requested = False
         if self._active_joint_key is not None and self._task is not None:
             self._task.observe_release()
+            self._previous_orphan_centroid = None
+            self._latest_orphan_state = None
             self._set_joint_enabled(self._active_joint_key, False)
             self._active_joint_key = None
+            self._active_grasp_body = None
+            self._active_grasp_collider = None
+            self._active_grasp_point_local = None
         self._set_finger_targets(opened=True)
 
     def _set_joint_enabled(self, key: str, enabled: bool) -> None:
@@ -1178,28 +1536,75 @@ class LeftGraspManager:
             dtype=self._np.float64,
         )
 
-    def _activate_joint(self, key: str, point_m) -> None:
+    def _gripper_geometry(self, target_position) -> dict:
+        """Report live finger contact volumes in the left-EE frame."""
+        ee = self._body_matrix(f"{self._root_path}/ee_left")
+        ee_inverse = ee.GetInverse()
+        target_local = (
+            self._np.asarray(
+                ee_inverse.Transform(self._Gf.Vec3d(*target_position)),
+                dtype=self._np.float64,
+            ).tolist()
+            if target_position is not None
+            else None
+        )
+        fingers = {}
+        for name in ("ee_finger_l1", "ee_finger_l2"):
+            body_path = f"{self._root_path}/{name}"
+            collider_path = f"{body_path}/restored_collisions/contact_proxy"
+            body_world = self._body_matrix(body_path)
+            collider_world = self._body_matrix(collider_path)
+            corners = []
+            for x in (-0.5, 0.5):
+                for y in (-0.5, 0.5):
+                    for z in (-0.5, 0.5):
+                        world = collider_world.Transform(self._Gf.Vec3d(x, y, z))
+                        corners.append(
+                            self._np.asarray(
+                                ee_inverse.Transform(world), dtype=self._np.float64
+                            )
+                        )
+            corners = self._np.asarray(corners)
+            fingers[name] = {
+                "body_origin_ee_m": self._np.asarray(
+                    ee_inverse.Transform(body_world.ExtractTranslation()),
+                    dtype=self._np.float64,
+                ).tolist(),
+                "collider_min_ee_m": self._np.min(corners, axis=0).tolist(),
+                "collider_max_ee_m": self._np.max(corners, axis=0).tolist(),
+            }
+        return {"target_position_ee_m": target_local, "fingers": fingers}
+
+    def _activate_joint(
+        self,
+        key: str,
+        point_m,
+        body1_path: str,
+        collider_path: str,
+    ) -> None:
         joint = self._UsdPhysics.FixedJoint.Get(
             self._stage,
             self._joint_paths[key],
         )
         body0_path = f"{self._root_path}/ee_left"
-        body1_path = self._grasp_bodies[key]
+        joint.GetBody1Rel().SetTargets([body1_path])
         body0 = self._body_matrix(body0_path)
         body1 = self._body_matrix(body1_path)
         point = self._Gf.Vec3d(*point_m.tolist())
         joint.GetLocalPos0Attr().Set(
             self._Gf.Vec3f(body0.GetInverse().Transform(point))
         )
-        joint.GetLocalPos1Attr().Set(
-            self._Gf.Vec3f(body1.GetInverse().Transform(point))
-        )
+        local_point = body1.GetInverse().Transform(point)
+        joint.GetLocalPos1Attr().Set(self._Gf.Vec3f(local_point))
         child_rotation = body1.ExtractRotationQuat()
         relative = body0.ExtractRotationQuat().GetInverse() * child_rotation
         joint.GetLocalRot0Attr().Set(self._Gf.Quatf(relative))
         joint.GetLocalRot1Attr().Set(self._Gf.Quatf(1.0))
         joint.GetJointEnabledAttr().Set(True)
         self._active_joint_key = key
+        self._active_grasp_body = body1_path
+        self._active_grasp_collider = collider_path
+        self._active_grasp_point_local = self._Gf.Vec3d(local_point)
 
     def notify_cut(self, event: dict) -> bool:
         if self._task is None:
@@ -1213,7 +1618,8 @@ class LeftGraspManager:
         )
         if accepted and self._active_joint_key is not None:
             self._cut_grasp_position = self._body_position(
-                self._grasp_bodies[self._active_joint_key]
+                self._active_grasp_body
+                or self._grasp_bodies[self._active_joint_key]
             )
         return accepted
 
@@ -1222,14 +1628,16 @@ class LeftGraspManager:
             self._pending.clear()
             return
         self._task.advance()
-        grouped: dict[str, dict] = {}
+        grouped: dict[tuple[str, str], dict] = {}
         for event in self._pending:
             aggregate = grouped.setdefault(
-                event["key"],
+                (event["key"], event["body"]),
                 {
+                    "key": event["key"],
                     "vine": event["vine"],
                     "organ": event["organ"],
                     "body": event["body"],
+                    "collider": event["collider"],
                     "fingers": set(),
                     "impulse": 0.0,
                     "point_sum": self._np.zeros(3),
@@ -1243,8 +1651,29 @@ class LeftGraspManager:
             aggregate["weight"] += max(magnitude, 1e-12)
         self._pending.clear()
 
-        active = grouped.get(self._active_target or "")
-        if self._close_requested and active is not None:
+        active_candidates = [
+            aggregate
+            for (key, _), aggregate in grouped.items()
+            if key == (self._active_target or "")
+        ]
+        active = (
+            max(
+                active_candidates,
+                key=lambda aggregate: (
+                    {"left_finger_1", "left_finger_2"}.issubset(
+                        aggregate["fingers"]
+                    ),
+                    aggregate["impulse"],
+                ),
+            )
+            if active_candidates
+            else None
+        )
+        if (
+            self._close_requested
+            and self._active_joint_key is None
+            and active is not None
+        ):
             established = self._task.observe_grasp(
                 vine=active["vine"],
                 organ=active["organ"],
@@ -1254,7 +1683,26 @@ class LeftGraspManager:
             )
             if established and self._active_joint_key is None:
                 point = active["point_sum"] / active["weight"]
-                self._activate_joint(self._active_target, point)
+                self._activate_joint(
+                    self._active_target,
+                    point,
+                    active["body"],
+                    active["collider"],
+                )
+        elif self._close_requested and self._active_joint_key is None:
+            # Required grasp steps are consecutive physical-contact steps;
+            # proximity reports or a contact gap must restart the sequence.
+            planned = self._grasp_colliders.get(
+                self._grasp_collider_for_key.get(self._active_target or "", "")
+            )
+            if planned is not None:
+                self._task.observe_grasp(
+                    vine=planned["vine"],
+                    organ=planned["organ"],
+                    body_path=planned["body"],
+                    finger_contacts=set(),
+                    force_n=0.0,
+                )
 
         if self._active_joint_key is not None:
             self._task.observe_hold(grasp_active=True)
@@ -1267,7 +1715,8 @@ class LeftGraspManager:
                 }
             ):
                 current = self._body_position(
-                    self._grasp_bodies[self._active_joint_key]
+                    self._active_grasp_body
+                    or self._grasp_bodies[self._active_joint_key]
                 )
                 self._task.observe_transport(
                     float(self._np.linalg.norm(current - self._cut_grasp_position))
@@ -1294,19 +1743,28 @@ class LeftGraspManager:
                 self._previous_orphan_centroid = centroid.copy()
                 floor = self._task.parameters.drop_zone_min_m[2]
                 lowest = float(self._np.min(positions[:, 2]))
+                floor_contact = bool(
+                    lowest
+                    <= floor + self._task.parameters.floor_tolerance_m
+                )
+                self._latest_orphan_state = {
+                    "centroid_m": centroid.tolist(),
+                    "speed_m_s": speed,
+                    "lowest_height_m": lowest,
+                    "floor_contact": floor_contact,
+                    "body_count": len(paths),
+                }
                 self._task.observe_deposit(
                     centroid_m=centroid,
                     lowest_height_m=lowest,
                     speed_m_s=speed,
-                    floor_contact=(
-                        lowest
-                        <= floor + self._task.parameters.floor_tolerance_m
-                    ),
+                    floor_contact=floor_contact,
                 )
 
     @property
     def summary(self) -> dict:
-        target_body = self._grasp_bodies.get(self._active_target or "")
+        target_body = self._active_grasp_body
+        planned_body = self._grasp_bodies.get(self._active_target or "")
         target_position = (
             self._body_position(target_body).tolist()
             if target_body is not None
@@ -1328,10 +1786,12 @@ class LeftGraspManager:
         return {
             "model": "opposed-left-finger fixed-joint grasp",
             "active_target": self._active_target,
+            "planned_grasp_body": planned_body,
             "active_grasp_body": target_body,
             "active_grasp_position_m": target_position,
             "left_ee_position_m": left_ee_position,
             "left_ee_distance_to_grasp_mm": target_distance_mm,
+            "gripper_geometry": self._gripper_geometry(target_position),
             "close_requested": self._close_requested,
             "active_joint": (
                 self._joint_paths.get(self._active_joint_key)
@@ -1339,6 +1799,9 @@ class LeftGraspManager:
                 else None
             ),
             "graspable_targets": len(self._joint_paths),
+            "finger_drive_configuration": dict(self._finger_drive_configuration),
+            "finger_close_overtravel_m": self._close_overtravel_m,
+            "orphan_state": self._latest_orphan_state,
             "task": self._task.summary if self._task is not None else None,
         }
 
@@ -1909,12 +2372,14 @@ def _robot_precontact(stage, runtime: VineRuntime) -> dict:
         and np.isfinite(blade_extension).all()
         and np.isfinite(arc_facing).all()
     )
-    # Both components must be within a short final approach but outside a 5 mm
-    # no-spawn-contact margin.  The blade points into the row and the U faces up.
+    # Both components must be within the staged arm's verified reachable
+    # approach envelope but outside a 5 mm no-spawn-contact margin. The full
+    # probe separately proves bounded IK, contact safety, and the physical cut.
+    # The blade points into the row and the U faces up.
     succeeded = bool(
         finite
-        and 0.005 < blade_distance < 0.200
-        and 0.005 < arc_distance < 0.200
+        and 0.005 < blade_distance < 0.300
+        and 0.005 < arc_distance < 0.300
         and blade_extension[1] < -0.70
         and arc_facing[2] > 0.70
     )
@@ -1931,6 +2396,1141 @@ def _robot_precontact(stage, runtime: VineRuntime) -> dict:
         "arc_bounds_m": {"min": arc_min.tolist(), "max": arc_max.tolist()},
         "finite": finite,
         "succeeded": succeeded,
+    }
+
+
+_LEFT_AISLE_CLEARANCE_WAYPOINTS_DEGREES = (
+    (13.953, 28.379, 26.822, -149.999, 77.017, 106.965, 0.0),
+    (-3.647, 19.746, 40.289, -149.999, 115.225, 89.831, 0.0),
+    (-39.855, 4.358, 18.724, -137.646, 99.514, 70.217, 0.0),
+    (-61.416, -0.999, 9.339, -119.583, 87.697, 58.299, 0.0),
+    (-69.063, -0.999, 7.054, -106.906, 80.808, 52.222, 0.0),
+)
+_LEFT_READY_DEGREES = (0.0, 5.0, 0.0, -120.0, 0.0, 70.0, 0.0)
+_RIGHT_SAFE_DEGREES = (-101.724, -83.623, 34.196, -135.683, -57.431, 94.832, -74.920)
+_LEFT_JAW_CENTRE_M = (0.0, 0.0, -0.1025)
+# Track the outer flat-blade wing against the live articulated petiole rather
+# than extending Link 0 as if the bent chain were straight. The yawed support
+# provides parent-stem clearance.
+_RIGHT_EDGE_WING_M = (-0.014, -0.07047998, 0.0)
+# The physical plate is 13 mm thick along the petiole tangent. A 12 mm target
+# lets its proximal face overlap the main-stem envelope, while a 20 mm target
+# lets the loaded compliant contact migrate beyond the 25 mm admissible zone.
+# The controlled load moved the 18 mm plate contact just beyond the admissible
+# zone; 16 mm keeps the full physical plate inside it while force feedback stops
+# the late high-load main-stem excursion seen in the earlier uncontrolled run.
+_RIGHT_CUT_STUB_M = 0.016
+_RIGHT_KNIFE_YAW_DEGREES = -25.0
+_RIGHT_KNIFE_ROLL_DEGREES = 0.0
+_RIGHT_SERVO_MAX_ATTEMPTS = 7
+_LEFT_APPROACH_SEEDS_DEGREES = {
+    0.10: (-103.781, -0.999, -25.819, -115.255, -18.501, 109.999, -23.873),
+    0.06: (-107.042, -0.999, -22.579, -104.214, -15.552, 109.999, -19.398),
+    0.04: (-109.778, -0.999, -20.964, -96.981, -13.813, 109.999, -16.244),
+    0.02: (-113.954, -0.999, -19.378, -87.399, -11.571, 109.999, -11.855),
+    0.01: (-117.218, -0.999, -18.627, -80.651, -9.925, 109.999, -8.657),
+    0.00: (-120.779, 0.740, -20.440, -74.103, -5.287, 109.523, -3.747),
+}
+_LEFT_TRANSPORT_SEED_DEGREES = (
+    -108.062,
+    -0.999,
+    -26.702,
+    -124.530,
+    -20.523,
+    109.999,
+    -29.550,
+)
+_RBY1_ARM_EFFORT_LIMITS_NM = (70.0, 70.0, 70.0, 40.0, 10.0, 10.0, 8.0)
+
+
+def _configure_arm_drives(stage, side: str) -> dict:
+    """Apply hardware-bounded position gains to one RB-Y1 arm."""
+    from pxr import UsdPhysics
+
+    joints = []
+    for index, maximum_force in enumerate(_RBY1_ARM_EFFORT_LIMITS_NM):
+        joint = stage.GetPrimAtPath(f"/World/RBY1/joints/{side}_arm_{index}")
+        drive = UsdPhysics.DriveAPI.Get(joint, "angular")
+        if not drive:
+            raise ValueError(f"missing {side} arm drive {index}")
+        drive.CreateTypeAttr("force")
+        drive.CreateStiffnessAttr(20.0)
+        drive.CreateDampingAttr(2.0)
+        drive.CreateMaxForceAttr(maximum_force)
+        joints.append(
+            {
+                "joint": str(joint.GetPath()),
+                "maximum_force_nm": maximum_force,
+            }
+        )
+    return {
+        "side": side,
+        "type": "force",
+        "stiffness_nm_per_degree": 20.0,
+        "damping_nm_s_per_degree": 2.0,
+        "joints": joints,
+    }
+
+
+def _set_arm_drive_targets(stage, side: str, degrees) -> None:
+    from pxr import UsdPhysics
+
+    for index, value in enumerate(degrees):
+        joint = stage.GetPrimAtPath(f"/World/RBY1/joints/{side}_arm_{index}")
+        drive = UsdPhysics.DriveAPI.Get(joint, "angular")
+        if not drive:
+            raise ValueError(f"missing {side} arm drive {index}")
+        drive.CreateTargetPositionAttr(float(value))
+        drive.CreateTargetVelocityAttr(0.0)
+
+
+def _probe_unsafe_contacts(contact_summary: dict, blade_geometry: dict, grasp_geometry: dict) -> list[dict]:
+    """Reject robot contacts except floor support and intended tool contacts."""
+    cut_colliders = set(blade_geometry["colliders"])
+    grasp_colliders = set(
+        grasp_geometry.get("colliders", (grasp_geometry["collider"],))
+    )
+    unsafe = []
+    for pair in contact_summary["pairs"]:
+        if float(pair.get("maximum_impulse_ns", 0.0)) <= 1e-12:
+            continue
+        paths = (pair["collider0"], pair["collider1"])
+        robot = next((path for path in paths if path.startswith("/World/RBY1/")), None)
+        if robot is None:
+            continue
+        other = paths[1] if paths[0] == robot else paths[0]
+        if "GroundPlane/CollisionPlane" in other:
+            continue
+        if other in grasp_colliders and "/ee_finger_l" in robot:
+            continue
+        if other in cut_colliders and robot.endswith(("/BladeCollision", "/ArcCollision")):
+            continue
+        if other.startswith(("/World/InteractiveVines/", "/World/NeighbourSafety/")):
+            unsafe.append(dict(pair))
+            continue
+        if other.startswith(("/World/Main_Cultivation_Zone", "/World/Main_Cultivation_Zone_01")):
+            unsafe.append(dict(pair))
+    return unsafe
+
+
+def _bimanual_probe(
+    stage,
+    context,
+    runtime: VineRuntime,
+    args,
+    report: dict,
+    blade_monitor: BladeContactMonitor,
+    grasp_manager: LeftGraspManager,
+    contact_diagnostics: RobotContactDiagnostics,
+    robot_hardware,
+    robot_kinematics,
+) -> dict:
+    """Execute staged, force-limited dual-arm deleafing acceptance motion."""
+    import numpy as np
+    from pxr import Usd
+    from pxr import UsdGeom
+
+    if blade_monitor is None or grasp_manager is None or contact_diagnostics is None:
+        return {"succeeded": False, "error": "robot cut/grasp/contact monitors are required"}
+    if args.motion_steps < 30 or args.drop_steps < 60:
+        return {"succeeded": False, "error": "probe step counts are too small for bounded motion"}
+
+    blade_geometry = blade_monitor.target_geometry
+    grasp_geometry = grasp_manager.target_geometry
+    if blade_geometry is None or grasp_geometry is None:
+        return {"succeeded": False, "error": "active cut or grasp target geometry is missing"}
+
+    model = robot_kinematics.Rby1Kinematics()
+    base_gf = UsdGeom.Xformable(
+        stage.GetPrimAtPath("/World/RBY1/base")
+    ).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+    # Gf uses row-vector matrices; the pure kinematics module uses columns.
+    base_matrix = np.asarray(base_gf, dtype=np.float64).T
+    commanded_blade_local = np.append(
+        robot_hardware.KNIFE_ROTATION
+        @ np.asarray(_RIGHT_EDGE_WING_M, dtype=np.float64),
+        1.0,
+    )
+    previous_commanded_blade_point = None
+    stages = []
+    applied_cuts = []
+    left_counterpull_start = None
+    left_counterpull_target = None
+    left_hold_capacity_n = None
+    current = {
+        "left": np.asarray(_LEFT_READY_DEGREES, dtype=np.float64),
+        "right": np.asarray(_RIGHT_SAFE_DEGREES, dtype=np.float64),
+    }
+    stages.append(
+        {
+            "stage": "right_arm_drive_configuration",
+            "configuration": _configure_arm_drives(stage, "right"),
+            "settled_base_matrix": base_matrix.tolist(),
+        }
+    )
+    stages.append(
+        {
+            "stage": "left_arm_drive_configuration",
+            "configuration": _configure_arm_drives(stage, "left"),
+        }
+    )
+
+    def tick() -> None:
+        context.step(render=False)
+        grasp_manager.process()
+        applied_cuts.extend(
+            _apply_blade_cut_decisions(
+                context,
+                blade_monitor,
+                report,
+                grasp_manager=grasp_manager,
+            )
+        )
+
+    def record_commanded_blade_motion(right_degrees=None) -> None:
+        """Map right joint targets to the commanded knife-wing velocity."""
+        nonlocal previous_commanded_blade_point
+        if right_degrees is None:
+            blade_monitor.set_commanded_edge_velocity(np.zeros(3))
+            previous_commanded_blade_point = None
+            return
+        point = (
+            model.forward("right", right_degrees, base_matrix)
+            @ commanded_blade_local
+        )[:3]
+        velocity = (
+            np.zeros(3, dtype=np.float64)
+            if previous_commanded_blade_point is None
+            else (point - previous_commanded_blade_point) * 240.0
+        )
+        previous_commanded_blade_point = point.copy()
+        blade_monitor.set_commanded_edge_velocity(velocity)
+
+    def pose_sample(side: str) -> list[float]:
+        matrix = UsdGeom.Xformable(
+            stage.GetPrimAtPath(f"/World/RBY1/ee_{side}")
+        ).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+        return [float(value) for value in matrix.ExtractTranslation()]
+
+    def move(
+        side: str,
+        target,
+        name: str,
+        *,
+        steps: int | None = None,
+        hold_steps: int = 0,
+    ) -> None:
+        start = current[side].copy()
+        target_values = np.asarray(target, dtype=np.float64)
+        count = int(steps or args.motion_steps)
+        contact_diagnostics.set_phase(name)
+        samples = []
+        for index in range(1, count + 1):
+            fraction = index / count
+            smooth = fraction * fraction * (3.0 - 2.0 * fraction)
+            commanded = start + smooth * (target_values - start)
+            _set_arm_drive_targets(stage, side, commanded)
+            record_commanded_blade_motion(
+                commanded if side == "right" else None
+            )
+            tick()
+            if index in {1, count // 2, count}:
+                samples.append({"step": index, "ee_position_m": pose_sample(side)})
+        for _ in range(int(hold_steps)):
+            _set_arm_drive_targets(stage, side, target_values)
+            record_commanded_blade_motion(
+                target_values if side == "right" else None
+            )
+            tick()
+        if hold_steps:
+            samples.append(
+                {
+                    "step": count + int(hold_steps),
+                    "ee_position_m": pose_sample(side),
+                    "endpoint_hold": True,
+                }
+            )
+        current[side] = target_values
+        stages.append(
+            {
+                "stage": name,
+                "arm": side,
+                "steps": count,
+                "hold_steps": int(hold_steps),
+                "target_degrees": target_values.tolist(),
+                "samples": samples,
+                "blade_safety_clear": blade_monitor.safety_clear,
+            }
+        )
+
+    def move_bimanual(
+        right_target,
+        left_target,
+        name: str,
+        *,
+        steps: int,
+        force_control: dict | None = None,
+    ) -> None:
+        starts = {side: current[side].copy() for side in ("right", "left")}
+        targets = {
+            "right": np.asarray(right_target, dtype=np.float64),
+            "left": np.asarray(left_target, dtype=np.float64),
+        }
+        count = int(steps)
+        contact_diagnostics.set_phase(name)
+        samples = []
+        command_fraction = 0.0
+        maximum_observed_force_n = 0.0
+        loaded_advance_steps = 0
+        unload_steps = 0
+        executed_steps = 0
+        for index in range(1, count + 1):
+            executed_steps = index
+            control_mode = "nominal"
+            if force_control is None:
+                fraction = index / count
+            else:
+                feedback = blade_monitor.active_cut_feedback or {}
+                force_n = float(feedback.get("effective_force_n", 0.0))
+                maximum_observed_force_n = max(
+                    maximum_observed_force_n,
+                    force_n,
+                )
+                increment = 1.0 / count
+                if force_n > float(force_control["maximum_force_n"]):
+                    command_fraction = max(
+                        -1.0,
+                        command_fraction
+                        - float(force_control["unload_fraction"]) * increment,
+                    )
+                    unload_steps += 1
+                    control_mode = "unload"
+                elif force_n >= float(force_control["target_force_n"]):
+                    command_fraction = min(
+                        1.0,
+                        command_fraction
+                        + float(force_control["loaded_advance_fraction"])
+                        * increment,
+                    )
+                    loaded_advance_steps += 1
+                    control_mode = "loaded_advance"
+                else:
+                    command_fraction = min(1.0, command_fraction + increment)
+                fraction = command_fraction
+            smooth = (
+                fraction
+                if force_control is not None
+                else fraction * fraction * (3.0 - 2.0 * fraction)
+            )
+            for side in ("right", "left"):
+                commanded = starts[side] + smooth * (
+                    targets[side] - starts[side]
+                )
+                _set_arm_drive_targets(stage, side, commanded)
+                if side == "right":
+                    record_commanded_blade_motion(commanded)
+            tick()
+            if index in {1, count // 2, count} or (
+                force_control is not None and control_mode == "unload" and len(samples) < 8
+            ):
+                feedback = blade_monitor.active_cut_feedback or {}
+                samples.append(
+                    {
+                        "step": index,
+                        "command_fraction": fraction,
+                        "force_control_mode": control_mode,
+                        "blade_force_n": float(
+                            feedback.get("effective_force_n", 0.0)
+                        ),
+                        "right_ee_position_m": pose_sample("right"),
+                        "left_ee_position_m": pose_sample("left"),
+                    }
+                )
+            if force_control is not None and applied_cuts:
+                break
+        if force_control is None:
+            commanded_targets = targets
+            command_fraction = 1.0
+        else:
+            smooth = command_fraction
+            commanded_targets = {
+                side: starts[side] + smooth * (targets[side] - starts[side])
+                for side in ("right", "left")
+            }
+        current.update(commanded_targets)
+        stages.append(
+            {
+                "stage": name,
+                "arm": "both",
+                "steps": executed_steps,
+                "hold_steps": 0,
+                "target_degrees": {
+                    side: target.tolist()
+                    for side, target in commanded_targets.items()
+                },
+                "requested_target_degrees": {
+                    side: target.tolist() for side, target in targets.items()
+                },
+                "command_fraction": command_fraction,
+                "force_control": (
+                    {
+                        **force_control,
+                        "maximum_observed_force_n": maximum_observed_force_n,
+                        "loaded_advance_steps": loaded_advance_steps,
+                        "unload_steps": unload_steps,
+                    }
+                    if force_control is not None
+                    else None
+                ),
+                "samples": samples,
+                "blade_safety_clear": blade_monitor.safety_clear,
+            }
+        )
+
+    def solve_left(point, seed, alternate_seed=None) -> object:
+        seeds = [seed]
+        if alternate_seed is not None:
+            seeds.append(alternate_seed)
+        candidates = [
+            model.solve_position_axes(
+                "left",
+                local_point_m=(
+                    _LEFT_JAW_CENTRE_M
+                    if grasp_geometry.get("tool_local_point_m") is None
+                    else grasp_geometry["tool_local_point_m"]
+                ),
+                target_point_m=point,
+                seed_degrees=candidate_seed,
+                base_matrix=base_matrix,
+                pointing_axis=2,
+                pointing_direction=(0.0, 1.0, 0.0),
+                transverse_axis=0,
+                transverse_to=grasp_geometry["axis"],
+            )
+            for candidate_seed in seeds
+        ]
+        return min(
+            candidates,
+            key=lambda result: (
+                not result.succeeded,
+                result.position_error_m,
+                result.orientation_error_rad,
+            ),
+        )
+
+    def solve_right(
+        side_m: float,
+        seed,
+        translation_correction=None,
+        cut_geometry_override=None,
+    ) -> object:
+        preferred_cut_direction = np.asarray(
+            [0.0, -np.cos(np.radians(15.0)), np.sin(np.radians(15.0))],
+            dtype=np.float64,
+        )
+        cut_geometry = (
+            blade_monitor.target_path_geometry(_RIGHT_CUT_STUB_M)
+            if cut_geometry_override is None
+            else cut_geometry_override
+        )
+        if cut_geometry is None:
+            raise RuntimeError("live articulated cut path disappeared")
+        knife_rotation = robot_hardware.cut_aligned_knife_rotation(
+            cut_geometry["axis"],
+            preferred_cut_direction,
+        )
+        cut_direction = knife_rotation @ np.asarray([0.0, -1.0, 0.0])
+        # Stay inside the benchmark's 25 mm admissible physical stub zone and
+        # follow the live bent centreline rather than extending Link-0 as if
+        # the whole articulated petiole were straight.
+        cut_point = cut_geometry["point_m"]
+        edge = cut_point + cut_direction * side_m
+        correction = (
+            np.zeros(3, dtype=np.float64)
+            if translation_correction is None
+            else np.asarray(translation_correction, dtype=np.float64)
+        )
+        root = edge - knife_rotation @ np.asarray(_RIGHT_EDGE_WING_M) + correction
+        desired = np.eye(4, dtype=np.float64)
+        desired[:3, :3] = knife_rotation @ robot_hardware.KNIFE_ROTATION.T
+        desired[:3, 3] = root
+        return model.solve_pose("right", desired, seed, base_matrix)
+
+    try:
+        if args.bimanual_probe in {"left_approach", "full"}:
+            for index, waypoint in enumerate(_LEFT_AISLE_CLEARANCE_WAYPOINTS_DEGREES):
+                move("left", waypoint, f"left_clearance_{index}")
+
+            left_solutions = []
+            offsets = (0.10, 0.06, 0.04, 0.02)
+            if args.bimanual_probe == "full":
+                offsets += (0.01, 0.0)
+            seed = current["left"]
+            for offset in offsets:
+                # The compliant vine continues to sway during the multi-second
+                # approach. Reacquire the live grasp body before every solve so
+                # the final fingers close around its current pose instead of
+                # pulling it back to a stale pre-motion target.
+                grasp_geometry = grasp_manager.target_geometry
+                if grasp_geometry is None:
+                    raise RuntimeError("live grasp geometry disappeared during approach")
+                goal = grasp_geometry["centre_m"] + np.asarray([0.0, offset, 0.0])
+                solution = solve_left(
+                    goal,
+                    seed,
+                    _LEFT_APPROACH_SEEDS_DEGREES[offset],
+                )
+                left_solutions.append(dataclasses.asdict(solution))
+                stages.append(
+                    {
+                        "stage": f"left_ik_{offset:.3f}",
+                        "solution": dataclasses.asdict(solution),
+                    }
+                )
+                if not solution.succeeded:
+                    raise RuntimeError(f"left IK failed at aisle offset {offset:.3f} m")
+                move("left", solution.joint_degrees, f"left_approach_{offset:.3f}")
+                seed = solution.joint_degrees
+            stages.append({"stage": "left_ik", "solutions": left_solutions})
+
+            if args.bimanual_probe == "left_approach":
+                unsafe = _probe_unsafe_contacts(
+                    contact_diagnostics.summary, blade_geometry, grasp_geometry
+                )
+                return {
+                    "mode": args.bimanual_probe,
+                    "stages": stages,
+                    "unsafe_contacts": unsafe,
+                    "succeeded": bool(not unsafe and blade_monitor.safety_clear),
+                }
+
+            contact_diagnostics.set_phase("left_grasp_close")
+            grasp_manager.request_close()
+            # The imported left-finger drives settle asymmetrically under the
+            # greenhouse pose. Give both physical fingers a full second at the
+            # default 240 Hz; the grasp gate still requires opposed contact and
+            # measured force, so elapsed time alone cannot establish a grasp.
+            grasp_close_steps = 2 * args.motion_steps
+            for _ in range(grasp_close_steps):
+                tick()
+            stages.append(
+                {
+                    "stage": "left_grasp_close",
+                    "steps": grasp_close_steps,
+                    "task_phase": grasp_manager.task_phase,
+                    "summary": grasp_manager.summary,
+                }
+            )
+            if grasp_manager.task_phase != "grasped":
+                raise RuntimeError("left two-finger grasp was not established")
+
+            # Hold the physical grasp at its established pose during cutting.
+            # An earlier 50 mm pre-pull rotated wrist joint 4 into a posture
+            # with only ~71 N point-force capacity, barely above the 66.3 N
+            # cut threshold, and swept finger 1 through another organ. The
+            # unpulled grasp posture has measurable margin and supplies the
+            # required bimanual counterforce without preloading a neighbour.
+            grasp_geometry = grasp_manager.target_geometry
+            if grasp_geometry is None:
+                raise RuntimeError("live grasp geometry disappeared before counterhold")
+            hold_cut_geometry = blade_monitor.target_path_geometry(
+                _RIGHT_CUT_STUB_M
+            )
+            if hold_cut_geometry is None:
+                raise RuntimeError("live cut geometry disappeared before counterhold")
+            preferred_cut_direction = np.asarray(
+                [0.0, -np.cos(np.radians(15.0)), np.sin(np.radians(15.0))],
+                dtype=np.float64,
+            )
+            hold_knife_rotation = robot_hardware.cut_aligned_knife_rotation(
+                hold_cut_geometry["axis"],
+                preferred_cut_direction,
+            )
+            hold_cut_direction = hold_knife_rotation @ np.asarray(
+                [0.0, -1.0, 0.0], dtype=np.float64
+            )
+            feedback = blade_monitor.active_cut_feedback
+            required_cut_force_n = float(
+                args.cut_force
+                if feedback is None
+                else feedback["required_force_n"]
+            )
+            hold_local_point = (
+                _LEFT_JAW_CENTRE_M
+                if grasp_geometry.get("tool_local_point_m") is None
+                else grasp_geometry["tool_local_point_m"]
+            )
+            hold_capacity = model.point_force_capacity(
+                "left",
+                current["left"],
+                base_matrix,
+                hold_local_point,
+                hold_cut_direction,
+                required_cut_force_n,
+                _RBY1_ARM_EFFORT_LIMITS_NM,
+            )
+            left_hold_capacity_n = hold_capacity.force_capacity_n
+            minimum_hold_capacity_n = 1.10 * required_cut_force_n
+            stages.append(
+                {
+                    "stage": "left_static_counterhold",
+                    "joint_degrees": current["left"].tolist(),
+                    "grasp_body": grasp_geometry["body"],
+                    "grasp_collider": grasp_geometry["collider"],
+                    "grasp_anchor_m": grasp_geometry["centre_m"].tolist(),
+                    "tool_local_anchor_m": np.asarray(hold_local_point).tolist(),
+                    "opposed_cut_direction": hold_cut_direction.tolist(),
+                    "required_cut_force_n": required_cut_force_n,
+                    "minimum_capacity_n": minimum_hold_capacity_n,
+                    "capacity": dataclasses.asdict(hold_capacity),
+                }
+            )
+            if left_hold_capacity_n < minimum_hold_capacity_n:
+                raise RuntimeError(
+                    "left counterhold posture lacks hardware effort margin: "
+                    f"{left_hold_capacity_n:.1f} N capacity for "
+                    f"{required_cut_force_n:.1f} N cut"
+                )
+            left_counterpull_start = current["left"].copy()
+            left_counterpull_target = current["left"].copy()
+
+        if args.bimanual_probe in {"right_approach", "full"}:
+            # Seed the right approach from the live cut line. The yawed support
+            # path is contact-clear, so every waypoint can safely reacquire the
+            # compliant target instead of following a stale frame while the
+            # left arm tensions the petiole.
+            blade_geometry = blade_monitor.target_geometry
+            if blade_geometry is None:
+                raise RuntimeError("live cut geometry disappeared before right approach")
+            right_solutions = []
+            # Establish the rolled tool frame well outside the canopy, then
+            # enter along the intended Cartesian cut line.
+            right_offsets = (-0.100, -0.060, -0.035, -0.015)
+            seed = current["right"]
+            right_waypoints = {}
+            translation_correction = np.zeros(3, dtype=np.float64)
+            for side_m in right_offsets:
+                live_cut_geometry = blade_monitor.target_geometry
+                if live_cut_geometry is None:
+                    raise RuntimeError(
+                        f"live cut geometry disappeared before side {side_m:.3f} m"
+                    )
+                blade_geometry = live_cut_geometry
+                tracking_error = float("inf")
+                convergence_m = 0.005 if side_m <= -0.035 else 0.002
+                hard_limit_m = 0.010 if side_m <= -0.035 else 0.005
+                for servo_attempt in range(_RIGHT_SERVO_MAX_ATTEMPTS):
+                    live_cut_geometry = blade_monitor.target_geometry
+                    if live_cut_geometry is None:
+                        raise RuntimeError(
+                            f"live cut geometry disappeared during side {side_m:.3f} m"
+                        )
+                    blade_geometry = live_cut_geometry
+                    solution = solve_right(
+                        side_m,
+                        seed,
+                        translation_correction,
+                    )
+                    solution_record = dataclasses.asdict(solution)
+                    solution_record.update(
+                        {
+                            "side_m": side_m,
+                            "servo_attempt": servo_attempt,
+                            "translation_correction_m": translation_correction.tolist(),
+                        }
+                    )
+                    right_solutions.append(solution_record)
+                    stages.append(
+                        {
+                            "stage": f"right_ik_{side_m:.3f}_{servo_attempt}",
+                            "solution": solution_record,
+                        }
+                    )
+                    if not solution.succeeded:
+                        raise RuntimeError(
+                            f"right IK failed at side {side_m:.3f} m, "
+                            f"servo attempt {servo_attempt}"
+                        )
+                    right_waypoints[side_m] = solution.joint_degrees
+                    phase = (
+                        f"right_sweep_{side_m:.3f}"
+                        if servo_attempt == 0
+                        else f"right_servo_{side_m:.3f}_{servo_attempt}"
+                    )
+                    move(
+                        "right",
+                        solution.joint_degrees,
+                        phase,
+                        hold_steps=args.motion_steps,
+                    )
+                    seed = solution.joint_degrees
+                    live_target = blade_monitor.target_geometry
+                    live_path = blade_monitor.target_path_geometry(_RIGHT_CUT_STUB_M)
+                    if live_target is None or live_path is None:
+                        raise RuntimeError(
+                            f"live cut geometry disappeared after side {side_m:.3f} m"
+                        )
+                    tool = blade_monitor.tool_point_geometry(_RIGHT_EDGE_WING_M)
+                    planned_point = (
+                        live_path["point_m"]
+                        + tool["cut_direction"] * side_m
+                    )
+                    correction_error = planned_point - tool["point_m"]
+                    tracking_error = float(np.linalg.norm(correction_error))
+                    delta = tool["point_m"] - live_path["virtual_junction_m"]
+                    axial = float(np.dot(delta, live_path["axis"]))
+                    radial = delta - axial * live_path["axis"]
+                    stages[-1]["cut_alignment"] = {
+                        "live_target_centre_m": live_path["point_m"].tolist(),
+                        "live_target_axis": live_path["axis"].tolist(),
+                        "live_target_segment": live_path["segment"],
+                        "live_target_collider": live_path["collider"],
+                        "blade_wing_point_m": tool["point_m"].tolist(),
+                        "planned_point_error_mm": tracking_error * 1000.0,
+                        "live_goal_error_mm": tracking_error * 1000.0,
+                        "live_axial_stub_mm": axial * 1000.0,
+                        "live_radial_distance_mm": float(
+                            np.linalg.norm(radial) * 1000.0
+                        ),
+                        "live_signed_side_mm": float(
+                            np.dot(
+                                tool["point_m"] - live_path["point_m"],
+                                tool["cut_direction"],
+                            )
+                            * 1000.0
+                        ),
+                    }
+                    if tracking_error <= convergence_m or applied_cuts:
+                        break
+                    correction_step = correction_error
+                    if tracking_error > 0.010:
+                        correction_step = correction_error * (0.010 / tracking_error)
+                    translation_correction += correction_step
+                if tracking_error > hard_limit_m and not applied_cuts:
+                    raise RuntimeError(
+                        f"right Cartesian servo remained {tracking_error * 1000.0:.1f} mm "
+                        f"from sweep side {side_m:.3f} m"
+                    )
+            stages.append(
+                {
+                    "stage": "right_ik",
+                    "cut_stub_m": _RIGHT_CUT_STUB_M,
+                    "edge_wing_local_m": list(_RIGHT_EDGE_WING_M),
+                    "knife_yaw_degrees": _RIGHT_KNIFE_YAW_DEGREES,
+                    "knife_roll_degrees": _RIGHT_KNIFE_ROLL_DEGREES,
+                    "orientation_mode": "live_segment_transverse_support_up",
+                    "servo_max_attempts": _RIGHT_SERVO_MAX_ATTEMPTS,
+                    "sweep_offsets_m": list(right_offsets),
+                    "solutions": right_solutions,
+                }
+            )
+
+            if args.bimanual_probe == "right_approach":
+                unsafe = _probe_unsafe_contacts(
+                    contact_diagnostics.summary, blade_geometry, grasp_geometry
+                )
+                return {
+                    "mode": args.bimanual_probe,
+                    "stages": stages,
+                    "unsafe_contacts": unsafe,
+                    "succeeded": bool(not unsafe and blade_monitor.safety_clear),
+                }
+
+            # Track the compliant petiole online during the actual cut. A
+            # single joint-space jump between accurate endpoints lets the
+            # tensioned branch move between them without ever touching the
+            # blade. These short consecutive segments preserve forward motion
+            # while refreshing the physical target frame before every solve.
+            sweep_solutions = []
+            sweep_start_m = -0.015
+            sweep_stop_m = 0.035
+            # Use at least 24 integration/contact samples per 5 mm IK segment.
+            # At the default this is a 1.0 s, 0.05 m/s nominal sweep; measured
+            # edge force can slow or unload it further before the left arm's
+            # hardware-bounded counterhold is overpowered.
+            sweep_segments = 10
+            segment_steps = max(24, args.motion_steps // 8)
+            # Reacquire the compliant target through pre-contact, then commit
+            # to this physical cut plane. Continuing to chase the target while
+            # loaded makes the blade push the petiole sideways; a latched plane
+            # creates relative shear travel while the left arm holds tension.
+            latched_cut_geometry = blade_monitor.target_path_geometry(
+                _RIGHT_CUT_STUB_M
+            )
+            if latched_cut_geometry is None:
+                raise RuntimeError("live cut geometry disappeared before committed stroke")
+            cut_feedback = blade_monitor.active_cut_feedback
+            required_cut_force_n = float(
+                args.cut_force
+                if cut_feedback is None
+                else cut_feedback["required_force_n"]
+            )
+            maximum_control_force_n = min(
+                1.04 * required_cut_force_n,
+                0.93
+                * float(
+                    left_hold_capacity_n
+                    if left_hold_capacity_n is not None
+                    else 1.25 * required_cut_force_n
+                ),
+            )
+            force_control = {
+                "target_force_n": 1.005 * required_cut_force_n,
+                "maximum_force_n": maximum_control_force_n,
+                "loaded_advance_fraction": 0.25,
+                "unload_fraction": 1.00,
+            }
+            if force_control["target_force_n"] >= force_control["maximum_force_n"]:
+                raise RuntimeError("left counterhold has no usable force-control band")
+            if not applied_cuts:
+                for index in range(1, sweep_segments + 1):
+                    side_m = sweep_start_m + (
+                        (sweep_stop_m - sweep_start_m) * index / sweep_segments
+                    )
+                    live_cut_geometry = blade_monitor.target_geometry
+                    if live_cut_geometry is None:
+                        raise RuntimeError(
+                            f"live cut geometry disappeared during sweep segment {index}"
+                        )
+                    blade_geometry = live_cut_geometry
+                    solution = solve_right(
+                        side_m,
+                        current["right"],
+                        translation_correction,
+                        latched_cut_geometry,
+                    )
+                    record = dataclasses.asdict(solution)
+                    record.update(
+                        {
+                            "segment": index,
+                            "side_m": side_m,
+                            "translation_correction_m": (
+                                translation_correction.tolist()
+                            ),
+                        }
+                    )
+                    sweep_solutions.append(record)
+                    if not solution.succeeded:
+                        raise RuntimeError(
+                            f"right live sweep IK failed at segment {index}"
+                        )
+                    phase = f"right_cut_sweep_{index:02d}"
+                    if (
+                        left_counterpull_start is not None
+                        and left_counterpull_target is not None
+                    ):
+                        left_fraction = index / sweep_segments
+                        left_target = left_counterpull_start + left_fraction * (
+                            left_counterpull_target - left_counterpull_start
+                        )
+                        move_bimanual(
+                            solution.joint_degrees,
+                            left_target,
+                            phase,
+                            steps=segment_steps,
+                            force_control=force_control,
+                        )
+                    else:
+                        move(
+                            "right",
+                            solution.joint_degrees,
+                            phase,
+                            steps=segment_steps,
+                        )
+                    live_target = blade_monitor.target_geometry
+                    live_path = blade_monitor.target_path_geometry(_RIGHT_CUT_STUB_M)
+                    if live_target is None or live_path is None:
+                        raise RuntimeError(
+                            f"live cut geometry disappeared after sweep segment {index}"
+                        )
+                    tool = blade_monitor.tool_point_geometry(_RIGHT_EDGE_WING_M)
+                    live_goal = (
+                        live_path["point_m"]
+                        + tool["cut_direction"] * side_m
+                    )
+                    correction_error = live_goal - tool["point_m"]
+                    tracking_error = float(np.linalg.norm(correction_error))
+                    delta = tool["point_m"] - live_path["virtual_junction_m"]
+                    axial = float(np.dot(delta, live_path["axis"]))
+                    radial = delta - axial * live_path["axis"]
+                    stages[-1]["cut_alignment"] = {
+                        "live_target_centre_m": live_path["point_m"].tolist(),
+                        "live_target_axis": live_path["axis"].tolist(),
+                        "live_target_segment": live_path["segment"],
+                        "live_target_collider": live_path["collider"],
+                        "blade_wing_point_m": tool["point_m"].tolist(),
+                        "live_goal_error_mm": tracking_error * 1000.0,
+                        "live_axial_stub_mm": axial * 1000.0,
+                        "live_radial_distance_mm": float(
+                            np.linalg.norm(radial) * 1000.0
+                        ),
+                        "live_signed_side_mm": float(
+                            np.dot(
+                                tool["point_m"] - live_path["point_m"],
+                                tool["cut_direction"],
+                            )
+                            * 1000.0
+                        ),
+                    }
+                    if not blade_monitor.safety_clear:
+                        raise RuntimeError(
+                            f"protected contact during live sweep segment {index}"
+                        )
+                    if applied_cuts:
+                        break
+                    # Keep the committed stroke registered on radial/axial
+                    # target motion, but never chase displacement along the
+                    # cutting direction. The latter must remain real relative
+                    # blade travel through tissue, not controller compensation.
+                    transverse_error = correction_error - (
+                        float(np.dot(correction_error, tool["cut_direction"]))
+                        * tool["cut_direction"]
+                    )
+                    transverse_error_norm = float(
+                        np.linalg.norm(transverse_error)
+                    )
+                    stages[-1]["cut_alignment"][
+                        "transverse_correction_error_mm"
+                    ] = transverse_error_norm * 1000.0
+                    if transverse_error_norm > 0.002:
+                        correction_step = transverse_error
+                        if transverse_error_norm > 0.005:
+                            correction_step = transverse_error * (
+                                0.005 / transverse_error_norm
+                            )
+                        translation_correction += correction_step
+            # Rigid collision geometry cannot be progressively split, so once
+            # the edge is loaded at the safe physical plane, repeat a bounded
+            # 5 mm slicing target instead of driving farther into the row.
+            # Only forward, direction-valid, force-qualified travel contributes
+            # fracture work; reverse unload strokes contribute nothing.
+            fracture_cycle_solutions = []
+            maximum_fracture_cycles = 20
+            fracture_side_m = 0.015
+            if not applied_cuts:
+                for cycle in range(1, maximum_fracture_cycles + 1):
+                    solution = solve_right(
+                        fracture_side_m,
+                        current["right"],
+                        translation_correction,
+                        latched_cut_geometry,
+                    )
+                    record = dataclasses.asdict(solution)
+                    record.update(
+                        {
+                            "cycle": cycle,
+                            "side_m": fracture_side_m,
+                            "translation_correction_m": translation_correction.tolist(),
+                        }
+                    )
+                    fracture_cycle_solutions.append(record)
+                    if not solution.succeeded:
+                        raise RuntimeError(
+                            f"right fracture-cycle IK failed at cycle {cycle}"
+                        )
+                    move_bimanual(
+                        solution.joint_degrees,
+                        current["left"],
+                        f"right_cut_fracture_cycle_{cycle:02d}",
+                        steps=segment_steps,
+                        force_control=force_control,
+                    )
+                    if not blade_monitor.safety_clear:
+                        raise RuntimeError(
+                            f"protected contact during fracture cycle {cycle}"
+                        )
+                    if applied_cuts:
+                        break
+            stages.append(
+                {
+                    "stage": "right_live_cut_sweep",
+                    "control_mode": (
+                        "live_precontact_latched_cut_axis_transverse_tracking"
+                    ),
+                    "latched_target_point_m": latched_cut_geometry[
+                        "point_m"
+                    ].tolist(),
+                    "latched_target_axis": latched_cut_geometry["axis"].tolist(),
+                    "latched_target_segment": latched_cut_geometry["segment"],
+                    "latched_target_collider": latched_cut_geometry["collider"],
+                    "start_side_m": sweep_start_m,
+                    "stop_side_m": sweep_stop_m,
+                    "segments_requested": sweep_segments,
+                    "segments_executed": len(sweep_solutions),
+                    "steps_per_segment": segment_steps,
+                    "force_control": force_control,
+                    "solutions": sweep_solutions,
+                    "maximum_fracture_cycles": maximum_fracture_cycles,
+                    "fracture_cycles_executed": len(fracture_cycle_solutions),
+                    "fracture_cycle_side_m": fracture_side_m,
+                    "fracture_cycle_solutions": fracture_cycle_solutions,
+                }
+            )
+
+            if not applied_cuts:
+                raise RuntimeError("right leading-edge sweep did not physically sever the petiole")
+            if grasp_manager.task_phase != "orphan_retained":
+                raise RuntimeError(
+                    f"physical cut did not enter orphan_retained: {grasp_manager.task_phase}"
+                )
+            for side_m in (-0.035, -0.060, -0.100):
+                move(
+                    "right",
+                    right_waypoints[side_m],
+                    f"right_retract_{side_m:.3f}",
+                    hold_steps=args.motion_steps,
+                )
+
+        grasp_geometry = grasp_manager.target_geometry
+        if grasp_geometry is None:
+            raise RuntimeError("live grasp geometry disappeared before transport")
+        transport_origin = grasp_geometry["centre_m"].copy()
+        # Keep the grasp anchor on a short Cartesian aisle-clearance route.
+        # One large joint-space interpolation arced finger 1 through Organ_0009
+        # and never produced the requested anchor displacement.
+        transport_offsets = (
+            np.asarray([0.0, 0.04, 0.04]),
+            np.asarray([0.0, 0.10, 0.06]),
+            np.asarray([0.0, 0.18, 0.08]),
+            # Only translate sideways after the orphan is clear of the row.
+            # The earlier rearward route placed the falling branch over the
+            # 620 x 500 mm chassis footprint; this aisle-side route keeps the
+            # release point at least 100 mm outside that footprint.
+            np.asarray([-0.22, 0.22, 0.04]),
+        )
+        transport_ee_origin = model.forward(
+            "left",
+            current["left"],
+            base_matrix,
+        )
+        transport_solutions = []
+        for index, offset in enumerate(transport_offsets, start=1):
+            grasp_geometry = grasp_manager.target_geometry
+            if grasp_geometry is None:
+                raise RuntimeError(
+                    f"live grasp geometry disappeared at transport waypoint {index}"
+                )
+            if index <= 3:
+                desired = transport_ee_origin.copy()
+                desired[:3, 3] += offset
+                pose_transport = model.solve_pose(
+                    "left",
+                    desired,
+                    current["left"],
+                    base_matrix,
+                )
+                axes_transport = solve_left(
+                    transport_origin + offset,
+                    current["left"],
+                )
+                candidates = (
+                    ("pose_preserving", pose_transport),
+                    ("point_axes", axes_transport),
+                )
+                if pose_transport.succeeded:
+                    solver, transport = candidates[0]
+                else:
+                    solver, transport = candidates[1]
+                candidate_solutions = {
+                    name: dataclasses.asdict(solution)
+                    for name, solution in candidates
+                }
+            else:
+                transport = solve_left(
+                    transport_origin + offset,
+                    current["left"],
+                    _LEFT_TRANSPORT_SEED_DEGREES,
+                )
+                solver = "point_axes"
+                candidate_solutions = {
+                    solver: dataclasses.asdict(transport),
+                }
+            transport_solutions.append(dataclasses.asdict(transport))
+            stages.append(
+                {
+                    "stage": f"left_transport_ik_{index:02d}",
+                    "target_point_m": (transport_origin + offset).tolist(),
+                    "offset_m": offset.tolist(),
+                    "solver": solver,
+                    "candidate_solutions": candidate_solutions,
+                    "solution": dataclasses.asdict(transport),
+                }
+            )
+            if not transport.succeeded:
+                raise RuntimeError(f"left transport IK failed at waypoint {index}")
+            move(
+                "left",
+                transport.joint_degrees,
+                f"left_transport_{index:02d}",
+                steps=args.motion_steps,
+                hold_steps=(
+                    max(args.motion_steps // 2, 30)
+                    if index == len(transport_offsets)
+                    else 0
+                ),
+            )
+            unsafe = _probe_unsafe_contacts(
+                contact_diagnostics.summary,
+                blade_geometry,
+                grasp_geometry,
+            )
+            if unsafe:
+                raise RuntimeError(
+                    f"unsafe robot contact during transport waypoint {index}"
+                )
+        stages.append(
+            {
+                "stage": "left_transport_ik",
+                "origin_m": transport_origin.tolist(),
+                "offsets_m": [offset.tolist() for offset in transport_offsets],
+                "solutions": transport_solutions,
+            }
+        )
+        if grasp_manager.task_phase != "transported":
+            raise RuntimeError(f"orphan did not reach transport clearance: {grasp_manager.task_phase}")
+
+        contact_diagnostics.set_phase("orphan_release")
+        grasp_manager.request_open()
+        for _ in range(args.drop_steps):
+            tick()
+        stages.append(
+            {
+                "stage": "orphan_release_and_drop",
+                "steps": args.drop_steps,
+                "task_phase": grasp_manager.task_phase,
+                "summary": grasp_manager.summary,
+            }
+        )
+    except Exception as exc:
+        unsafe = _probe_unsafe_contacts(
+            contact_diagnostics.summary, blade_geometry, grasp_geometry
+        )
+        return {
+            "mode": args.bimanual_probe,
+            "stages": stages,
+            "physical_cuts": applied_cuts,
+            "unsafe_contacts": unsafe,
+            "blade_safety_clear": blade_monitor.safety_clear,
+            "task": grasp_manager.summary,
+            "succeeded": False,
+            "error": str(exc),
+        }
+
+    unsafe = _probe_unsafe_contacts(contact_diagnostics.summary, blade_geometry, grasp_geometry)
+    benchmark_cuts = [cut for cut in applied_cuts if cut.get("benchmark_valid")]
+    return {
+        "mode": args.bimanual_probe,
+        "stages": stages,
+        "physical_cuts": applied_cuts,
+        "unsafe_contacts": unsafe,
+        "blade_safety_clear": blade_monitor.safety_clear,
+        "task": grasp_manager.summary,
+        "succeeded": bool(
+            grasp_manager.task_succeeded
+            and len(benchmark_cuts) == 1
+            and not unsafe
+            and blade_monitor.safety_clear
+        ),
     }
 
 

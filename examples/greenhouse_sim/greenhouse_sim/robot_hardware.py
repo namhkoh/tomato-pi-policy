@@ -96,6 +96,12 @@ def rotation_x(degrees: float) -> np.ndarray:
     return np.array([[1.0, 0.0, 0.0], [0.0, c, -s], [0.0, s, c]], dtype=np.float64)
 
 
+def rotation_y(degrees: float) -> np.ndarray:
+    angle = math.radians(degrees)
+    c, s = math.cos(angle), math.sin(angle)
+    return np.array([[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]], dtype=np.float64)
+
+
 def rotation_z(degrees: float) -> np.ndarray:
     angle = math.radians(degrees)
     c, s = math.cos(angle), math.sin(angle)
@@ -131,6 +137,45 @@ def compose_rotation_xyz(rpy_radians: tuple[float, float, float] | list[float]) 
 def transform_direction(rotation: np.ndarray, direction: tuple[float, float, float] | np.ndarray) -> np.ndarray:
     """Apply a conventional column-vector rotation to a direction."""
     return np.asarray(rotation, dtype=np.float64) @ np.asarray(direction, dtype=np.float64)
+
+
+def cut_aligned_knife_rotation(
+    target_axis: tuple[float, float, float] | np.ndarray,
+    preferred_cut_direction: tuple[float, float, float] | np.ndarray,
+    upward: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 1.0),
+) -> np.ndarray:
+    """Orient the CAD knife for a transverse cut with its support facing up.
+
+    The flat plate's local X axis is its edge, local -Y is cutting travel, and
+    local +Z points toward the U-shaped support.  A valid guillotine-like cut
+    therefore places both X and -Y transverse to the contacted petiole tangent.
+    The support normal is selected from the two tangent directions so it has a
+    positive world-up component, then the preferred aisle motion is projected
+    into the transverse plane.
+    """
+    tangent = np.asarray(target_axis, dtype=np.float64)
+    tangent_norm = float(np.linalg.norm(tangent))
+    preferred = np.asarray(preferred_cut_direction, dtype=np.float64)
+    preferred_norm = float(np.linalg.norm(preferred))
+    up = np.asarray(upward, dtype=np.float64)
+    if tangent.shape != (3,) or tangent_norm <= 1e-12:
+        raise ValueError("target axis must be a non-zero three-vector")
+    if preferred.shape != (3,) or preferred_norm <= 1e-12:
+        raise ValueError("preferred cut direction must be a non-zero three-vector")
+    if up.shape != (3,) or float(np.linalg.norm(up)) <= 1e-12:
+        raise ValueError("upward direction must be a non-zero three-vector")
+    support = tangent / tangent_norm
+    if float(np.dot(support, up)) < 0.0:
+        support = -support
+    cut_direction = preferred - float(np.dot(preferred, support)) * support
+    cut_norm = float(np.linalg.norm(cut_direction))
+    if cut_norm <= 1e-12:
+        raise ValueError("preferred cut direction is parallel to the target axis")
+    cut_direction /= cut_norm
+    knife_y = -cut_direction
+    edge_axis = np.cross(knife_y, support)
+    edge_axis /= float(np.linalg.norm(edge_axis))
+    return np.column_stack((edge_axis, knife_y, support))
 
 
 def read_binary_stl(path: pathlib.Path, *, scale: float = 0.001) -> TriangleMesh:

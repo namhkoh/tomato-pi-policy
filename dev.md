@@ -29,8 +29,9 @@ at `D:\isaac-sim`, Windows 11. Active deleafing branch `koh-dev/deleaf`
 - [x] Protected-contact ledger for main stem, non-target organs, neighbouring vines, structure, and robot
 - [x] Bi-manual task state/retention support: left grasp -> right cut -> transport -> floor deposit
 - [x] Stable non-contact robot/vine startup after collider deduplication and wrist-envelope correction
-- [ ] Robot-to-vine gripper/blade contact and cut validation
-- [ ] Collision-aware dual-arm approach and simulator command/teleoperation bridge
+- [x] Robot-to-vine gripper/blade contact and cut validation
+- [x] Hardware-bounded dual-arm approach + complete grasp/cut/transport/deposit acceptance
+- [ ] Simulator-to-lab teleoperation/recording bridge + repeatability trials
 - [ ] Benchmark task definition + metrics
 
 ## Findings
@@ -779,15 +780,89 @@ aisle floor zone, below the floor tolerance, and moving no faster than 0.15 m/s.
 | Safe right pre-contact | blade 117.945 mm and U support 65.033 mm from settled `SubStem_00`; arc still faces upward | same report |
 | Error scan | no Python traceback, PhysX error, invalid joint, NaN, broadphase fault, or explosion signature | `kit_20260808_152754.log` |
 
-This clears the stable benchmark-physics and event-accounting milestone. It does
-**not** clear robot-to-vine execution: the left arm is intentionally 644.5 mm
-from the selected grasp body in its collision-clear SDK-ready pose, and the right
-blade intentionally retains an air gap. The next milestone is a collision-aware
-dual-arm command path that reaches pre-grasp/pre-cut, executes a slow force-limited
-grasp and transverse sweep, and proves one complete physical sequence in the
-engine. Only after that live sequence is repeatable should the lab RB-Y1 teleop
-bridge be connected for demonstration collection; RL/VLA environment batching
-and scoring remain downstream of that gate.
+This cleared the stable benchmark-physics and event-accounting milestone. The
+robot-to-vine execution gate described here is completed in the 2026-08-09
+validation below.
+
+### Complete physical bi-manual execution (2026-08-09)
+
+The staged RB-Y1 controller now completes the required task in the supplied
+greenhouse using the original tomato mesh and the authored physics backend:
+
+1. the left arm approaches the live moving petiole, closes both physical
+   fingers, and requires three consecutive opposed-contact steps before a grasp
+   can be established;
+2. the left arm counterholds the exact selected organ while the right flat blade
+   approaches from a collision-checked side and executes force-limited transverse
+   slicing cycles;
+3. the selected petiole severs only after the leading edge satisfies contact,
+   cut-zone, direction, force, work, selected-target, and protected-contact
+   gates;
+4. the left arm retains the orphan, clears the vine row, carries it to a
+   chassis-clear side-aisle zone, opens the gripper, and lets it settle on the
+   greenhouse floor.
+
+The earlier false starts identified real constraints rather than being hidden by
+weaker thresholds:
+
+- A planned `Link_3` grasp was not the contacted physical body. The manager now
+  groups eligible cut/grasp colliders by body and anchors the fixed grasp joint
+  to the actual opposed-finger contact on `Link_2`; contact gaps reset the
+  consecutive-step gate.
+- Both arm drives use the vendor URDF effort limits `(70, 70, 70, 40, 10, 10,
+  8)` N m. Exact RB-Y1 v1.0 FK/IK and a point Jacobian reject a counterhold
+  posture unless it can supply at least 1.10 times the 66.3 N cut requirement.
+  A tested 72.1 N posture was therefore rejected rather than accepted by
+  reducing the safety margin.
+- Moving the entire unheld rigid petiole can no longer accumulate cut work.
+  Reverse/unload motion also contributes none. The rigid-tissue fracture proxy
+  can accumulate commanded penetration only while the real leading edge is in
+  an admissible physical contact, the blade is moving in the required direction,
+  force is above threshold, the exact target is counterheld by the left grasp,
+  and the protected-contact ledger is clear.
+- One large joint-space transport interpolation arced through foliage. The
+  accepted route uses short Cartesian row-clearance waypoints, preserves the
+  grasp pose whenever full-pose IK passes, falls back to bounded point/axis IK
+  without changing its thresholds, translates sideways only after row
+  clearance, and holds the terminal pose before release.
+- Dropping directly over the original base stance let the long orphan rotate
+  into a wheel. The accepted base is 150 mm farther back at
+  `(6.99114, 3.93000, -0.3050817)` m. Its plan footprint extends beneath the
+  neighbouring elevated supplied gutter, but the full 3-D contact trace has no
+  gutter, robot, tool, or neighbouring-vine contact. Smaller trial offsets that
+  reduced counterhold effort margin were explicitly rejected.
+
+**Severance-model limitation, recorded rather than hidden:** PhysX cannot make a
+live internal joint disappear inside the current reduced-coordinate petiole
+articulation. Disabling `Joint_002` in USD left the subtree constrained in the
+running solver. The severer therefore records the nearest geometric cut joint
+and 21.003 mm geometric stub, but physically disables the organ's pre-authored
+maximal-coordinate `BaseJoint`, yielding a realised physical stub of zero. This
+is reported as `release_mode=maximal_coordinate_organ_base`. A future topology
+backend must partition/rebuild the articulation at the selected internal joint
+if non-zero residual stub physics is required. Likewise, the commanded
+traction-separation penetration is an explicit approximation for a rigid
+capsule that cannot deform or split; it does not replace the required physical
+contact, force, direction, work, counterhold, or safety evidence.
+
+**Definitive Isaac Sim 5.1 acceptance:**
+
+| Check | Result | Evidence |
+|---|---|---|
+| Complete greenhouse suite | 63 passed, 1 PhysX-only test skipped outside a running app | `python -m pytest examples/greenhouse_sim -q` |
+| 480-step integrated stability | succeeded=true; finite vine; 0 runaway organs; 68.700 mm maximum compliant motion; robot stable at 2.078 degrees tilt; pre-contact valid; empty stderr | `data/greenhouse_sim/stability_480_final.json` |
+| Opposed physical grasp | actual `Link_002`; 26.603 N peak grasp force; exact selected target retained | `data/greenhouse_sim/bimanual_full_acceptance_final_pass.json` |
+| Hardware effort margin | vendor joint limits active; counterhold posture admitted only above 72.93 N capacity | same report, `left_static_counterhold` |
+| Physical cut | one intended cut; 73.875 N peak; 0.5910 J work vs 0.5554 J required; 8.697 mm forward travel; edge alignment 0.9825; transverse-motion alignment 0.9871; benchmark_valid=true | same report |
+| Safe transport/deposit | 315.0 mm maximum clearance; endpoint hold; task phase `deposited`; floor contact=true; final speed 0.1490 m/s; zero unsafe contacts | same report |
+| Whole acceptance | top-level succeeded=true; bimanual probe=true; robot stability=true; pre-contact=true; no Python stderr | same report and `.stderr.log` |
+
+This is the simulator-stability gate for the lab phase, not the completion of
+the benchmark. Next work is repeated-seed/task-target acceptance, then the
+simulator-to-lab RB-Y1 teleoperation and synchronized D405/action recording
+bridge for demonstration collection. Tear-force calibration, task/scene
+randomisation, observation/action interfaces, VLA policy adapters, metrics, and
+RL batching remain downstream and must not be claimed as complete.
 
 ## Research findings, 2026-08-06 (pre-implementation)
 
@@ -923,3 +998,8 @@ One logical change per commit; no AI attribution trailers.
   duplicate imported robot colliders, oversized wrist planning envelopes, and
   the left-palm jaw obstruction; passed 48 regressions and a clean 480-step
   integrated robot/vine/contact soak on `koh-dev/deleaf`.
+- 2026-08-09 — Completed the hardware-effort-limited RB-Y1 left-grasp/right-cut/
+  retain/transport/floor-deposit execution, added exact v1.0 kinematics and
+  force-capacity checks, made rigid-tissue fracture/topology approximations
+  explicit in reports, and passed 63 regressions plus top-level physical
+  acceptance with one valid cut and zero unsafe contacts on `koh-dev/deleaf`.

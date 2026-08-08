@@ -93,8 +93,13 @@ def test_arc_length_sampling_is_continuous() -> None:
     fitted = skeleton.extract_skeleton(_component(*_tube(centres, radius=0.004)), np.zeros(3))
 
     # Interpolation, not snapping: a cut measured between nodes stays exact.
-    midpoint = fitted.point_at(0.5 * fitted.length)
-    assert midpoint[2] == pytest.approx(0.5 * fitted.length, abs=0.01)
+    fraction = 0.513
+    sample = fitted.point_at(fraction * fitted.length)
+    expected = fitted.points[0] + fraction * (
+        fitted.points[-1] - fitted.points[0]
+    )
+    np.testing.assert_allclose(sample, expected, atol=1e-12)
+    assert np.min(np.linalg.norm(fitted.points - sample, axis=1)) > 1e-5
     np.testing.assert_allclose(fitted.point_at(0.0), fitted.points[0], atol=1e-12)
     np.testing.assert_allclose(fitted.point_at(1e6), fitted.points[-1], atol=1e-12)
     assert fitted.radius_at(0.5 * fitted.length) == pytest.approx(0.004, abs=5e-4)

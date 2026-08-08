@@ -213,12 +213,14 @@ and cannot trigger a cut. The knife is rolled
 about its unchanged blade axis so that arc faces upward in the ready pose and
 the flat plate is presented cleanly toward the cut.
 
-The default base pose is `(6.99114, 3.78000, -0.3050817)` m at -90 degrees yaw,
-on the opposite side of the target gutter. It starts with about 229 mm chassis
-clearance to that gutter and faces world -Y toward `Vine_0000/SubStem_00`. The
-official SDK ready vector is retained as a separate reference; the launcher
-replaces only the right arm with a verified collision-clear pre-contact IK pose. The
-elbow stays in the inter-row aisle. Override the stance with
+The default base pose is `(6.99114, 3.93000, -0.3050817)` m at -90 degrees yaw,
+on the opposite side of the target gutter. The 150 mm rearward offset keeps a
+released branch clear of the wheels and faces world -Y toward
+`Vine_0000/SubStem_00`. Its plan footprint extends beneath the supplied
+neighbouring elevated gutter, but the validated 3-D contact trace has no
+robot/gutter collision. The official SDK ready vector is retained as a separate
+reference; the launcher replaces only the right arm with a verified
+collision-clear pre-contact IK pose. Override the stance with
 `--robot-position X Y Z` when testing a different vine or posture.
 
 Each dynamic vine has a finite hidden catch tray so severed foliage does not
@@ -246,18 +248,30 @@ $ISAACSIM/python.sh examples/greenhouse_sim/interactive_greenhouse.py \
 ```
 
 The accepted pose is stable, both wrist brackets coincide with the v1.1 CAD's
-actual screw pair, and all three optical frames remain present. The
-480-step report measures the settled flat blade 118.1 mm and upward U-support
-65.2 mm from the actual lower-petiole attachment. All 34 robot rigid bodies
-remain finite, the base settles with 2.08 degrees tilt, and the contact trace
-contains only wheel/chassis support against the greenhouse floor. A final
-approach controller and a robot-driven physical cut remain the next gate before
-benchmark and RL work. The physical trigger and bi-manual task accounting are
-already live: 18 petiole targets expose local cut geometry; qualifying requires
-at least 66.3 N, transverse forward motion, sustained work through the measured
-diameter, a clear protected-contact ledger, and a prior left two-finger grasp.
-After severance the left grasp must retain, transport, and release the orphan in
-the aisle floor zone. See `dev.md` for exact limits and validation evidence.
+actual screw pair, and all three optical frames remain present. The final
+480-step report measures the parked flat blade 267.8 mm and upward U-support
+215.0 mm from the actual lower-petiole attachment, inside the 300 mm staged
+approach envelope and outside the 5 mm no-spawn-contact margin. All 34 robot
+rigid bodies remain finite, the base settles with 2.08 degrees tilt, and the
+contact trace contains only wheel/chassis support against the greenhouse floor.
+
+The complete robot-driven bi-manual acceptance is also live: 18 petiole targets
+expose local cut geometry; qualifying requires at least 66.3 N, transverse
+forward motion, sustained work through the measured diameter, a clear
+protected-contact ledger, and a prior left two-finger grasp. After severance the
+left grasp must retain, transport, and release the orphan in the side-aisle floor
+zone. Run the deterministic acceptance with:
+
+```bash
+$ISAACSIM/python.sh examples/greenhouse_sim/interactive_greenhouse.py \
+    --headless --bimanual-probe full --motion-steps 180 --drop-steps 1200 \
+    --report data/greenhouse_sim/bimanual_full_acceptance_final_pass.json
+```
+
+The accepted run reports one benchmark-valid intended cut, zero unsafe
+contacts, and the full `grasped -> orphan_retained -> transported -> released ->
+deposited` sequence. See `dev.md` for the exact force/work evidence and the
+current rigid-tissue severance approximation.
 
 For live video, launch without `--headless` and use the interaction-window
 camera buttons or keys `1`-`4`; the selected D405 becomes the active viewport.
@@ -346,6 +360,7 @@ depends on), and never falls back to grafting.
 | `greenhouse_sim/deleaf_task.py` | Required bi-manual grasp/cut/transport/deposit state machine |
 | `greenhouse_sim/greenhouse_scene.py` | Vine placement over the greenhouse stage |
 | `greenhouse_sim/robot_hardware.py` | D405/bracket mounts and flat-blade cut semantics |
+| `greenhouse_sim/robot_kinematics.py` | Exact RB-Y1 v1.0 FK/IK, Jacobian, and effort-capacity checks |
 | `greenhouse_sim/robot_scene.py` | RBY1 placement, ready pose, and fit validation |
 | `greenhouse_sim/usd_env.py` | Makes USD importable without booting Kit |
 | `extract_robot_hardware.py` | Reproducible supplied-CAD extraction and manifest |
@@ -372,9 +387,9 @@ foliage-area airflow, greenhouse integration, pull/recovery, and flush cutting.
 Manual Shift-drag, airflow-motion, and debug-cut acceptance is complete. Exact RB-Y1
 v1.0 import, ready-pose stability, three D405 fits/optical frames, and right
 knife-only end-effector semantics are also verified. Physical leading-edge cut
-qualification, protected-contact accounting, and the bi-manual task state
-machine are implemented and unit-tested. Next: collision-aware dual-arm motion
-and one complete robot-to-vine grasp/contact/cut/transport/deposit acceptance,
-then the teleoperation/recording bridge, 32.5 N tear calibration, task metrics,
-benchmarking, and RL.
+qualification, protected-contact accounting, hardware-effort-limited dual-arm
+motion, and one complete grasp/contact/cut/transport/floor-deposit acceptance
+are verified in Isaac Sim with zero unsafe contacts. Next: the
+teleoperation/recording bridge and repeatability trials, then 32.5 N tear
+calibration, task metrics, benchmark randomisation, policy interfaces, and RL.
 See `dev.md` at the repository root for evidence and remaining work.

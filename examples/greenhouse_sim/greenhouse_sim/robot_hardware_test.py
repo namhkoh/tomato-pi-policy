@@ -39,6 +39,31 @@ def test_knife_projects_along_the_right_tool_axis() -> None:
     np.testing.assert_allclose(robot_hardware.KNIFE_TRANSLATION_M, [0.0, 0.0, 0.0], atol=0.0)
 
 
+def test_cut_aligned_knife_is_transverse_and_keeps_support_up() -> None:
+    target = np.asarray([0.42, -0.64, -0.65])
+    preferred = np.asarray([0.0, -0.966, 0.259])
+
+    rotation = robot_hardware.cut_aligned_knife_rotation(target, preferred)
+    edge_axis = rotation @ np.asarray([1.0, 0.0, 0.0])
+    cut_direction = rotation @ np.asarray([0.0, -1.0, 0.0])
+    support = rotation @ np.asarray([0.0, 0.0, 1.0])
+    target /= np.linalg.norm(target)
+
+    np.testing.assert_allclose(rotation.T @ rotation, np.eye(3), atol=1e-12)
+    assert np.linalg.det(rotation) > 0.999999
+    assert abs(float(np.dot(edge_axis, target))) < 1e-12
+    assert abs(float(np.dot(cut_direction, target))) < 1e-12
+    assert float(np.dot(cut_direction, preferred)) > 0.0
+    assert support[2] > 0.0
+
+
+def test_rotation_y_preserves_a_right_handed_tool_frame() -> None:
+    rotation = robot_hardware.rotation_y(-35.0)
+
+    np.testing.assert_allclose(rotation.T @ rotation, np.eye(3), atol=1e-12)
+    assert np.linalg.det(rotation) == pytest.approx(1.0, abs=1e-12)
+
+
 def test_wrist_camera_brackets_align_the_reference_m3_pair() -> None:
     for rotation, translation in (
         (robot_hardware.LEFT_CAMERA_ROTATION, robot_hardware.LEFT_CAMERA_TRANSLATION_M),

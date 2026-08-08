@@ -179,7 +179,10 @@ def _add_gripper_colliders(stage, Gf, Sdf, UsdGeom, UsdPhysics) -> list[str]:
     # either finger could establish a valid grasp.
     body_min = np.array([-0.0630, -0.0325, -0.0250])
     body_max = np.array([0.0630, 0.0325, 0.0])
-    finger_min = np.array([-0.0030, -0.0160, -0.0605])
+    # Include the 5 mm inner gripping-pad depth omitted by the coarse finger
+    # box. Without it the imported zero-position limit leaves a 13.7 mm gap,
+    # so an 8.4 mm proximal petiole can never produce opposed contact.
+    finger_min = np.array([-0.0080, -0.0160, -0.0605])
     finger_max = np.array([0.0130, 0.0160, 0.0015])
     links = {
         "ee_left": (body_min, body_max, "gripper_body"),

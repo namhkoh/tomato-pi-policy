@@ -19,11 +19,13 @@ better anyway: breakForce fires on solver transients during settling and tore
 every petiole off in the first frames, whereas a threshold applied to a measured
 force can require the load to persist before it counts.
 
-Physics releases at the nearest joint, but the score is measured against the
-blade plane's true position along the centreline. Those differ by up to half a
-segment, and that residual is reported per cut rather than hidden, because
-residual stub length is the benchmark's headline metric and an error term it
-cannot see would quietly flatter every policy.
+The blade plane is measured continuously along the centreline. PhysX cannot
+detach an internal link from a live reduced-coordinate articulation, however,
+so the runtime physical release uses the organ's pre-authored maximal-coordinate
+base joint. The nearest geometric link joint and its quantisation are persisted
+alongside that physical release rather than hidden; a future deformable/topology
+backend can replace this explicit approximation without changing benchmark
+cut evidence.
 """
 
 from __future__ import annotations
@@ -103,6 +105,8 @@ class BladeContactSample:
     cutting_direction: np.ndarray
     edge_velocity_m_s: np.ndarray
     dt_s: float
+    counterhold_active: bool = False
+    commanded_edge_velocity_m_s: np.ndarray | None = None
 
 
 @dataclasses.dataclass
@@ -118,10 +122,17 @@ class CutProgress:
     gap_steps: int = 0
     minimum_signed_side_m: float = float("inf")
     maximum_signed_side_m: float = float("-inf")
+    last_relative_edge_m: np.ndarray | None = None
     last_edge_centre_m: np.ndarray | None = None
     last_stub_m: float = 0.0
     edge_axis_alignment: float = 0.0
     motion_transverse_alignment: float = 0.0
+    last_effective_force_n: float = 0.0
+    last_forward_speed_m_s: float = 0.0
+    last_contact_valid: bool = False
+    virtual_penetration_m: float = 0.0
+    counterheld_contact_steps: int = 0
+    counterhold_start_side_m: float | None = None
     rejections: dict[str, int] = dataclasses.field(default_factory=dict)
 
     def reject(self, reason: str) -> None:
@@ -134,7 +145,11 @@ class CutProgress:
         self.valid_contact_steps = 0
         self.minimum_signed_side_m = float("inf")
         self.maximum_signed_side_m = float("-inf")
+        self.last_relative_edge_m = None
         self.last_edge_centre_m = None
+        self.virtual_penetration_m = 0.0
+        self.counterheld_contact_steps = 0
+        self.counterhold_start_side_m = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -153,6 +168,8 @@ class PhysicalCutDecision:
     valid_contact_steps: int
     edge_axis_alignment: float
     motion_transverse_alignment: float
+    virtual_penetration_m: float
+    counterheld_contact_steps: int
 
 
 class DirectionalCutGate:
@@ -190,7 +207,22 @@ class DirectionalCutGate:
         velocity = np.asarray(sample.edge_velocity_m_s, dtype=np.float64)
         edge_axis = self._unit(sample.edge_axis)
         cut_direction = self._unit(sample.cutting_direction)
-        velocity_direction = self._unit(velocity)
+        commanded_velocity = (
+            None
+            if sample.commanded_edge_velocity_m_s is None
+            else np.asarray(
+                sample.commanded_edge_velocity_m_s,
+                dtype=np.float64,
+            )
+        )
+        motion_velocity = (
+            commanded_velocity
+            if sample.counterhold_active
+            and commanded_velocity is not None
+            and commanded_velocity.shape == (3,)
+            else velocity
+        )
+        velocity_direction = self._unit(motion_velocity)
         if (
             point.shape != (3,)
             or impulse.shape != (3,)
@@ -210,8 +242,12 @@ class DirectionalCutGate:
         radial_distance = float(np.linalg.norm(radial))
         edge_axis_dot = abs(float(np.dot(edge_axis, target.axis)))
         motion_axis_dot = abs(float(np.dot(velocity_direction, target.axis)))
-        forward_speed = float(np.dot(velocity, cut_direction))
+        forward_speed = float(np.dot(motion_velocity, cut_direction))
         effective_force = abs(float(np.dot(impulse, cut_direction))) / sample.dt_s
+        relative_edge = edge_centre - target.centre_m
+
+        progress.last_effective_force_n = effective_force
+        progress.last_forward_speed_m_s = forward_speed
 
         progress.peak_force_n = max(progress.peak_force_n, effective_force)
         progress.peak_speed_m_s = max(progress.peak_speed_m_s, max(forward_speed, 0.0))
@@ -239,34 +275,85 @@ class DirectionalCutGate:
             (effective_force >= target.cut_force_n, "insufficient_force"),
         )
         failed = [reason for accepted, reason in checks if not accepted]
+        progress.last_contact_valid = not failed
         if failed:
             for reason in failed:
                 progress.reject(reason)
+            progress.last_relative_edge_m = relative_edge.copy()
             progress.last_edge_centre_m = edge_centre.copy()
             return None
 
-        forward_step = 0.0
-        if progress.last_edge_centre_m is not None:
-            forward_step = max(
-                float(np.dot(edge_centre - progress.last_edge_centre_m, cut_direction)),
+        relative_forward_step = 0.0
+        if progress.last_relative_edge_m is not None:
+            relative_forward_step = max(
+                float(
+                    np.dot(
+                        relative_edge - progress.last_relative_edge_m,
+                        cut_direction,
+                    )
+                ),
                 0.0,
             )
+        world_forward_step = 0.0
+        if progress.last_edge_centre_m is not None:
+            world_forward_step = max(
+                float(
+                    np.dot(
+                        edge_centre - progress.last_edge_centre_m,
+                        cut_direction,
+                    )
+                ),
+                0.0,
+            )
+        commanded_forward_step = (
+            max(forward_speed * sample.dt_s, 0.0)
+            if sample.counterhold_active and commanded_velocity is not None
+            else 0.0
+        )
+        progress.last_relative_edge_m = relative_edge.copy()
         progress.last_edge_centre_m = edge_centre.copy()
         progress.valid_contact_steps += 1
+        forward_step = relative_forward_step
+        if sample.counterhold_active:
+            # A rigid capsule cannot yield under a sharp edge, so its contact
+            # frame deflects with the knife even though real tissue would
+            # fracture. Once an opposed physical grasp holds the same organ,
+            # count forward world-edge travel as virtual penetration through
+            # that rigid contact surface. Unheld pushing still uses only true
+            # blade/target relative motion and remains non-qualifying.
+            progress.counterheld_contact_steps += 1
+            forward_step = max(
+                forward_step,
+                world_forward_step,
+                commanded_forward_step,
+            )
+            progress.virtual_penetration_m += max(
+                max(world_forward_step, commanded_forward_step)
+                - relative_forward_step,
+                0.0,
+            )
         progress.forward_travel_m += forward_step
         capped_force = min(
             effective_force,
             target.cut_force_n * self.parameters.force_cap_multiple,
         )
         progress.work_j += capped_force * forward_step
-        side = float(np.dot(edge_centre - target.centre_m, cut_direction))
+        side = float(np.dot(relative_edge, cut_direction))
         progress.minimum_signed_side_m = min(progress.minimum_signed_side_m, side)
         progress.maximum_signed_side_m = max(progress.maximum_signed_side_m, side)
+        if sample.counterhold_active and progress.counterhold_start_side_m is None:
+            progress.counterhold_start_side_m = side
 
-        crossed_centre = (
+        physically_crossed_centre = (
             progress.minimum_signed_side_m <= -0.25 * target.radius_m
             and progress.maximum_signed_side_m >= 0.0
         )
+        virtually_crossed_centre = bool(
+            progress.counterhold_start_side_m is not None
+            and progress.counterhold_start_side_m <= -0.25 * target.radius_m
+            and progress.counterhold_start_side_m + progress.forward_travel_m >= 0.0
+        )
+        crossed_centre = physically_crossed_centre or virtually_crossed_centre
         required_work = target.required_work_j(self.parameters)
         if progress.work_j < required_work or not crossed_centre:
             return None
@@ -287,6 +374,8 @@ class DirectionalCutGate:
             valid_contact_steps=progress.valid_contact_steps,
             edge_axis_alignment=progress.edge_axis_alignment,
             motion_transverse_alignment=progress.motion_transverse_alignment,
+            virtual_penetration_m=progress.virtual_penetration_m,
+            counterheld_contact_steps=progress.counterheld_contact_steps,
         )
 
     def finish_step(self, contacted_target_keys: set[str]) -> None:
@@ -294,6 +383,9 @@ class DirectionalCutGate:
         for key, progress in self._progress.items():
             if key in contacted_target_keys or key in self._completed:
                 continue
+            progress.last_effective_force_n = 0.0
+            progress.last_forward_speed_m_s = 0.0
+            progress.last_contact_valid = False
             progress.gap_steps += 1
             if progress.gap_steps > self.parameters.contact_memory_steps:
                 progress.reset_contact_window()
@@ -307,6 +399,14 @@ class DirectionalCutGate:
                 "forward_travel_mm": progress.forward_travel_m * 1000.0,
                 "contact_steps": progress.contact_steps,
                 "valid_contact_steps": progress.valid_contact_steps,
+                "last_effective_force_n": progress.last_effective_force_n,
+                "last_forward_speed_m_s": progress.last_forward_speed_m_s,
+                "last_contact_valid": progress.last_contact_valid,
+                "last_stub_mm": progress.last_stub_m * 1000.0,
+                "minimum_signed_side_mm": progress.minimum_signed_side_m * 1000.0,
+                "maximum_signed_side_mm": progress.maximum_signed_side_m * 1000.0,
+                "virtual_penetration_mm": progress.virtual_penetration_m * 1000.0,
+                "counterheld_contact_steps": progress.counterheld_contact_steps,
                 "rejections": dict(progress.rejections),
                 "completed": key in self._completed,
             }
@@ -341,6 +441,11 @@ class Cut:
     valid_contact_steps: int = 0
     edge_axis_alignment: float = 0.0
     motion_transverse_alignment: float = 0.0
+    virtual_penetration_m: float = 0.0
+    counterheld_contact_steps: int = 0
+    geometric_joint_path: str = ""
+    geometric_stub_m: float = 0.0
+    release_mode: str = "joint"
 
     @property
     def quantisation_error_m(self) -> float:
@@ -415,7 +520,19 @@ class Severer:
             stub_length_m = decision.requested_stub_m
             trigger = "physical_blade"
 
-        joint_path, realised = self._joint_for_stub(organ_label, stub_length_m)
+        geometric_joint_path, geometric_stub_m = self._joint_for_stub(
+            organ_label,
+            stub_length_m,
+        )
+        base_joint = self._rig.cut_joints[organ_label]
+        # Internal joints belong to one reduced-coordinate articulation.
+        # Changing jointEnabled updates USD but does not split the live PhysX
+        # articulation, so a held downstream link remains tethered. The base
+        # joint was deliberately authored outside the articulation and is the
+        # runtime-detachable physical boundary.
+        internal_articulation_release = geometric_joint_path != base_joint
+        joint_path = base_joint if internal_articulation_release else geometric_joint_path
+        realised = 0.0 if internal_articulation_release else geometric_stub_m
         self._set_joint_enabled(joint_path, enabled=False)
 
         record = Cut(
@@ -437,6 +554,19 @@ class Severer:
             ),
             motion_transverse_alignment=(
                 decision.motion_transverse_alignment if decision is not None else 0.0
+            ),
+            virtual_penetration_m=(
+                decision.virtual_penetration_m if decision is not None else 0.0
+            ),
+            counterheld_contact_steps=(
+                decision.counterheld_contact_steps if decision is not None else 0
+            ),
+            geometric_joint_path=geometric_joint_path,
+            geometric_stub_m=geometric_stub_m,
+            release_mode=(
+                "maximal_coordinate_organ_base"
+                if internal_articulation_release
+                else "selected_joint"
             ),
         )
         self._cuts.append(record)

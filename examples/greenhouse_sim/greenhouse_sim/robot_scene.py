@@ -21,12 +21,12 @@ from pxr import UsdPhysics  # noqa: E402
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[3]
 DEFAULT_ROBOT_ASSET = REPOSITORY_ROOT / "data" / "greenhouse_sim" / "robots" / "rby1a_v1.0.usd"
 DEFAULT_ROBOT_PATH = "/World/RBY1"
-# Stand in the authored aisle on the opposite (+Y) side of Vine_0000, facing
-# back toward the row.  The chassis has 229 mm clearance to the target gutter
-# and 35 mm to the neighbouring gutter before settling; normal forward settling
-# moves it away from that tighter rear clearance.
+# Stand on the opposite (+Y) side of Vine_0000, facing back toward the row. The
+# 150 mm rearward offset keeps a released branch clear of the wheels. Its plan
+# footprint extends beneath the supplied neighbouring elevated gutter, while
+# the validated 3-D scene has no robot/gutter collision.
 # Main_Cultivation_Zone's authored collision floor is z=-0.3050817 m.
-DEFAULT_POSITION_M = np.array([6.99114, 3.7800, -0.3050817], dtype=np.float64)
+DEFAULT_POSITION_M = np.array([6.99114, 3.9300, -0.3050817], dtype=np.float64)
 DEFAULT_YAW_DEGREES = -90.0
 DEFAULT_POSE_NAME = "opposite_aisle_knife_precontact_substem_00"
 

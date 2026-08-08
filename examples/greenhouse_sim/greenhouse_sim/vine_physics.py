@@ -43,6 +43,9 @@ from greenhouse_sim import organs
 from greenhouse_sim import skeleton as skeleton_module
 from greenhouse_sim import usd_env
 
+
+PETIOLE_CUT_ZONE_LENGTH_M = 0.025
+
 usd_env.ensure_pxr()
 
 from pxr import Gf  # noqa: E402
@@ -199,6 +202,42 @@ class PlantRig:
     def link_paths_for(self, organ: int) -> list[str]:
         return [link.path for link in self.links if link.organ == organ]
 
+    def cut_segment_frame(
+        self, collider: ColliderInfo
+    ) -> tuple[np.ndarray, np.ndarray, float]:
+        """Return a local straight-line cut frame with global arc coordinates.
+
+        A petiole cut zone can span several articulated capsules.  Contact
+        geometry must follow the particular capsule that the blade touched,
+        while residual stub length must still be measured from the organ
+        junction.  Extending the contacted segment axis backwards by its
+        cumulative arc length gives both properties: projecting a point onto
+        the returned line yields its cumulative stub coordinate, even after
+        that segment bends relative to its neighbours.
+        """
+        if "petiole_cut_zone" not in collider.role:
+            raise ValueError(f"collider is not a petiole cut zone: {collider.path}")
+        chain = sorted(
+            (link for link in self.links if link.organ == collider.organ),
+            key=lambda link: link.index,
+        )
+        link = next(
+            (candidate for candidate in chain if candidate.index == collider.segment),
+            None,
+        )
+        if link is None:
+            raise ValueError(f"cut-zone link is missing for collider: {collider.path}")
+        axis = link.end - link.start
+        length = float(np.linalg.norm(axis))
+        if length <= 1e-12:
+            raise ValueError(f"cut-zone link has zero length: {link.path}")
+        axis = axis / length
+        arc_start_m = float(
+            sum(candidate.length for candidate in chain if candidate.index < link.index)
+        )
+        virtual_junction_m = link.start - arc_start_m * axis
+        return virtual_junction_m, axis, arc_start_m
+
 
 def beam_stiffness(youngs_modulus_pa: float, radius_m: float, length_m: float) -> float:
     """Bending stiffness of a beam segment, in N*m per radian.
@@ -235,6 +274,14 @@ def _orient_to(axis: np.ndarray) -> Gf.Quatf:
     return Gf.Quatf(half / 2.0, Gf.Vec3f(*(cross / half)))
 
 
+def _physical_collider_radius(
+    link: Link, collider_radius_m: float | None = None
+) -> float:
+    """Clamp contact geometry without changing structural link properties."""
+    requested = link.radius if collider_radius_m is None else collider_radius_m
+    return min(float(requested), 0.5 * link.length)
+
+
 def _define_capsule(
     stage: Usd.Stage,
     path: Sdf.Path,
@@ -243,6 +290,7 @@ def _define_capsule(
     *,
     visible: bool = False,
     collidable: bool = True,
+    collider_radius_m: float | None = None,
 ) -> Sdf.Path:
     """A rigid body carrying its collider as a child, returning the collider.
 
@@ -297,7 +345,7 @@ def _define_capsule(
     # stands for -- on these assets up to 4.2x -- which silently engulfs
     # neighbouring organs and leaves PhysX resolving overlaps that should never
     # exist. Clamping keeps every collider inside its own segment.
-    radius = min(float(link.radius), 0.5 * link.length)
+    radius = _physical_collider_radius(link, collider_radius_m)
     capsule.CreateRadiusAttr(radius)
     capsule.CreateHeightAttr(max(link.length - 2.0 * radius, 1e-4))
     if collidable:
@@ -509,22 +557,35 @@ def author_plant_physics(
                     segment = int(np.argmin(np.abs(centres - target)))
                     contact_segments[segment] = "protected_main_stem"
             elif organ.label.startswith("SubStem_"):
-                # Segment zero is the blade-contact zone at the real junction.
-                # A second midpoint collider remains available for mouse and
-                # left-gripper interaction. Self-collision inside this organ's
-                # articulation is disabled, so the endpoint capsule does not
-                # fight its own chain.
-                contact_segments[0] = "petiole_cut_zone"
-                midpoint = int(np.argmin(np.abs(centres - 0.5 * arcs[-1])))
-                contact_segments[midpoint] = (
+                # Every segment intersecting the admissible stub interval is
+                # physical blade contact. Previously only segment zero was
+                # enabled (8.38 mm on SubStem_00), although the cut gate accepts
+                # a realistic stub through 25 mm. A valid 12 mm path therefore
+                # passed through no petiole collider and reached the main stem.
+                cut_segments = set(_petiole_cut_zone_segments(arcs))
+                for segment in cut_segments:
+                    contact_segments[segment] = "petiole_cut_zone"
+                grasp_segment = _petiole_grasp_segment(arcs)
+                contact_segments[grasp_segment] = (
                     "petiole_cut_zone_grasp"
-                    if midpoint == 0
+                    if grasp_segment in cut_segments
                     else "petiole_grasp"
                 )
 
         for segment in range(points.shape[0] - 1):
             contactable = segment in contact_segments
             radius = float(max(0.5 * (centreline.radii[segment] + centreline.radii[segment + 1]), 1e-4))
+            role = contact_segments.get(segment, "")
+            # The first artistic petiole segment flares rapidly away from the
+            # junction. Its average radius is appropriate for mass/stiffness,
+            # but not for the physical cut interface: use the measured
+            # proximal radius so the blade and guide encounter the tissue that
+            # the force/work model represents.
+            collider_radius = (
+                float(max(centreline.radii[0], 1e-4))
+                if "petiole_cut_zone" in role
+                else None
+            )
             link = Link(
                 path=str(organ_scope.AppendChild(f"Link_{segment:03d}")),
                 organ=organ.index,
@@ -540,10 +601,10 @@ def author_plant_physics(
                 properties,
                 visible=visible_colliders,
                 collidable=contactable,
+                collider_radius_m=collider_radius,
             )
             if contactable:
                 collider_paths.append(collider)
-                role = contact_segments[segment]
                 collider_prim = stage.GetPrimAtPath(collider)
                 collider_prim.CreateAttribute(
                     "tomato:organIndex", Sdf.ValueTypeNames.Int, custom=True
@@ -674,6 +735,31 @@ def _depth(plant: organs.Plant, index: int) -> int:
         organ = plant.organs[organ.parent]
         depth += 1
     return depth
+
+
+def _petiole_cut_zone_segments(
+    arc_lengths: np.ndarray,
+    maximum_stub_m: float = PETIOLE_CUT_ZONE_LENGTH_M,
+) -> tuple[int, ...]:
+    """Structural segments intersecting the benchmark's allowed stub zone."""
+    arcs = np.asarray(arc_lengths, dtype=np.float64)
+    if arcs.ndim != 1 or arcs.size < 2 or maximum_stub_m <= 0.0:
+        return ()
+    return tuple(
+        int(index)
+        for index in np.flatnonzero(arcs[:-1] < float(maximum_stub_m))
+    )
+
+
+def _petiole_grasp_segment(arc_lengths: np.ndarray) -> int:
+    """Choose the first physical segment just distal to the cut zone."""
+    arcs = np.asarray(arc_lengths, dtype=np.float64)
+    if arcs.ndim != 1 or arcs.size < 2:
+        raise ValueError("arc lengths must contain at least one segment")
+    cut_segments = _petiole_cut_zone_segments(arcs)
+    if not cut_segments:
+        return 0
+    return min(cut_segments[-1] + 1, len(arcs) - 2)
 
 
 def _nearest_link(chain: list[Link], point: np.ndarray) -> Link | None:
