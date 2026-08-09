@@ -9,12 +9,12 @@ the greenhouse example are degrees, matching USD angular-drive targets.
 from __future__ import annotations
 
 import dataclasses
+import itertools
 import math
 import pathlib
 import xml.etree.ElementTree as ET
 
 import numpy as np
-
 
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[3]
 DEFAULT_URDF = REPOSITORY_ROOT / "third_party" / "rby1-sdk" / "models" / "rby1a" / "urdf" / "model_v1.0.urdf"
@@ -38,6 +38,70 @@ class ForceCapacity:
     joint_utilization: tuple[float, ...]
     maximum_utilization: float
     force_capacity_n: float
+
+
+@dataclasses.dataclass(frozen=True)
+class CapsuleObstacle:
+    """World-space capsule centreline used for conservative tool clearance."""
+
+    path: str
+    start_m: tuple[float, float, float]
+    end_m: tuple[float, float, float]
+    radius_m: float
+
+
+@dataclasses.dataclass(frozen=True)
+class ClearanceResult:
+    clearance_m: float
+    nearest_obstacle: str | None
+
+
+def select_tool_clearance_route(candidates: list[dict], tolerance_m: float = 1e-6) -> dict:
+    """Select a route direction first, then maximize separation within it."""
+    if tolerance_m < 0.0:
+        raise ValueError("tolerance_m cannot be negative")
+    feasible = [
+        candidate
+        for candidate in candidates
+        if candidate["feasible"]
+        and len(candidate["solutions"]) == len(candidate["offsets"])
+    ]
+    if not feasible:
+        raise ValueError("no route candidate has complete IK")
+    best_minimum = max(
+        candidate["minimum_clearance"]["clearance_m"]
+        for candidate in feasible
+    )
+    clearance_tied = [
+        candidate
+        for candidate in feasible
+        if candidate["minimum_clearance"]["clearance_m"]
+        >= best_minimum - tolerance_m
+    ]
+    direction_signs = sorted(
+        {candidate["x_sign"] for candidate in clearance_tied}
+    )
+    selected_sign = max(
+        direction_signs,
+        key=lambda sign: max(
+            candidate["mean_clearance_m"]
+            for candidate in clearance_tied
+            if candidate["x_sign"] == sign
+        ),
+    )
+    selected_direction = [
+        candidate
+        for candidate in clearance_tied
+        if candidate["x_sign"] == selected_sign
+    ]
+    return max(
+        selected_direction,
+        key=lambda candidate: (
+            candidate["lateral_distance_m"],
+            candidate["lift_distance_m"],
+            candidate["mean_clearance_m"],
+        ),
+    )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -92,6 +156,150 @@ def base_transform(position_m, yaw_degrees: float) -> np.ndarray:
     matrix[:3, :3] = _axis_rotation(np.asarray([0.0, 0.0, 1.0]), math.radians(yaw_degrees))
     matrix[:3, 3] = np.asarray(position_m, dtype=np.float64)
     return matrix
+
+
+def sphere_capsule_clearance(
+    centre_m,
+    radius_m: float,
+    obstacles: tuple[CapsuleObstacle, ...],
+) -> ClearanceResult:
+    """Return signed separation between a sphere and the nearest capsule."""
+    centre = np.asarray(centre_m, dtype=np.float64)
+    if centre.shape != (3,):
+        raise ValueError("centre_m must contain three values")
+    if radius_m < 0.0:
+        raise ValueError("radius_m cannot be negative")
+    best = float("inf")
+    nearest = None
+    for obstacle in obstacles:
+        start = np.asarray(obstacle.start_m, dtype=np.float64)
+        end = np.asarray(obstacle.end_m, dtype=np.float64)
+        span = end - start
+        denominator = float(np.dot(span, span))
+        fraction = 0.0 if denominator <= 1e-18 else float(
+            np.clip(np.dot(centre - start, span) / denominator, 0.0, 1.0)
+        )
+        axis_point = start + fraction * span
+        clearance = float(
+            np.linalg.norm(centre - axis_point) - radius_m - obstacle.radius_m
+        )
+        if clearance < best:
+            best = clearance
+            nearest = obstacle.path
+    return ClearanceResult(clearance_m=best, nearest_obstacle=nearest)
+
+
+def oriented_box_capsule_clearance(
+    centre_m,
+    rotation: np.ndarray,
+    half_extents_m,
+    obstacles: tuple[CapsuleObstacle, ...],
+) -> ClearanceResult:
+    """Return exact signed separation from an oriented box to capsules."""
+    centre = np.asarray(centre_m, dtype=np.float64)
+    basis = np.asarray(rotation, dtype=np.float64)
+    half_extents = np.asarray(half_extents_m, dtype=np.float64)
+    if centre.shape != (3,) or basis.shape != (3, 3) or half_extents.shape != (3,):
+        raise ValueError("box centre, rotation, and half extents have invalid shapes")
+    if np.any(half_extents < 0.0):
+        raise ValueError("box half extents cannot be negative")
+    best = float("inf")
+    nearest = None
+    for obstacle in obstacles:
+        start = np.asarray(obstacle.start_m, dtype=np.float64)
+        end = np.asarray(obstacle.end_m, dtype=np.float64)
+        local_start = basis.T @ (start - centre)
+        local_end = basis.T @ (end - centre)
+        clearance = (
+            _segment_aabb_distance(local_start, local_end, half_extents)
+            - obstacle.radius_m
+        )
+        if clearance < best:
+            best = clearance
+            nearest = obstacle.path
+    return ClearanceResult(clearance_m=best, nearest_obstacle=nearest)
+
+
+def _segment_aabb_distance(start, end, half_extents) -> float:
+    """Exact distance between a segment and an origin-centred axis-aligned box."""
+    start = np.asarray(start, dtype=np.float64)
+    end = np.asarray(end, dtype=np.float64)
+    half_extents = np.asarray(half_extents, dtype=np.float64)
+    delta = end - start
+    breakpoints = [0.0, 1.0]
+    for axis in range(3):
+        if abs(float(delta[axis])) <= 1e-15:
+            continue
+        for boundary in (-half_extents[axis], half_extents[axis]):
+            fraction = float((boundary - start[axis]) / delta[axis])
+            if 0.0 < fraction < 1.0:
+                breakpoints.append(fraction)
+    breakpoints = sorted(set(breakpoints))
+
+    def squared_distance(fraction: float) -> float:
+        point = start + fraction * delta
+        excess = np.maximum(np.abs(point) - half_extents, 0.0)
+        return float(np.dot(excess, excess))
+
+    best_squared = float("inf")
+    for lower, upper in itertools.pairwise(breakpoints):
+        midpoint = 0.5 * (lower + upper)
+        point = start + midpoint * delta
+        offsets = np.zeros(3, dtype=np.float64)
+        active_delta = np.zeros(3, dtype=np.float64)
+        below = point < -half_extents
+        above = point > half_extents
+        offsets[below] = start[below] + half_extents[below]
+        offsets[above] = start[above] - half_extents[above]
+        active_delta[below | above] = delta[below | above]
+        denominator = float(np.dot(active_delta, active_delta))
+        candidates = [lower, upper]
+        if denominator > 1e-18:
+            stationary = -float(np.dot(offsets, active_delta)) / denominator
+            candidates.append(float(np.clip(stationary, lower, upper)))
+        best_squared = min(
+            best_squared,
+            *(squared_distance(fraction) for fraction in candidates),
+        )
+    return float(np.sqrt(max(best_squared, 0.0)))
+
+
+def tool_sphere_clearance(
+    model,
+    side: str,
+    arm_degrees,
+    base_matrix: np.ndarray,
+    local_centre_m,
+    radius_m: float,
+    obstacles: tuple[CapsuleObstacle, ...],
+) -> ClearanceResult:
+    """Transform a tool-attached sphere and measure its capsule clearance."""
+    local = np.append(np.asarray(local_centre_m, dtype=np.float64), 1.0)
+    centre = (model.forward(side, arm_degrees, base_matrix) @ local)[:3]
+    return sphere_capsule_clearance(centre, radius_m, obstacles)
+
+
+def tool_box_clearance(
+    model,
+    side: str,
+    arm_degrees,
+    base_matrix: np.ndarray,
+    local_centre_m,
+    local_rotation: np.ndarray,
+    half_extents_m,
+    obstacles: tuple[CapsuleObstacle, ...],
+) -> ClearanceResult:
+    """Transform a tool-attached box and measure its capsule clearance."""
+    tool = model.forward(side, arm_degrees, base_matrix)
+    local = np.append(np.asarray(local_centre_m, dtype=np.float64), 1.0)
+    centre = (tool @ local)[:3]
+    rotation = tool[:3, :3] @ np.asarray(local_rotation, dtype=np.float64)
+    return oriented_box_capsule_clearance(
+        centre,
+        rotation,
+        half_extents_m,
+        obstacles,
+    )
 
 
 class Rby1Kinematics:

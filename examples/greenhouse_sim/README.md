@@ -213,15 +213,14 @@ and cannot trigger a cut. The knife is rolled
 about its unchanged blade axis so that arc faces upward in the ready pose and
 the flat plate is presented cleanly toward the cut.
 
-The default base pose is `(6.99114, 3.93000, -0.3050817)` m at -90 degrees yaw,
-on the opposite side of the target gutter. The 150 mm rearward offset keeps a
-released branch clear of the wheels and faces world -Y toward
-`Vine_0000/SubStem_00`. Its plan footprint extends beneath the supplied
-neighbouring elevated gutter, but the validated 3-D contact trace has no
-robot/gutter collision. The official SDK ready vector is retained as a separate
-reference; the launcher replaces only the right arm with a verified
-collision-clear pre-contact IK pose. Override the stance with
-`--robot-position X Y Z` when testing a different vine or posture.
+The nominal base pose is `(6.99114, 3.93000, -0.3050817)` m at -90 degrees
+yaw, on the opposite side of the target gutter. By default,
+`--robot-position-mode target-conditioned` resolves the settled physical
+target before authoring the robot, preserves a 20 mm reach reserve, requires a
+distal grasp segment, and tests deterministic 0/30/60/90 mm aisle advances with
+exact RB-Y1 IK and wrist-D405 clearance. `SubStem_00` keeps the nominal pose;
+`SubStem_01` advances 30 mm. Use `--robot-position-mode fixed` to preserve
+`--robot-position X Y Z` exactly for calibration or regression work.
 
 Each dynamic vine has a finite hidden catch tray so severed foliage does not
 fall forever. This is a synthetic episode fixture rather than greenhouse
@@ -272,6 +271,13 @@ The accepted run reports one benchmark-valid intended cut, zero unsafe
 contacts, and the full `grasped -> orphan_retained -> transported -> released ->
 deposited` sequence. See `dev.md` for the exact force/work evidence and the
 current rigid-tissue severance approximation.
+
+Post-cut retract is target-conditioned as well. The planner evaluates both
+knife-wing choices and multiple right-tool routes against live vine capsules.
+It sweeps the full flat blade and non-cutting U-support through exact RB-Y1
+kinematics, chooses the safer lateral direction family, then maximizes
+separation before aisle stow. The strict PhysX contact ledger remains the
+acceptance authority; geometric planning does not waive a physical contact.
 
 For live video, launch without `--headless` and use the interaction-window
 camera buttons or keys `1`-`4`; the selected D405 becomes the active viewport.
@@ -433,11 +439,11 @@ Manual Shift-drag, airflow-motion, and debug-cut acceptance is complete. Exact R
 v1.0 import, ready-pose stability, three D405 fits/optical frames, and right
 knife-only end-effector semantics are also verified. Physical leading-edge cut
 qualification, protected-contact accounting, hardware-effort-limited dual-arm
-motion, and one complete grasp/contact/cut/transport/floor-deposit acceptance
-are verified in Isaac Sim with zero unsafe contacts. Deterministic target
+motion, and complete grasp/contact/cut/transport/floor-deposit acceptance on
+`Vine_0000/SubStem_00` and the formerly blocked `SubStem_01` are verified in
+Isaac Sim with zero unsafe contacts. Deterministic target
 selection, strict repeatability aggregation, and the simulator-only
 teleoperation/D405 recorder are implemented and hardware-free validated. Next:
-target-conditioned base/torso positioning and collision-aware alternate-target
-acceptance, lab leader-arm validation, the full target/seed matrix, then 32.5 N
-tear calibration, task metrics, benchmark randomisation, policy interfaces, and RL.
+lab leader-arm validation, the full target/seed matrix, then 32.5 N tear
+calibration, task metrics, benchmark randomisation, policy interfaces, and RL.
 See `dev.md` at the repository root for evidence and remaining work.

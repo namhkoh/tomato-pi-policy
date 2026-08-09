@@ -19,6 +19,29 @@ def test_knife_components_match_the_supplied_geometry() -> None:
     np.testing.assert_allclose(blade_max - blade_min, [0.03036205, 0.07147998, 0.013], atol=1e-7)
     np.testing.assert_allclose(arc_max - arc_min, [0.006, 0.06230074, 0.05091788], atol=1e-7)
 
+    blade_centre, blade_half_extents = robot_hardware.knife_blade_box()
+    arc_centre, arc_half_extents = robot_hardware.knife_support_box()
+    np.testing.assert_allclose(
+        2.0 * blade_half_extents,
+        blade_max - blade_min,
+        atol=1e-7,
+    )
+    np.testing.assert_allclose(
+        2.0 * arc_half_extents,
+        arc_max - arc_min,
+        atol=1e-7,
+    )
+    np.testing.assert_allclose(
+        blade_centre,
+        0.5 * (blade_min + blade_max),
+        atol=1e-7,
+    )
+    np.testing.assert_allclose(
+        arc_centre,
+        0.5 * (arc_min + arc_max),
+        atol=1e-7,
+    )
+
 
 def test_manifest_marks_only_the_flat_plate_as_cutting() -> None:
     manifest = robot_hardware.load_manifest()

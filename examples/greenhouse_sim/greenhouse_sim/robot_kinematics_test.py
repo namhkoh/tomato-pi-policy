@@ -7,7 +7,6 @@ import pytest
 
 from greenhouse_sim import robot_kinematics
 
-
 BASE = robot_kinematics.base_transform((6.99114, 3.78, -0.3050817), -90.0)
 RIGHT_SAFE = (-101.724, -83.623, 34.196, -135.683, -57.431, 94.832, -74.920)
 
@@ -106,3 +105,118 @@ def test_point_force_capacity_rejects_invalid_inputs() -> None:
         model.point_force_capacity(
             "left", joints, BASE, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0), 1.0, np.ones(6)
         )
+
+
+def test_sphere_capsule_clearance_is_signed_and_reports_nearest() -> None:
+    obstacles = (
+        robot_kinematics.CapsuleObstacle("far", (2.0, 0.0, 0.0), (2.0, 0.0, 1.0), 0.1),
+        robot_kinematics.CapsuleObstacle("near", (0.0, 0.0, -1.0), (0.0, 0.0, 1.0), 0.1),
+    )
+
+    clear = robot_kinematics.sphere_capsule_clearance((0.5, 0.0, 0.0), 0.2, obstacles)
+    overlap = robot_kinematics.sphere_capsule_clearance((0.2, 0.0, 0.0), 0.2, obstacles)
+
+    assert clear.nearest_obstacle == "near"
+    assert clear.clearance_m == pytest.approx(0.2)
+    assert overlap.clearance_m == pytest.approx(-0.1)
+
+
+def test_oriented_box_clearance_accounts_for_projected_half_extent() -> None:
+    obstacle = robot_kinematics.CapsuleObstacle(
+        "stem", (1.0, 0.0, -1.0), (1.0, 0.0, 1.0), 0.1
+    )
+    result = robot_kinematics.oriented_box_capsule_clearance(
+        (0.0, 0.0, 0.0),
+        np.eye(3),
+        (0.25, 0.5, 0.1),
+        (obstacle,),
+    )
+
+    assert result.nearest_obstacle == "stem"
+    assert result.clearance_m == pytest.approx(0.65)
+
+
+def test_oriented_box_clearance_uses_entire_capsule_segment() -> None:
+    obstacle = robot_kinematics.CapsuleObstacle(
+        "diagonal",
+        (-2.0, 0.6, 0.0),
+        (2.0, 0.6, 0.0),
+        0.05,
+    )
+    result = robot_kinematics.oriented_box_capsule_clearance(
+        (0.0, 0.0, 0.0),
+        np.eye(3),
+        (0.25, 0.5, 0.1),
+        (obstacle,),
+    )
+
+    assert result.nearest_obstacle == "diagonal"
+    assert result.clearance_m == pytest.approx(0.05)
+
+
+def test_tool_box_clearance_transforms_box_from_end_effector_frame() -> None:
+    class TranslatedTool:
+        @staticmethod
+        def forward(side, arm_degrees, base_matrix):
+            del side, arm_degrees, base_matrix
+            transform = np.eye(4)
+            transform[:3, 3] = (1.0, 2.0, 3.0)
+            return transform
+
+    obstacle = robot_kinematics.CapsuleObstacle(
+        "stem",
+        (1.5, 2.0, 2.0),
+        (1.5, 2.0, 4.0),
+        0.05,
+    )
+    result = robot_kinematics.tool_box_clearance(
+        TranslatedTool(),
+        "right",
+        np.zeros(7),
+        np.eye(4),
+        (0.1, 0.0, 0.0),
+        np.eye(3),
+        (0.1, 0.2, 0.3),
+        (obstacle,),
+    )
+
+    assert result.nearest_obstacle == "stem"
+    assert result.clearance_m == pytest.approx(0.25)
+
+
+def _route(name, sign, minimum, mean, lateral):
+    return {
+        "name": name,
+        "x_sign": sign,
+        "lateral_distance_m": lateral,
+        "lift_distance_m": 0.08,
+        "minimum_clearance": {"clearance_m": minimum},
+        "mean_clearance_m": mean,
+        "feasible": True,
+        "solutions": [object()],
+        "offsets": [object()],
+    }
+
+
+def test_route_selector_chooses_direction_before_widest_tied_route() -> None:
+    candidates = [
+        _route("negative", -1.0, -0.006, 0.030, 0.04),
+        _route("positive_short", 1.0, -0.006, 0.016, 0.04),
+        _route("positive_wide", 1.0, -0.006, 0.003, 0.12),
+    ]
+
+    selected = robot_kinematics.select_tool_clearance_route(candidates)
+
+    assert selected["name"] == "negative"
+
+
+def test_route_selector_maximizes_separation_inside_safe_direction() -> None:
+    candidates = [
+        _route("negative", -1.0, -0.008, 0.030, 0.04),
+        _route("positive_short", 1.0, -0.004, 0.012, 0.04),
+        _route("positive_wide", 1.0, -0.004, 0.007, 0.12),
+    ]
+
+    selected = robot_kinematics.select_tool_clearance_route(candidates)
+
+    assert selected["name"] == "positive_wide"

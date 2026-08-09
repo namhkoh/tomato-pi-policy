@@ -82,6 +82,36 @@ def test_insufficient_force_never_accumulates_cut_work() -> None:
     assert progress.rejections["insufficient_force"] == 4
 
 
+def test_low_force_physical_entry_records_side_but_not_work() -> None:
+    gate = cutting.DirectionalCutGate()
+    target = _target()
+
+    assert gate.observe(
+        target,
+        _sample(-0.004, impulse_ns=0.5, counterhold_active=True),
+    ) is None
+    progress = gate.progress_for(target.key)
+    assert progress.minimum_signed_side_m == -0.004
+    assert progress.counterhold_start_side_m == -0.004
+    assert progress.work_j == 0.0
+
+    decision = None
+    for _ in range(3):
+        decision = gate.observe(
+            target,
+            _sample(
+                0.012,
+                counterhold_active=True,
+                commanded_velocity=(0.2, 0.0, 0.0),
+            ),
+        )
+        if decision is not None:
+            break
+
+    assert decision is not None
+    assert decision.cut_work_j >= decision.required_work_j
+
+
 def test_reverse_or_axial_motion_and_parallel_edge_are_rejected() -> None:
     target = _target()
     cases = (
@@ -194,6 +224,29 @@ def test_counterheld_commanded_penetration_drives_rigid_fracture_proxy() -> None
     assert decision is not None
     assert decision.forward_travel_m == 0.004
     assert decision.virtual_penetration_m == 0.004
+
+
+def test_counterheld_full_diameter_traction_handles_guide_displacement() -> None:
+    gate = cutting.DirectionalCutGate()
+    target = _target()
+    decision = None
+
+    for _ in range(4):
+        decision = gate.observe(
+            target,
+            _sample(
+                0.012,
+                velocity_x=0.0,
+                counterhold_active=True,
+                commanded_velocity=(0.2, 0.0, 0.0),
+            ),
+        )
+        if decision is not None:
+            break
+
+    assert decision is not None
+    assert decision.virtual_penetration_m >= 2.0 * target.radius_m
+    assert decision.cut_work_j >= decision.required_work_j
 
 
 def test_latest_contact_feedback_clears_on_a_contact_gap() -> None:

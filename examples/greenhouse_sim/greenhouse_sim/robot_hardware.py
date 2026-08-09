@@ -26,7 +26,6 @@ from pxr import Usd  # noqa: E402
 from pxr import UsdGeom  # noqa: E402
 from pxr import UsdPhysics  # noqa: E402
 
-
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[3]
 ASSET_DIR = REPOSITORY_ROOT / "greenhouse" / "robot_assets"
 DERIVED_DIR = ASSET_DIR / "derived"
@@ -65,6 +64,61 @@ RIGHT_CAMERA_TRANSLATION_M = WRIST_CAMERA_TRANSLATION_M.copy()
 KNIFE_TRANSLATION_M = np.zeros(3, dtype=np.float64)
 CUTTING_EDGE_DEPTH_M = 0.002
 HEAD_BRACKET_TRANSLATION_M = np.array([0.022, 0.0, 0.040], dtype=np.float64)
+
+
+def wrist_d405_body_sphere(
+    manifest: dict | None = None,
+) -> tuple[np.ndarray, float]:
+    """Return the conservative D405 body sphere in either wrist EE frame."""
+    centre, _, half_extents = wrist_d405_body_box(manifest)
+    return centre, float(np.linalg.norm(half_extents))
+
+
+def wrist_d405_body_box(
+    manifest: dict | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return D405 body box centre, rotation, and half extents in wrist EE."""
+    manifest = load_manifest() if manifest is None else manifest
+    body_minimum, body_maximum = _bounds_m(_part(manifest, "d405_body"))
+    body_centre = 0.5 * (body_minimum + body_maximum)
+    half_extents = 0.5 * (body_maximum - body_minimum)
+    mount = manifest["mounts"]["camera_bracket_to_d405"]
+    mount_rotation = np.asarray(mount["rotation_matrix"], dtype=np.float64)
+    mount_translation = np.asarray(mount["translation_mm"], dtype=np.float64) * 0.001
+    centre = WRIST_CAMERA_TRANSLATION_M + mount_translation + mount_rotation @ body_centre
+    return centre, mount_rotation, half_extents
+
+
+def knife_blade_box(
+    manifest: dict | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return blade-plate centre and half extents in the knife CAD frame."""
+    manifest = load_manifest() if manifest is None else manifest
+    knife = _part(manifest, "deleaf_knife")
+    blade = next(
+        component
+        for component in knife["components"]
+        if component["name"] == "deleaf_knife_blade"
+    )
+    minimum = np.asarray(blade["min_mm"], dtype=np.float64) * 0.001
+    maximum = np.asarray(blade["max_mm"], dtype=np.float64) * 0.001
+    return 0.5 * (minimum + maximum), 0.5 * (maximum - minimum)
+
+
+def knife_support_box(
+    manifest: dict | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return conservative U-support bounds in the knife CAD frame."""
+    manifest = load_manifest() if manifest is None else manifest
+    knife = _part(manifest, "deleaf_knife")
+    support = next(
+        component
+        for component in knife["components"]
+        if component["name"] == "deleaf_knife_arc"
+    )
+    minimum = np.asarray(support["min_mm"], dtype=np.float64) * 0.001
+    maximum = np.asarray(support["max_mm"], dtype=np.float64) * 0.001
+    return 0.5 * (minimum + maximum), 0.5 * (maximum - minimum)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -405,7 +459,6 @@ def _author_knife(
     knife = _part(manifest, "deleaf_knife")
     components = {component["name"]: component for component in knife["components"]}
     blade = components["deleaf_knife_blade"]
-    arc = components["deleaf_knife_arc"]
 
     blade_path = f"{root_path}/Blade"
     blade_mesh = _author_mesh(stage, blade_path, DERIVED_DIR / "deleaf_knife_blade.stl", (0.58, 0.61, 0.64))

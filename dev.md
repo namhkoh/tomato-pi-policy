@@ -910,14 +910,50 @@ is paused so observation setup cannot advance unobserved physics.
 | Final integrated stability | succeeded=true; finite vine; 0 runaway organs; 68.732 mm maximum compliant motion; robot stable at 2.078 degrees tilt; selected-target pre-contact valid | `data/greenhouse_sim/stability_target_teleop_480_final.json` |
 | Hardware-free teleop/recording | one fresh disabled command accepted; neither arm enabled; no unsafe latch; one synchronized JSONL step; head RGB 320x180, range 1-244, 6,736 unique colors | `data/greenhouse_sim/teleop_camera_warmup_validation.json` and its reported episode directory |
 
-**Multi-target gate remains open, explicitly:** `SubStem_01` is a valid selected
-physical target and passes startup pre-contact. The preferred Link 3 and Link 2
-grasp segments are outside the fixed-base left-arm reach (best miss 40.463 mm
-and 15.724 mm respectively). Proximal Link 1 is reachable but its final approach
-touches non-target `Organ_0041/Link_002` (2.148e-3 N s maximum impulse), so the
-probe correctly fails rather than weakening collision or reach criteria. The
-next simulator task is target-conditioned mobile-base/torso pre-positioning and
-collision-aware approach planning, followed by the full target/seed matrix.
+### Multi-target reach/collision blocker resolved, 2026-08-09
+
+The recorded fixed-base `SubStem_01` failure was real: distal Link 3/2 were
+outside left-arm reach, while falling back to proximal Link 1 caused a
+non-target collision. The fix does not relax either gate. Robot authoring now
+waits for the settled physical target and uses exact RB-Y1 IK to test
+deterministic 0/30/60/90 mm aisle advances. Planning enforces a 20 mm reach
+reserve, a distal segment floor, and wrist-D405 clearance; fixed positioning
+remains available explicitly through `--robot-position-mode fixed`.
+
+The bimanual sequence now also:
+
+- keeps the planned distal segment after settling instead of silently falling
+  back proximally;
+- scores multiple left-wrist IK branches using the authored D405 volume;
+- selects the knife wing with the greatest live non-target clearance;
+- evaluates exact segment-to-oriented-box clearance for both the flat blade and
+  non-cutting U-support over sampled RB-Y1 joint interpolation;
+- selects the safer right-retract direction family and then maximizes lateral/
+  vertical separation before aisle stow; and
+- selects a swept, payload-clear left transport route while the PhysX contact
+  ledger remains the strict zero-waiver acceptance authority.
+
+The force/direction/work/counterhold cut gate remains physical. Low-force
+leading-edge contact can establish entry-side geometry but cannot contribute
+cut work. A counterheld full-diameter crossing may account for rigid U-guide
+displacement only after physical leading-edge contact and still must meet
+force, direction, work, travel, intended-target, and protected-contact
+requirements.
+
+**Verification:**
+
+| Check | Result | Evidence |
+|---|---|---|
+| Complete greenhouse suite | 85 passed, 1 PhysX-only test skipped; new base-planner modules pass Ruff | `D:\isaac-sim\python.bat -m pytest examples\greenhouse_sim\greenhouse_sim -q` |
+| Baseline `SubStem_00` full episode | top-level/probe true; nominal base; distal Link 3 plan; `positive_x_extra_wide_high` retract; one valid cut at 72.559 N and 0.55564 J vs 0.55540 J required; task deposited with 257.780 mm clearance; zero unsafe contacts; blade safety clear | `data/greenhouse_sim/bimanual_full_substem00_clearance_tiebreak.json` |
+| Former blocker `SubStem_01` full episode | top-level/probe true; 30 mm base advance; distal Link 2 plan; positive-X blade wing; `negative_x_then_lift` retract; one valid cut at 74.462 N and 0.45248 J vs 0.43719 J required; task deposited with 264.425 mm clearance; zero unsafe contacts; blade safety clear | `data/greenhouse_sim/bimanual_full_substem01_direction_family.json` |
+| 480-step integrated stability | succeeded=true; 121/121 vine bodies finite; 0 runaway organs; 68.710 mm maximum compliant motion; 34/34 robot bodies finite; 2.078 degree base tilt; selected-target pre-contact valid; contacts limited to floor support | `data/greenhouse_sim/stability_multitarget_blocker_fix_480.json` |
+
+This closes the known fixed-base reach/collision blocker and verifies two
+distinct target geometries. It does not yet claim benchmark-wide
+repeatability: the next simulator gate is the isolated-process target/seed
+matrix, followed by deliberate lab leader-arm validation. Robot benchmarking,
+policy/VLA integration, and RL remain downstream of those stability gates.
 
 ## Research findings, 2026-08-06 (pre-implementation)
 
@@ -1064,3 +1100,9 @@ One logical change per commit; no AI attribution trailers.
   synchronized D405/action recording; preserved the complete known-target
   physical acceptance and recorded the fixed-base `SubStem_01` reach/collision
   failure instead of relaxing criteria on `koh-dev/deleaf`.
+- 2026-08-09 — Resolved the fixed-base `SubStem_01` blocker with
+  target-conditioned base placement, distal-segment and D405-clear left IK,
+  target-specific knife-wing selection, exact full-tool swept-volume retract
+  planning, and payload-clear orphan transport; passed 85 regressions, both
+  `SubStem_00`/`SubStem_01` full physical episodes with zero unsafe contacts,
+  and the 480-step integrated stability soak on `koh-dev/deleaf`.

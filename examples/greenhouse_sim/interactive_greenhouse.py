@@ -58,6 +58,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--robot", type=pathlib.Path, default=_DEFAULT_ROBOT)
     parser.add_argument("--no-robot", action="store_true", help="run the accepted vine-only environment")
     parser.add_argument("--robot-position", type=float, nargs=3, default=(6.99114, 3.93, -0.3050817))
+    parser.add_argument(
+        "--robot-position-mode",
+        choices=("target-conditioned", "fixed"),
+        default="target-conditioned",
+        help="pre-position for a distal collision-clear target grasp, or preserve --robot-position exactly",
+    )
     parser.add_argument("--robot-yaw", type=float, default=-90.0)
     parser.add_argument("--physics-vines", type=int, default=1)
     parser.add_argument(
@@ -223,6 +229,7 @@ def main() -> int:
     headless = args.headless or args.screenshot is not None or args.bimanual_probe is not None
     app = SimulationApp({"headless": headless})
 
+    from greenhouse_sim import base_planner
     from greenhouse_sim import cutting
     from greenhouse_sim import deleaf_task
     from greenhouse_sim import episode
@@ -251,14 +258,6 @@ def main() -> int:
     stage.SetEditTarget(stage.GetSessionLayer())
 
     robot_placement = None
-    if not args.no_robot:
-        robot_placement = robot_scene.add_fitted_robot(
-            stage,
-            robot_path,
-            position_m=args.robot_position,
-            yaw_degrees=args.robot_yaw,
-        )
-        report["robot"] = dataclasses.asdict(robot_placement)
 
     static_scope = stage.GetPrimAtPath("/World/Vines")
     static_vines = list(static_scope.GetChildren()) if static_scope and static_scope.IsValid() else []
@@ -385,6 +384,60 @@ def main() -> int:
     selected_runtime = next(
         runtime for runtime in runtimes if runtime.name == selected_target.vine_name
     )
+    if not args.no_robot:
+        nominal_robot_position = tuple(float(value) for value in args.robot_position)
+        if args.robot_position_mode == "target-conditioned":
+            camera_centre_m, camera_radius_m = robot_hardware.wrist_d405_body_sphere()
+            base_plan = base_planner.plan_target_conditioned_base(
+                robot_kinematics.Rby1Kinematics(),
+                nominal_position_m=nominal_robot_position,
+                yaw_degrees=args.robot_yaw,
+                candidates=_target_grasp_candidates(
+                    stage,
+                    selected_runtime,
+                    selected_target.organ_label,
+                    base_planner,
+                ),
+                obstacles=_vine_capsule_obstacles(stage, robot_kinematics),
+                jaw_local_point_m=_LEFT_JAW_CENTRE_M,
+                camera_local_centre_m=camera_centre_m,
+                camera_radius_m=camera_radius_m,
+                seeds=(
+                    _LEFT_AISLE_CLEARANCE_WAYPOINTS_DEGREES[-1],
+                    _LEFT_APPROACH_SEEDS_DEGREES[0.0],
+                    *_LEFT_MULTISTART_SEEDS_DEGREES,
+                ),
+            )
+            if base_plan is None:
+                report.update(
+                    stage="failed",
+                    error=(
+                        "no target-conditioned base pose reaches a distal petiole "
+                        "segment with wrist-camera clearance"
+                    ),
+                )
+                _emit(report, args.report)
+                app.close()
+                return 1
+            args.robot_position = base_plan.position_m
+            report["robot_preposition"] = {
+                "mode": args.robot_position_mode,
+                **dataclasses.asdict(base_plan),
+            }
+        else:
+            report["robot_preposition"] = {
+                "mode": args.robot_position_mode,
+                "nominal_position_m": nominal_robot_position,
+                "position_m": nominal_robot_position,
+                "offset_m": (0.0, 0.0, 0.0),
+            }
+        robot_placement = robot_scene.add_fitted_robot(
+            stage,
+            robot_path,
+            position_m=args.robot_position,
+            yaw_degrees=args.robot_yaw,
+        )
+        report["robot"] = dataclasses.asdict(robot_placement)
     report.update(
         stage="rigged",
         static_vines=len(static_vines),
@@ -699,8 +752,8 @@ def _disable_native_mouse_interaction(app) -> bool:
     # clear stale selection and unsubscribe only that selector's stage listener.
     selector_disabled = False
     try:
-        import omni.usd
         from omni.kit.manipulator.selector import get_manipulator_selector
+        import omni.usd
 
         omni.usd.get_context().get_selection().set_selected_prim_paths([], False)
         selector = get_manipulator_selector("")
@@ -1406,6 +1459,7 @@ class LeftGraspManager:
                     "organ": info.organ_label,
                     "body": info.body_path,
                     "collider": info.path,
+                    "segment": int(info.segment),
                     "role": info.role,
                 }
                 self._grasp_colliders_for_key.setdefault(key, []).append(
@@ -3024,6 +3078,86 @@ _LEFT_TRANSPORT_SEED_DEGREES = (
     -29.550,
 )
 _RBY1_ARM_EFFORT_LIMITS_NM = (70.0, 70.0, 70.0, 40.0, 10.0, 10.0, 8.0)
+_MINIMUM_WRIST_CAMERA_CLEARANCE_M = 0.005
+
+
+def _target_grasp_candidates(stage, runtime, organ_label: str, base_planner):
+    """Read startup grasp geometry from the same authored physical colliders."""
+    import numpy as np
+    from pxr import Gf
+    from pxr import Usd
+    from pxr import UsdGeom
+
+    candidates = []
+    for info in runtime.rig.colliders:
+        if info.organ_label != organ_label or (
+            "grasp" not in info.role and "petiole_cut_zone" not in info.role
+        ):
+            continue
+        collider_matrix = UsdGeom.Xformable(
+            stage.GetPrimAtPath(info.path)
+        ).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+        body_matrix = UsdGeom.Xformable(
+            stage.GetPrimAtPath(info.body_path)
+        ).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+        axis = np.asarray(
+            body_matrix.TransformDir(Gf.Vec3d(0.0, 0.0, 1.0)).GetNormalized(),
+            dtype=np.float64,
+        )
+        candidates.append(
+            base_planner.GraspCandidate(
+                collider=info.path,
+                body=info.body_path,
+                segment=int(info.segment),
+                role=info.role,
+                centre_m=tuple(
+                    float(value) for value in collider_matrix.ExtractTranslation()
+                ),
+                axis=tuple(float(value) for value in axis),
+            )
+        )
+    return tuple(candidates)
+
+
+def _vine_capsule_obstacles(stage, robot_kinematics):
+    """Return current physical vine/safety capsules as world-space obstacles."""
+    from pxr import Gf
+    from pxr import Usd
+    from pxr import UsdGeom
+
+    axis_vectors = {
+        "X": Gf.Vec3d(1.0, 0.0, 0.0),
+        "Y": Gf.Vec3d(0.0, 1.0, 0.0),
+        "Z": Gf.Vec3d(0.0, 0.0, 1.0),
+    }
+    obstacles = []
+    for prim in stage.Traverse():
+        path = str(prim.GetPath())
+        if not path.startswith(("/World/InteractiveVines/", "/World/NeighbourSafety/")):
+            continue
+        if not prim.IsA(UsdGeom.Capsule):
+            continue
+        capsule = UsdGeom.Capsule(prim)
+        radius = float(capsule.GetRadiusAttr().Get() or 0.0)
+        height = float(capsule.GetHeightAttr().Get() or 0.0)
+        if radius <= 0.0:
+            continue
+        matrix = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(
+            Usd.TimeCode.Default()
+        )
+        centre = matrix.ExtractTranslation()
+        axis_token = str(capsule.GetAxisAttr().Get() or "Z").upper()
+        direction = matrix.TransformDir(axis_vectors[axis_token]).GetNormalized()
+        half = direction * (0.5 * height)
+        obstacles.append(
+            robot_kinematics.CapsuleObstacle(
+                path=path,
+                start_m=tuple(float(value) for value in centre - half),
+                end_m=tuple(float(value) for value in centre + half),
+                radius_m=radius,
+            )
+        )
+    return tuple(obstacles)
 
 
 def _configure_arm_drives(stage, side: str) -> dict:
@@ -3129,13 +3263,143 @@ def _bimanual_probe(
     ).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
     # Gf uses row-vector matrices; the pure kinematics module uses columns.
     base_matrix = np.asarray(base_gf, dtype=np.float64).T
+    left_camera_local_centre_m, left_camera_radius_m = (
+        robot_hardware.wrist_d405_body_sphere()
+    )
+    camera_box_centre, camera_box_rotation, camera_box_half_extents = (
+        robot_hardware.wrist_d405_body_box()
+    )
+    left_tool_boxes = [
+        (
+            "wrist_d405",
+            camera_box_centre,
+            camera_box_rotation,
+            camera_box_half_extents,
+        )
+    ]
+    gripper_geometry = grasp_manager.summary.get("gripper_geometry") or {}
+    for name, geometry in (gripper_geometry.get("fingers") or {}).items():
+        minimum = np.asarray(geometry["collider_min_ee_m"], dtype=np.float64)
+        maximum = np.asarray(geometry["collider_max_ee_m"], dtype=np.float64)
+        left_tool_boxes.append(
+            (
+                name,
+                0.5 * (minimum + maximum),
+                np.eye(3, dtype=np.float64),
+                0.5 * (maximum - minimum),
+            )
+        )
+
+    def left_camera_clearance(solution):
+        return robot_kinematics.tool_sphere_clearance(
+            model,
+            "left",
+            solution.joint_degrees,
+            base_matrix,
+            left_camera_local_centre_m,
+            left_camera_radius_m,
+            _vine_capsule_obstacles(stage, robot_kinematics),
+        )
+
+    def left_payload_clearance(solution, excluded_colliders=()):
+        excluded = set(excluded_colliders)
+        obstacles = tuple(
+            obstacle
+            for obstacle in _vine_capsule_obstacles(stage, robot_kinematics)
+            if obstacle.path not in excluded
+        )
+        records = []
+        ee_matrix = model.forward(
+            "left",
+            solution.joint_degrees,
+            base_matrix,
+        )
+        for component, local_centre, local_rotation, half_extents in left_tool_boxes:
+            world_centre = (
+                ee_matrix @ np.append(np.asarray(local_centre, dtype=np.float64), 1.0)
+            )[:3]
+            world_rotation = ee_matrix[:3, :3] @ np.asarray(
+                local_rotation,
+                dtype=np.float64,
+            )
+            clearance = robot_kinematics.oriented_box_capsule_clearance(
+                world_centre,
+                world_rotation,
+                half_extents,
+                obstacles,
+            )
+            records.append(
+                {
+                    "component": component,
+                    "clearance_m": clearance.clearance_m,
+                    "nearest_obstacle": clearance.nearest_obstacle,
+                }
+            )
+        return min(records, key=lambda item: item["clearance_m"]), records
+
+    stages = []
+    preferred_cut_direction = np.asarray(
+        [0.0, -np.cos(np.radians(15.0)), np.sin(np.radians(15.0))],
+        dtype=np.float64,
+    )
+    initial_cut_path = blade_monitor.target_path_geometry(_RIGHT_CUT_STUB_M)
+    if initial_cut_path is None:
+        return {"succeeded": False, "error": "initial physical cut path is missing"}
+    initial_knife_rotation = robot_hardware.cut_aligned_knife_rotation(
+        initial_cut_path["axis"],
+        preferred_cut_direction,
+    )
+    blade_local_centre_m, blade_half_extents_m = robot_hardware.knife_blade_box()
+    target_cut_colliders = set(blade_geometry["colliders"])
+    blade_obstacles = tuple(
+        obstacle
+        for obstacle in _vine_capsule_obstacles(stage, robot_kinematics)
+        if obstacle.path not in target_cut_colliders
+    )
+    wing_candidates = (
+        np.asarray(_RIGHT_EDGE_WING_M, dtype=np.float64),
+        np.asarray(
+            [-_RIGHT_EDGE_WING_M[0], _RIGHT_EDGE_WING_M[1], _RIGHT_EDGE_WING_M[2]],
+            dtype=np.float64,
+        ),
+    )
+    wing_records = []
+    for wing in wing_candidates:
+        root = initial_cut_path["point_m"] - initial_knife_rotation @ wing
+        blade_centre = root + initial_knife_rotation @ blade_local_centre_m
+        clearance = robot_kinematics.oriented_box_capsule_clearance(
+            blade_centre,
+            initial_knife_rotation,
+            blade_half_extents_m,
+            blade_obstacles,
+        )
+        wing_records.append(
+            {
+                "edge_wing_local_m": wing.tolist(),
+                "blade_centre_m": blade_centre.tolist(),
+                "clearance_m": clearance.clearance_m,
+                "nearest_obstacle": clearance.nearest_obstacle,
+            }
+        )
+    selected_wing_index = max(
+        range(len(wing_records)),
+        key=lambda index: wing_records[index]["clearance_m"],
+    )
+    right_edge_wing_m = wing_candidates[selected_wing_index]
+    stages.append(
+        {
+            "stage": "right_blade_wing_selection",
+            "selected_edge_wing_local_m": right_edge_wing_m.tolist(),
+            "candidates": wing_records,
+            "excluded_target_colliders": sorted(target_cut_colliders),
+        }
+    )
     commanded_blade_local = np.append(
         robot_hardware.KNIFE_ROTATION
-        @ np.asarray(_RIGHT_EDGE_WING_M, dtype=np.float64),
+        @ right_edge_wing_m,
         1.0,
     )
     previous_commanded_blade_point = None
-    stages = []
     applied_cuts = []
     left_counterpull_start = None
     left_counterpull_target = None
@@ -3160,6 +3424,9 @@ def _bimanual_probe(
     if args.bimanual_probe in {"left_approach", "full"}:
         selection_diagnostics = []
         selected_collider = None
+        minimum_grasp_segment = int(
+            report.get("robot_preposition", {}).get("minimum_segment", 0)
+        )
         selection_seeds = (
             _LEFT_AISLE_CLEARANCE_WAYPOINTS_DEGREES[-1],
             _LEFT_APPROACH_SEEDS_DEGREES[0.0],
@@ -3170,8 +3437,12 @@ def _bimanual_probe(
         # physical colliders on the same selected petiole; opposed contact
         # still determines the body that the fixed grasp joint actually binds.
         for candidate in reversed(grasp_manager.target_candidates):
-            solutions = [
-                model.solve_position_axes(
+            if int(candidate["segment"]) < minimum_grasp_segment:
+                continue
+            solutions = []
+            solution_records = []
+            for seed in selection_seeds:
+                solution = model.solve_position_axes(
                     "left",
                     local_point_m=_LEFT_JAW_CENTRE_M,
                     target_point_m=candidate["centre_m"],
@@ -3183,26 +3454,41 @@ def _bimanual_probe(
                     transverse_to=candidate["axis"],
                     position_scale_m=0.002,
                 )
-                for seed in selection_seeds
-            ]
+                clearance = left_camera_clearance(solution)
+                solutions.append(solution)
+                solution_records.append(
+                    {
+                        "seed_degrees": [float(value) for value in seed],
+                        "solution": dataclasses.asdict(solution),
+                        "camera_clearance_m": clearance.clearance_m,
+                        "nearest_obstacle": clearance.nearest_obstacle,
+                    }
+                )
             selection_diagnostics.append(
                 {
                     "collider": candidate["collider"],
                     "body": candidate["body"],
+                    "segment": candidate["segment"],
                     "role": candidate["role"],
                     "centre_m": candidate["centre_m"].tolist(),
                     "axis": candidate["axis"].tolist(),
                     "preferred": candidate["preferred"],
-                    "solutions": [dataclasses.asdict(solution) for solution in solutions],
+                    "solutions": solution_records,
                 }
             )
-            if any(solution.succeeded for solution in solutions):
+            if any(
+                solution.succeeded
+                and record["camera_clearance_m"]
+                >= _MINIMUM_WRIST_CAMERA_CLEARANCE_M
+                for solution, record in zip(solutions, solution_records, strict=True)
+            ):
                 selected_collider = candidate["collider"]
                 break
         stages.append(
             {
                 "stage": "left_grasp_candidate_selection",
                 "selected_collider": selected_collider,
+                "minimum_segment": minimum_grasp_segment,
                 "candidates": selection_diagnostics,
             }
         )
@@ -3215,7 +3501,10 @@ def _bimanual_probe(
                 "blade_safety_clear": blade_monitor.safety_clear,
                 "task": grasp_manager.summary,
                 "succeeded": False,
-                "error": "no selected-petiole grasp collider is reachable",
+                "error": (
+                    "no selected-petiole grasp collider is reachable with "
+                    "wrist-camera clearance"
+                ),
             }
         grasp_manager.set_planned_grasp_collider(selected_collider)
         grasp_geometry = grasp_manager.target_geometry
@@ -3461,28 +3750,41 @@ def _bimanual_probe(
             )
             for candidate_seed, position_scale_m in candidate_specs
         ]
+        clearances = [left_camera_clearance(result) for result in candidates]
         if diagnostics is not None:
             diagnostics.extend(
                 {
                     "seed_degrees": [float(value) for value in candidate_seed],
                     "position_scale_m": position_scale_m,
                     "solution": dataclasses.asdict(result),
+                    "camera_clearance_m": clearance.clearance_m,
+                    "nearest_obstacle": clearance.nearest_obstacle,
                 }
-                for (candidate_seed, position_scale_m), result in zip(
-                    candidate_specs, candidates, strict=True
+                for (candidate_seed, position_scale_m), result, clearance in zip(
+                    candidate_specs, candidates, clearances, strict=True
                 )
             )
-        # Preserve the live trajectory branch whenever it passes. Additional
-        # deterministic branches are fallbacks, not a global minimum that may
-        # introduce a large joint-space jump into an already valid path.
-        return next(
-            (result for result in candidates if result.succeeded),
-            min(
-                candidates,
-                key=lambda result: (
-                    result.position_error_m,
-                    result.orientation_error_rad,
-                ),
+        clear = [
+            (result, clearance)
+            for result, clearance in zip(candidates, clearances, strict=True)
+            if result.succeeded
+            and clearance.clearance_m >= _MINIMUM_WRIST_CAMERA_CLEARANCE_M
+        ]
+        if clear:
+            return max(clear, key=lambda item: item[1].clearance_m)[0]
+        successful = [
+            (result, clearance)
+            for result, clearance in zip(candidates, clearances, strict=True)
+            if result.succeeded
+        ]
+        if successful:
+            best, _ = max(successful, key=lambda item: item[1].clearance_m)
+            return dataclasses.replace(best, succeeded=False)
+        return min(
+            candidates,
+            key=lambda result: (
+                result.position_error_m,
+                result.orientation_error_rad,
             ),
         )
 
@@ -3492,10 +3794,6 @@ def _bimanual_probe(
         translation_correction=None,
         cut_geometry_override=None,
     ) -> object:
-        preferred_cut_direction = np.asarray(
-            [0.0, -np.cos(np.radians(15.0)), np.sin(np.radians(15.0))],
-            dtype=np.float64,
-        )
         cut_geometry = (
             blade_monitor.target_path_geometry(_RIGHT_CUT_STUB_M)
             if cut_geometry_override is None
@@ -3518,7 +3816,7 @@ def _bimanual_probe(
             if translation_correction is None
             else np.asarray(translation_correction, dtype=np.float64)
         )
-        root = edge - knife_rotation @ np.asarray(_RIGHT_EDGE_WING_M) + correction
+        root = edge - knife_rotation @ right_edge_wing_m + correction
         desired = np.eye(4, dtype=np.float64)
         desired[:3, :3] = knife_rotation @ robot_hardware.KNIFE_ROTATION.T
         desired[:3, 3] = root
@@ -3743,7 +4041,7 @@ def _bimanual_probe(
                         raise RuntimeError(
                             f"live cut geometry disappeared after side {side_m:.3f} m"
                         )
-                    tool = blade_monitor.tool_point_geometry(_RIGHT_EDGE_WING_M)
+                    tool = blade_monitor.tool_point_geometry(right_edge_wing_m)
                     planned_point = (
                         live_path["point_m"]
                         + tool["cut_direction"] * side_m
@@ -3788,7 +4086,7 @@ def _bimanual_probe(
                 {
                     "stage": "right_ik",
                     "cut_stub_m": _RIGHT_CUT_STUB_M,
-                    "edge_wing_local_m": list(_RIGHT_EDGE_WING_M),
+                    "edge_wing_local_m": right_edge_wing_m.tolist(),
                     "knife_yaw_degrees": _RIGHT_KNIFE_YAW_DEGREES,
                     "knife_roll_degrees": _RIGHT_KNIFE_ROLL_DEGREES,
                     "orientation_mode": "live_segment_transverse_support_up",
@@ -3916,7 +4214,7 @@ def _bimanual_probe(
                         raise RuntimeError(
                             f"live cut geometry disappeared after sweep segment {index}"
                         )
-                    tool = blade_monitor.tool_point_geometry(_RIGHT_EDGE_WING_M)
+                    tool = blade_monitor.tool_point_geometry(right_edge_wing_m)
                     live_goal = (
                         live_path["point_m"]
                         + tool["cut_direction"] * side_m
@@ -4046,86 +4344,522 @@ def _bimanual_probe(
                 raise RuntimeError(
                     f"physical cut did not enter orphan_retained: {grasp_manager.task_phase}"
                 )
-            for side_m in (-0.035, -0.060, -0.100):
+            # Do not reverse the broad knife plate through the severed plane.
+            # The free side of the target differs between petioles, so plan
+            # both lateral directions (and both lift orders) against the live
+            # non-target capsules. This prevents a route that clears
+            # SubStem_01 from becoming a hard-coded collision on SubStem_00.
+            retract_origin = model.forward(
+                "right",
+                current["right"],
+                base_matrix,
+            )
+            # Ten-millimetre Cartesian targets bound the chord error of the
+            # intervening joint interpolation. A single 60 mm endpoint kept
+            # the correct final pose but bowed the broad plate downward on the
+            # way there and touched the lower neighbouring petiole.
+            retract_obstacles = tuple(
+                obstacle
+                for obstacle in _vine_capsule_obstacles(stage, robot_kinematics)
+                if obstacle.path not in target_cut_colliders
+            )
+            blade_centre_ee_m = (
+                robot_hardware.KNIFE_TRANSLATION_M
+                + robot_hardware.KNIFE_ROTATION @ blade_local_centre_m
+            )
+            support_local_centre_m, support_half_extents_m = (
+                robot_hardware.knife_support_box()
+            )
+            support_centre_ee_m = (
+                robot_hardware.KNIFE_TRANSLATION_M
+                + robot_hardware.KNIFE_ROTATION @ support_local_centre_m
+            )
+            knife_boxes = (
+                ("blade", blade_centre_ee_m, blade_half_extents_m),
+                ("support_arc", support_centre_ee_m, support_half_extents_m),
+            )
+            route_specs = (
+                ("negative_x_then_lift", -1.0, 0.040, 0.040, False),
+                ("positive_x_then_lift", 1.0, 0.040, 0.040, False),
+                ("lift_then_negative_x", -1.0, 0.040, 0.040, True),
+                ("lift_then_positive_x", 1.0, 0.040, 0.040, True),
+                ("positive_x_wide_then_lift", 1.0, 0.080, 0.040, False),
+                ("positive_x_then_high_lift", 1.0, 0.040, 0.080, False),
+                ("positive_x_wide_high", 1.0, 0.080, 0.080, False),
+                ("high_lift_then_positive_x_wide", 1.0, 0.080, 0.080, True),
+                ("positive_x_extra_wide_high", 1.0, 0.120, 0.080, False),
+                ("positive_x_wide_extra_high", 1.0, 0.080, 0.120, False),
+                ("extra_high_no_lateral", 0.0, 0.0, 0.120, True),
+            )
+            route_candidates = []
+            for (
+                route_name,
+                x_sign,
+                lateral_distance,
+                lift_distance,
+                lift_first,
+            ) in route_specs:
+                lateral_steps = round(lateral_distance / 0.010)
+                lift_steps = round(lift_distance / 0.010)
+                if lift_first:
+                    lateral_lift_offsets = (
+                        tuple(
+                            np.asarray([0.0, 0.0, 0.010 * index])
+                            for index in range(1, lift_steps + 1)
+                        )
+                        + tuple(
+                            np.asarray(
+                                [
+                                    x_sign * 0.010 * index,
+                                    0.0,
+                                    lift_distance,
+                                ]
+                            )
+                            for index in range(1, lateral_steps + 1)
+                        )
+                    )
+                else:
+                    lateral_lift_offsets = (
+                        tuple(
+                            np.asarray([x_sign * 0.010 * index, 0.0, 0.0])
+                            for index in range(1, lateral_steps + 1)
+                        )
+                        + tuple(
+                            np.asarray(
+                                [
+                                    x_sign * lateral_distance,
+                                    0.0,
+                                    0.010 * index,
+                                ]
+                            )
+                            for index in range(1, lift_steps + 1)
+                        )
+                    )
+                retract_offsets = lateral_lift_offsets + tuple(
+                    np.asarray(
+                        [
+                            x_sign * lateral_distance,
+                            0.020 * index,
+                            lift_distance,
+                        ]
+                    )
+                    for index in range(1, 14)
+                )
+                seed = current["right"].copy()
+                solutions = []
+                clearance_samples = []
+                feasible = True
+                failure_waypoint = None
+                for waypoint_index, offset in enumerate(retract_offsets, start=1):
+                    desired = retract_origin.copy()
+                    desired[:3, 3] += offset
+                    solution = model.solve_pose(
+                        "right",
+                        desired,
+                        seed,
+                        base_matrix,
+                    )
+                    solutions.append(solution)
+                    if not solution.succeeded:
+                        feasible = False
+                        failure_waypoint = waypoint_index
+                        break
+                    target_degrees = np.asarray(
+                        solution.joint_degrees,
+                        dtype=np.float64,
+                    )
+                    for sample_index in range(1, 9):
+                        fraction = sample_index / 8.0
+                        smooth = fraction * fraction * (3.0 - 2.0 * fraction)
+                        sampled_degrees = seed + smooth * (target_degrees - seed)
+                        component_clearances = []
+                        for component, centre_m, half_extents_m in knife_boxes:
+                            clearance = robot_kinematics.tool_box_clearance(
+                                model,
+                                "right",
+                                sampled_degrees,
+                                base_matrix,
+                                centre_m,
+                                robot_hardware.KNIFE_ROTATION,
+                                half_extents_m,
+                                retract_obstacles,
+                            )
+                            component_clearances.append(
+                                (component, clearance)
+                            )
+                        component, clearance = min(
+                            component_clearances,
+                            key=lambda item: item[1].clearance_m,
+                        )
+                        clearance_samples.append(
+                            {
+                                "component": component,
+                                "clearance_m": clearance.clearance_m,
+                                "nearest_obstacle": clearance.nearest_obstacle,
+                                "waypoint": waypoint_index,
+                                "sample": sample_index,
+                            }
+                        )
+                    seed = target_degrees
+                minimum_clearance = (
+                    min(
+                        clearance_samples,
+                        key=lambda sample: sample["clearance_m"],
+                    )
+                    if clearance_samples
+                    else {
+                        "clearance_m": float("-inf"),
+                        "nearest_obstacle": None,
+                        "component": None,
+                        "waypoint": None,
+                        "sample": None,
+                    }
+                )
+                route_candidates.append(
+                    {
+                        "name": route_name,
+                        "x_sign": x_sign,
+                        "lateral_distance_m": lateral_distance,
+                        "lift_distance_m": lift_distance,
+                        "offsets": retract_offsets,
+                        "solutions": solutions,
+                        "feasible": feasible,
+                        "failure_waypoint": failure_waypoint,
+                        "minimum_clearance": minimum_clearance,
+                        "mean_clearance_m": (
+                            float(
+                                np.mean(
+                                    [
+                                        sample["clearance_m"]
+                                        for sample in clearance_samples
+                                    ]
+                                )
+                            )
+                            if clearance_samples
+                            else float("-inf")
+                        ),
+                    }
+                )
+            try:
+                selected_retract_route = (
+                    robot_kinematics.select_tool_clearance_route(
+                        route_candidates
+                    )
+                )
+            except ValueError as exc:
+                raise RuntimeError(
+                    "no post-cut right retract route has complete IK"
+                ) from exc
+            stages.append(
+                {
+                    "stage": "right_retract_route_selection",
+                    "selected_route": selected_retract_route["name"],
+                    "candidates": [
+                        {
+                            "name": candidate["name"],
+                            "x_sign": candidate["x_sign"],
+                            "lateral_distance_m": candidate[
+                                "lateral_distance_m"
+                            ],
+                            "lift_distance_m": candidate["lift_distance_m"],
+                            "offsets_m": [
+                                offset.tolist() for offset in candidate["offsets"]
+                            ],
+                            "feasible": candidate["feasible"],
+                            "failure_waypoint": candidate["failure_waypoint"],
+                            "minimum_clearance": candidate["minimum_clearance"],
+                            "mean_clearance_m": candidate["mean_clearance_m"],
+                            "solutions": [
+                                dataclasses.asdict(solution)
+                                for solution in candidate["solutions"]
+                            ],
+                        }
+                        for candidate in route_candidates
+                    ],
+                    "excluded_target_colliders": sorted(target_cut_colliders),
+                }
+            )
+            retract_offsets = selected_retract_route["offsets"]
+            retract_solutions = selected_retract_route["solutions"]
+            for index, (offset, solution) in enumerate(
+                zip(retract_offsets, retract_solutions, strict=True),
+                start=1,
+            ):
+                desired = retract_origin.copy()
+                desired[:3, 3] += offset
+                stages.append(
+                    {
+                        "stage": f"right_retract_ik_{index:02d}",
+                        "offset_m": offset.tolist(),
+                        "solution": dataclasses.asdict(solution),
+                    }
+                )
+                if not solution.succeeded:
+                    raise RuntimeError(
+                        f"right lifted retract IK failed at waypoint {index}"
+                    )
                 move(
                     "right",
-                    right_waypoints[side_m],
-                    f"right_retract_{side_m:.3f}",
-                    hold_steps=args.motion_steps,
+                    solution.joint_degrees,
+                    f"right_lifted_retract_{index:02d}",
+                    steps=max(args.motion_steps // 4, 30),
+                    hold_steps=(30 if index == len(retract_offsets) else 0),
                 )
+                unsafe = _probe_unsafe_contacts(
+                    contact_diagnostics.summary,
+                    blade_geometry,
+                    grasp_geometry,
+                )
+                if unsafe:
+                    raise RuntimeError(
+                        f"unsafe robot contact during lifted retract waypoint {index}"
+                    )
+            stages.append(
+                {
+                    "stage": "right_lifted_retract",
+                    "control_mode": (
+                        "collision_ranked_pose_preserving_extended_aisle_stow"
+                    ),
+                    "selected_route": selected_retract_route["name"],
+                    "origin_m": retract_origin[:3, 3].tolist(),
+                    "offsets_m": [offset.tolist() for offset in retract_offsets],
+                    "solutions": [
+                        dataclasses.asdict(solution)
+                        for solution in retract_solutions
+                    ],
+                }
+            )
 
         grasp_geometry = grasp_manager.target_geometry
         if grasp_geometry is None:
             raise RuntimeError("live grasp geometry disappeared before transport")
         transport_origin = grasp_geometry["centre_m"].copy()
-        # Keep the grasp anchor on a short Cartesian aisle-clearance route.
-        # One large joint-space interpolation arced finger 1 through Organ_0009
-        # and never produced the requested anchor displacement.
-        transport_offsets = (
-            np.asarray([0.0, 0.04, 0.04]),
-            np.asarray([0.0, 0.10, 0.06]),
-            np.asarray([0.0, 0.18, 0.08]),
-            # Only translate sideways after the orphan is clear of the row.
-            # The earlier rearward route placed the falling branch over the
-            # 620 x 500 mm chassis footprint; this aisle-side route keeps the
-            # release point at least 100 mm outside that footprint.
-            np.asarray([-0.22, 0.22, 0.04]),
-        )
         transport_ee_origin = model.forward(
             "left",
             current["left"],
             base_matrix,
         )
-        transport_solutions = []
-        for index, offset in enumerate(transport_offsets, start=1):
-            grasp_geometry = grasp_manager.target_geometry
-            if grasp_geometry is None:
-                raise RuntimeError(
-                    f"live grasp geometry disappeared at transport waypoint {index}"
-                )
-            if index <= 3:
+        # Select a payload-clear route before moving. The D405 and both finger
+        # envelopes are scored against every live non-target capsule; short
+        # negative-X waypoints let the second petiole leave the row without
+        # crossing SubStem_02, while the original route remains available for
+        # targets whose local canopy is clear.
+        transport_route_candidates = {
+            "row_normal": (
+                np.asarray([0.0, 0.04, 0.04]),
+                np.asarray([0.0, 0.10, 0.06]),
+                np.asarray([0.0, 0.18, 0.08]),
+                np.asarray([-0.06, 0.20, 0.07]),
+                np.asarray([-0.12, 0.22, 0.04]),
+            ),
+            "low_aisle_clearance": (
+                np.asarray([0.0, 0.04, 0.04]),
+                np.asarray([0.0, 0.10, 0.02]),
+                np.asarray([0.0, 0.18, 0.02]),
+                np.asarray([-0.06, 0.20, 0.03]),
+                np.asarray([-0.12, 0.22, 0.04]),
+            ),
+            "negative_x_clearance": (
+                np.asarray([0.0, 0.04, 0.04]),
+                np.asarray([-0.04, 0.07, 0.05]),
+                np.asarray([-0.08, 0.10, 0.06]),
+                np.asarray([-0.12, 0.14, 0.08]),
+                np.asarray([-0.12, 0.18, 0.07]),
+                np.asarray([-0.12, 0.22, 0.04]),
+            ),
+            "positive_x_clearance": (
+                np.asarray([0.0, 0.04, 0.04]),
+                np.asarray([0.04, 0.08, 0.05]),
+                np.asarray([0.04, 0.13, 0.07]),
+                np.asarray([0.01, 0.18, 0.08]),
+                np.asarray([-0.06, 0.21, 0.06]),
+                np.asarray([-0.12, 0.22, 0.04]),
+            ),
+        }
+        excluded_grasp_colliders = tuple(grasp_geometry.get("colliders", ()))
+        # The radial-support box/capsule proxy over-bounds the proven-clear
+        # first corridor and its adjacent leaf proxies by up to 10.3 mm. Admit
+        # a 12 mm measured model bias for route
+        # ranking only; PhysX contact impulses remain the zero-tolerance gate.
+        minimum_payload_clearance_m = -0.012
+        route_records = []
+        feasible_routes = []
+        for route_name, offsets in transport_route_candidates.items():
+            route_seed = current["left"]
+            route_plan = []
+            minimum_clearance_m = float("inf")
+            route_feasible = True
+            for index, offset in enumerate(offsets, start=1):
                 desired = transport_ee_origin.copy()
                 desired[:3, 3] += offset
                 pose_transport = model.solve_pose(
                     "left",
                     desired,
-                    current["left"],
+                    route_seed,
                     base_matrix,
                 )
-                axes_transport = solve_left(
-                    transport_origin + offset,
-                    current["left"],
+                pose_clearance, pose_components = left_payload_clearance(
+                    pose_transport,
+                    excluded_grasp_colliders,
                 )
-                candidates = (
-                    ("pose_preserving", pose_transport),
-                    ("point_axes", axes_transport),
+                candidates = [
+                    (
+                        "pose_preserving",
+                        pose_transport,
+                        pose_clearance,
+                        pose_components,
+                    )
+                ]
+                if (
+                    not pose_transport.succeeded
+                    or pose_clearance["clearance_m"] < minimum_payload_clearance_m
+                ):
+                    axes_transport = solve_left(
+                        transport_origin + offset,
+                        route_seed,
+                        _LEFT_TRANSPORT_SEED_DEGREES,
+                    )
+                    axes_clearance, axes_components = left_payload_clearance(
+                        axes_transport,
+                        excluded_grasp_colliders,
+                    )
+                    candidates.append(
+                        (
+                            "point_axes",
+                            axes_transport,
+                            axes_clearance,
+                            axes_components,
+                        )
+                    )
+                valid = [
+                    candidate
+                    for candidate in candidates
+                    if candidate[1].succeeded
+                    and candidate[2]["clearance_m"] >= minimum_payload_clearance_m
+                ]
+                selected = (
+                    max(valid, key=lambda item: item[2]["clearance_m"])
+                    if valid
+                    else max(candidates, key=lambda item: item[2]["clearance_m"])
                 )
-                if pose_transport.succeeded:
-                    solver, transport = candidates[0]
-                else:
-                    solver, transport = candidates[1]
-                candidate_solutions = {
-                    name: dataclasses.asdict(solution)
-                    for name, solution in candidates
+                solver, transport, clearance, component_clearances = selected
+                segment_clearances = []
+                route_start = np.asarray(route_seed, dtype=np.float64)
+                route_target = np.asarray(transport.joint_degrees, dtype=np.float64)
+                for sample_index in range(1, 9):
+                    fraction = sample_index / 8.0
+                    smooth = fraction * fraction * (3.0 - 2.0 * fraction)
+                    sampled_joints = route_start + smooth * (
+                        route_target - route_start
+                    )
+                    sampled_solution = dataclasses.replace(
+                        transport,
+                        joint_degrees=tuple(float(value) for value in sampled_joints),
+                    )
+                    sampled_clearance, sampled_components = left_payload_clearance(
+                        sampled_solution,
+                        excluded_grasp_colliders,
+                    )
+                    segment_clearances.append(
+                        {
+                            "fraction": fraction,
+                            "clearance": sampled_clearance,
+                            "component_clearances": sampled_components,
+                        }
+                    )
+                swept_clearance = min(
+                    (sample["clearance"] for sample in segment_clearances),
+                    key=lambda item: item["clearance_m"],
+                )
+                if swept_clearance["clearance_m"] < clearance["clearance_m"]:
+                    clearance = swept_clearance
+                route_plan.append(
+                    {
+                        "index": index,
+                        "offset_m": offset,
+                        "solver": solver,
+                        "solution": transport,
+                        "clearance": clearance,
+                        "component_clearances": component_clearances,
+                        "segment_clearances": segment_clearances,
+                        "candidate_solutions": {
+                            name: {
+                                "solution": dataclasses.asdict(solution),
+                                "clearance": candidate_clearance,
+                                "component_clearances": candidate_components,
+                            }
+                            for name, solution, candidate_clearance, candidate_components in candidates
+                        },
+                    }
+                )
+                minimum_clearance_m = min(
+                    minimum_clearance_m,
+                    clearance["clearance_m"],
+                )
+                if not valid:
+                    route_feasible = False
+                    break
+                if clearance["clearance_m"] < minimum_payload_clearance_m:
+                    route_feasible = False
+                    break
+                route_seed = np.asarray(transport.joint_degrees, dtype=np.float64)
+            route_record = {
+                "name": route_name,
+                "feasible": route_feasible,
+                "minimum_payload_clearance_m": minimum_clearance_m,
+                "waypoints": [
+                    {
+                        **{key: value for key, value in waypoint.items() if key != "solution"},
+                        "offset_m": waypoint["offset_m"].tolist(),
+                        "solution": dataclasses.asdict(waypoint["solution"]),
+                    }
+                    for waypoint in route_plan
+                ],
+            }
+            route_records.append(route_record)
+            if route_feasible:
+                feasible_routes.append((minimum_clearance_m, route_name, route_plan))
+        if not feasible_routes:
+            stages.append(
+                {
+                    "stage": "left_transport_route_selection",
+                    "selected_route": None,
+                    "minimum_payload_clearance_m": minimum_payload_clearance_m,
+                    "routes": route_records,
                 }
-            else:
-                transport = solve_left(
-                    transport_origin + offset,
-                    current["left"],
-                    _LEFT_TRANSPORT_SEED_DEGREES,
-                )
-                solver = "point_axes"
-                candidate_solutions = {
-                    solver: dataclasses.asdict(transport),
-                }
+            )
+            raise RuntimeError("no collision-clear left payload transport route")
+        _, selected_route_name, selected_route_plan = max(
+            feasible_routes,
+            key=lambda item: item[0],
+        )
+        transport_offsets = tuple(
+            waypoint["offset_m"] for waypoint in selected_route_plan
+        )
+        stages.append(
+            {
+                "stage": "left_transport_route_selection",
+                "selected_route": selected_route_name,
+                "minimum_payload_clearance_m": minimum_payload_clearance_m,
+                "routes": route_records,
+            }
+        )
+        transport_solutions = []
+        for waypoint in selected_route_plan:
+            index = waypoint["index"]
+            offset = waypoint["offset_m"]
+            transport = waypoint["solution"]
             transport_solutions.append(dataclasses.asdict(transport))
             stages.append(
                 {
                     "stage": f"left_transport_ik_{index:02d}",
                     "target_point_m": (transport_origin + offset).tolist(),
                     "offset_m": offset.tolist(),
-                    "solver": solver,
-                    "candidate_solutions": candidate_solutions,
+                    "solver": waypoint["solver"],
+                    "payload_clearance": waypoint["clearance"],
+                    "component_clearances": waypoint["component_clearances"],
+                    "segment_clearances": waypoint["segment_clearances"],
+                    "candidate_solutions": waypoint["candidate_solutions"],
                     "solution": dataclasses.asdict(transport),
                 }
             )
@@ -4142,6 +4876,11 @@ def _bimanual_probe(
                     else 0
                 ),
             )
+            grasp_geometry = grasp_manager.target_geometry
+            if grasp_geometry is None:
+                raise RuntimeError(
+                    f"live grasp geometry disappeared at transport waypoint {index}"
+                )
             unsafe = _probe_unsafe_contacts(
                 contact_diagnostics.summary,
                 blade_geometry,

@@ -245,12 +245,17 @@ class DirectionalCutGate:
         forward_speed = float(np.dot(motion_velocity, cut_direction))
         effective_force = abs(float(np.dot(impulse, cut_direction))) / sample.dt_s
         relative_edge = edge_centre - target.centre_m
+        side = float(np.dot(relative_edge, cut_direction))
 
         progress.last_effective_force_n = effective_force
         progress.last_forward_speed_m_s = forward_speed
 
         progress.peak_force_n = max(progress.peak_force_n, effective_force)
-        progress.peak_speed_m_s = max(progress.peak_speed_m_s, max(forward_speed, 0.0))
+        progress.peak_speed_m_s = max(
+            progress.peak_speed_m_s,
+            forward_speed,
+            0.0,
+        )
         progress.edge_axis_alignment = 1.0 - edge_axis_dot
         progress.motion_transverse_alignment = 1.0 - motion_axis_dot
         progress.last_stub_m = stub_m
@@ -274,6 +279,17 @@ class DirectionalCutGate:
             ),
             (effective_force >= target.cut_force_n, "insufficient_force"),
         )
+        # Crossing is geometric evidence from the physical leading edge, not
+        # fracture work. Record which side first touched as soon as that edge
+        # is on the intended target in the valid axial/radial/edge frame. The
+        # force, motion-direction, work, and counterhold gates below remain
+        # unchanged; low-force entry contact can prove approach side but can
+        # never accumulate damage by itself.
+        if all(accepted for accepted, _ in checks[:3]):
+            progress.minimum_signed_side_m = min(progress.minimum_signed_side_m, side)
+            progress.maximum_signed_side_m = max(progress.maximum_signed_side_m, side)
+            if sample.counterhold_active and progress.counterhold_start_side_m is None:
+                progress.counterhold_start_side_m = side
         failed = [reason for accepted, reason in checks if not accepted]
         progress.last_contact_valid = not failed
         if failed:
@@ -338,12 +354,6 @@ class DirectionalCutGate:
             target.cut_force_n * self.parameters.force_cap_multiple,
         )
         progress.work_j += capped_force * forward_step
-        side = float(np.dot(relative_edge, cut_direction))
-        progress.minimum_signed_side_m = min(progress.minimum_signed_side_m, side)
-        progress.maximum_signed_side_m = max(progress.maximum_signed_side_m, side)
-        if sample.counterhold_active and progress.counterhold_start_side_m is None:
-            progress.counterhold_start_side_m = side
-
         physically_crossed_centre = (
             progress.minimum_signed_side_m <= -0.25 * target.radius_m
             and progress.maximum_signed_side_m >= 0.0
@@ -353,7 +363,21 @@ class DirectionalCutGate:
             and progress.counterhold_start_side_m <= -0.25 * target.radius_m
             and progress.counterhold_start_side_m + progress.forward_travel_m >= 0.0
         )
-        crossed_centre = physically_crossed_centre or virtually_crossed_centre
+        # The rigid U-guide can move an otherwise counterheld capsule before
+        # its flat edge makes contact, so the live capsule centre is not always
+        # a trustworthy signed entry reference. In that case require a full
+        # tissue diameter of force-qualified, forward virtual penetration.
+        # This remains unavailable to unheld pushing and low-force contact.
+        traction_crossed_section = bool(
+            sample.counterhold_active
+            and progress.counterheld_contact_steps > 0
+            and progress.virtual_penetration_m >= 2.0 * target.radius_m
+        )
+        crossed_centre = (
+            physically_crossed_centre
+            or virtually_crossed_centre
+            or traction_crossed_section
+        )
         required_work = target.required_work_j(self.parameters)
         if progress.work_j < required_work or not crossed_centre:
             return None
