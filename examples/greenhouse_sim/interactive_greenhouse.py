@@ -19,6 +19,7 @@ The Vine Interaction window exposes the same selection and cut controls.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import json
 import pathlib
@@ -59,6 +60,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--robot-position", type=float, nargs=3, default=(6.99114, 3.93, -0.3050817))
     parser.add_argument("--robot-yaw", type=float, default=-90.0)
     parser.add_argument("--physics-vines", type=int, default=1)
+    parser.add_argument(
+        "--target-vine",
+        default="Vine_0000",
+        help="physics-enabled vine name, or 'auto' for seeded selection",
+    )
+    parser.add_argument(
+        "--target-organ",
+        default="SubStem_00",
+        help="physical petiole label, or 'auto' for seeded selection",
+    )
+    parser.add_argument(
+        "--episode-seed",
+        type=int,
+        default=0,
+        help="deterministic target-selection seed when either target selector is auto",
+    )
     parser.add_argument(
         "--neighbor-safety-vines",
         type=int,
@@ -121,6 +138,29 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="record robot contact pairs and impulses during settling",
     )
+    parser.add_argument(
+        "--teleop-command-file",
+        type=pathlib.Path,
+        default=None,
+        help="atomic greenhouse.teleop.v1 mailbox written by a simulator input device",
+    )
+    parser.add_argument(
+        "--teleop-record-dir",
+        type=pathlib.Path,
+        default=None,
+        help="parent directory for synchronized JSONL and D405 demonstration episodes",
+    )
+    parser.add_argument("--teleop-watchdog-ms", type=float, default=250.0)
+    parser.add_argument("--teleop-max-joint-speed", type=float, default=45.0, metavar="DEG_S")
+    parser.add_argument("--teleop-record-hz", type=float, default=10.0)
+    parser.add_argument(
+        "--teleop-cameras",
+        nargs="+",
+        choices=("head", "left_wrist", "right_wrist"),
+        default=("head", "left_wrist", "right_wrist"),
+    )
+    parser.add_argument("--teleop-width", type=int, default=640)
+    parser.add_argument("--teleop-height", type=int, default=360)
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--warmup", type=int, default=40)
@@ -153,6 +193,18 @@ def main() -> int:
     if args.neighbor_safety_vines < 0:
         print("--neighbor-safety-vines cannot be negative")
         return 1
+    if args.teleop_command_file is not None and args.no_robot:
+        print("--teleop-command-file requires the fitted robot")
+        return 1
+    if args.teleop_record_dir is not None and args.teleop_command_file is None:
+        print("--teleop-record-dir requires --teleop-command-file")
+        return 1
+    if args.teleop_watchdog_ms <= 0.0 or args.teleop_max_joint_speed <= 0.0:
+        print("teleop watchdog and maximum joint speed must be positive")
+        return 1
+    if args.teleop_record_hz <= 0.0 or args.teleop_width < 1 or args.teleop_height < 1:
+        print("teleop recording rate and dimensions must be positive")
+        return 1
     if not args.no_robot and not robot_path.exists():
         print(f"fitted robot not found: {robot_path}; run build_robot.py first or pass --no-robot")
         return 1
@@ -173,12 +225,14 @@ def main() -> int:
 
     from greenhouse_sim import cutting
     from greenhouse_sim import deleaf_task
+    from greenhouse_sim import episode
     from greenhouse_sim import glb
     from greenhouse_sim import organs
     from greenhouse_sim import robot_hardware
     from greenhouse_sim import robot_kinematics
     from greenhouse_sim import robot_scene
     from greenhouse_sim import skeleton as skeleton_module
+    from greenhouse_sim import teleop
     from greenhouse_sim import vine_interaction
     from greenhouse_sim import vine_physics
     from greenhouse_sim import vine_usd
@@ -316,6 +370,21 @@ def main() -> int:
         )
 
     camera_path = _author_camera(stage, placement_centres[0], args, Gf, Sdf, UsdGeom)
+    try:
+        selected_target = episode.resolve_target(
+            runtimes,
+            vine_name=args.target_vine,
+            organ_label=args.target_organ,
+            seed=args.episode_seed,
+        )
+    except ValueError as exc:
+        report.update(stage="failed", error=str(exc))
+        _emit(report, args.report)
+        app.close()
+        return 1
+    selected_runtime = next(
+        runtime for runtime in runtimes if runtime.name == selected_target.vine_name
+    )
     report.update(
         stage="rigged",
         static_vines=len(static_vines),
@@ -329,6 +398,15 @@ def main() -> int:
         ),
         neighbour_safety_colliders=len(safety_colliders),
         sources=[str(runtime.source) for runtime in runtimes],
+        episode_target={
+            **dataclasses.asdict(selected_target),
+            "key": selected_target.key,
+            "selection_mode": (
+                "seeded_auto"
+                if "auto" in (args.target_vine, args.target_organ)
+                else "exact"
+            ),
+        },
     )
     _emit(report, args.report)
 
@@ -339,7 +417,11 @@ def main() -> int:
 
     contact_diagnostics = (
         RobotContactDiagnostics(stage)
-        if args.contact_diagnostics or args.bimanual_probe is not None
+        if (
+            args.contact_diagnostics
+            or args.bimanual_probe is not None
+            or args.teleop_command_file is not None
+        )
         else None
     )
     blade_cutting = None
@@ -357,8 +439,10 @@ def main() -> int:
             ),
         )
         blade_cutting.add_safety_colliders(safety_colliders)
-        if runtimes and "SubStem_00" in runtimes[0].rig.junctions:
-            blade_cutting.set_active_target(runtimes[0].name, "SubStem_00")
+        blade_cutting.set_active_target(
+            selected_target.vine_name,
+            selected_target.organ_label,
+        )
         report["blade_cutting"] = blade_cutting.summary
         floor_z = float(args.robot_position[2])
         grasp_manager = LeftGraspManager(
@@ -378,8 +462,10 @@ def main() -> int:
                 ),
             ),
         )
-        if runtimes and "SubStem_00" in runtimes[0].rig.junctions:
-            grasp_manager.set_active_target(runtimes[0].name, "SubStem_00")
+        grasp_manager.set_active_target(
+            selected_target.vine_name,
+            selected_target.organ_label,
+        )
         blade_cutting.set_counterhold_provider(grasp_manager.holds_target)
         report["bimanual_task"] = grasp_manager.summary
     context = SimulationContext(
@@ -416,12 +502,19 @@ def main() -> int:
             )
 
     if headless:
-        success = _run_headless_checks(stage, context, runtimes, args, report)
+        success = _run_headless_checks(
+            stage,
+            context,
+            runtimes,
+            selected_target,
+            args,
+            report,
+        )
         if args.bimanual_probe is not None:
             probe = _bimanual_probe(
                 stage,
                 context,
-                runtimes[0],
+                selected_runtime,
                 args,
                 report,
                 blade_cutting,
@@ -459,7 +552,6 @@ def main() -> int:
 
     if contact_diagnostics is not None:
         report["robot_contacts"] = contact_diagnostics.summary
-        contact_diagnostics.close()
 
     # Render the selected inspection camera before the overlay reads its
     # projection matrices. All settling frames above are deliberately headless.
@@ -482,7 +574,30 @@ def main() -> int:
         camera_views,
         blade_cutting,
         grasp_manager,
+        selected_target,
     )
+    teleop_controller = None
+    if args.teleop_command_file is not None:
+        # Replicator render products need explicit warmup, but that must not
+        # advance unobserved physics or accumulate cut/grasp contacts.
+        context.pause()
+        try:
+            teleop_controller = SimulatorTeleop(
+                stage,
+                args,
+                camera_views,
+                selected_target,
+                report,
+                args.report,
+                teleop,
+                robot_hardware,
+                robot_kinematics,
+                blade_cutting,
+                grasp_manager,
+                contact_diagnostics,
+            )
+        finally:
+            context.play()
     report.update(stage="running", controls=controller.controls)
     _emit(report, args.report)
     if args.visual_pull_probe:
@@ -499,12 +614,18 @@ def main() -> int:
         "C DEBUG-force-cuts; V changes vine; 1-4 switches cameras"
     )
     try:
+        simulation_step = 0
         while app.is_running():
             context.step(render=True)
+            simulation_step += 1
             controller.process(context)
+            if teleop_controller is not None:
+                teleop_controller.process(simulation_step)
             if args.tear_force > 0.0:
                 controller.poll_tears()
     finally:
+        if teleop_controller is not None:
+            teleop_controller.close()
         controller.close()
         if blade_cutting is not None:
             report["blade_cutting"] = blade_cutting.summary
@@ -512,6 +633,9 @@ def main() -> int:
         if grasp_manager is not None:
             report["bimanual_task"] = grasp_manager.summary
             grasp_manager.close()
+        if contact_diagnostics is not None:
+            report["robot_contacts"] = contact_diagnostics.summary
+            contact_diagnostics.close()
         report["stage"] = "closed"
         _emit(report, args.report)
         context.stop()
@@ -651,6 +775,7 @@ class RobotContactDiagnostics:
                     "minimum_separation_mm": float("inf"),
                     "maximum_impulse_ns": 0.0,
                     "maximum_impulse_vector_ns": [0.0, 0.0, 0.0],
+                    "maximum_impulse_position_m": None,
                     "phases": [],
                 },
             )
@@ -669,6 +794,7 @@ class RobotContactDiagnostics:
                 if magnitude > pair["maximum_impulse_ns"]:
                     pair["maximum_impulse_ns"] = magnitude
                     pair["maximum_impulse_vector_ns"] = impulse.tolist()
+                    pair["maximum_impulse_position_m"] = self._vector(contact.position)
 
     @property
     def summary(self) -> dict:
@@ -1280,6 +1406,7 @@ class LeftGraspManager:
                     "organ": info.organ_label,
                     "body": info.body_path,
                     "collider": info.path,
+                    "role": info.role,
                 }
                 self._grasp_colliders_for_key.setdefault(key, []).append(
                     info.path
@@ -1394,9 +1521,43 @@ class LeftGraspManager:
         )
 
     @property
+    def target_candidates(self) -> list[dict]:
+        """Return live physical colliders eligible for the selected grasp."""
+        from pxr import Gf
+
+        key = self._active_target or ""
+        candidates = []
+        for path in self._grasp_colliders_for_key.get(key, ()):
+            info = self._grasp_colliders[path]
+            body_matrix = self._body_matrix(info["body"])
+            collider_matrix = self._body_matrix(path)
+            candidates.append(
+                {
+                    **info,
+                    "centre_m": self._np.asarray(
+                        collider_matrix.ExtractTranslation(), dtype=self._np.float64
+                    ),
+                    "axis": self._np.asarray(
+                        body_matrix.TransformDir(Gf.Vec3d(0.0, 0.0, 1.0)).GetNormalized(),
+                        dtype=self._np.float64,
+                    ),
+                    "preferred": path == self._grasp_collider_for_key.get(key),
+                }
+            )
+        return candidates
+
+    def set_planned_grasp_collider(self, collider_path: str) -> None:
+        """Plan against one eligible collider; opposed contact chooses the final body."""
+        info = self._grasp_colliders.get(collider_path)
+        if info is None or info["key"] != self._active_target:
+            raise ValueError(f"collider is not eligible for active target: {collider_path}")
+        key = info["key"]
+        self._grasp_collider_for_key[key] = collider_path
+        self._grasp_bodies[key] = info["body"]
+
+    @property
     def target_geometry(self) -> dict | None:
         from pxr import Gf
-        from pxr import Usd
 
         key = self._active_target or ""
         path = (
@@ -1799,6 +1960,18 @@ class LeftGraspManager:
                 else None
             ),
             "graspable_targets": len(self._joint_paths),
+            "target_candidates": [
+                {
+                    **{
+                        key: value
+                        for key, value in candidate.items()
+                        if key not in {"centre_m", "axis"}
+                    },
+                    "centre_m": candidate["centre_m"].tolist(),
+                    "axis": candidate["axis"].tolist(),
+                }
+                for candidate in self.target_candidates
+            ],
             "finger_drive_configuration": dict(self._finger_drive_configuration),
             "finger_close_overtravel_m": self._close_overtravel_m,
             "orphan_state": self._latest_orphan_state,
@@ -1911,6 +2084,7 @@ class InteractionController:
         camera_views: dict[str, str],
         blade_cutting: BladeContactMonitor | None,
         grasp_manager: LeftGraspManager | None,
+        selected_target,
     ):
         import carb
         import omni.appwindow
@@ -1920,14 +2094,18 @@ class InteractionController:
         self._runtimes = runtimes
         self._report = report
         self._report_path = report_path
-        self._vine = 0
-        self._target = 0
         self._pending: list[str] = []
         self._camera_views = camera_views
         self._blade_cutting = blade_cutting
         self._grasp_manager = grasp_manager
         self._active_camera = "inspection"
         self._targets = [self._target_labels(runtime) for runtime in runtimes]
+        self._vine = next(
+            index
+            for index, runtime in enumerate(runtimes)
+            if runtime.name == selected_target.vine_name
+        )
+        self._target = self._targets[self._vine].index(selected_target.organ_label)
 
         self._window = ui.Window("Vine Interaction", width=420, height=405)
         with self._window.frame:
@@ -2210,7 +2388,399 @@ class InteractionController:
         self._window.visible = False
 
 
-def _run_headless_checks(stage, context, runtimes, args, report: dict) -> bool:
+class _TeleopCameraRecorder:
+    """Read the latest rendered D405 RGB observations into an episode folder."""
+
+    def __init__(self, camera_views, camera_names, resolution, frames_directory) -> None:
+        import numpy as np
+        import omni.replicator.core as rep
+        from PIL import Image
+
+        self._np = np
+        self._rep = rep
+        self._Image = Image
+        self._frames_directory = pathlib.Path(frames_directory)
+        self._streams = {}
+        for name in camera_names:
+            camera_path = camera_views.get(name)
+            if camera_path is None:
+                raise ValueError(f"teleop camera is unavailable: {name}")
+            product = rep.create.render_product(camera_path, resolution)
+            annotator = rep.AnnotatorRegistry.get_annotator("rgb")
+            annotator.attach([product])
+            self._streams[name] = (camera_path, product, annotator)
+        for _ in range(8):
+            rep.orchestrator.step(rt_subframes=4)
+
+    def capture(self, sample_index: int) -> tuple[dict[str, str], dict[str, str]]:
+        images = {}
+        errors = {}
+        for name, (_, _, annotator) in self._streams.items():
+            try:
+                rgba = self._np.asarray(annotator.get_data())
+                if rgba.ndim != 3 or rgba.shape[2] < 3 or rgba.size == 0:
+                    raise ValueError(f"unexpected RGB shape {rgba.shape}")
+                path = self._frames_directory / f"{sample_index:06d}_{name}.png"
+                self._Image.fromarray(rgba[:, :, :3].astype(self._np.uint8)).save(path)
+                images[name] = str(path.relative_to(self._frames_directory.parent))
+            except Exception as exc:
+                errors[name] = str(exc)
+        return images, errors
+
+    def close(self) -> None:
+        for _, product, annotator in self._streams.values():
+            with contextlib.suppress(Exception):
+                annotator.detach([product])
+            with contextlib.suppress(Exception):
+                product.destroy()
+        self._streams.clear()
+
+
+class SimulatorTeleop:
+    """Rate-limited, watchdog-protected leader-arm input for the simulator."""
+
+    def __init__(
+        self,
+        stage,
+        args,
+        camera_views,
+        selected_target,
+        report,
+        report_path,
+        teleop_module,
+        robot_hardware,
+        robot_kinematics,
+        blade_monitor,
+        grasp_manager,
+        contact_diagnostics,
+    ) -> None:
+        import os
+        import time
+
+        import numpy as np
+        from pxr import Usd
+        from pxr import UsdGeom
+
+        self._time = time
+        self._np = np
+        self._Usd = Usd
+        self._UsdGeom = UsdGeom
+        self._stage = stage
+        self._args = args
+        self._teleop = teleop_module
+        self._report = report
+        self._report_path = report_path
+        self._blade_monitor = blade_monitor
+        self._grasp_manager = grasp_manager
+        self._contact_diagnostics = contact_diagnostics
+        self._mailbox = teleop_module.CommandMailbox(args.teleop_command_file)
+        self._model = robot_kinematics.Rby1Kinematics()
+        limits = {
+            side: self._model.arm_limits_degrees(side) for side in ("left", "right")
+        }
+        self._gate = teleop_module.TeleopSafetyGate(
+            limits,
+            watchdog_s=args.teleop_watchdog_ms / 1000.0,
+            maximum_joint_speed_deg_s=args.teleop_max_joint_speed,
+        )
+        base_gf = UsdGeom.Xformable(
+            stage.GetPrimAtPath("/World/RBY1/base")
+        ).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+        self._base_matrix = np.asarray(base_gf, dtype=np.float64).T
+        self._blade_local = np.append(
+            robot_hardware.KNIFE_ROTATION
+            @ np.asarray(_RIGHT_EDGE_WING_M, dtype=np.float64),
+            1.0,
+        )
+        self._previous_blade_point = None
+        self._last_process_time = time.monotonic()
+        self._last_command_time = None
+        self._last_record_time = -float("inf")
+        self._last_publish_time = -float("inf")
+        self._last_gripper_closed = None
+        self._latest_error = None
+        self._unsafe_contacts = []
+        self._unsafe_latched = False
+        self._accepted_commands = 0
+        self._rejected_commands = 0
+        self._rate_limited_commands = 0
+        self._watchdog_holds = 0
+        self._last_sequence = None
+        self._latest_age_ms = None
+        self._recording = False
+        self._closed = False
+
+        self._drive_configuration = {
+            side: _configure_arm_drives(stage, side) for side in ("left", "right")
+        }
+        self._recorder = None
+        self._camera_recorder = None
+        self._episode_directory = None
+        if args.teleop_record_dir is not None:
+            stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+            self._episode_directory = pathlib.Path(args.teleop_record_dir) / (
+                f"episode_{stamp}_{os.getpid()}"
+            )
+            self._recorder = teleop_module.DemonstrationRecorder(
+                self._episode_directory,
+                {
+                    "schema": "greenhouse.demonstration.v1",
+                    "target": selected_target.key,
+                    "episode_seed": selected_target.seed,
+                    "command_schema": teleop_module.SCHEMA,
+                    "command_file": str(pathlib.Path(args.teleop_command_file).resolve()),
+                    "simulator_only": True,
+                    "physical_robot_commanded": False,
+                    "physics_hz": 240.0,
+                    "record_hz": args.teleop_record_hz,
+                    "camera_resolution": [args.teleop_width, args.teleop_height],
+                    "cameras": list(args.teleop_cameras),
+                    "watchdog_ms": args.teleop_watchdog_ms,
+                    "maximum_joint_speed_deg_s": args.teleop_max_joint_speed,
+                },
+            )
+            self._camera_recorder = _TeleopCameraRecorder(
+                camera_views,
+                args.teleop_cameras,
+                (args.teleop_width, args.teleop_height),
+                self._recorder.frames_directory,
+            )
+        self._publish(force=True)
+
+    def _arm_state(self, side: str) -> dict:
+        from pxr import PhysxSchema
+        from pxr import UsdPhysics
+
+        positions = []
+        velocities = []
+        for index in range(7):
+            joint = self._stage.GetPrimAtPath(f"/World/RBY1/joints/{side}_arm_{index}")
+            state = PhysxSchema.JointStateAPI.Get(joint, "angular")
+            position = state.GetPositionAttr().Get() if state else None
+            velocity = state.GetVelocityAttr().Get() if state else None
+            if position is None:
+                drive = UsdPhysics.DriveAPI.Get(joint, "angular")
+                position = drive.GetTargetPositionAttr().Get() if drive else 0.0
+            positions.append(float(position or 0.0))
+            velocities.append(float(velocity or 0.0))
+        return {"position_degrees": positions, "velocity_degrees_s": velocities}
+
+    def _ee_matrix(self, side: str) -> list[list[float]]:
+        matrix = self._UsdGeom.Xformable(
+            self._stage.GetPrimAtPath(f"/World/RBY1/ee_{side}")
+        ).ComputeLocalToWorldTransform(self._Usd.TimeCode.Default())
+        return [[float(matrix[row][column]) for column in range(4)] for row in range(4)]
+
+    def _current_unsafe_contacts(self) -> list[dict]:
+        if self._contact_diagnostics is None:
+            return []
+        blade_geometry = self._blade_monitor.target_geometry
+        grasp_geometry = self._grasp_manager.target_geometry
+        if blade_geometry is None or grasp_geometry is None:
+            return []
+        return _probe_unsafe_contacts(
+            self._contact_diagnostics.summary,
+            blade_geometry,
+            grasp_geometry,
+        )
+
+    def _set_blade_velocity(self, right_target, *, apply_right: bool, dt_s: float) -> None:
+        point = (self._model.forward("right", right_target, self._base_matrix) @ self._blade_local)[:3]
+        velocity = self._np.zeros(3, dtype=self._np.float64)
+        if apply_right and self._previous_blade_point is not None and dt_s > 0.0:
+            velocity = (point - self._previous_blade_point) / dt_s
+        self._previous_blade_point = point.copy()
+        self._blade_monitor.set_commanded_edge_velocity(velocity)
+
+    def _record(self, simulation_step: int, now_s: float, command, left_state, right_state) -> None:
+        if self._recorder is None or not command.recording:
+            return
+        if now_s - self._last_record_time < 1.0 / self._args.teleop_record_hz:
+            return
+        sample_index = self._recorder.samples
+        images, camera_errors = self._camera_recorder.capture(sample_index)
+        grasp_summary = self._grasp_manager.summary
+        task = grasp_summary.get("task") or {}
+        blade_summary = self._blade_monitor.summary
+        self._recorder.append(
+            {
+                "schema": "greenhouse.demonstration.step.v1",
+                "sample_index": sample_index,
+                "simulation_step": simulation_step,
+                "simulation_time_s": simulation_step / 240.0,
+                "host_monotonic_time_s": now_s,
+                "target": blade_summary.get("active_target"),
+                "observation": {
+                    "left_arm": left_state,
+                    "right_arm": right_state,
+                    "left_ee_world_matrix": self._ee_matrix("left"),
+                    "right_ee_world_matrix": self._ee_matrix("right"),
+                    "cameras": images,
+                    "camera_errors": camera_errors,
+                },
+                "action": dataclasses.asdict(command),
+                "task": {
+                    "phase": task.get("phase"),
+                    "grasp_active": task.get("grasp_active"),
+                    "task_succeeded": self._grasp_manager.task_succeeded,
+                    "active_grasp_body": grasp_summary.get("active_grasp_body"),
+                    "physical_cuts": len(blade_summary.get("physical_cuts", ())),
+                    "cut_feedback": self._blade_monitor.active_cut_feedback,
+                },
+                "safety": {
+                    "blade_safety_clear": self._blade_monitor.safety_clear,
+                    "unsafe_contact_count": len(self._unsafe_contacts),
+                    "unsafe_latched": self._unsafe_latched,
+                },
+            }
+        )
+        self._last_record_time = now_s
+
+    @property
+    def summary(self) -> dict:
+        now = self._time.monotonic()
+        watchdog_age_ms = (
+            None
+            if self._last_command_time is None
+            else (now - self._last_command_time) * 1000.0
+        )
+        return {
+            "schema": self._teleop.SCHEMA,
+            "simulator_only": True,
+            "physical_robot_commanded": False,
+            "command_file": str(pathlib.Path(self._args.teleop_command_file).resolve()),
+            "watchdog_ms": self._args.teleop_watchdog_ms,
+            "maximum_joint_speed_deg_s": self._args.teleop_max_joint_speed,
+            "accepted_commands": self._accepted_commands,
+            "rejected_commands": self._rejected_commands,
+            "rate_limited_commands": self._rate_limited_commands,
+            "watchdog_holds": self._watchdog_holds,
+            "last_sequence": self._last_sequence,
+            "latest_command_age_ms": self._latest_age_ms,
+            "watchdog_age_ms": watchdog_age_ms,
+            "watchdog_fresh": (
+                watchdog_age_ms is not None
+                and watchdog_age_ms <= self._args.teleop_watchdog_ms
+            ),
+            "unsafe_latched": self._unsafe_latched,
+            "unsafe_contacts": self._unsafe_contacts,
+            "recording": self._recording,
+            "recorded_samples": self._recorder.samples if self._recorder is not None else 0,
+            "episode_directory": (
+                str(self._episode_directory) if self._episode_directory is not None else None
+            ),
+            "latest_error": self._latest_error,
+            "drive_configuration": self._drive_configuration,
+        }
+
+    def _publish(self, *, force: bool = False) -> None:
+        now = self._time.monotonic()
+        if not force and now - self._last_publish_time < 1.0:
+            return
+        self._report["teleoperation"] = self.summary
+        _emit(self._report, self._report_path)
+        self._last_publish_time = now
+
+    def process(self, simulation_step: int) -> None:
+        now = self._time.monotonic()
+        dt_s = max(now - self._last_process_time, 1.0 / 240.0)
+        self._last_process_time = now
+        left_state = self._arm_state("left")
+        right_state = self._arm_state("right")
+        self._unsafe_contacts = self._current_unsafe_contacts()
+        if self._unsafe_contacts:
+            self._unsafe_latched = True
+        if self._unsafe_latched:
+            _set_arm_drive_targets(self._stage, "left", left_state["position_degrees"])
+            _set_arm_drive_targets(self._stage, "right", right_state["position_degrees"])
+            self._blade_monitor.set_commanded_edge_velocity(self._np.zeros(3))
+            self._latest_error = "unsafe robot contact latched; teleop motion is held"
+            self._publish()
+            return
+
+        try:
+            raw = self._mailbox.poll()
+        except self._teleop.TeleopCommandError as exc:
+            self._rejected_commands += 1
+            self._latest_error = str(exc)
+            _set_arm_drive_targets(self._stage, "left", left_state["position_degrees"])
+            _set_arm_drive_targets(self._stage, "right", right_state["position_degrees"])
+            self._blade_monitor.set_commanded_edge_velocity(self._np.zeros(3))
+            self._publish()
+            return
+        if raw is None:
+            self._blade_monitor.set_commanded_edge_velocity(self._np.zeros(3))
+            if (
+                self._last_command_time is not None
+                and now - self._last_command_time > self._args.teleop_watchdog_ms / 1000.0
+            ):
+                _set_arm_drive_targets(self._stage, "left", left_state["position_degrees"])
+                _set_arm_drive_targets(self._stage, "right", right_state["position_degrees"])
+                self._recording = False
+                self._watchdog_holds += 1
+                self._latest_error = "teleop watchdog expired; measured pose is held"
+            self._publish()
+            return
+        try:
+            command = self._gate.accept(
+                raw,
+                now_s=now,
+                dt_s=dt_s,
+                current_left_degrees=left_state["position_degrees"],
+                current_right_degrees=right_state["position_degrees"],
+            )
+        except self._teleop.TeleopCommandError as exc:
+            self._rejected_commands += 1
+            self._latest_error = str(exc)
+            _set_arm_drive_targets(self._stage, "left", left_state["position_degrees"])
+            _set_arm_drive_targets(self._stage, "right", right_state["position_degrees"])
+            self._blade_monitor.set_commanded_edge_velocity(self._np.zeros(3))
+            self._publish()
+            return
+
+        if command.apply_left:
+            _set_arm_drive_targets(self._stage, "left", command.left_target_degrees)
+            if command.left_gripper_closed != self._last_gripper_closed:
+                if command.left_gripper_closed:
+                    self._grasp_manager.request_close()
+                else:
+                    self._grasp_manager.request_open()
+                self._last_gripper_closed = command.left_gripper_closed
+        else:
+            _set_arm_drive_targets(self._stage, "left", left_state["position_degrees"])
+        if command.apply_right:
+            _set_arm_drive_targets(self._stage, "right", command.right_target_degrees)
+        else:
+            _set_arm_drive_targets(self._stage, "right", right_state["position_degrees"])
+        self._set_blade_velocity(
+            command.right_target_degrees,
+            apply_right=command.apply_right,
+            dt_s=dt_s,
+        )
+        self._accepted_commands += 1
+        self._rate_limited_commands += int(command.rate_limited)
+        self._last_sequence = command.sequence
+        self._last_command_time = now
+        self._latest_age_ms = command.age_s * 1000.0
+        self._latest_error = None
+        self._recording = bool(command.recording and self._recorder is not None)
+        self._record(simulation_step, now, command, left_state, right_state)
+        self._publish()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._blade_monitor.set_commanded_edge_velocity(self._np.zeros(3))
+        if self._camera_recorder is not None:
+            self._camera_recorder.close()
+        if self._recorder is not None:
+            self._recorder.close()
+        self._recording = False
+        self._closed = True
+        self._publish(force=True)
+
+
+def _run_headless_checks(stage, context, runtimes, selected_target, args, report: dict) -> bool:
     import numpy as np
 
     success = True
@@ -2245,7 +2815,14 @@ def _run_headless_checks(stage, context, runtimes, args, report: dict) -> bool:
         robot_stability = _robot_stability(stage, args)
         report["robot_stability"] = robot_stability
         success = success and bool(robot_stability["succeeded"])
-        robot_precontact = _robot_precontact(stage, runtimes[0])
+        selected_runtime = next(
+            runtime for runtime in runtimes if runtime.name == selected_target.vine_name
+        )
+        robot_precontact = _robot_precontact(
+            stage,
+            selected_runtime,
+            selected_target.organ_label,
+        )
         report["robot_precontact"] = robot_precontact
         success = success and bool(robot_precontact["succeeded"])
 
@@ -2318,14 +2895,13 @@ def _robot_stability(stage, args) -> dict:
     }
 
 
-def _robot_precontact(stage, runtime: VineRuntime) -> dict:
-    """Measure the settled knife pose against the first real lower petiole."""
+def _robot_precontact(stage, runtime: VineRuntime, target_label: str) -> dict:
+    """Measure the settled knife pose against the selected physical petiole."""
     import numpy as np
     from pxr import Gf
     from pxr import Usd
     from pxr import UsdGeom
 
-    target_label = "SubStem_00"
     target_position = runtime.cut_sites.get(target_label)
     if target_position is None:
         return {"succeeded": False, "error": f"missing cut site {target_label}"}
@@ -2431,6 +3007,13 @@ _LEFT_APPROACH_SEEDS_DEGREES = {
     0.01: (-117.218, -0.999, -18.627, -80.651, -9.925, 109.999, -8.657),
     0.00: (-120.779, 0.740, -20.440, -74.103, -5.287, 109.523, -3.747),
 }
+# Ordered fallback reached the second supplied petiole with 0.167 mm point
+# error while retaining the same aisle-side shoulder branch. It is considered
+# only when both the previous live solution and the accepted SubStem_00 seed
+# fail the unchanged 1 mm / 50 degree point-axis criteria.
+_LEFT_MULTISTART_SEEDS_DEGREES = (
+    (-139.249, -0.999, -89.957, -20.278, 60.752, 49.790, -48.653),
+)
 _LEFT_TRANSPORT_SEED_DEGREES = (
     -108.062,
     -0.999,
@@ -2574,6 +3157,68 @@ def _bimanual_probe(
             "configuration": _configure_arm_drives(stage, "left"),
         }
     )
+    if args.bimanual_probe in {"left_approach", "full"}:
+        selection_diagnostics = []
+        selected_collider = None
+        selection_seeds = (
+            _LEFT_AISLE_CLEARANCE_WAYPOINTS_DEGREES[-1],
+            _LEFT_APPROACH_SEEDS_DEGREES[0.0],
+            *_LEFT_MULTISTART_SEEDS_DEGREES,
+        )
+        # Prefer the authored distal grasp segment, but fall back proximally
+        # when exact RB-Y1 kinematics prove it unreachable. All candidates are
+        # physical colliders on the same selected petiole; opposed contact
+        # still determines the body that the fixed grasp joint actually binds.
+        for candidate in reversed(grasp_manager.target_candidates):
+            solutions = [
+                model.solve_position_axes(
+                    "left",
+                    local_point_m=_LEFT_JAW_CENTRE_M,
+                    target_point_m=candidate["centre_m"],
+                    seed_degrees=seed,
+                    base_matrix=base_matrix,
+                    pointing_axis=2,
+                    pointing_direction=(0.0, 1.0, 0.0),
+                    transverse_axis=0,
+                    transverse_to=candidate["axis"],
+                    position_scale_m=0.002,
+                )
+                for seed in selection_seeds
+            ]
+            selection_diagnostics.append(
+                {
+                    "collider": candidate["collider"],
+                    "body": candidate["body"],
+                    "role": candidate["role"],
+                    "centre_m": candidate["centre_m"].tolist(),
+                    "axis": candidate["axis"].tolist(),
+                    "preferred": candidate["preferred"],
+                    "solutions": [dataclasses.asdict(solution) for solution in solutions],
+                }
+            )
+            if any(solution.succeeded for solution in solutions):
+                selected_collider = candidate["collider"]
+                break
+        stages.append(
+            {
+                "stage": "left_grasp_candidate_selection",
+                "selected_collider": selected_collider,
+                "candidates": selection_diagnostics,
+            }
+        )
+        if selected_collider is None:
+            return {
+                "mode": args.bimanual_probe,
+                "stages": stages,
+                "physical_cuts": applied_cuts,
+                "unsafe_contacts": [],
+                "blade_safety_clear": blade_monitor.safety_clear,
+                "task": grasp_manager.summary,
+                "succeeded": False,
+                "error": "no selected-petiole grasp collider is reachable",
+            }
+        grasp_manager.set_planned_grasp_collider(selected_collider)
+        grasp_geometry = grasp_manager.target_geometry
 
     def tick() -> None:
         context.step(render=False)
@@ -2787,10 +3432,16 @@ def _bimanual_probe(
             }
         )
 
-    def solve_left(point, seed, alternate_seed=None) -> object:
+    def solve_left(point, seed, alternate_seed=None, diagnostics=None) -> object:
         seeds = [seed]
         if alternate_seed is not None:
             seeds.append(alternate_seed)
+        seeds.extend(_LEFT_MULTISTART_SEEDS_DEGREES)
+        candidate_specs = [
+            (candidate_seed, position_scale_m)
+            for position_scale_m in (0.005, 0.002)
+            for candidate_seed in seeds
+        ]
         candidates = [
             model.solve_position_axes(
                 "left",
@@ -2806,15 +3457,32 @@ def _bimanual_probe(
                 pointing_direction=(0.0, 1.0, 0.0),
                 transverse_axis=0,
                 transverse_to=grasp_geometry["axis"],
+                position_scale_m=position_scale_m,
             )
-            for candidate_seed in seeds
+            for candidate_seed, position_scale_m in candidate_specs
         ]
-        return min(
-            candidates,
-            key=lambda result: (
-                not result.succeeded,
-                result.position_error_m,
-                result.orientation_error_rad,
+        if diagnostics is not None:
+            diagnostics.extend(
+                {
+                    "seed_degrees": [float(value) for value in candidate_seed],
+                    "position_scale_m": position_scale_m,
+                    "solution": dataclasses.asdict(result),
+                }
+                for (candidate_seed, position_scale_m), result in zip(
+                    candidate_specs, candidates, strict=True
+                )
+            )
+        # Preserve the live trajectory branch whenever it passes. Additional
+        # deterministic branches are fallbacks, not a global minimum that may
+        # introduce a large joint-space jump into an already valid path.
+        return next(
+            (result for result in candidates if result.succeeded),
+            min(
+                candidates,
+                key=lambda result: (
+                    result.position_error_m,
+                    result.orientation_error_rad,
+                ),
             ),
         )
 
@@ -2875,15 +3543,20 @@ def _bimanual_probe(
                 if grasp_geometry is None:
                     raise RuntimeError("live grasp geometry disappeared during approach")
                 goal = grasp_geometry["centre_m"] + np.asarray([0.0, offset, 0.0])
+                candidate_diagnostics = []
                 solution = solve_left(
                     goal,
                     seed,
                     _LEFT_APPROACH_SEEDS_DEGREES[offset],
+                    candidate_diagnostics,
                 )
                 left_solutions.append(dataclasses.asdict(solution))
                 stages.append(
                     {
                         "stage": f"left_ik_{offset:.3f}",
+                        "target_point_m": goal.tolist(),
+                        "target_axis": grasp_geometry["axis"].tolist(),
+                        "candidate_solutions": candidate_diagnostics,
                         "solution": dataclasses.asdict(solution),
                     }
                 )

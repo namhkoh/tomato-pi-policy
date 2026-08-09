@@ -54,6 +54,23 @@ def test_position_ik_places_tool_point_without_orientation_constraint() -> None:
     np.testing.assert_allclose(actual[:3], target, atol=1e-3)
 
 
+def test_point_axes_ik_rejects_invalid_position_scale() -> None:
+    model = robot_kinematics.Rby1Kinematics()
+    with pytest.raises(ValueError, match="position_scale_m"):
+        model.solve_position_axes(
+            "left",
+            local_point_m=(0.0, 0.0, -0.1),
+            target_point_m=(0.0, 0.0, 0.0),
+            seed_degrees=(0.0,) * 7,
+            base_matrix=BASE,
+            pointing_axis=2,
+            pointing_direction=(0.0, 1.0, 0.0),
+            transverse_axis=0,
+            transverse_to=(1.0, 0.0, 0.0),
+            position_scale_m=0.0,
+        )
+
+
 def test_point_force_capacity_scales_utilization_not_capacity() -> None:
     model = robot_kinematics.Rby1Kinematics()
     joints = np.asarray((-75.0, 5.0, -30.0, -90.0, 20.0, 60.0, 10.0))

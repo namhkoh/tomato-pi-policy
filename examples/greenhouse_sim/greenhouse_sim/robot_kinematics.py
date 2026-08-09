@@ -376,6 +376,7 @@ class Rby1Kinematics:
         transverse_axis: int,
         transverse_to,
         torso_degrees=DEFAULT_TORSO_DEGREES,
+        position_scale_m: float = 0.005,
     ) -> IKResult:
         """Solve point placement with a pointing axis and transverse closing axis."""
         from scipy.optimize import least_squares
@@ -387,6 +388,8 @@ class Rby1Kinematics:
         pointing /= max(float(np.linalg.norm(pointing)), 1e-12)
         transverse = np.asarray(transverse_to, dtype=np.float64)
         transverse /= max(float(np.linalg.norm(transverse)), 1e-12)
+        if position_scale_m <= 0.0:
+            raise ValueError("position_scale_m must be positive")
         seed = np.radians(np.asarray(seed_degrees, dtype=np.float64))
         lower, upper = self.arm_limits_degrees(side)
         lower = np.radians(lower) + 1e-5
@@ -397,7 +400,7 @@ class Rby1Kinematics:
             point = (actual @ local_point)[:3]
             return np.concatenate(
                 (
-                    (point - target) / 0.005,
+                    (point - target) / position_scale_m,
                     (actual[:3, pointing_axis] - pointing) / 0.4,
                     np.asarray([np.dot(actual[:3, transverse_axis], transverse) / 0.3]),
                     (radians - seed) * 0.003,

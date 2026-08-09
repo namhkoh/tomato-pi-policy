@@ -278,6 +278,46 @@ camera buttons or keys `1`-`4`; the selected D405 becomes the active viewport.
 For an image without the GUI, use `--capture-camera head`, `left_wrist`, or
 `right_wrist` together with `--screenshot` as shown above.
 
+### Deterministic targets, repeatability, and simulator teleoperation
+
+Select an exact physical petiole or use seeded selection:
+
+```bash
+$ISAACSIM/python.sh examples/greenhouse_sim/interactive_greenhouse.py \
+    --headless --bimanual-probe full \
+    --target-vine Vine_0000 --target-organ SubStem_00 --episode-seed 0 \
+    --report data/greenhouse_sim/target_00.json
+```
+
+Run strict isolated-process trials with `run_bimanual_repeatability.py`. The
+summary does not count partial approaches or process return codes as success;
+it requires one intended physical cut, zero unsafe contacts, clear blade safety,
+and a deposited orphan.
+
+For simulator-only demonstration collection, start the GUI first:
+
+```bash
+$ISAACSIM/python.sh examples/greenhouse_sim/interactive_greenhouse.py \
+    --teleop-command-file data/greenhouse_sim/teleop_command.json \
+    --teleop-record-dir data/greenhouse_sim/demonstrations
+```
+
+Then publish the lab leader arms from the Python environment that has
+`rby1_sdk` installed:
+
+```bash
+python examples/greenhouse_sim/rby1_leader_to_sim.py \
+    --command-file data/greenhouse_sim/teleop_command.json --record
+```
+
+Hold each leader tool button to enable only that simulated arm; releasing it
+holds the measured pose. The left trigger closes the simulated left gripper.
+The bridge never connects to or commands the physical RB-Y1. Commands are
+watchdog-, joint-limit-, speed-, deadman-, and contact-gated. Each recording
+episode contains JSONL state/action/task/safety samples plus the selected head
+and wrist D405 RGB frames. Use `--dry-run` to publish one disabled command for a
+hardware-free integration check.
+
 ## Cutting demo
 
 Rigs one vine with compliant physics, settles it, cuts the lowest petiole, and
@@ -358,6 +398,9 @@ depends on), and never falls back to grafting.
 | `greenhouse_sim/vine_interaction.py` | Visible-mesh pulling and foliage-area airflow forces |
 | `greenhouse_sim/cutting.py` | Directional force/work cut gate, joint release, tear monitoring, and cut grading |
 | `greenhouse_sim/deleaf_task.py` | Required bi-manual grasp/cut/transport/deposit state machine |
+| `greenhouse_sim/episode.py` | Deterministic exact/seeded physical target selection |
+| `greenhouse_sim/repeatability.py` | Strict repeated-episode acceptance aggregation |
+| `greenhouse_sim/teleop.py` | Simulator-only mailbox safety gate and demonstration recorder |
 | `greenhouse_sim/greenhouse_scene.py` | Vine placement over the greenhouse stage |
 | `greenhouse_sim/robot_hardware.py` | D405/bracket mounts and flat-blade cut semantics |
 | `greenhouse_sim/robot_kinematics.py` | Exact RB-Y1 v1.0 FK/IK, Jacobian, and effort-capacity checks |
@@ -371,6 +414,8 @@ depends on), and never falls back to grafting.
 | `launch_greenhouse.py` | Static viewer / headless capture |
 | `interactive_vine.py` | Isolated physics-vine inspection |
 | `interactive_greenhouse.py` | Physics greenhouse, mouse pulling, cutting UI, and acceptance probes |
+| `run_bimanual_repeatability.py` | One-Isaac-process-per-target/seed repeatability runner |
+| `rby1_leader_to_sim.py` | One-way lab leader-arm input publisher; never commands the real RB-Y1 |
 
 Run the tests with Isaac's interpreter (they are hermetic and use synthetic
 assets, so they need no GLB files):
@@ -389,7 +434,10 @@ v1.0 import, ready-pose stability, three D405 fits/optical frames, and right
 knife-only end-effector semantics are also verified. Physical leading-edge cut
 qualification, protected-contact accounting, hardware-effort-limited dual-arm
 motion, and one complete grasp/contact/cut/transport/floor-deposit acceptance
-are verified in Isaac Sim with zero unsafe contacts. Next: the
-teleoperation/recording bridge and repeatability trials, then 32.5 N tear
-calibration, task metrics, benchmark randomisation, policy interfaces, and RL.
+are verified in Isaac Sim with zero unsafe contacts. Deterministic target
+selection, strict repeatability aggregation, and the simulator-only
+teleoperation/D405 recorder are implemented and hardware-free validated. Next:
+target-conditioned base/torso positioning and collision-aware alternate-target
+acceptance, lab leader-arm validation, the full target/seed matrix, then 32.5 N
+tear calibration, task metrics, benchmark randomisation, policy interfaces, and RL.
 See `dev.md` at the repository root for evidence and remaining work.

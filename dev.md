@@ -31,7 +31,9 @@ at `D:\isaac-sim`, Windows 11. Active deleafing branch `koh-dev/deleaf`
 - [x] Stable non-contact robot/vine startup after collider deduplication and wrist-envelope correction
 - [x] Robot-to-vine gripper/blade contact and cut validation
 - [x] Hardware-bounded dual-arm approach + complete grasp/cut/transport/deposit acceptance
-- [ ] Simulator-to-lab teleoperation/recording bridge + repeatability trials
+- [x] Simulator-only leader-arm command bridge + synchronized D405/action recording
+- [x] Deterministic target selection + strict isolated-process repeatability runner
+- [ ] Lab leader-arm hardware validation + multi-target physical repeatability acceptance
 - [ ] Benchmark task definition + metrics
 
 ## Findings
@@ -857,12 +859,65 @@ contact, force, direction, work, counterhold, or safety evidence.
 | Safe transport/deposit | 315.0 mm maximum clearance; endpoint hold; task phase `deposited`; floor contact=true; final speed 0.1490 m/s; zero unsafe contacts | same report |
 | Whole acceptance | top-level succeeded=true; bimanual probe=true; robot stability=true; pre-contact=true; no Python stderr | same report and `.stderr.log` |
 
-This is the simulator-stability gate for the lab phase, not the completion of
-the benchmark. Next work is repeated-seed/task-target acceptance, then the
-simulator-to-lab RB-Y1 teleoperation and synchronized D405/action recording
-bridge for demonstration collection. Tear-force calibration, task/scene
-randomisation, observation/action interfaces, VLA policy adapters, metrics, and
-RL batching remain downstream and must not be claimed as complete.
+This is the known-target simulator-stability gate for the lab phase, not the
+completion of the benchmark. The next section records the deterministic target
+and simulator-only teleoperation layer added on top of it. Alternate-target
+physical acceptance, lab leader-hardware validation, tear-force calibration,
+task/scene randomisation, observation/action interfaces, VLA policy adapters,
+metrics, and RL batching remain downstream and must not be claimed as complete.
+
+### Deterministic targets and simulator-only teleoperation (2026-08-09)
+
+Episode targets are no longer hard-coded in monitor, grasp, pre-contact, and
+probe code. `--target-vine`, `--target-organ`, and `--episode-seed` resolve an
+exact or seeded `auto` target from stable sorted physical cut-joint candidates;
+the selected key and selection mode are persisted in every report. The visible
+UI starts on the same target instead of silently resetting the managers to
+`SubStem_00`. `run_bimanual_repeatability.py` launches one isolated Isaac
+process per target/seed and counts an episode only when all strict checks pass:
+top-level and probe success, exactly one intended benchmark cut, clear blade
+safety, zero unsafe contacts, and terminal `deposited` state.
+
+The simulator now consumes an atomic `greenhouse.teleop.v1` JSON mailbox. Each
+arm has an independent deadman bit; commands must have a strictly increasing
+sequence and a fresh host-monotonic timestamp, pass exact URDF joint limits,
+and pass a configurable joint-speed limiter. Deadman release, stale watchdog,
+invalid command, or an unsafe-contact latch actively changes the drive target
+to the measured pose. Right-arm commands are also mapped through exact RB-Y1
+FK to a commanded knife-edge velocity, so teleoperation still cannot bypass
+the physical contact/force/direction/work/counterhold cut gate.
+
+`rby1_leader_to_sim.py` reads the vendored dual leader arms and trigger tools
+and publishes only this simulator mailbox. It contains no RB-Y1 address,
+command stream, power, servo, or gripper connection; the physical robot is not
+commanded. Leader torque is limited to vendor-style gravity compensation,
+joint-limit resistance, and damping, and a communication fault disables leader
+torque. This path is code-complete but remains **lab-hardware unverified** until
+the leader devices are connected deliberately.
+
+When `--teleop-record-dir` is supplied, each run creates a unique episode with
+metadata, synchronized JSONL steps, measured arm positions/velocities, both EE
+world transforms, active target/task/cut/safety state, the gated action, and
+selected head/wrist D405 RGB frames. Replicator warmup occurs while the timeline
+is paused so observation setup cannot advance unobserved physics.
+
+**Verification:**
+
+| Check | Result | Evidence |
+|---|---|---|
+| Complete greenhouse suite | 76 passed, 1 PhysX-only test skipped outside a running app; all new files pass Ruff | `D:\isaac-sim\python.bat -m pytest examples/greenhouse_sim/greenhouse_sim -q` |
+| Final known-target physical acceptance | top-level/probe true; target `Vine_0000/SubStem_00`; one benchmark-valid cut at 71.444 N; task deposited; zero unsafe contacts; blade safety clear | `data/greenhouse_sim/bimanual_full_target_teleop_final.json` |
+| Final integrated stability | succeeded=true; finite vine; 0 runaway organs; 68.732 mm maximum compliant motion; robot stable at 2.078 degrees tilt; selected-target pre-contact valid | `data/greenhouse_sim/stability_target_teleop_480_final.json` |
+| Hardware-free teleop/recording | one fresh disabled command accepted; neither arm enabled; no unsafe latch; one synchronized JSONL step; head RGB 320x180, range 1-244, 6,736 unique colors | `data/greenhouse_sim/teleop_camera_warmup_validation.json` and its reported episode directory |
+
+**Multi-target gate remains open, explicitly:** `SubStem_01` is a valid selected
+physical target and passes startup pre-contact. The preferred Link 3 and Link 2
+grasp segments are outside the fixed-base left-arm reach (best miss 40.463 mm
+and 15.724 mm respectively). Proximal Link 1 is reachable but its final approach
+touches non-target `Organ_0041/Link_002` (2.148e-3 N s maximum impulse), so the
+probe correctly fails rather than weakening collision or reach criteria. The
+next simulator task is target-conditioned mobile-base/torso pre-positioning and
+collision-aware approach planning, followed by the full target/seed matrix.
 
 ## Research findings, 2026-08-06 (pre-implementation)
 
@@ -1003,3 +1058,9 @@ One logical change per commit; no AI attribution trailers.
   force-capacity checks, made rigid-tissue fracture/topology approximations
   explicit in reports, and passed 63 regressions plus top-level physical
   acceptance with one valid cut and zero unsafe contacts on `koh-dev/deleaf`.
+- 2026-08-09 — Added deterministic physical-target episodes and strict
+  isolated-process repeatability aggregation; added a simulator-only dual
+  leader-arm mailbox with deadman/watchdog/URDF/speed/contact gates and
+  synchronized D405/action recording; preserved the complete known-target
+  physical acceptance and recorded the fixed-base `SubStem_01` reach/collision
+  failure instead of relaxing criteria on `koh-dev/deleaf`.
