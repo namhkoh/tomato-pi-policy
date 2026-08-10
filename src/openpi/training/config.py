@@ -90,12 +90,46 @@ class DataConfig:
     # If true, will use the LeRobot dataset task to define the prompt.
     prompt_from_task: bool = False
 
+    # Name of the dataset column holding the per-frame subtask label, used as the `low_prompt`
+    # target when training a pi0.5 subtask model (Pi0Config.subtask=True). Required whenever the
+    # subtask CE loss is active (loss_mode "ce_only" or "both"). The LeRobot revision this repo
+    # pins predates native subtask support, so the label comes from a plain column rather than
+    # meta/subtasks.parquet. Frames whose label is empty are skipped.
+    subtask_key: str | None = None
+
     # Only used for RLDS data loader (ie currently only used for DROID).
     rlds_data_dir: str | None = None
     # Action space for DROID dataset.
     action_space: droid_rlds_dataset.DroidActionSpace | None = None
     # List of datasets to sample from: name, version, weight, and optionally filter_dict_path
     datasets: Sequence[droid_rlds_dataset.RLDSDataset] = ()
+
+
+def _validate_subtask_config(data_config: DataConfig, model_config: _model.BaseModelConfig) -> None:
+    """Keep DataConfig.subtask_key and Pi0Config.subtask/loss_mode consistent.
+
+    Both mistakes are silent otherwise: a subtask model without labels trains no CE at all (the
+    tokenizer would raise, but only once the first batch is pulled), and a subtask_key on a
+    non-subtask model is a column that is read and thrown away.
+    """
+    has_key = data_config.subtask_key is not None
+    is_subtask = model_config.model_type == ModelType.PI05_SUBTASK
+    if not is_subtask:
+        if has_key:
+            raise ValueError(
+                f"subtask_key={data_config.subtask_key!r} is set but the model is not a subtask "
+                "model. Use Pi0Config(pi05=True, subtask=True) or drop subtask_key."
+            )
+        return
+    loss_mode = getattr(model_config, "loss_mode", "both")
+    if loss_mode in ("ce_only", "both") and not has_key:
+        raise ValueError(
+            f"loss_mode={loss_mode!r} trains the subtask cross-entropy, which needs per-frame "
+            "subtask labels. Set DataConfig.subtask_key to the dataset column holding them, or "
+            "train with loss_mode='fm_only'."
+        )
+    if loss_mode == "fm_only" and has_key:
+        raise ValueError("loss_mode='fm_only' does not use subtask labels; drop subtask_key to make that " "explicit.")
 
 
 class GroupFactory(Protocol):
@@ -133,6 +167,29 @@ class ModelTransformFactory(GroupFactory):
                             _tokenizer.PaligemmaTokenizer(model_config.max_token_len),
                             discrete_state_input=model_config.discrete_state_input,
                         ),
+                        _transforms.PadStatesAndActions(model_config.action_dim),
+                    ],
+                )
+            case _model.ModelType.PI05_SUBTASK:
+                assert isinstance(model_config, pi0_config.Pi0Config)
+                # Training tokenizes the high+low prompt pair (causal subtask span + CE targets).
+                # At inference only the high prompt exists — the subtask is generated — so
+                # policy_config swaps this for TokenizeHighPrompt. loss_mode="fm_only" trains
+                # without any subtask supervision, so it uses the inference tokenizer too.
+                tokenizer = _tokenizer.PaligemmaTokenizer(model_config.max_token_len)
+                if model_config.loss_mode == "fm_only":
+                    tokenize_transform = _transforms.TokenizeHighPrompt(
+                        tokenizer, discrete_state_input=model_config.discrete_state_input
+                    )
+                else:
+                    tokenize_transform = _transforms.TokenizeHighLowPrompt(
+                        tokenizer, discrete_state_input=model_config.discrete_state_input
+                    )
+                return _transforms.Group(
+                    inputs=[
+                        _transforms.InjectDefaultPrompt(self.default_prompt),
+                        _transforms.ResizeImages(224, 224),
+                        tokenize_transform,
                         _transforms.PadStatesAndActions(model_config.action_dim),
                     ],
                 )
@@ -179,13 +236,15 @@ class DataConfigFactory(abc.ABC):
     def create_base_config(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
         repo_id = self.repo_id if self.repo_id is not tyro.MISSING else None
         asset_id = self.assets.asset_id or repo_id
-        return dataclasses.replace(
+        config = dataclasses.replace(
             self.base_config or DataConfig(),
             repo_id=repo_id,
             asset_id=asset_id,
             norm_stats=self._load_norm_stats(epath.Path(self.assets.assets_dir or assets_dirs), asset_id),
             use_quantile_norm=model_config.model_type != ModelType.PI0,
         )
+        _validate_subtask_config(config, model_config)
+        return config
 
     def _load_norm_stats(self, assets_dir: epath.Path, asset_id: str | None) -> dict[str, _transforms.NormStats] | None:
         if asset_id is None:
@@ -963,6 +1022,29 @@ _CONFIGS = [
         num_train_steps=10,
         overwrite=True,
         exp_name="debug_pi05",
+        wandb_enabled=False,
+    ),
+    TrainConfig(
+        # pi0.5 with subtask generation. Fake data, so this only smoke-tests the graph (CE + FM
+        # in one forward). To train for real, point `data` at a LeRobot dataset whose frames carry
+        # a subtask label and set `subtask_key` to that column, e.g.:
+        #   data=LeRobotLiberoDataConfig(
+        #       repo_id="...",
+        #       base_config=DataConfig(prompt_from_task=True, subtask_key="subtask"),
+        #   )
+        name="debug_pi05_subtask",
+        # max_token_len is cut from the pi0.5 default of 200: the subtask CE deembeds every text
+        # position over the 257k PaliGemma vocabulary, so the logits alone are
+        # (batch, max_token_len - 1, 257152) floats — ~400MB at 200, before the backward pass.
+        # Fine on an accelerator, not on the CPU a debug config tends to get run on.
+        model=pi0_config.Pi0Config(
+            pi05=True, subtask=True, max_token_len=32, paligemma_variant="dummy", action_expert_variant="dummy"
+        ),
+        data=FakeDataConfig(),
+        batch_size=2,
+        num_train_steps=10,
+        overwrite=True,
+        exp_name="debug_pi05_subtask",
         wandb_enabled=False,
     ),
     # RoboArena & PolaRiS configs.

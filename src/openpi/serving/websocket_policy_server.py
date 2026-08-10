@@ -51,14 +51,36 @@ class WebsocketPolicyServer:
 
         await websocket.send(packer.pack(self._metadata))
 
+        # pi0.5 subtask policies accept a few control fields alongside the observation and own a
+        # per-connection stage-1 cache. Detected by duck typing so this module keeps depending on
+        # the client-side BasePolicy interface only.
+        subtask_cache = self._policy.new_subtask_cache() if hasattr(self._policy, "new_subtask_cache") else None
+
         prev_total_time = None
         while True:
             try:
                 start_time = time.monotonic()
                 obs = msgpack_numpy.unpackb(await websocket.recv())
 
+                infer_kwargs = {}
+                if subtask_cache is not None:
+                    infer_kwargs = {
+                        "subtask_cache": subtask_cache,
+                        # force_subtask_regen: ignore a cache hit and regenerate. The cache key is
+                        # the prompt only, so a client whose scene changed while the arm held
+                        # still needs this to get a fresh caption.
+                        "force_subtask_regen": bool(obs.pop("force_subtask_regen", False)),
+                        # subtask_only: return the generated caption and skip action sampling.
+                        "subtask_only": bool(obs.pop("subtask_only", False)),
+                    }
+                else:
+                    # Strip regardless — obs is handed to the policy as observation data, and an
+                    # unknown key blows up in Observation.from_dict.
+                    for control_key in ("force_subtask_regen", "subtask_only"):
+                        obs.pop(control_key, None)
+
                 infer_time = time.monotonic()
-                action = self._policy.infer(obs)
+                action = self._policy.infer(obs, **infer_kwargs)
                 infer_time = time.monotonic() - infer_time
 
                 action["server_timing"] = {

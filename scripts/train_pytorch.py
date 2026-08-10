@@ -307,6 +307,15 @@ def log_memory_usage(device, step, phase="unknown"):
 
 
 def train_loop(config: _config.TrainConfig):
+    if getattr(config.model, "subtask", False):
+        # PI0Pytorch computes the flow-matching loss only. It would happily consume the subtask
+        # batch (the extra masks are simply ignored) and train a model that never learns to
+        # generate a subtask, while the config claims it did. Subtask training is JAX-only.
+        raise NotImplementedError(
+            f"Config {config.name!r} sets Pi0Config.subtask=True, which the PyTorch trainer does "
+            "not implement — it would silently train without the subtask objective. Use "
+            "scripts/train.py."
+        )
     use_ddp, local_rank, device = setup_ddp()
     is_main = (not use_ddp) or (dist.get_rank() == 0)
     set_seed(config.seed, local_rank)

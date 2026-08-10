@@ -33,6 +33,8 @@ class ModelType(enum.Enum):
     PI0 = "pi0"
     PI0_FAST = "pi0_fast"
     PI05 = "pi05"
+    # pi05 that generates a low-level subtask before the actions (see Pi0Config.subtask).
+    PI05_SUBTASK = "pi05_subtask"
 
 
 # The model always expects these images
@@ -241,6 +243,14 @@ class BaseModelConfig(abc.ABC):
         return nnx.merge(graphdef, state)
 
     def load_pytorch(self, train_config, weight_path: str):
+        if getattr(train_config.model, "subtask", False):
+            # PI0Pytorch has no generate_subtask, so Policy.infer would fall back to the flat path
+            # and sample actions from a prompt that still ends at "Subtask: " — plausible-looking
+            # but never conditioned on a subtask. Only the JAX path implements this.
+            raise NotImplementedError(
+                "Subtask generation (Pi0Config.subtask=True) is implemented for the JAX model "
+                "only; this checkpoint would be served without its subtask stage."
+            )
         logger.info(f"train_config: {train_config}")
         model = pi0_pytorch.PI0Pytorch(config=train_config.model)
         safetensors.torch.load_model(model, weight_path)

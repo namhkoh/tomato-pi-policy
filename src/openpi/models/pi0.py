@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 
 import einops
@@ -9,11 +10,44 @@ from typing_extensions import override
 
 from openpi.models import model as _model
 from openpi.models import pi0_config
-import openpi.models.gemma as _gemma
+
+# gemma_05 is gemma.py plus the two things autoregressive subtask decoding needs: a fixed-size
+# (idx, k, v) KV cache that can be appended to one token at a time, and deembed() for logits.
+# Its non-decoding behaviour is identical, so the flat pi0/pi0.5 paths are unchanged.
+import openpi.models.gemma_05 as _gemma
 import openpi.models.siglip as _siglip
 from openpi.shared import array_typing as at
+import openpi.shared.nnx_utils as nnx_utils
 
 logger = logging.getLogger("openpi")
+
+# PaliGemma end-of-sequence token id; subtask autoregressive generation stops here.
+PALIGEMMA_EOS_TOKEN = 1
+
+# Per-model jitted subtask-generation entry points. Keyed by id() with a strong reference to the
+# model (identity check), because nnx modules make no promises about hashability/weakref support.
+# Entries live for the process — serving builds one model, and module_jit's frozen state pins the
+# params either way. max_tokens is a static argument, so one wrapper serves any value (XLA
+# recompiles per distinct value).
+#
+# `generate` is what serving calls: prefill + the whole decode loop inside ONE jit. The separate
+# `prefill`/`decode_step` wrappers are kept because they are the reference implementation the
+# equivalence test drives the eager loop with.
+_SUBTASK_JIT_FNS: dict[int, tuple] = {}
+
+
+def _subtask_jit_fns(model: "Pi0"):
+    entry = _SUBTASK_JIT_FNS.get(id(model))
+    if entry is not None and entry[0] is model:
+        return entry[1]
+    fns = (
+        # jitted fun signature is (state, observation, max_tokens) -> static idx 2.
+        nnx_utils.module_jit(model._subtask_prefill, static_argnums=(2,)),  # noqa: SLF001
+        nnx_utils.module_jit(model._subtask_decode_step),  # noqa: SLF001
+        nnx_utils.module_jit(model._subtask_generate, static_argnums=(2,)),  # noqa: SLF001
+    )
+    _SUBTASK_JIT_FNS[id(model)] = (model, fns)
+    return fns
 
 
 def make_attn_mask(input_mask, mask_ar):
@@ -67,6 +101,8 @@ class Pi0(_model.BaseModel):
     def __init__(self, config: pi0_config.Pi0Config, rngs: nnx.Rngs):
         super().__init__(config.action_dim, config.action_horizon, config.max_token_len)
         self.pi05 = config.pi05
+        self.subtask = config.subtask
+        self.loss_mode = config.loss_mode
         paligemma_config = _gemma.get_config(config.paligemma_variant)
         action_expert_config = _gemma.get_config(config.action_expert_variant)
         # TODO: rewrite gemma in NNX. For now, use bridge.
@@ -129,7 +165,9 @@ class Pi0(_model.BaseModel):
             tokenized_inputs = self.PaliGemma.llm(obs.tokenized_prompt, method="embed")
             tokens.append(tokenized_inputs)
             input_mask.append(obs.tokenized_prompt_mask)
-            # full attention between image and language inputs
+            # Full attention between image and language inputs. For the subtask (pi0.5) path the
+            # CAUSAL subtask span is applied by the callers via observation.token_ar_mask, so the
+            # high-level prompt stays bidirectional and only the subtask tokens are causal.
             ar_mask += [False] * tokenized_inputs.shape[1]
         tokens = jnp.concatenate(tokens, axis=1)
         input_mask = jnp.concatenate(input_mask, axis=1)
@@ -185,10 +223,266 @@ class Pi0(_model.BaseModel):
         ar_mask = jnp.array(ar_mask)
         return tokens, input_mask, ar_mask, adarms_cond
 
+    # ───────────────────────── subtask (pi0.5) machinery ─────────────────────────
+    # Inference is a 2-stage process orchestrated by Policy.infer:
+    #   stage 1: generate_subtask (jitted device loop) -> stage 2: build_full_observation ->
+    #   sample_actions. The model only exposes the building blocks; sample_actions itself stays
+    #   the flat path, reading the spliced prompt like any other prompt.
+    def _subtask_prefill(self, observation: _model.Observation, max_tokens: int):
+        """Jitted stage-1 prefill: SigLIP + full-prefix forward, cache room for max_tokens slots.
+
+        Returns (last-token logits, kv_cache, prefix_mask, next logical position).
+        """
+        prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
+        b = prefix_tokens.shape[0]
+        prefix_s = prefix_tokens.shape[1]
+
+        # Prefill: reserve cache room for max_tokens future slots (gemma_05 sizes the fixed cache
+        # to attn_mask.shape[-1]).
+        prefix_attn_mask = make_attn_mask(prefix_mask, prefix_ar_mask)
+        prefix_attn_mask = jnp.pad(prefix_attn_mask, ((0, 0), (0, 0), (0, max_tokens)))
+        positions = jnp.cumsum(prefix_mask, axis=1) - 1
+        (prefix_out, _), kv_cache = self.PaliGemma.llm(
+            [prefix_tokens, None], mask=prefix_attn_mask, positions=positions, adarms_cond=[None, None]
+        )
+
+        # Logits from the last *real* prefix token (skip right-padding).
+        seq_idx = jnp.arange(prefix_s)[None, :]
+        last_pos = jnp.max(jnp.where(prefix_mask, seq_idx, -1), axis=1).astype(jnp.int32)
+        last_hidden = prefix_out[jnp.arange(b), last_pos, :]
+        logits = self.PaliGemma.llm(last_hidden[:, None, :], method="deembed")
+
+        num_real = jnp.sum(prefix_mask, axis=1).astype(jnp.int32)  # logical position of next token
+        return logits, kv_cache, prefix_mask, num_real
+
+    def _subtask_decode_step(self, next_token, attn_mask, positions, kv_cache):
+        """Jitted stage-1 decode step: embed one token, suffix forward with KV cache, logits."""
+        next_emb = self.PaliGemma.llm(next_token[:, None], method="embed")
+        (new_out, _), kv_cache = self.PaliGemma.llm(
+            [next_emb, None],
+            mask=attn_mask,
+            positions=positions,
+            adarms_cond=[None, None],
+            kv_cache=kv_cache,
+        )
+        logits = self.PaliGemma.llm(new_out, method="deembed")
+        return logits, kv_cache
+
+    def _subtask_generate(self, observation: _model.Observation, max_tokens: int) -> at.Int[at.Array, "b t"]:
+        """Jitted stage-1 generation: prefill + the whole greedy decode loop on device.
+
+        The EOS stop is a lax.while_loop predicate rather than a host-side `bool(jnp.all(done))`
+        check, so the whole generation is one dispatch and zero device->host syncs. That matters
+        because serving regenerates whenever the discretized state in the pi0.5 prompt crosses a
+        bin, i.e. continuously while the robot moves.
+
+        Returns a FIXED-WIDTH (B, max_tokens) buffer, PAD(0) after each row's EOS, rather than a
+        buffer trimmed to the last row's EOS. Trimming would need the length on the host, i.e. the
+        one sync this exists to remove. It is safe because the padding is handled downstream:
+        build_full_observation re-derives per-row validity from the tokens and keeps the filler out
+        of tokenized_prompt_mask, and sample_actions derives RoPE positions from
+        cumsum(tokenized_prompt_mask), so masked filler consumes no logical position.
+
+        The prefill attn mask is pre-padded by ``max_tokens`` so gemma_05._init_cache reserves
+        room, and each generated token is written at physical slot ``prefix_S + i`` (via
+        _update_cache) while its RoPE position continues logically from the real prefix length.
+        """
+        logits, kv_cache, prefix_mask, next_pos = self._subtask_prefill(observation, max_tokens)
+        b = prefix_mask.shape[0]
+        step_idx = jnp.arange(max_tokens)
+
+        def cond(carry):
+            i, done = carry[0], carry[1]
+            return jnp.logical_and(i < max_tokens, jnp.logical_not(jnp.all(done)))
+
+        def body(carry):
+            i, done, tokens, logits, kv_cache, next_pos = carry
+            next_token = jnp.argmax(logits[:, -1, :], axis=-1).astype(jnp.int32)  # (B,)
+            # Per-row EOS tracking: once a row emits EOS it emits PAD(0) thereafter, so in a B>1
+            # batch a short row is not dragged past its EOS by longer rows.
+            next_token = jnp.where(done, jnp.zeros_like(next_token), next_token)
+            tokens = tokens.at[:, i].set(next_token)
+            done = done | (next_token == PALIGEMMA_EOS_TOKEN)
+
+            # Validity over the fixed cache: real prefix + generated slots 0..i
+            # (physical prefix_S..prefix_S+i).
+            gen_valid = jnp.broadcast_to(step_idx[None, :] <= i, (b, max_tokens))
+            step_valid = jnp.concatenate([prefix_mask, gen_valid], axis=1)  # (b, prefix_s + max_tokens)
+            attn_mask = step_valid[:, None, :]  # (b, 1, cache_size)
+            logits, kv_cache = self._subtask_decode_step(next_token, attn_mask, next_pos[:, None], kv_cache)
+            return i + 1, done, tokens, logits, kv_cache, next_pos + 1
+
+        # The predicate is checked before the body, so when every row finishes at step i the body
+        # has already run one more decode_step than an eager mid-body break would. The extra step's
+        # logits are discarded, so the emitted tokens are identical; it costs one token's worth of
+        # compute to avoid a host sync per token.
+        init = (
+            jnp.int32(0),
+            jnp.zeros((b,), dtype=jnp.bool_),
+            jnp.zeros((b, max_tokens), dtype=jnp.int32),
+            logits,
+            kv_cache,
+            next_pos,
+        )
+        return jax.lax.while_loop(cond, body, init)[2]
+
+    def generate_subtask(self, observation: _model.Observation, *, max_tokens: int = 48) -> at.Int[at.Array, "b t"]:
+        """Stage 1 of pi0.5 subtask inference: greedily generate low-level subtask tokens.
+
+        Thin wrapper: preprocessing stays outside the jit, generation is one jitted call — see
+        _subtask_generate for why the loop lives on device and why the returned (B, max_tokens)
+        buffer is padded rather than trimmed.
+        """
+        observation = jax.tree.map(jnp.asarray, observation)
+        observation = _model.preprocess_observation(None, observation, train=False)
+        generate = _subtask_jit_fns(self)[2]
+        return generate(observation, max_tokens)
+
+    def build_full_observation(
+        self, observation: _model.Observation, subtask_tokens: at.Int[at.Array, "b t"]
+    ) -> _model.Observation:
+        """Stage 2 prep: splice the generated subtask into the padded high-level prompt so the
+        action expert conditions on the full sequence.
+
+        Inserts ``[subtask ... EOS]`` starting at each example's prompt length, via jnp.where over
+        the padding region. token_loss_mask is dropped and token_ar_mask is rebuilt so the subtask
+        span stays causal, as in training.
+
+        Rows whose subtask ended early are PAD(0)-filled by generate_subtask; those slots are
+        excluded from tokenized_prompt_mask rather than presented as prompt content.
+        """
+        observation = jax.tree.map(jnp.asarray, observation)
+        insert = subtask_tokens
+        b, max_len = observation.tokenized_prompt.shape
+        gen_len = insert.shape[1]
+        if gen_len == 0:
+            return observation
+        prefix_len = jnp.sum(observation.tokenized_prompt_mask, axis=1)
+        # Hardening: the splice below silently drops any token whose position reaches max_len.
+        # Warn (eager path, B is small) so a truncated subtask is not lost silently.
+        #
+        # gen_len is the FIXED generation width (generate_subtask does not trim to the last EOS),
+        # so this is a physical-capacity check. Post-EOS filler is masked out of attention and
+        # consumes no RoPE position, but it does occupy prompt slots. Budget: max_token_len is 200
+        # for pi0.5 against a prefix of roughly 60-130 plus 48 generated, so the fixed width keeps
+        # a healthy margin. Raising max_tokens or lengthening the State span eats into it.
+        if bool(jnp.any(prefix_len + gen_len > max_len)):
+            logger.warning(
+                "build_full_observation: prompt(%s) + generated(%d) exceeds max_token_len(%d); "
+                "trailing subtask tokens are silently dropped.",
+                prefix_len.tolist(),
+                int(gen_len),
+                int(max_len),
+            )
+
+        # Per-row validity of the spliced span. generate_subtask emits PAD(0) after each row's EOS,
+        # so in a B>1 batch a short row carries filler that must NOT become attendable prompt
+        # content (token id 0 read as if it were a word). A slot is real up to and including the
+        # first EOS.
+        is_eos = subtask_tokens == PALIGEMMA_EOS_TOKEN
+        insert_valid = (jnp.cumsum(is_eos, axis=1) - is_eos) == 0
+
+        idx = jnp.arange(max_len)[None, :]
+        offset = idx - prefix_len[:, None]
+        in_gen = (offset >= 0) & (offset < gen_len)
+        offset_clamped = jnp.clip(offset, 0, gen_len - 1).astype(jnp.int32)
+        rows = jnp.arange(b)[:, None]
+        gen_vals = insert[rows, offset_clamped]
+        in_gen = in_gen & insert_valid[rows, offset_clamped]
+        new_tokens = jnp.where(in_gen, gen_vals, observation.tokenized_prompt)
+        new_mask = observation.tokenized_prompt_mask | in_gen
+        # Causal ar_mask over the spliced subtask+EOS span (=1), bidirectional (=0) elsewhere
+        # (high prompt / State / pad) — mirrors tokenize_high_low_prompt so the action stage
+        # attends over the subtask exactly as training did.
+        new_ar_mask = in_gen.astype(jnp.int32)
+        return dataclasses.replace(
+            observation,
+            tokenized_prompt=new_tokens,
+            tokenized_prompt_mask=new_mask,
+            token_ar_mask=new_ar_mask,
+            token_loss_mask=None,
+        )
+
+    def _compute_subtask_ce_loss(
+        self,
+        prefix_out: at.Float[at.Array, "b s d"],
+        observation: _model.Observation,
+        num_image_tokens: int,
+    ) -> at.Float[at.Array, " b"]:
+        """Cross-entropy over the subtask span (next-token prediction): hidden[i] predicts
+        token[i+1]. Masked to the subtask+EOS region via observation.token_loss_mask."""
+        num_text = self.max_token_len
+        text_hidden = prefix_out[:, num_image_tokens : num_image_tokens + num_text - 1, :]
+        logits = self.PaliGemma.llm(text_hidden, method="deembed")
+        targets = observation.tokenized_prompt[:, 1:]
+        loss_mask = observation.token_loss_mask[:, 1:].astype(jnp.float32)
+        log_probs = jax.nn.log_softmax(logits, axis=-1)
+        token_nll = -jnp.take_along_axis(log_probs, targets[:, :, None], axis=-1).squeeze(-1)
+        masked_nll = token_nll * loss_mask
+        return jnp.sum(masked_nll, axis=-1) / jnp.clip(jnp.sum(loss_mask, axis=-1), 1)
+
+    def _compute_subtask_loss(
+        self, rng: at.KeyArrayLike, observation: _model.Observation, actions: _model.Actions, *, train: bool
+    ) -> at.Float[at.Array, "*b ah"]:
+        """pi0.5 subtask training: ONE forward over [prefix | suffix], from which both the subtask
+        CE and the action flow-matching loss are read. The prefix attention is bidirectional except
+        the subtask span, which is causal — taken from observation.token_ar_mask. `loss_mode`
+        dispatches which terms contribute."""
+        preprocess_rng, noise_rng, time_rng = jax.random.split(rng, 3)
+        observation = _model.preprocess_observation(preprocess_rng, observation, train=train)
+        batch_shape = actions.shape[:-2]
+        noise = jax.random.normal(noise_rng, actions.shape)
+        time = jax.random.beta(time_rng, 1.5, 1, batch_shape) * 0.999 + 0.001
+        time_expanded = time[..., None, None]
+        x_t = time_expanded * noise + (1 - time_expanded) * actions
+        u_t = noise - actions
+
+        prefix_tokens, prefix_mask, _ = self.embed_prefix(observation)
+        suffix_tokens, suffix_mask, suffix_ar_mask_1d, adarms_cond = self.embed_suffix(observation, x_t, time)
+        b = prefix_tokens.shape[0]
+        num_text = self.max_token_len
+        num_image_tokens = prefix_tokens.shape[1] - num_text
+        # Prefix ar_mask (batched): images bidirectional, text from token_ar_mask (subtask causal).
+        img_ar = jnp.zeros((b, num_image_tokens), dtype=jnp.bool_)
+        if observation.token_ar_mask is not None:
+            text_ar = observation.token_ar_mask.astype(jnp.bool_)
+        else:
+            text_ar = jnp.zeros((b, num_text), dtype=jnp.bool_)
+        prefix_ar_mask = jnp.concatenate([img_ar, text_ar], axis=1)
+        suffix_ar_mask = jnp.broadcast_to(suffix_ar_mask_1d[None, :], (b, suffix_tokens.shape[1]))
+
+        input_mask = jnp.concatenate([prefix_mask, suffix_mask], axis=1)
+        ar_mask = jnp.concatenate([prefix_ar_mask, suffix_ar_mask], axis=1)
+        attn_mask = make_attn_mask(input_mask, ar_mask)
+        positions = jnp.cumsum(input_mask, axis=1) - 1
+        (prefix_out, suffix_out), _ = self.PaliGemma.llm(
+            [prefix_tokens, suffix_tokens],
+            mask=attn_mask,
+            positions=positions,
+            adarms_cond=[None, adarms_cond],
+        )
+
+        ce = (
+            self._compute_subtask_ce_loss(prefix_out, observation, num_image_tokens)
+            if observation.token_loss_mask is not None
+            else jnp.zeros(b)
+        )
+        if self.loss_mode == "ce_only":
+            return jnp.broadcast_to(ce[:, None], (b, self.action_horizon))
+
+        v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
+        flow_loss = jnp.mean(jnp.square(v_t - u_t), axis=-1)
+        if self.loss_mode == "fm_only":
+            return flow_loss
+        return ce[:, None] + flow_loss
+
     @override
     def compute_loss(
         self, rng: at.KeyArrayLike, observation: _model.Observation, actions: _model.Actions, *, train: bool = False
     ) -> at.Float[at.Array, "*b ah"]:
+        if self.subtask:
+            return self._compute_subtask_loss(rng, observation, actions, train=train)
+
         preprocess_rng, noise_rng, time_rng = jax.random.split(rng, 3)
         observation = _model.preprocess_observation(preprocess_rng, observation, train=train)
 
@@ -232,6 +526,14 @@ class Pi0(_model.BaseModel):
 
         # first fill KV cache with a forward pass of the prefix
         prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
+        # For pi0.5 subtask models the spliced subtask span must stay CAUSAL here (matching
+        # compute_loss), so honor observation.token_ar_mask when present instead of embed_prefix's
+        # all-bidirectional text mask. Otherwise the action expert would read
+        # bidirectionally-attended subtask hiddens at inference but causal ones in training.
+        if observation.token_ar_mask is not None:
+            num_image_tokens = prefix_tokens.shape[1] - self.max_token_len
+            img_ar = jnp.zeros((prefix_tokens.shape[0], num_image_tokens), dtype=jnp.bool_)
+            prefix_ar_mask = jnp.concatenate([img_ar, observation.token_ar_mask.astype(jnp.bool_)], axis=1)
         prefix_attn_mask = make_attn_mask(prefix_mask, prefix_ar_mask)
         positions = jnp.cumsum(prefix_mask, axis=1) - 1
         _, kv_cache = self.PaliGemma.llm([prefix_tokens, None], mask=prefix_attn_mask, positions=positions)
