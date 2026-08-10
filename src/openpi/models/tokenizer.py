@@ -1,5 +1,6 @@
 import logging
 import os
+import string
 
 import jax
 import numpy as np
@@ -9,6 +10,26 @@ from transformers import AutoProcessor
 
 import openpi.models.utils.fsq_tokenizer as fsq_tokenizer
 import openpi.shared.download as download
+
+# PaliGemma end-of-sequence token id. Terminates the generated subtask span.
+PALIGEMMA_EOS_TOKEN = 1
+
+
+def _discretize_state_str(state: np.ndarray) -> str:
+    """Discretize a normalized ([-1, 1]) state vector into the 256-bin token string.
+
+    Identical binning to PaligemmaTokenizer.tokenize so the subtask (pi0.5) prompt carries
+    proprioceptive state in the same format as the flat pi0.5 path.
+    """
+    discretized_state = np.digitize(state, bins=np.linspace(-1, 1, 256 + 1)[:-1]) - 1
+    return " ".join(map(str, discretized_state))
+
+
+def _clean_prompt(prompt: str) -> str:
+    cleaned = prompt.lower().strip().replace("_", " ").replace("\n", " ")
+    if cleaned and cleaned[-1] in string.punctuation:
+        cleaned = cleaned[:-1]
+    return cleaned
 
 
 class PaligemmaTokenizer:
@@ -46,6 +67,97 @@ class PaligemmaTokenizer:
             mask = [True] * self._max_len
 
         return np.asarray(tokens), np.asarray(mask)
+
+    def tokenize_high_level_prompt(
+        self, high_prompt: str, state: np.ndarray | None = None
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Tokenize the high-level prefix for subtask generation at inference.
+
+        Format: ``"Task: {high}[, State: {state}]. Subtask: "`` (then PAD). The model
+        autoregressively generates the subtask tokens after this prefix (Pi0.generate_subtask).
+        Returns (tokens, mask) only — the absence of token_ar_mask is what triggers the two-stage
+        path in Policy.infer. The State span MUST match tokenize_high_low_prompt so the spliced
+        prompt aligns with what training saw.
+        """
+        cleaned_high = _clean_prompt(high_prompt)
+        if state is not None:
+            sub_prompt = f"Task: {cleaned_high}, State: {_discretize_state_str(state)}. Subtask: "
+        else:
+            sub_prompt = f"Task: {cleaned_high}. Subtask: "
+        tokens = self._tokenizer.encode(sub_prompt, add_bos=True)
+        if len(tokens) < self._max_len:
+            padding = [False] * (self._max_len - len(tokens))
+            mask = [True] * len(tokens) + padding
+            tokens = tokens + padding
+        else:
+            if len(tokens) > self._max_len:
+                logging.warning(
+                    f"Token length ({len(tokens)}) exceeds max length ({self._max_len}), truncating. "
+                    "Consider increasing the `max_token_len` in your model config if this happens frequently."
+                )
+            tokens = tokens[: self._max_len]
+            mask = [True] * self._max_len
+        return np.asarray(tokens), np.asarray(mask)
+
+    def tokenize_high_low_prompt(
+        self, high_prompt: str, low_prompt: str, state: np.ndarray | None = None
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Tokenize the high+low prompt pair for subtask training.
+
+        Sequence: ``[BOS]"Task: {high}[, State: {state}]. Subtask: " {low} [EOS] [PAD]``
+          - ar_mask:   0 over the prefix incl. State (bidirectional), 1 over the subtask+EOS span
+                       (causal AR generation).
+          - loss_mask: True over the subtask+EOS span (the CE targets).
+        The optional State span (discrete proprioceptive input) matches
+        tokenize_high_level_prompt so the inference-time splice stays aligned.
+        Returns (tokens, mask, ar_mask, loss_mask), all of length max_len.
+        """
+        prefix_str_base = _clean_prompt(high_prompt)
+        if state is not None:
+            prefix_str = f"Task: {prefix_str_base}, State: {_discretize_state_str(state)}. Subtask: "
+        else:
+            prefix_str = f"Task: {prefix_str_base}. Subtask: "
+        prefix_tokens = self._tokenizer.encode(prefix_str, add_bos=True)
+        ar_mask = [0] * len(prefix_tokens)  # bidirectional prefix
+        loss_mask = [False] * len(prefix_tokens)
+
+        suffix_tokens = [*self._tokenizer.encode(_clean_prompt(low_prompt)), PALIGEMMA_EOS_TOKEN]
+        ar_mask += [1] * len(suffix_tokens)  # causal subtask span (incl. EOS)
+        loss_mask += [True] * len(suffix_tokens)  # CE on the subtask span
+        tokens = prefix_tokens + suffix_tokens
+
+        total_len = len(tokens)
+        if total_len < self._max_len:
+            pad = self._max_len - total_len
+            mask = [True] * total_len + [False] * pad
+            tokens = tokens + [0] * pad
+            ar_mask = ar_mask + [0] * pad
+            loss_mask = loss_mask + [False] * pad
+        else:
+            if total_len > self._max_len and any(loss_mask[self._max_len :]):
+                # Truncating CE-target tokens (the subtask tail, including the EOS terminator)
+                # corrupts the label: the model never learns to stop generating.
+                raise ValueError(
+                    f"Subtask training sequence needs {total_len} tokens but "
+                    f"max_token_len={self._max_len}; the truncated tail contains CE loss "
+                    f"targets. Set --model.max-token-len {total_len + 16} or higher."
+                )
+            tokens = tokens[: self._max_len]
+            mask = [True] * self._max_len
+            ar_mask = ar_mask[: self._max_len]
+            loss_mask = loss_mask[: self._max_len]
+
+        return (
+            np.asarray(tokens, dtype=np.int32),
+            np.asarray(mask, dtype=np.bool_),
+            np.asarray(ar_mask, dtype=np.int32),
+            np.asarray(loss_mask, dtype=np.bool_),
+        )
+
+    def detokenize(self, tokens: np.ndarray) -> str:
+        """Decode token ids back to text, skipping padding (0) and EOS (1)."""
+        valid = [int(t) for t in tokens if t not in (0, PALIGEMMA_EOS_TOKEN)]
+        return self._tokenizer.decode(valid)
 
 
 class FASTTokenizer:

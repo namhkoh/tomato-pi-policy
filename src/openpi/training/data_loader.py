@@ -56,7 +56,20 @@ class TransformedDataset(Dataset[T_co]):
         self._transform = _transforms.compose(transforms)
 
     def __getitem__(self, index: SupportsIndex) -> T_co:
-        return self._transform(self._dataset[index])
+        # A transform may return None to mean "skip this sample" (SubtaskFromColumn does that for
+        # unlabeled frames). Scan forward for the next usable one rather than recursing, which
+        # would blow the stack on a long unlabeled run and never terminate if nothing is labeled.
+        n = len(self)
+        start = index.__index__()
+        for offset in range(n):
+            result = self._transform(self._dataset[(start + offset) % n])
+            if result is not None:
+                return result
+        raise ValueError(
+            f"Every sample in the dataset was skipped by the transforms (scanned all {n}, "
+            f"starting at index {start}). For subtask training this means no frame carries a "
+            "non-empty label in the subtask_key column."
+        )
 
     def __len__(self) -> int:
         return len(self._dataset)
@@ -145,8 +158,14 @@ def create_torch_dataset(
         },
     )
 
+    pre_transforms = []
     if data_config.prompt_from_task:
-        dataset = TransformedDataset(dataset, [_transforms.PromptFromLeRobotTask(dataset_meta.tasks)])
+        pre_transforms.append(_transforms.PromptFromLeRobotTask(dataset_meta.tasks))
+    if data_config.subtask_key is not None:
+        # Must come last: it is the transform that returns None for unlabeled frames.
+        pre_transforms.append(_transforms.SubtaskFromColumn(data_config.subtask_key))
+    if pre_transforms:
+        dataset = TransformedDataset(dataset, pre_transforms)
 
     return dataset
 

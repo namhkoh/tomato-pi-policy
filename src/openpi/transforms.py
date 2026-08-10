@@ -68,6 +68,11 @@ class CompositeTransform(DataTransformFn):
     def __call__(self, data: DataDict) -> DataDict:
         for transform in self.transforms:
             data = transform(data)
+            # A transform may return None to mean "skip this sample" (SubtaskFromColumn does
+            # that for unlabeled frames). Stop rather than feed None to the next transform;
+            # TransformedDataset scans forward for the next usable sample.
+            if data is None:
+                return None
         return data
 
 
@@ -264,6 +269,117 @@ class TokenizePrompt(DataTransformFn):
 
         tokens, token_masks = self.tokenizer.tokenize(prompt, state)
         return {**data, "tokenized_prompt": tokens, "tokenized_prompt_mask": token_masks}
+
+
+@dataclasses.dataclass(frozen=True)
+class TokenizeHighPrompt(DataTransformFn):
+    """Tokenize the high-level prompt only — pi0.5 subtask generation at INFERENCE.
+
+    Emits no token_ar_mask/token_loss_mask, which is exactly what makes Policy.infer take the
+    two-stage path (generate the subtask, splice it in, then sample actions).
+    """
+
+    tokenizer: _tokenizer.PaligemmaTokenizer
+    discrete_state_input: bool = False
+
+    def __call__(self, data: DataDict) -> DataDict:
+        if (prompt := data.pop("prompt", None)) is None:
+            raise ValueError("Prompt is required")
+
+        if self.discrete_state_input:
+            if (state := data.get("state", None)) is None:
+                raise ValueError("State is required.")
+        else:
+            state = None
+
+        if not isinstance(prompt, str):
+            prompt = prompt.item()
+
+        tokens, token_masks = self.tokenizer.tokenize_high_level_prompt(prompt, state=state)
+        return {**data, "tokenized_prompt": tokens, "tokenized_prompt_mask": token_masks}
+
+
+@dataclasses.dataclass(frozen=True)
+class TokenizeHighLowPrompt(DataTransformFn):
+    """Tokenize the high-level + low-level prompt pair — pi0.5 subtask generation TRAINING.
+
+    `low_prompt` is the per-frame subtask label; see SubtaskFromColumn for where it comes from.
+    """
+
+    tokenizer: _tokenizer.PaligemmaTokenizer
+    discrete_state_input: bool = False
+
+    def __call__(self, data: DataDict) -> DataDict:
+        if self.discrete_state_input:
+            if (state := data.get("state", None)) is None:
+                raise ValueError("State is required.")
+        else:
+            state = None
+
+        if (high_prompt := data.pop("prompt", None)) is None:
+            raise ValueError("Prompt is required")
+        if (low_prompt := data.pop("low_prompt", None)) is None:
+            raise ValueError(
+                "low_prompt is required for subtask training. Set DataConfig.subtask_key to the "
+                "dataset column holding the per-frame subtask label."
+            )
+
+        if not isinstance(high_prompt, str):
+            high_prompt = high_prompt.item()
+        if not isinstance(low_prompt, str):
+            low_prompt = low_prompt.item()
+
+        tokens, mask, ar_mask, loss_mask = self.tokenizer.tokenize_high_low_prompt(high_prompt, low_prompt, state=state)
+        return {
+            **data,
+            "tokenized_prompt": tokens,
+            "tokenized_prompt_mask": mask,
+            "token_ar_mask": ar_mask,
+            "token_loss_mask": loss_mask,
+        }
+
+
+@dataclasses.dataclass(frozen=True)
+class SubtaskFromColumn(DataTransformFn):
+    """Reads the per-frame subtask label from a dataset column into `low_prompt`.
+
+    This repo pins a LeRobot revision that predates native subtask support (subtask_index +
+    meta/subtasks.parquet), so the label is taken from a plain dataset column instead. Point
+    `key` at whichever column your conversion script wrote.
+
+    Frames whose label is missing or empty are unlabeled: the transform returns None and
+    TransformedDataset skips forward to the next sample. Training on them would otherwise teach
+    the model to emit an empty subtask.
+    """
+
+    key: str = "subtask"
+
+    def __call__(self, data: DataDict) -> DataDict | None:
+        if self.key not in data:
+            raise ValueError(
+                f'Cannot extract the subtask: dataset has no "{self.key}" column. ' f"Available keys: {sorted(data)}"
+            )
+
+        # Pop, not get: the raw column is a string and everything left in the dict is collated
+        # into the training batch.
+        subtask = data.pop(self.key)
+        if subtask is None:
+            return None
+        if not isinstance(subtask, str):
+            # numpy/pyarrow scalars carry the string in .item(). Anything else — most likely an
+            # index column paired with a lookup table, the way LeRobot stores tasks — is not a
+            # label this transform can use, and str()ing it would silently train on "3".
+            subtask = subtask.item() if hasattr(subtask, "item") else subtask
+            if not isinstance(subtask, str):
+                raise TypeError(
+                    f'Column "{self.key}" holds {type(subtask).__name__}, not a string. '
+                    "subtask_key must name a column of subtask text; if your dataset stores an "
+                    "index instead, resolve it to text in a repack transform first."
+                )
+        if not subtask.strip():
+            return None
+
+        return {**data, "low_prompt": subtask}
 
 
 @dataclasses.dataclass(frozen=True)

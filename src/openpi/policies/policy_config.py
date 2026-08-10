@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 import logging
 import os
 import pathlib
@@ -11,6 +12,24 @@ import openpi.shared.download as download
 from openpi.training import checkpoints as _checkpoints
 from openpi.training import config as _config
 import openpi.transforms as transforms
+
+
+def _to_inference_transforms(
+    model_transforms: Sequence[transforms.DataTransformFn],
+) -> list[transforms.DataTransformFn]:
+    """Swap the subtask training tokenizer for its inference counterpart.
+
+    Training tokenizes the high+low prompt pair, since the low-level subtask is the CE target. At
+    inference there is no label — the subtask is what the model generates — so only the high-level
+    prompt is tokenized, and the resulting absence of token_ar_mask is what makes Policy.infer take
+    the two-stage path. Every other transform passes through untouched.
+    """
+    return [
+        transforms.TokenizeHighPrompt(t.tokenizer, discrete_state_input=t.discrete_state_input)
+        if isinstance(t, transforms.TokenizeHighLowPrompt)
+        else t
+        for t in model_transforms
+    ]
 
 
 def create_trained_policy(
@@ -79,7 +98,7 @@ def create_trained_policy(
             transforms.InjectDefaultPrompt(default_prompt),
             *data_config.data_transforms.inputs,
             transforms.Normalize(norm_stats, use_quantiles=data_config.use_quantile_norm),
-            *data_config.model_transforms.inputs,
+            *_to_inference_transforms(data_config.model_transforms.inputs),
         ],
         output_transforms=[
             *data_config.model_transforms.outputs,

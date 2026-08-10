@@ -1,5 +1,5 @@
 import dataclasses
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import flax.nnx as nnx
 import jax
@@ -7,7 +7,11 @@ import jax.numpy as jnp
 from typing_extensions import override
 
 from openpi.models import model as _model
-import openpi.models.gemma as _gemma
+
+# Must match what pi0.py runs on: the two modules' variant lists are the same today, but reading
+# Variant from gemma while Pi0 resolves it through gemma_05 would let a variant added to one pass
+# the type and then fail at get_config.
+import openpi.models.gemma_05 as _gemma
 from openpi.shared import array_typing as at
 import openpi.shared.nnx_utils as nnx_utils
 
@@ -29,12 +33,25 @@ class Pi0Config(_model.BaseModelConfig):
     # - the state input is part of the discrete language tokens rather than a continuous input that is part of the suffix
     # - the action expert uses adaRMSNorm to inject the flow matching timestep
     pi05: bool = False
+    # Generate a low-level subtask ("Subtask: {...}") before the actions: the prompt span is
+    # causal and supervised with cross-entropy, and inference becomes two-stage (generate the
+    # subtask, splice it into the prompt, then denoise actions). Requires pi05.
+    #
+    # Opt-in rather than implied by pi05, so every existing pi05 config keeps training and serving
+    # the flat way against the released flat checkpoints.
+    subtask: bool = False
+    # Subtask training loss: ce_only (subtask CE only) / fm_only (flow matching only) /
+    # both. Only meaningful when subtask=True; staged training is a training option, not a
+    # separate model.
+    loss_mode: Literal["ce_only", "fm_only", "both"] = "both"
     # This config option is not used directly by the model, but it is read by the ModelTransformFactory.
     discrete_state_input: bool = None  # type: ignore
 
     pytorch_compile_mode: str | None = "max-autotune"
 
     def __post_init__(self):
+        if self.subtask and not self.pi05:
+            raise ValueError("subtask=True requires pi05=True (the subtask path is pi0.5 only).")
         if self.max_token_len is None:
             object.__setattr__(self, "max_token_len", 200 if self.pi05 else 48)
         if self.discrete_state_input is None:
@@ -50,6 +67,8 @@ class Pi0Config(_model.BaseModelConfig):
     @property
     @override
     def model_type(self) -> _model.ModelType:
+        if self.subtask:
+            return _model.ModelType.PI05_SUBTASK
         if self.pi05:
             return _model.ModelType.PI05
         return _model.ModelType.PI0
@@ -80,6 +99,18 @@ class Pi0Config(_model.BaseModelConfig):
                 state=jax.ShapeDtypeStruct([batch_size, self.action_dim], jnp.float32),
                 tokenized_prompt=jax.ShapeDtypeStruct([batch_size, self.max_token_len], jnp.int32),
                 tokenized_prompt_mask=jax.ShapeDtypeStruct([batch_size, self.max_token_len], bool),
+                # Subtask training additionally consumes the causal mask over the subtask span and
+                # the CE target mask. Declared only when the loss actually reads them, so the
+                # traced train step matches what TokenizeHighLowPrompt emits; loss_mode="fm_only"
+                # tokenizes the high prompt alone and must keep the plain spec.
+                **(
+                    {
+                        "token_ar_mask": jax.ShapeDtypeStruct([batch_size, self.max_token_len], jnp.int32),
+                        "token_loss_mask": jax.ShapeDtypeStruct([batch_size, self.max_token_len], bool),
+                    }
+                    if self.subtask and self.loss_mode != "fm_only"
+                    else {}
+                ),
             )
         action_spec = jax.ShapeDtypeStruct([batch_size, self.action_horizon, self.action_dim], jnp.float32)
 
