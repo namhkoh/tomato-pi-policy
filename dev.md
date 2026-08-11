@@ -8,6 +8,11 @@ Environment: Isaac Sim **5.1.0-rc.19** (Kit 107.3.3, omni.physx 107.3.26, USD 0.
 at `D:\isaac-sim`, Windows 11. Active deleafing branch `koh-dev/deleaf`
 (fork of openpi).
 
+Branch ownership: `koh-dev/deleaf` contains the simulator physics, grasp/cut
+benchmark, IK, and generic simulator mailbox/recorder. The connected physical
+RB-Y1 read-only state publisher is isolated on `koh-dev/rby1`, which starts from
+the latest deleaf commit.
+
 ## Status
 
 - [x] Recon: assets, Isaac 5.1 APIs, RB-Y1 SDK, repo conventions, prior art
@@ -16,6 +21,8 @@ at `D:\isaac-sim`, Windows 11. Active deleafing branch `koh-dev/deleaf`
 - [x] Verified: fused vine GLBs decompose into per-organ connected components
 - [x] Asset pipeline: GLB → organ graph → structured USD (all 20 vines)
 - [x] Greenhouse composition + launch (renders headless; see below)
+- [x] Physics-ready vines inherit exact `gh_tomato_test.usd` stem root/yaw
+      frames while preserving the supplied gutter and bed transforms
 - [x] Compliant vine physics — stable per-organ articulations (biological calibration pending)
 - [x] Cut severance — verified: severed organ detaches, plant stays connected
 - [x] Trellis support + stable interaction-contact physics (evidence below)
@@ -29,10 +36,13 @@ at `D:\isaac-sim`, Windows 11. Active deleafing branch `koh-dev/deleaf`
 - [x] Protected-contact ledger for main stem, non-target organs, neighbouring vines, structure, and robot
 - [x] Bi-manual task state/retention support: left grasp -> right cut -> transport -> floor deposit
 - [x] Stable non-contact robot/vine startup after collider deduplication and wrist-envelope correction
+- [x] Leaf-blade/robot physical contact with target-only left-finger grasp semantics and non-pausing teleop contact monitoring
 - [x] Robot-to-vine gripper/blade contact and cut validation
 - [x] Hardware-bounded dual-arm approach + complete grasp/cut/transport/deposit acceptance
 - [x] Simulator-only leader-arm command bridge + synchronized D405/action recording
 - [x] Deterministic target selection + strict isolated-process repeatability runner
+- [ ] Live lab-teleop selected-leaf pinch/grasp/cut acceptance
+- [ ] Record synchronized successful trajectories and prepare the π0.5 dataset/export contract
 - [ ] Lab leader-arm hardware validation + multi-target physical repeatability acceptance
 - [ ] Benchmark task definition + metrics
 
@@ -95,6 +105,135 @@ tomato stems referenced into the stage yet.
 
 Object USDs are Y-up/cm and are brought in via payload arcs with auto-inserted
 `unitsResolve` xform ops (rotateX 90, scale 0.01).
+
+### Current benchmark source and vine placement (2026-08-10)
+
+The generated benchmark now sublayers `greenhouse/gh_tomato_test.usd` and
+selects `Gutter_01` without changing any gutter or bed transform. Its embedded
+legacy `Stems` scopes are disabled only in the generated layer and replaced by
+the existing physics-ready vines. Default `source` placement maps each
+`tomato_NNN.usd` to its matching `tomato_stem_NNN` source prim and converts the
+original Y-up frame to an exact Z-up root translation plus one of the authored
++/-90 degree row facings. For example, `Vine_0000`/`tomato_000.usd` now uses
+`(15.830962741, 5.580149839, 0.392986681)` and yaw `+90 degrees`, exactly
+matching its supplied Side_2 stem frame. Procedural bed placement remains an
+explicit opt-in mode.
+
+The previous generated root/yaw put the canopy into the wall-side robot aisle,
+then target-relative base placement still admitted arm capsules through lower
+foliage. Base planning now rejects fixed torso/head overlap, both actual waiting
+arm postures, each solved left grasp arm, the wrist camera envelope, and
+inter-arm overlap before the robot is authored. The 240-step acceptance report
+`data/greenhouse_sim/source_placement_contact_check6_20260810.json` completed
+with `succeeded=true`, zero robot-vine contact pairs, 0/121 runaway organs,
+68.603 mm maximum compliant vine motion, and a stable 34-body robot.
+
+The default interactive target is now the exact Side_1 source placement
+`Vine_0002/SubStem_00`, with RB-Y1 yaw `+90 degrees` in the wider negative-Y
+inter-gutter aisle. The accepted base is `(10.639222, 4.799768, -0.152541)` m;
+the selected petiole is 297.253 mm directly forward. The 240-step report
+`data/greenhouse_sim/wide_aisle_contact_final_20260810.json` passed with zero
+robot-vine contact pairs, zero runaway organs, 17.495 mm maximum compliant vine
+motion, and a stable robot. Physics-vine selection now promotes an explicitly
+requested non-first vine before filling the physics budget.
+
+All bimanual Cartesian directions (grasp approach, counterpull, blade stroke,
+retract, and orphan transport) are now expressed in the robot's yaw-relative
+task frame. Live arm capsules are checked against vine capsules at endpoints
+and across every command chord; this exposed the former missing arm-vine gate.
+The first strict `Vine_0002/SubStem_00` left-approach rerun rejected the route
+without motion through the canopy and recorded zero unsafe contacts, so the
+new-side full bimanual episode remains an open re-planning item rather than an
+accepted result. Exact vectorized capsule batches replace the equivalent scalar
+distance loop to keep that stronger gate practical.
+
+### Physical leaf contact, gripper direction, and wrist mounts (2026-08-11)
+
+The arm-through-leaf failure was not a solver-timestep problem: foliage was only
+render and mouse-raycast geometry, while the stable `interaction` collider set
+contained stems and petioles. Interaction mode now authors one 3 mm-minimum,
+PCA-oriented contact box per foliage organ (115 on `tomato_002`). Each box rides
+the same rigid link as its rendered leaflet and is filtered against every other
+plant body, avoiding self-depenetration explosions while preserving external
+robot/tool collision. The boxes retain their owning `SubStem_*` identity, so an
+opposed left-finger pinch on the selected branch can establish the existing
+branch grasp. Neighbouring foliage contacts remain physical and benchmark-unsafe,
+but default `--teleop-contact-policy monitor` no longer pauses or latches command
+consumption; opt-in `rollback` returns toward the last contact-free target.
+
+A 480-step fixed-station soak at `(10.639222, 4.30, -0.152541)` m authored 127
+plant contact shapes, kept 384 links and all 34 robot bodies finite, produced
+zero runaway organs and no robot-vine contact pairs. A stricter staged approach
+from the old 4.799768 m base then produced seven real foliage contact pairs and
+was rejected (`succeeded=false`) before grasp/cut. This is the intended evidence
+that leaves no longer tunnel through the robot and that neighbouring contact is
+not silently accepted. It also supersedes the old near-canopy base as an
+autonomous acceptance pose now that leaf volume is physical. With the measured
+lab pose, the first 4.30 m GUI launch correctly latched on one 2.014 mm
+neighbouring-leaf/finger spawn overlap. Relaunching only 50 mm farther back at
+`(10.639222, 4.25, -0.152541)` m reached `running`, accepted 432 fresh whole-body
+commands, retained 0.998478 left-gripper openness, and had zero robot-vine pairs
+or unsafe latch. Collision-aware replanning of the autonomous route through the
+dense physical canopy remains open.
+
+The live left gripper convention was reversed because motor ID 1 uses numeric
+minimum=open and numeric maximum=closed. The read-only publisher now computes
+`(max_q - position) / (max_q - min_q)`. Live verification read position
+-4.488427 with session stops -4.502233/4.570971 and published 0.998478 openness,
+exactly matching the endpoint-derived value. No physical robot or gripper
+command path was added.
+
+The wrist-camera brackets were also 50 mm high because the supplied FreeCAD
+component origin was treated as the official URDF EE origin. In the reference
+assembly the M3 pair is Z=+38.5 mm and the gripper flange is Z=+50 mm; in
+`EE_BODY.dae` that flange is Z=0. The correct Isaac screw datum is therefore
+Z=-11.5 mm. The generated right mount uses
+`(0, -0.095919538, -0.041619184)` m with identity rotation; the generated left
+mount uses `(0, +0.095919538, -0.041619184)` m with a 180-degree Z rotation.
+This matches the outside wrist faces at CAD Y=+/-259 mm, and the robot
+USD/manifest were rebuilt.
+
+The first live post-change report captured an active `Foliage_155`/left-finger
+contact with `contact_policy=monitor`, `unsafe_latched=false`, and
+`hold_active=false`; accepted mailbox commands then increased from 1,706 to
+1,966, confirming the old permanent contact freeze was removed. Source-plant
+ancestry maps that visible leaf to `Vine_0002/SubStem_02`, not the selected
+`Vine_0002/SubStem_00`, which explains why collision worked while target-only
+grasp attachment did not.
+
+The follow-up live report
+`data/greenhouse_sim/physical_robot_teleop_leaf_grasp_20260811.json` isolated two
+additional root causes. PhysX contact-offset/CONTACT_LOST records with zero
+impulse could overwrite a real pinch with a zero-force one-finger diagnostic,
+and the original semantic cutting strip occupied the plate's distal local `-Y`
+end where the U-support extends beyond it. The run therefore closed the gripper
+to 0.00149 openness without establishing a grasp and recorded only non-cutting
+arc contact; no cutting-edge target progress was possible.
+
+The grasp manager now discards zero-impulse records before persistence scoring.
+While closing, positive contact on both left fingers automatically retargets to
+the physically pinched branch and records
+`trigger=opposed_finger_physical_pinch`; one-finger brushes cannot retarget, and
+`T` remains an explicit fallback. The knife semantic is now the unobstructed
+outer 2 mm strip along the flat plate's long local `-X` side, with local `-X`
+cut travel and local `+Y` edge axis. The support's closest X bound remains over
+10 mm inside that strip. The fitted RB-Y1 USD was rebuilt, focused geometry and
+contact-policy tests pass, and the complete suite passes 126 tests with one
+PhysX-only skip. Manual live opposed-pinch and force-gated cut acceptance is
+still intentionally open; the strict autonomous `Vine_0002` canopy route also
+remains a separate collision-aware replanning blocker.
+
+### Optimized vine assets — `greenhouse/tomato_glb_30/` (2026-08-11)
+
+The collaborator-supplied directory contains 30 GLB/JSON pairs. It is materially
+lighter but is not a drop-in mesh swap for the existing benchmark semantics. A
+read-only `tomato_002` comparison reduced resolved triangles from 819,490 to
+374,714, while connected components increased from 264 to 840, foliage labels
+from 115 to 374, and `SubStem` targets from 20 to 44; the old/new organ label
+sets do not match. Migration is therefore deferred until the current grasp/cut
+gate is accepted and must include sidecar/topology validation, target remapping,
+physics-capacity profiling, and placement regression rather than changing
+`_DEFAULT_VINE_DIR` silently.
 
 ### Isaac Sim 5.1 physics capabilities
 
@@ -170,8 +309,9 @@ advancing 0.3–0.5 cm/day. Bins: ≤5 mm flush / 5–20 mm marginal / >20 mm ri
 ### D6 — Benchmark cuts require physical leading-edge evidence and bi-manual order
 
 The full flat knife plate remains a physical collider, but it is not itself a
-cutting semantic. Only contact points inside the distal 2 mm straight-edge
-region can accumulate cut work. A valid severance requires the measured petiole
+cutting semantic. Only contact points inside the outer 2 mm strip along the
+unobstructed long local `-X` plate side can accumulate cut work. A valid
+severance requires the measured petiole
 cut zone, transverse edge and motion alignment, forward edge motion, at least the
 petiole's 66.3 N cut force, sustained work through its diameter, and a sweep
 across the target centre. Separate taps do not combine. The U support, blade
@@ -882,8 +1022,11 @@ The simulator now consumes an atomic `greenhouse.teleop.v1` JSON mailbox. Each
 arm has an independent deadman bit; commands must have a strictly increasing
 sequence and a fresh host-monotonic timestamp, pass exact URDF joint limits,
 and pass a configurable joint-speed limiter. Deadman release, stale watchdog,
-invalid command, or an unsafe-contact latch actively changes the drive target
-to the measured pose. Right-arm commands are also mapped through exact RB-Y1
+or invalid command actively changes the drive target to the measured pose.
+Physical contacts remain collision-enforced and benchmark-scored; default
+`monitor` mode continues consuming commands without pausing, and opt-in
+`rollback` drives toward the last contact-free target while contact remains
+active. Right-arm commands are also mapped through exact RB-Y1
 FK to a commanded knife-edge velocity, so teleoperation still cannot bypass
 the physical contact/force/direction/work/counterhold cut gate.
 
@@ -905,7 +1048,7 @@ is paused so observation setup cannot advance unobserved physics.
 
 | Check | Result | Evidence |
 |---|---|---|
-| Complete greenhouse suite | 76 passed, 1 PhysX-only test skipped outside a running app; all new files pass Ruff | `D:\isaac-sim\python.bat -m pytest examples/greenhouse_sim/greenhouse_sim -q` |
+| Complete greenhouse suite | 124 passed, 1 PhysX-only test skipped outside a running app | `D:\isaac-sim\python.bat -m pytest -q examples/greenhouse_sim` |
 | Final known-target physical acceptance | top-level/probe true; target `Vine_0000/SubStem_00`; one benchmark-valid cut at 71.444 N; task deposited; zero unsafe contacts; blade safety clear | `data/greenhouse_sim/bimanual_full_target_teleop_final.json` |
 | Final integrated stability | succeeded=true; finite vine; 0 runaway organs; 68.732 mm maximum compliant motion; robot stable at 2.078 degrees tilt; selected-target pre-contact valid | `data/greenhouse_sim/stability_target_teleop_480_final.json` |
 | Hardware-free teleop/recording | one fresh disabled command accepted; neither arm enabled; no unsafe latch; one synchronized JSONL step; head RGB 320x180, range 1-244, 6,736 unique colors | `data/greenhouse_sim/teleop_camera_warmup_validation.json` and its reported episode directory |
@@ -955,6 +1098,59 @@ repeatability: the next simulator gate is the isolated-process target/seed
 matrix, followed by deliberate lab leader-arm validation. Robot benchmarking,
 policy/VLA integration, and RL remain downstream of those stability gates.
 
+### Full upper-body read-only teleop and torso-collapse fix, 2026-08-11
+
+The connected RB-Y1 path now mirrors the complete fixed-base upper body rather
+than only the arms. `rby1_robot_state_to_sim.py` uses the SDK model indices for
+torso `[2..7]`, right arm `[8..14]`, left arm `[15..21]`, and head `[22,23]`.
+It polls the robot-PC's read-only gripper cache at
+`http://192.168.50.243:8765/status` at 10 Hz and maps motor ID 1 continuously
+from the current session's calibrated closed/open stops into simulated left-jaw
+aperture. The right physical gripper remains excluded because the simulated
+right end effector is knife-only. The bridge still contains no power, servo,
+control-stream, or physical-gripper command call.
+
+Teleop startup no longer shows or sweeps through the scripted asymmetric
+right-arm knife pre-contact pose. A fresh mailbox sample seeds torso, head, and
+both arm drive targets plus initial PhysX joint state before physics
+initialization; a stale/missing sample falls back to the symmetric Model A SDK
+ready pose. D405 assemblies remain link-parented, so head and wrist observations
+follow the mirrored joints automatically.
+
+The observed disappearing-torso failure was a simulator hold-controller defect.
+After an unsafe-contact/watchdog latch, every frame reset the drive target to
+the latest measured position. That target followed the gravity-driven fall,
+eliminating restoring position error and allowing the six-link torso to collapse
+through the base. Holds now snapshot exactly one safe joint vector and continue
+driving that fixed vector. Disabled joint groups likewise retain their last
+commanded target rather than chasing current state. Torso drives use the v1.0
+URDF effort limits `(270,270,270,120,120,120) N m` with bounded position gains;
+head drives are separately bounded. The live cutting command velocity now comes
+from the measured cutting-edge transform, so torso motion is included in cut
+direction/speed evidence.
+
+Continuous left-gripper aperture drives the real simulated finger joints. Closing
+still requires opposed physical finger contact before the benchmark fixed grasp
+is established; opening releases the retained branch. Existing force/direction/
+work/counterhold cutting, orphan transport, floor deposit, neighbour-contact,
+and safety-latch semantics are unchanged.
+
+**Verification:**
+
+| Check | Result | Evidence |
+|---|---|---|
+| Complete greenhouse regressions | 111 passed, 1 PhysX-only skip | `D:\isaac-sim\python.bat -m pytest -q examples/greenhouse_sim/greenhouse_sim` |
+| Fresh measured startup | mailbox age 31 ms; no asymmetric pre-contact sweep | `data/greenhouse_sim/teleop_fullbody_live.json` |
+| 12 s stationary full-body soak | left/right error <0.061 deg, torso <0.096 deg, head <0.109 deg; no unsafe contact; watchdog fresh | live report above |
+| Forced state-source dropout | six-second watchdog hold; torso drift <0.096 deg, head <0.117 deg; no collapse or unsafe contact | live report above |
+| Gripper channel | live calibrated source/request both approximately 0.999 open during soak | live report above |
+| GUI responsiveness | fixed-pose run reached `running`; Kit `Responding=True` | PID health check and live report |
+
+The visible simulator is running at the preflight-checked fixed base
+`(10.639221515539253, 4.25, -0.15254085567917297)` with
+`Vine_0002/SubStem_00`. Deliberate lab motion plus physical grasp/pull/cut
+acceptance remains pending and must not be inferred from the stationary and
+watchdog soaks.
 ## Research findings, 2026-08-06 (pre-implementation)
 
 ### Stiffness — the current E is 5–15× too low
@@ -1106,3 +1302,33 @@ One logical change per commit; no AI attribution trailers.
   planning, and payload-clear orphan transport; passed 85 regressions, both
   `SubStem_00`/`SubStem_01` full physical episodes with zero unsafe contacts,
   and the 480-step integrated stability soak on `koh-dev/deleaf`.
+- 2026-08-09 — Removed the implicit headless override from deterministic
+  bimanual probes and render probe physics steps whenever `--headless` is
+  omitted, allowing the same validated IK sequence to be inspected live while
+  preserving explicit headless repeatability runs.
+- 2026-08-09 — Removed a redundant pre-motion multistart grasp search from
+  target-conditioned probes by reusing the exact distal/D405-clear collider
+  accepted during base placement; live waypoint IK and all physical task gates
+  remain active. Fixed-position regressions retain the full fallback search.
+- 2026-08-09 — Corrected the interactive control flow so a non-headless
+  `--bimanual-probe` executes the same validated probe instead of entering the
+  idle interaction loop; visible runs emit live
+  waypoint progress, and hold the final state open for inspection.
+- 2026-08-09: Corrected the visible probe scheduler to advance exactly one
+  240 Hz physics/control sample before monitoring and issue a render-only
+  refresh every fourth sample. This avoids Isaac's four physics substeps per
+  `step(render=True)` at 60 Hz. The visible `SubStem_01` full episode passed:
+  one intended physical cut, 68 valid contact steps, 0.47107 J work, 76.819 N
+  peak force, deposited orphan, zero unsafe contacts, and clear blade safety
+  (`data/greenhouse_sim/visible_ik_end_to_end_substem01_fixed.json`). The
+  complete greenhouse suite remains green at 85 passed and 1 PhysX-only skip.
+- 2026-08-11 — Fixed live physical-grasp attribution by excluding zero-impulse
+  contact-offset/lost records and automatically selecting a differently targeted
+  branch only from a positive-load opposed-finger pinch; retained `T` as an
+  explicit fallback and added regression coverage.
+- 2026-08-11 — Moved the knife semantic edge from the U-support-occluded distal
+  local `-Y` end to the exposed long local `-X` flat-plate side, propagated the
+  axis convention through monitoring, IK, force-capacity checks, inspection,
+  and the generated robot USD, and passed 126 tests with one PhysX-only skip.
+  Manual lab pinch/cut acceptance and the dense-canopy autonomous route remain
+  open gates; `tomato_glb_30` is recorded as a non-drop-in future migration.

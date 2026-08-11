@@ -42,6 +42,14 @@ def test_knife_components_match_the_supplied_geometry() -> None:
         atol=1e-7,
     )
 
+    support_boxes = robot_hardware.knife_support_boxes()
+    assert len(support_boxes) == 6
+    for point in arc.points:
+        assert any(
+            np.all(np.abs(point - centre) <= half_extents + 1e-12)
+            for centre, half_extents in support_boxes
+        )
+
 
 def test_manifest_marks_only_the_flat_plate_as_cutting() -> None:
     manifest = robot_hardware.load_manifest()
@@ -52,14 +60,28 @@ def test_manifest_marks_only_the_flat_plate_as_cutting() -> None:
     assert "flat straight blade only" in knife["cut_semantics"]
 
 
-def test_knife_projects_along_the_right_tool_axis() -> None:
-    # CAD -Y is the blade length, and CAD +Z points toward the support arc.
-    projection = robot_hardware.transform_direction(robot_hardware.KNIFE_ROTATION, (0.0, -1.0, 0.0))
-    support_side = robot_hardware.transform_direction(robot_hardware.KNIFE_ROTATION, (0.0, 0.0, 1.0))
+def test_knife_cutting_side_projects_along_the_right_tool_axis() -> None:
+    cut_direction = robot_hardware.transform_direction(
+        robot_hardware.KNIFE_ROTATION,
+        robot_hardware.KNIFE_CUT_DIRECTION_LOCAL,
+    )
+    support_side = robot_hardware.transform_direction(
+        robot_hardware.KNIFE_ROTATION, (0.0, 0.0, 1.0)
+    )
 
-    np.testing.assert_allclose(projection, [0.0, 0.0, -1.0], atol=1e-12)
+    np.testing.assert_allclose(cut_direction, [0.0, -1.0, 0.0], atol=1e-12)
     np.testing.assert_allclose(support_side, [1.0, 0.0, 0.0], atol=1e-12)
     np.testing.assert_allclose(robot_hardware.KNIFE_TRANSLATION_M, [0.0, 0.0, 0.0], atol=0.0)
+
+
+def test_flat_blade_long_cutting_side_is_outside_support() -> None:
+    blade_centre, blade_half = robot_hardware.knife_blade_box()
+    support_centre, support_half = robot_hardware.knife_support_box()
+    blade_min_x = float(blade_centre[0] - blade_half[0])
+    edge_max_x = blade_min_x + robot_hardware.CUTTING_EDGE_DEPTH_M
+    support_min_x = float(support_centre[0] - support_half[0])
+
+    assert edge_max_x < support_min_x
 
 
 def test_cut_aligned_knife_is_transverse_and_keeps_support_up() -> None:
@@ -67,8 +89,8 @@ def test_cut_aligned_knife_is_transverse_and_keeps_support_up() -> None:
     preferred = np.asarray([0.0, -0.966, 0.259])
 
     rotation = robot_hardware.cut_aligned_knife_rotation(target, preferred)
-    edge_axis = rotation @ np.asarray([1.0, 0.0, 0.0])
-    cut_direction = rotation @ np.asarray([0.0, -1.0, 0.0])
+    edge_axis = rotation @ robot_hardware.KNIFE_EDGE_AXIS_LOCAL
+    cut_direction = rotation @ robot_hardware.KNIFE_CUT_DIRECTION_LOCAL
     support = rotation @ np.asarray([0.0, 0.0, 1.0])
     target /= np.linalg.norm(target)
 
@@ -88,26 +110,79 @@ def test_rotation_y_preserves_a_right_handed_tool_frame() -> None:
 
 
 def test_wrist_camera_brackets_align_the_reference_m3_pair() -> None:
-    for rotation, translation in (
-        (robot_hardware.LEFT_CAMERA_ROTATION, robot_hardware.LEFT_CAMERA_TRANSLATION_M),
-        (robot_hardware.RIGHT_CAMERA_ROTATION, robot_hardware.RIGHT_CAMERA_TRANSLATION_M),
-    ):
-        transformed = (rotation @ robot_hardware.WRIST_BRACKET_BOLT_CENTRES_M.T).T + translation
-        np.testing.assert_allclose(transformed, robot_hardware.WRIST_REFERENCE_BOLT_CENTRES_M, atol=1e-12)
-    np.testing.assert_allclose(robot_hardware.LEFT_CAMERA_ROTATION, np.eye(3), atol=0.0)
-    np.testing.assert_allclose(robot_hardware.RIGHT_CAMERA_ROTATION, np.eye(3), atol=0.0)
+    right = (
+        robot_hardware.RIGHT_CAMERA_ROTATION
+        @ robot_hardware.WRIST_BRACKET_BOLT_CENTRES_M.T
+    ).T + robot_hardware.RIGHT_CAMERA_TRANSLATION_M
+    left = (
+        robot_hardware.LEFT_CAMERA_ROTATION
+        @ robot_hardware.WRIST_BRACKET_BOLT_CENTRES_M.T
+    ).T + robot_hardware.LEFT_CAMERA_TRANSLATION_M
+    expected_left = (
+        robot_hardware.rotation_z(180.0)
+        @ robot_hardware.WRIST_REFERENCE_BOLT_CENTRES_M.T
+    ).T
 
+    np.testing.assert_allclose(
+        right, robot_hardware.WRIST_REFERENCE_BOLT_CENTRES_M, atol=1e-12
+    )
+    np.testing.assert_allclose(left, expected_left, atol=1e-12)
+    np.testing.assert_allclose(
+        robot_hardware.LEFT_CAMERA_ROTATION,
+        robot_hardware.rotation_z(180.0),
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        robot_hardware.RIGHT_CAMERA_ROTATION, np.eye(3), atol=0.0
+    )
+
+def test_wrist_camera_mount_converts_freecad_component_frame_to_urdf_ee() -> None:
+    # RBY1_Example_setup.FCStd locates the M3 pair at z=+38.5 mm relative to
+    # its gripper component origin.  The matching official EE_BODY.dae flange
+    # is z=0 while that FreeCAD flange is z=+50 mm.
+    freecad_bolt_z_m = 0.0385
+    freecad_to_urdf_flange_m = 0.0500
+
+    assert robot_hardware.WRIST_REFERENCE_BOLT_CENTRES_M[0, 2] == pytest.approx(
+        freecad_bolt_z_m - freecad_to_urdf_flange_m,
+        abs=1e-12,
+    )
+
+
+def test_wrist_camera_bracket_box_matches_authored_mount() -> None:
+    right_centre, right_rotation, half_extents = (
+        robot_hardware.wrist_camera_bracket_box(side="right")
+    )
+    left_centre, left_rotation, left_half_extents = (
+        robot_hardware.wrist_camera_bracket_box(side="left")
+    )
+
+    np.testing.assert_allclose(right_rotation, np.eye(3), atol=0.0)
+    np.testing.assert_allclose(
+        left_rotation, robot_hardware.rotation_z(180.0), atol=1e-12
+    )
+    np.testing.assert_allclose(left_half_extents, half_extents, atol=0.0)
+    np.testing.assert_allclose(
+        2.0 * half_extents, [0.027, 0.05991954, 0.03461918], atol=1e-9
+    )
+    np.testing.assert_allclose(
+        left_centre,
+        robot_hardware.rotation_z(180.0) @ right_centre,
+        atol=1e-12,
+    )
 
 def test_wrist_camera_cad_axes_match_the_reference_mount() -> None:
     manifest = robot_hardware.load_manifest()
-    camera_rotation = np.asarray(manifest["mounts"]["camera_bracket_to_d405"]["rotation_matrix"])
+    camera_rotation = np.asarray(
+        manifest["mounts"]["camera_bracket_to_d405"]["rotation_matrix"]
+    )
     camera_forward = np.array([0.0, 1.0, 0.0])
     left = robot_hardware.LEFT_CAMERA_ROTATION @ camera_rotation @ camera_forward
     right = robot_hardware.RIGHT_CAMERA_ROTATION @ camera_rotation @ camera_forward
 
-    assert left[1] > 0.3 and left[2] < -0.9
-    np.testing.assert_allclose(left, right, atol=1e-12)
-
+    assert left[1] < -0.3 and left[2] < -0.9
+    assert right[1] > 0.3 and right[2] < -0.9
+    np.testing.assert_allclose(left[2], right[2], atol=1e-12)
 
 def test_head_camera_faces_forward_through_bracket_window() -> None:
     head_forward = robot_hardware.HEAD_BRACKET_ROTATION @ robot_hardware.HEAD_CAMERA_ROTATION @ np.array(
@@ -152,8 +227,12 @@ def test_authored_stage_has_three_cameras_and_one_cutting_part() -> None:
     assert len(cutting) == 1
     assert cutting[0].GetAttribute("tomato:hardwareRole").Get() == "cutting_edge"
     assert cutting[0].GetAttribute("tomato:edgeDepthMillimeters").Get() == 2.0
-    assert cutting[0].GetAttribute("tomato:cuttingDirection").Get() == Gf.Vec3f(0.0, -1.0, 0.0)
-    assert cutting[0].GetAttribute("tomato:edgeAxis").Get() == Gf.Vec3f(1.0, 0.0, 0.0)
+    assert cutting[0].GetAttribute("tomato:cuttingDirection").Get() == Gf.Vec3f(
+        *robot_hardware.KNIFE_CUT_DIRECTION_LOCAL.tolist()
+    )
+    assert cutting[0].GetAttribute("tomato:edgeAxis").Get() == Gf.Vec3f(
+        *robot_hardware.KNIFE_EDGE_AXIS_LOCAL.tolist()
+    )
     assert all(stage.GetPrimAtPath(path).IsValid() for path in report.non_cutting_supports)
     assert all(not stage.GetPrimAtPath(path).GetAttribute("tomato:cuttingSurface").Get() for path in report.non_cutting_supports)
     arc_collision = stage.GetPrimAtPath(
@@ -182,10 +261,11 @@ def test_authored_stage_has_three_cameras_and_one_cutting_part() -> None:
     right_forward, right_up = camera_axes[report.cameras[1]]
     np.testing.assert_allclose(head_forward, [1.0, 0.0, 0.0], atol=1e-9)
     np.testing.assert_allclose(head_up, [0.0, 0.0, 1.0], atol=1e-9)
-    assert left_forward[1] > 0.3 and left_forward[2] < -0.9
-    np.testing.assert_allclose(left_forward, right_forward, atol=1e-9)
-    assert left_up[0] > 0.9 and right_up[0] < -0.9
-    np.testing.assert_allclose(left_up, -right_up, atol=1e-9)
+    assert left_forward[1] < -0.3 and left_forward[2] < -0.9
+    assert right_forward[1] > 0.3 and right_forward[2] < -0.9
+    np.testing.assert_allclose(left_forward[2], right_forward[2], atol=1e-9)
+    assert left_up[0] < -0.9 and right_up[0] < -0.9
+    np.testing.assert_allclose(left_up, right_up, atol=1e-9)
     assert stage.GetPrimAtPath(report.cameras[0]).GetAttribute("tomato:sensorRollDegrees").Get() == 0.0
     assert stage.GetPrimAtPath(report.cameras[1]).GetAttribute("tomato:sensorRollDegrees").Get() == 180.0
     for attachment in report.attachments[:2]:
@@ -197,6 +277,8 @@ def test_authored_stage_has_three_cameras_and_one_cutting_part() -> None:
         Usd.TimeCode.Default()
     )
     blade_projection = np.asarray(
-        edge_matrix.TransformDir(Gf.Vec3d(0.0, -1.0, 0.0)).GetNormalized()
+        edge_matrix.TransformDir(
+            Gf.Vec3d(*robot_hardware.KNIFE_CUT_DIRECTION_LOCAL.tolist())
+        ).GetNormalized()
     )
-    np.testing.assert_allclose(blade_projection, [0.0, 0.0, -1.0], atol=1e-9)
+    np.testing.assert_allclose(blade_projection, [0.0, -1.0, 0.0], atol=1e-9)

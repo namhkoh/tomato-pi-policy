@@ -34,6 +34,19 @@ def test_pose_ik_recovers_a_nearby_exact_arm_pose() -> None:
     )
 
 
+def test_arm_joint_limit_margin_reports_nearest_authored_limit() -> None:
+    model = robot_kinematics.Rby1Kinematics()
+    lower, upper = model.arm_limits_degrees("right")
+    centre = 0.5 * (lower + upper)
+    near_upper = centre.copy()
+    near_upper[1] = upper[1] - 12.5
+
+    assert model.arm_joint_limit_margin_degrees("right", centre) > 12.5
+    assert model.arm_joint_limit_margin_degrees("right", near_upper) == pytest.approx(12.5)
+    with pytest.raises(ValueError, match="seven"):
+        model.arm_joint_limit_margin_degrees("right", near_upper[:6])
+
+
 def test_position_ik_places_tool_point_without_orientation_constraint() -> None:
     model = robot_kinematics.Rby1Kinematics()
     expected = np.asarray((-95.0, -60.0, 25.0, -110.0, -20.0, 70.0, -30.0))
@@ -154,6 +167,40 @@ def test_oriented_box_clearance_uses_entire_capsule_segment() -> None:
     assert result.clearance_m == pytest.approx(0.05)
 
 
+def test_oriented_box_clearance_rejects_greenhouse_wall_overlap() -> None:
+    wall = robot_kinematics.BoxObstacle(
+        "greenhouse_wall",
+        (1.0, -2.0, -2.0),
+        (1.1, 2.0, 2.0),
+    )
+
+    clear = robot_kinematics.oriented_box_box_clearance(
+        (0.0, 0.0, 0.0), np.eye(3), (0.25, 0.5, 0.1), (wall,)
+    )
+    overlap = robot_kinematics.oriented_box_box_clearance(
+        (0.9, 0.0, 0.0), np.eye(3), (0.25, 0.5, 0.1), (wall,)
+    )
+
+    assert clear.nearest_obstacle == "greenhouse_wall"
+    assert clear.clearance_m == pytest.approx(0.75)
+    assert overlap.clearance_m < 0.0
+
+
+def test_capsule_clearance_rejects_greenhouse_box_overlap() -> None:
+    box = robot_kinematics.BoxObstacle(
+        "gutter", (-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)
+    )
+    clear = robot_kinematics.CapsuleObstacle(
+        "arm", (-1.0, 1.0, 0.0), (1.0, 1.0, 0.0), 0.1
+    )
+    overlap = robot_kinematics.CapsuleObstacle(
+        "arm", (-1.0, 0.0, 0.0), (1.0, 0.0, 0.0), 0.1
+    )
+
+    assert robot_kinematics.capsule_box_clearance(clear, box) == pytest.approx(0.4)
+    assert robot_kinematics.capsule_box_clearance(overlap, box) < 0.0
+
+
 def test_tool_box_clearance_transforms_box_from_end_effector_frame() -> None:
     class TranslatedTool:
         @staticmethod
@@ -220,3 +267,82 @@ def test_route_selector_maximizes_separation_inside_safe_direction() -> None:
     selected = robot_kinematics.select_tool_clearance_route(candidates)
 
     assert selected["name"] == "positive_wide"
+
+
+def test_capsule_capsule_clearance_is_signed() -> None:
+    first = robot_kinematics.CapsuleObstacle(
+        "first", (-1.0, 0.0, 0.0), (1.0, 0.0, 0.0), 0.1
+    )
+    separated = robot_kinematics.CapsuleObstacle(
+        "separated", (0.0, 0.5, -1.0), (0.0, 0.5, 1.0), 0.1
+    )
+    crossing = robot_kinematics.CapsuleObstacle(
+        "crossing", (0.0, 0.0, -1.0), (0.0, 0.0, 1.0), 0.1
+    )
+
+    assert robot_kinematics.capsule_capsule_clearance(first, separated) == pytest.approx(0.3)
+    assert robot_kinematics.capsule_capsule_clearance(first, crossing) == pytest.approx(-0.2)
+
+
+def test_vectorized_segment_distances_match_scalar_kernel() -> None:
+    rng = np.random.default_rng(7)
+    first_start = rng.normal(size=3)
+    first_end = rng.normal(size=3)
+    second_starts = rng.normal(size=(32, 3))
+    second_ends = rng.normal(size=(32, 3))
+    second_ends[0] = second_starts[0]
+
+    actual = robot_kinematics._segment_to_segments_distances(
+        first_start,
+        first_end,
+        second_starts,
+        second_ends,
+    )
+    expected = np.asarray(
+        [
+            robot_kinematics._segment_segment_distance(
+                first_start,
+                first_end,
+                start,
+                end,
+            )
+            for start, end in zip(second_starts, second_ends, strict=True)
+        ]
+    )
+
+    np.testing.assert_allclose(actual, expected, atol=1e-12)
+
+def test_arm_obstacle_clearance_detects_a_vine_capsule_overlap() -> None:
+    model = robot_kinematics.Rby1Kinematics()
+    left_ready = (0.0, 5.0, 0.0, -120.0, 0.0, 70.0, 0.0)
+    arm_capsule = model.arm_capsules("left", left_ready, BASE)[-1]
+
+    result = model.arm_obstacle_clearance(
+        "left", left_ready, BASE, (arm_capsule,)
+    )
+
+    assert result.clearance_m < 0.0
+    assert result.nearest_obstacle is not None
+    assert "link_left_arm_" in result.nearest_obstacle
+
+
+def test_inter_arm_clearance_accepts_ready_pose_and_rejects_overlap() -> None:
+    model = robot_kinematics.Rby1Kinematics()
+    left_ready = (0.0, 5.0, 0.0, -120.0, 0.0, 70.0, 0.0)
+    colliding_left = (
+        -85.643995858, 107.071334251, 83.310427291, -82.849954157,
+        -36.521995776, 85.314361771, 51.134158417,
+    )
+    colliding_right = (
+        -177.567950194, 98.179681533, -88.657286263, -97.901238505,
+        -10.845725360, -1.684610892, -74.568687054,
+    )
+
+    ready = model.inter_arm_clearance(left_ready, RIGHT_SAFE, BASE)
+    overlap = model.inter_arm_clearance(colliding_left, colliding_right, BASE)
+
+    assert ready.clearance_m > 0.20
+    assert overlap.clearance_m < -0.14
+    assert overlap.nearest_obstacle is not None
+    assert "link_left_arm_" in overlap.nearest_obstacle
+    assert "link_right_arm_" in overlap.nearest_obstacle

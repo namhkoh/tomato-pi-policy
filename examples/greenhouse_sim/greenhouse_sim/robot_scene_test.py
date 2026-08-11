@@ -66,6 +66,7 @@ def test_generated_robot_references_with_ready_state_and_hardware() -> None:
         pytest.skip("PhysxSchema requires a running SimulationApp")
     from pxr import Usd
     from pxr import UsdGeom
+    from pxr import UsdPhysics
 
     stage = Usd.Stage.CreateInMemory()
     placement = robot_scene.add_fitted_robot(stage)
@@ -75,6 +76,13 @@ def test_generated_robot_references_with_ready_state_and_hardware() -> None:
     assert len(placement.initialized_joints) == 22
     assert len(placement.cameras) == 3
     assert all(stage.GetPrimAtPath(path).IsA(UsdGeom.Camera) for path in placement.cameras)
+    base_anchor = UsdPhysics.FixedJoint.Get(
+        stage, f"{placement.root_path}/joints/benchmark_world_fixed"
+    )
+    assert base_anchor
+    assert [str(path) for path in base_anchor.GetBody1Rel().GetTargets()] == [
+        f"{placement.root_path}/base"
+    ]
     for name, expected in robot_scene.READY_POSE_DEGREES.items():
         joint = stage.GetPrimAtPath(f"{placement.root_path}/joints/{name}")
         state = PhysxSchema.JointStateAPI.Get(joint, "angular")

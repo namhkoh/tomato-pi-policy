@@ -28,7 +28,7 @@ DEFAULT_ROBOT_PATH = "/World/RBY1"
 # Main_Cultivation_Zone's authored collision floor is z=-0.3050817 m.
 DEFAULT_POSITION_M = np.array([6.99114, 3.9300, -0.3050817], dtype=np.float64)
 DEFAULT_YAW_DEGREES = -90.0
-DEFAULT_POSE_NAME = "opposite_aisle_knife_precontact_substem_00"
+DEFAULT_POSE_NAME = "opposite_aisle_lower_gutter_safe_stow"
 
 # The official Model A ready pose used by the SDK's multi-control and leader-arm
 # examples.  Angular drive and PhysX joint-state attributes are in degrees.
@@ -52,20 +52,19 @@ SDK_READY_POSE_DEGREES = {
     "head_1": 0.0,
 }
 
-# Numerical IK from the exact RB-Y1 Model A v1.0 URDF. With the default base
-# pose this places the right flat blade in front of Vine_0000/SubStem_00 while
-# retaining a verified air gap. Deliberately do not spawn either arm at contact:
-# the failed closer candidate touched the main stem and a neighbouring petiole.
-# Collision-aware approach motion is the next control milestone. The torso,
-# left arm, and head retain the official SDK ready vector.
+# Numerical IK from the exact RB-Y1 Model A v1.0 URDF. This preserves the
+# knife's flat cutting orientation while moving its root 150 mm rearward and
+# 100 mm upward from the old high-gutter precontact pose. The old pose overlaps
+# upper foliage when used with gh_tomato_test's lower gutter. The torso, left
+# arm, and head retain the official SDK ready vector.
 GREENHOUSE_PRECONTACT_RIGHT_ARM_DEGREES = (
-    -101.724,
-    -83.623,
-    34.196,
-    -135.683,
-    -57.431,
-    94.832,
-    -74.920,
+    -146.58120585198483,
+    -83.52711902452849,
+    44.100760676248115,
+    -118.2726158812136,
+    -84.20799011233542,
+    109.99942703110308,
+    -67.89880648450034,
 )
 READY_POSE_DEGREES = {
     **SDK_READY_POSE_DEGREES,
@@ -126,6 +125,25 @@ def _initialize_ready_pose(stage: Usd.Stage, root_path: str) -> tuple[str, ...]:
     return tuple(initialized)
 
 
+def _anchor_stationary_base(stage: Usd.Stage, root_path: str) -> str:
+    """Fix the parked mobile base to its authored benchmark transform."""
+    base_path = f"{root_path}/base"
+    base = stage.GetPrimAtPath(base_path)
+    if not base.IsValid():
+        raise ValueError(f"fitted robot is missing base rigid body {base_path}")
+    world = UsdGeom.Xformable(base).ComputeLocalToWorldTransform(
+        Usd.TimeCode.Default()
+    )
+    joint_path = f"{root_path}/joints/benchmark_world_fixed"
+    joint = UsdPhysics.FixedJoint.Define(stage, Sdf.Path(joint_path))
+    joint.CreateBody1Rel().SetTargets([base_path])
+    joint.CreateLocalPos0Attr().Set(Gf.Vec3f(world.ExtractTranslation()))
+    joint.CreateLocalRot0Attr().Set(Gf.Quatf(world.ExtractRotationQuat()))
+    joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0))
+    joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
+    return joint_path
+
+
 def add_fitted_robot(
     stage: Usd.Stage,
     asset: pathlib.Path = DEFAULT_ROBOT_ASSET,
@@ -149,6 +167,7 @@ def add_fitted_robot(
         raise ValueError("robot position must contain exactly three values")
     _set_root_pose(root.GetPrim(), position, yaw_degrees)
 
+    _anchor_stationary_base(stage, root_path)
     initialized = _initialize_ready_pose(stage, root_path)
     cameras = (
         f"{root_path}/link_head_2/attachments/HeadCamera/D405/DepthCamera",

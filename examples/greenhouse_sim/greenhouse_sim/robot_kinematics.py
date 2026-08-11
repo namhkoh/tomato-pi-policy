@@ -51,6 +51,15 @@ class CapsuleObstacle:
 
 
 @dataclasses.dataclass(frozen=True)
+class BoxObstacle:
+    """World-space axis-aligned box used for rigid greenhouse clearance."""
+
+    path: str
+    minimum_m: tuple[float, float, float]
+    maximum_m: tuple[float, float, float]
+
+
+@dataclasses.dataclass(frozen=True)
 class ClearanceResult:
     clearance_m: float
     nearest_obstacle: str | None
@@ -114,6 +123,23 @@ class _Joint:
     axis: np.ndarray
     lower_rad: float
     upper_rad: float
+
+
+@dataclasses.dataclass(frozen=True)
+class _LinkCapsule:
+    link: str
+    index: int
+    origin: np.ndarray
+    radius_m: float
+    cylinder_length_m: float
+
+
+# Match build_robot.py: the URDF arm_5 cylinder is longer than the endpoint
+# comment in the source model and extends through the attached wrist tooling.
+_TASK_CONTACT_CAPSULE_OVERRIDES = {
+    "link_right_arm_5": ((0.0, 0.0, -0.024), 0.052),
+    "link_left_arm_5": ((0.0, 0.0, -0.024), 0.052),
+}
 
 
 def _numbers(value: str | None) -> np.ndarray:
@@ -189,6 +215,189 @@ def sphere_capsule_clearance(
     return ClearanceResult(clearance_m=best, nearest_obstacle=nearest)
 
 
+
+def _segment_segment_distance(first_start, first_end, second_start, second_end) -> float:
+    """Return the exact Euclidean distance between two finite 3-D segments."""
+    first_start = np.asarray(first_start, dtype=np.float64)
+    first_end = np.asarray(first_end, dtype=np.float64)
+    second_start = np.asarray(second_start, dtype=np.float64)
+    second_end = np.asarray(second_end, dtype=np.float64)
+    first_direction = first_end - first_start
+    second_direction = second_end - second_start
+    offset = first_start - second_start
+    first_length_squared = float(np.dot(first_direction, first_direction))
+    second_length_squared = float(np.dot(second_direction, second_direction))
+    direction_dot = float(np.dot(first_direction, second_direction))
+    first_offset_dot = float(np.dot(first_direction, offset))
+    second_offset_dot = float(np.dot(second_direction, offset))
+    epsilon = 1e-15
+
+    if first_length_squared <= epsilon and second_length_squared <= epsilon:
+        return float(np.linalg.norm(offset))
+    if first_length_squared <= epsilon:
+        first_fraction = 0.0
+        second_fraction = float(
+            np.clip(second_offset_dot / second_length_squared, 0.0, 1.0)
+        )
+    elif second_length_squared <= epsilon:
+        second_fraction = 0.0
+        first_fraction = float(
+            np.clip(-first_offset_dot / first_length_squared, 0.0, 1.0)
+        )
+    else:
+        denominator = (
+            first_length_squared * second_length_squared - direction_dot * direction_dot
+        )
+        if denominator > epsilon:
+            first_fraction = float(
+                np.clip(
+                    (direction_dot * second_offset_dot - first_offset_dot * second_length_squared)
+                    / denominator,
+                    0.0,
+                    1.0,
+                )
+            )
+        else:
+            first_fraction = 0.0
+        second_fraction = (
+            direction_dot * first_fraction + second_offset_dot
+        ) / second_length_squared
+        if second_fraction < 0.0:
+            second_fraction = 0.0
+            first_fraction = float(
+                np.clip(-first_offset_dot / first_length_squared, 0.0, 1.0)
+            )
+        elif second_fraction > 1.0:
+            second_fraction = 1.0
+            first_fraction = float(
+                np.clip(
+                    (direction_dot - first_offset_dot) / first_length_squared,
+                    0.0,
+                    1.0,
+                )
+            )
+    delta = offset + first_fraction * first_direction - second_fraction * second_direction
+    return float(np.linalg.norm(delta))
+
+
+def capsule_capsule_clearance(first: CapsuleObstacle, second: CapsuleObstacle) -> float:
+    """Return signed separation between two world-space capsules."""
+    return _segment_segment_distance(
+        first.start_m, first.end_m, second.start_m, second.end_m
+    ) - first.radius_m - second.radius_m
+
+
+def _segment_to_segments_distances(
+    first_start,
+    first_end,
+    second_starts: np.ndarray,
+    second_ends: np.ndarray,
+) -> np.ndarray:
+    """Vectorized exact distance from one segment to many finite segments."""
+    first_start = np.asarray(first_start, dtype=np.float64)
+    first_end = np.asarray(first_end, dtype=np.float64)
+    second_starts = np.asarray(second_starts, dtype=np.float64)
+    second_ends = np.asarray(second_ends, dtype=np.float64)
+    first_direction = first_end - first_start
+    second_directions = second_ends - second_starts
+    offsets = first_start - second_starts
+    first_length_squared = float(np.dot(first_direction, first_direction))
+    second_length_squared = np.einsum("ij,ij->i", second_directions, second_directions)
+    direction_dots = second_directions @ first_direction
+    first_offset_dots = offsets @ first_direction
+    second_offset_dots = np.einsum("ij,ij->i", second_directions, offsets)
+    epsilon = 1e-15
+    first_fractions = np.zeros(len(second_starts), dtype=np.float64)
+    second_fractions = np.zeros(len(second_starts), dtype=np.float64)
+    second_nondegenerate = second_length_squared > epsilon
+
+    if first_length_squared <= epsilon:
+        second_fractions[second_nondegenerate] = np.clip(
+            second_offset_dots[second_nondegenerate]
+            / second_length_squared[second_nondegenerate],
+            0.0,
+            1.0,
+        )
+    else:
+        denominators = (
+            first_length_squared * second_length_squared
+            - direction_dots * direction_dots
+        )
+        nonparallel = second_nondegenerate & (denominators > epsilon)
+        first_fractions[nonparallel] = np.clip(
+            (
+                direction_dots[nonparallel] * second_offset_dots[nonparallel]
+                - first_offset_dots[nonparallel] * second_length_squared[nonparallel]
+            )
+            / denominators[nonparallel],
+            0.0,
+            1.0,
+        )
+        second_fractions[second_nondegenerate] = (
+            direction_dots[second_nondegenerate]
+            * first_fractions[second_nondegenerate]
+            + second_offset_dots[second_nondegenerate]
+        ) / second_length_squared[second_nondegenerate]
+        below = second_nondegenerate & (second_fractions < 0.0)
+        second_fractions[below] = 0.0
+        first_fractions[below] = np.clip(
+            -first_offset_dots[below] / first_length_squared,
+            0.0,
+            1.0,
+        )
+        above = second_nondegenerate & (second_fractions > 1.0)
+        second_fractions[above] = 1.0
+        first_fractions[above] = np.clip(
+            (direction_dots[above] - first_offset_dots[above])
+            / first_length_squared,
+            0.0,
+            1.0,
+        )
+        degenerate = ~second_nondegenerate
+        first_fractions[degenerate] = np.clip(
+            -first_offset_dots[degenerate] / first_length_squared,
+            0.0,
+            1.0,
+        )
+
+    deltas = (
+        offsets
+        + first_fractions[:, None] * first_direction
+        - second_fractions[:, None] * second_directions
+    )
+    return np.linalg.norm(deltas, axis=1)
+
+
+def _capsule_sets_clearance(
+    first: tuple[CapsuleObstacle, ...],
+    second: tuple[CapsuleObstacle, ...],
+) -> ClearanceResult:
+    """Return exact minimum clearance using a vectorized obstacle batch."""
+    if not first or not second:
+        return ClearanceResult(clearance_m=float("inf"), nearest_obstacle=None)
+    starts = np.asarray([item.start_m for item in second], dtype=np.float64)
+    ends = np.asarray([item.end_m for item in second], dtype=np.float64)
+    radii = np.asarray([item.radius_m for item in second], dtype=np.float64)
+    best = float("inf")
+    nearest = None
+    for capsule in first:
+        clearances = (
+            _segment_to_segments_distances(
+                capsule.start_m,
+                capsule.end_m,
+                starts,
+                ends,
+            )
+            - capsule.radius_m
+            - radii
+        )
+        index = int(np.argmin(clearances))
+        clearance = float(clearances[index])
+        if clearance < best:
+            best = clearance
+            nearest = f"{capsule.path} <-> {second[index].path}"
+    return ClearanceResult(clearance_m=best, nearest_obstacle=nearest)
+
 def oriented_box_capsule_clearance(
     centre_m,
     rotation: np.ndarray,
@@ -218,6 +427,138 @@ def oriented_box_capsule_clearance(
             best = clearance
             nearest = obstacle.path
     return ClearanceResult(clearance_m=best, nearest_obstacle=nearest)
+
+
+def _box_centre_half_extents(obstacle: BoxObstacle) -> tuple[np.ndarray, np.ndarray]:
+    minimum = np.asarray(obstacle.minimum_m, dtype=np.float64)
+    maximum = np.asarray(obstacle.maximum_m, dtype=np.float64)
+    if minimum.shape != (3,) or maximum.shape != (3,) or np.any(maximum < minimum):
+        raise ValueError(f"invalid box obstacle bounds: {obstacle.path}")
+    return 0.5 * (minimum + maximum), 0.5 * (maximum - minimum)
+
+
+def _oriented_box_aabb_separation(
+    centre_m,
+    rotation: np.ndarray,
+    half_extents_m,
+    obstacle: BoxObstacle,
+) -> float:
+    """Return conservative signed SAT separation from an OBB to an AABB."""
+    centre = np.asarray(centre_m, dtype=np.float64)
+    basis = np.asarray(rotation, dtype=np.float64)
+    half_extents = np.asarray(half_extents_m, dtype=np.float64)
+    if centre.shape != (3,) or basis.shape != (3, 3) or half_extents.shape != (3,):
+        raise ValueError("box centre, rotation, and half extents have invalid shapes")
+    if np.any(half_extents < 0.0):
+        raise ValueError("box half extents cannot be negative")
+    obstacle_centre, obstacle_half_extents = _box_centre_half_extents(obstacle)
+    relative_rotation = basis.T
+    absolute_rotation = np.abs(relative_rotation) + 1e-12
+    translation = basis.T @ (obstacle_centre - centre)
+    gaps: list[float] = []
+
+    for axis in range(3):
+        gaps.append(
+            abs(float(translation[axis]))
+            - float(
+                half_extents[axis]
+                + np.dot(absolute_rotation[axis, :], obstacle_half_extents)
+            )
+        )
+    for axis in range(3):
+        gaps.append(
+            abs(float(np.dot(translation, relative_rotation[:, axis])))
+            - float(
+                obstacle_half_extents[axis]
+                + np.dot(half_extents, absolute_rotation[:, axis])
+            )
+        )
+    for first_axis in range(3):
+        first_next = (first_axis + 1) % 3
+        first_last = (first_axis + 2) % 3
+        for second_axis in range(3):
+            second_next = (second_axis + 1) % 3
+            second_last = (second_axis + 2) % 3
+            projected_distance = abs(
+                float(
+                    translation[first_last]
+                    * relative_rotation[first_next, second_axis]
+                    - translation[first_next]
+                    * relative_rotation[first_last, second_axis]
+                )
+            )
+            first_radius = float(
+                half_extents[first_next]
+                * absolute_rotation[first_last, second_axis]
+                + half_extents[first_last]
+                * absolute_rotation[first_next, second_axis]
+            )
+            second_radius = float(
+                obstacle_half_extents[second_next]
+                * absolute_rotation[first_axis, second_last]
+                + obstacle_half_extents[second_last]
+                * absolute_rotation[first_axis, second_next]
+            )
+            gaps.append(projected_distance - first_radius - second_radius)
+    return max(gaps)
+
+
+def oriented_box_box_clearance(
+    centre_m,
+    rotation: np.ndarray,
+    half_extents_m,
+    obstacles: tuple[BoxObstacle, ...],
+) -> ClearanceResult:
+    """Return signed separation from an oriented box to rigid structure boxes."""
+    best = float("inf")
+    nearest = None
+    for obstacle in obstacles:
+        clearance = _oriented_box_aabb_separation(
+            centre_m,
+            rotation,
+            half_extents_m,
+            obstacle,
+        )
+        if clearance < best:
+            best = clearance
+            nearest = obstacle.path
+    return ClearanceResult(clearance_m=best, nearest_obstacle=nearest)
+
+
+def sphere_box_clearance(
+    centre_m,
+    radius_m: float,
+    obstacles: tuple[BoxObstacle, ...],
+) -> ClearanceResult:
+    """Return signed separation from a sphere to rigid structure boxes."""
+    centre = np.asarray(centre_m, dtype=np.float64)
+    if centre.shape != (3,):
+        raise ValueError("centre_m must contain three values")
+    if radius_m < 0.0:
+        raise ValueError("radius_m cannot be negative")
+    best = float("inf")
+    nearest = None
+    for obstacle in obstacles:
+        obstacle_centre, half_extents = _box_centre_half_extents(obstacle)
+        excess = np.maximum(np.abs(centre - obstacle_centre) - half_extents, 0.0)
+        clearance = float(np.linalg.norm(excess) - radius_m)
+        if clearance < best:
+            best = clearance
+            nearest = obstacle.path
+    return ClearanceResult(clearance_m=best, nearest_obstacle=nearest)
+
+
+def capsule_box_clearance(capsule: CapsuleObstacle, obstacle: BoxObstacle) -> float:
+    """Return signed separation from a capsule to an axis-aligned box."""
+    centre, half_extents = _box_centre_half_extents(obstacle)
+    return (
+        _segment_aabb_distance(
+            np.asarray(capsule.start_m, dtype=np.float64) - centre,
+            np.asarray(capsule.end_m, dtype=np.float64) - centre,
+            half_extents,
+        )
+        - capsule.radius_m
+    )
 
 
 def _segment_aabb_distance(start, end, half_extents) -> float:
@@ -333,6 +674,42 @@ class Rby1Kinematics:
             )
             self._by_child[joint.child] = joint
             self._by_name[joint.name] = joint
+        self._link_capsules: dict[str, tuple[_LinkCapsule, ...]] = {}
+        for link in root.findall("link"):
+            link_name = link.attrib["name"]
+            capsules: list[_LinkCapsule] = []
+            for index, collision in enumerate(link.findall("collision")):
+                capsule = collision.find("geometry/capsule")
+                if capsule is None:
+                    continue
+                origin_element = collision.find("origin")
+                xyz = _numbers(
+                    None if origin_element is None else origin_element.get("xyz")
+                )
+                rpy = _numbers(
+                    None if origin_element is None else origin_element.get("rpy")
+                )
+                length = float(capsule.attrib["length"])
+                override = _TASK_CONTACT_CAPSULE_OVERRIDES.get(link_name)
+                if override is not None:
+                    xyz = np.asarray(override[0], dtype=np.float64)
+                    length = float(override[1])
+                origin = np.eye(4, dtype=np.float64)
+                origin[:3, :3] = _rotation_xyz(rpy)
+                origin[:3, 3] = xyz
+                capsules.append(
+                    _LinkCapsule(
+                        link=link_name,
+                        index=index,
+                        origin=origin,
+                        radius_m=float(capsule.attrib["radius"]),
+                        cylinder_length_m=length,
+                    )
+                )
+            if capsules:
+                self._link_capsules[link_name] = tuple(capsules)
+
+
 
     def _chain(self, child: str) -> tuple[_Joint, ...]:
         chain: list[_Joint] = []
@@ -342,15 +719,9 @@ class Rby1Kinematics:
             child = joint.parent
         return tuple(reversed(chain))
 
-    def arm_limits_degrees(self, side: str) -> tuple[np.ndarray, np.ndarray]:
-        joints = [self._by_name[f"{side}_arm_{index}"] for index in range(7)]
-        return (
-            np.degrees([joint.lower_rad for joint in joints]),
-            np.degrees([joint.upper_rad for joint in joints]),
-        )
-
-    def forward(
+    def _link_transform(
         self,
+        link: str,
         side: str,
         arm_degrees,
         base_matrix: np.ndarray,
@@ -363,13 +734,181 @@ class Rby1Kinematics:
             **{f"{side}_arm_{index}": value for index, value in enumerate(arm_radians)},
         }
         matrix = np.asarray(base_matrix, dtype=np.float64).copy()
-        for joint in self._chain(f"ee_{side}"):
+        for joint in self._chain(link):
             matrix = matrix @ joint.origin
             if joint.kind == "revolute":
                 rotation = np.eye(4, dtype=np.float64)
-                rotation[:3, :3] = _axis_rotation(joint.axis, values.get(joint.name, 0.0))
+                rotation[:3, :3] = _axis_rotation(
+                    joint.axis, values.get(joint.name, 0.0)
+                )
                 matrix = matrix @ rotation
         return matrix
+
+
+    def arm_limits_degrees(self, side: str) -> tuple[np.ndarray, np.ndarray]:
+        joints = [self._by_name[f"{side}_arm_{index}"] for index in range(7)]
+        return (
+            np.degrees([joint.lower_rad for joint in joints]),
+            np.degrees([joint.upper_rad for joint in joints]),
+        )
+
+    def arm_joint_limit_margin_degrees(self, side: str, arm_degrees) -> float:
+        """Return the smallest distance from an arm pose to an authored limit."""
+        values = np.asarray(arm_degrees, dtype=np.float64)
+        if values.shape != (7,):
+            raise ValueError("arm_degrees must contain seven joint values")
+        lower, upper = self.arm_limits_degrees(side)
+        return float(np.min(np.minimum(values - lower, upper - values)))
+
+    def forward(
+        self,
+        side: str,
+        arm_degrees,
+        base_matrix: np.ndarray,
+        torso_degrees=DEFAULT_TORSO_DEGREES,
+    ) -> np.ndarray:
+        return self._link_transform(
+            f"ee_{side}", side, arm_degrees, base_matrix, torso_degrees
+
+        )
+
+    def arm_capsules(
+        self,
+        side: str,
+        arm_degrees,
+        base_matrix: np.ndarray,
+        torso_degrees=DEFAULT_TORSO_DEGREES,
+    ) -> tuple[CapsuleObstacle, ...]:
+        """Transform one arm's authored URDF contact capsules to world space."""
+        if side not in {"left", "right"}:
+            raise ValueError(f"unsupported arm side {side!r}")
+        result: list[CapsuleObstacle] = []
+        prefix = f"link_{side}_arm_"
+        for link, capsules in self._link_capsules.items():
+            if not link.startswith(prefix):
+                continue
+            link_matrix = self._link_transform(
+                link, side, arm_degrees, base_matrix, torso_degrees
+            )
+            for capsule in capsules:
+                collision_matrix = link_matrix @ capsule.origin
+                half_length = 0.5 * capsule.cylinder_length_m
+                start = (collision_matrix @ np.asarray([0.0, 0.0, -half_length, 1.0]))[:3]
+                end = (collision_matrix @ np.asarray([0.0, 0.0, half_length, 1.0]))[:3]
+                result.append(
+                    CapsuleObstacle(
+                        path=f"{link}/capsule_{capsule.index:02d}",
+                        start_m=tuple(float(value) for value in start),
+                        end_m=tuple(float(value) for value in end),
+                        radius_m=capsule.radius_m,
+                    )
+                )
+        return tuple(result)
+
+    def fixed_body_capsules(
+        self,
+        base_matrix: np.ndarray,
+        torso_degrees=DEFAULT_TORSO_DEGREES,
+    ) -> tuple[CapsuleObstacle, ...]:
+        """Transform torso and head URDF contact capsules to world space."""
+        result: list[CapsuleObstacle] = []
+        for link, capsules in self._link_capsules.items():
+            if not link.startswith(("link_torso_", "link_head_")):
+                continue
+            link_matrix = self._link_transform(
+                link,
+                "left",
+                (0.0,) * 7,
+                base_matrix,
+                torso_degrees,
+            )
+            for capsule in capsules:
+                collision_matrix = link_matrix @ capsule.origin
+                half_length = 0.5 * capsule.cylinder_length_m
+                start = (
+                    collision_matrix
+                    @ np.asarray([0.0, 0.0, -half_length, 1.0])
+                )[:3]
+                end = (
+                    collision_matrix
+                    @ np.asarray([0.0, 0.0, half_length, 1.0])
+                )[:3]
+                result.append(
+                    CapsuleObstacle(
+                        path=f"{link}/capsule_{capsule.index:02d}",
+                        start_m=tuple(float(value) for value in start),
+                        end_m=tuple(float(value) for value in end),
+                        radius_m=capsule.radius_m,
+                    )
+                )
+        return tuple(result)
+
+    def fixed_body_clearance(
+        self,
+        base_matrix: np.ndarray,
+        obstacles: tuple[CapsuleObstacle, ...],
+        torso_degrees=DEFAULT_TORSO_DEGREES,
+    ) -> ClearanceResult:
+        """Return minimum torso/head separation from physical vine capsules."""
+        return _capsule_sets_clearance(
+            self.fixed_body_capsules(base_matrix, torso_degrees),
+            obstacles,
+        )
+
+    def arm_obstacle_clearance(
+        self,
+        side: str,
+        arm_degrees,
+        base_matrix: np.ndarray,
+        obstacles: tuple[CapsuleObstacle, ...],
+        torso_degrees=DEFAULT_TORSO_DEGREES,
+    ) -> ClearanceResult:
+        """Return minimum signed separation between one arm and vine capsules."""
+        return _capsule_sets_clearance(
+            self.arm_capsules(side, arm_degrees, base_matrix, torso_degrees),
+            obstacles,
+        )
+
+    def inter_arm_clearance(
+        self,
+        left_degrees,
+        right_degrees,
+        base_matrix: np.ndarray,
+        torso_degrees=DEFAULT_TORSO_DEGREES,
+    ) -> ClearanceResult:
+        """Return the minimum signed separation between left/right arm capsules."""
+        left_capsules = self.arm_capsules(
+            "left", left_degrees, base_matrix, torso_degrees
+        )
+        right_capsules = self.arm_capsules(
+            "right", right_degrees, base_matrix, torso_degrees
+        )
+        return _capsule_sets_clearance(left_capsules, right_capsules)
+
+    def arm_structure_clearance(
+        self,
+        side: str,
+        arm_degrees,
+        base_matrix: np.ndarray,
+        obstacles: tuple[BoxObstacle, ...],
+        torso_degrees=DEFAULT_TORSO_DEGREES,
+    ) -> ClearanceResult:
+        """Return minimum arm-capsule separation from rigid greenhouse boxes."""
+        capsules = self.arm_capsules(
+            side,
+            arm_degrees,
+            base_matrix,
+            torso_degrees,
+        )
+        best = float("inf")
+        nearest = None
+        for capsule in capsules:
+            for obstacle in obstacles:
+                clearance = capsule_box_clearance(capsule, obstacle)
+                if clearance < best:
+                    best = clearance
+                    nearest = f"{capsule.path} <-> {obstacle.path}"
+        return ClearanceResult(clearance_m=best, nearest_obstacle=nearest)
 
     def point_jacobian(
         self,

@@ -104,10 +104,16 @@ gitignored `data/greenhouse_sim/`. Step 1 re-checks each vine against its
 metadata sidecar and exits non-zero if any invariant breaks, so a regenerated
 asset set cannot quietly degrade the cut sites.
 
-The benchmark scene directly sublayers the supplied `greenhouse/green_house.usd`
+The benchmark scene directly sublayers the supplied `greenhouse/gh_tomato_test.usd`
 with the same Z-up, metre-scale stage metadata. It does not rescale or recreate
 the greenhouse. In that original asset, the target gutter spans Z=0.671–0.888 m
 over a cultivation floor at Z=-0.305 m, placing its top 1.193 m above the floor.
+
+The default `source` placement mode leaves that gutter and all bed transforms
+unchanged. Each physics-ready `tomato_NNN.usd` inherits the exact root
+translation and two-sided yaw of its matching `tomato_stem_NNN` prim in the
+source stage. Use `--placement-mode procedural` only when a generated
+bed-relative layout is intentionally required.
 
 To render a frame without a display (this is how the scene is checked in CI or
 over SSH):
@@ -141,7 +147,12 @@ While the simulation is running:
 - Hold **Shift** and left-drag any visible stem, petiole, or leaf blade.
 - Press `[` / `]` to select the previous / next deleafing petiole.
 - Press `G` to close the retained left tongs and `O` to open/release them. A
-  valid grasp requires loaded contact from both fingers on the selected petiole.
+  valid grasp requires loaded contact from both fingers on the selected petiole
+  or one of that selected branch's physical leaf proxies.
+- If positive physical load reaches both fingers on a different visible branch
+  while the gripper is closing, that opposed pinch automatically selects its
+  owning `Vine/SubStem`. A one-finger brush never retargets. Press `T` or click
+  **Target pinched leaf** only as an explicit fallback.
 - Press `C` only for an explicit **DEBUG FORCE CUT**. It releases the selected
   joint but is never benchmark-valid; a physical cut triggers automatically
   from real straight-edge contact, force, direction, travel, and work.
@@ -151,9 +162,17 @@ While the simulation is running:
   the **Vine Interaction** window.
 
 Mouse pulling raycasts the original rendered GLB mesh and maps the hit to its
-supporting rigid body. It therefore works across broad leaf blades as well as
-thin stems without enlarging the sparse robot-contact proxies. The pull is a bounded
-spring; `--drag-stiffness`, `--drag-damping`, and `--drag-max-force` tune it.
+supporting rigid body, so Shift-drag works across broad leaf blades and thin
+stems. In `interaction` collision mode each foliage organ also owns a thin,
+oriented physical contact box on that same body. Those boxes are filtered from
+the plant's own rigid bodies to preserve the stable authored rest pose, but they
+collide normally with the robot, fingers, and knife. A selected branch's leaf
+boxes are valid left-finger grasp contacts. Neighbouring foliage contact remains
+physical and benchmark-unsafe, but the default `--teleop-contact-policy monitor`
+logs it without pausing mailbox updates. Use `--teleop-contact-policy rollback`
+only when automatic return to the last contact-free pose is desired. The mouse
+pull is a bounded spring; `--drag-stiffness`, `--drag-damping`, and
+`--drag-max-force` tune it.
 The live report at `data/greenhouse_sim/interactive_greenhouse.json` records
 `visual_mouse_grabs`, releases, peak force, and cuts.
 
@@ -199,19 +218,21 @@ contact proxies, and fits the supplied hardware under `greenhouse/robot_assets/`
 
 - one Intel RealSense D405 and bracket on the head;
 - one D405 and bent bracket on the exact 18 mm-spaced M3 screw pair of each
-  end effector, using the mirrored RB-Y1 v1.1 CAD mounting datum;
+  end effector, using the mirrored RB-Y1 v1.1 CAD mounting datum converted from
+  the FreeCAD component origin to the official v1.0 URDF EE flange frame;
 - the supplied deleafing knife directly on the right end-effector flange.
 
 The original right gripper body and both tongs are fully removed from rendering
 and collision. Their invisible URDF links/joints remain only to preserve the
 exact v1.0 articulation and controller indexing; the right tool is knife-only.
 
-For the knife, only the distal 2 mm straight leading-edge region carries the
-cutting semantic. The full flat plate remains the physical contact collider but
-cannot trigger a cut from its broad face. The U-shaped arc is support geometry
-and cannot trigger a cut. The knife is rolled
-about its unchanged blade axis so that arc faces upward in the ready pose and
-the flat plate is presented cleanly toward the cut.
+For the knife, only the outer 2 mm strip along the long local `-X` side of the
+flat plate carries the cutting semantic; cutting travel is local `-X` and the
+straight edge axis is local `+Y`. The full plate remains the physical collider
+but its broad face cannot trigger a cut. The U-shaped arc remains non-cutting
+support geometry. Its nearest bound is more than 10 mm inside the semantic
+strip, so the arc cannot block centreline edge contact as it did with the former
+distal local `-Y` definition. The knife remains rolled with the arc upward.
 
 The nominal base pose is `(6.99114, 3.93000, -0.3050817)` m at -90 degrees
 yaw, on the opposite side of the target gutter. By default,
@@ -246,31 +267,43 @@ $ISAACSIM/python.sh examples/greenhouse_sim/interactive_greenhouse.py \
     --report data/greenhouse_sim/robot_wrist_screw_mount_acceptance.json
 ```
 
-The accepted pose is stable, both wrist brackets coincide with the v1.1 CAD's
-actual screw pair, and all three optical frames remain present. The final
-480-step report measures the parked flat blade 267.8 mm and upward U-support
-215.0 mm from the actual lower-petiole attachment, inside the 300 mm staged
-approach envelope and outside the 5 mm no-spawn-contact margin. All 34 robot
-rigid bodies remain finite, the base settles with 2.08 degrees tilt, and the
-contact trace contains only wheel/chassis support against the greenhouse floor.
+The wrist mount conversion is important: the supplied FreeCAD gripper component
+origin is 50 mm below the official `EE_BODY.dae` flange origin. The bracket M3
+axes are therefore at Z=-11.5 mm in each Isaac EE link, not Z=+38.5 mm. The
+rebuilt asset places the right bracket root at
+`(0, -0.095919538, -0.041619184)` m with identity rotation and the left root at
+`(0, +0.095919538, -0.041619184)` m with a 180-degree Z rotation. This matches
+the outside wrist faces in the supplied CAD and keeps all three optical frames
+valid.
+A 480-step fixed-station soak with 127 plant contact shapes kept all 34 robot
+bodies finite, recorded no robot-vine contact, and reported zero runaway vine
+organs.
 
-The complete robot-driven bi-manual acceptance is also live: 18 petiole targets
-expose local cut geometry; qualifying requires at least 66.3 N, transverse
-forward motion, sustained work through the measured diameter, a clear
-protected-contact ledger, and a prior left two-finger grasp. After severance the
-left grasp must retain, transport, and release the orphan in the side-aisle floor
-zone. Run the deterministic acceptance with:
+A complete robot-driven bi-manual acceptance was verified for the earlier
+`Vine_0000/SubStem_00` aisle layout: qualifying required at least 66.3 N,
+transverse forward motion, sustained work through the measured diameter, a
+clear protected-contact ledger, and a prior left two-finger grasp. That run
+reported one intended cut, zero unsafe contacts, and the complete `grasped ->
+orphan_retained -> transported -> released -> deposited` sequence.
 
-```bash
-$ISAACSIM/python.sh examples/greenhouse_sim/interactive_greenhouse.py \
-    --headless --bimanual-probe full --motion-steps 180 --drop-steps 1200 \
-    --report data/greenhouse_sim/bimanual_full_acceptance_final_pass.json
-```
+The current default has intentionally moved to the exact Side_1 source plant
+`Vine_0002/SubStem_00`, with RB-Y1 in the wider negative-Y inter-gutter aisle.
+Its startup/contact/stability gate is accepted, but its full bimanual route is
+not yet accepted: the strengthened live arm-vine gate safely rejects the current
+left approach before the forearm can enter the lower canopy. Use the normal
+interactive launch to inspect and pull/cut manually; treat **Run Full IK** as a
+re-planning diagnostic until the new-side episode passes the strict report.
+See `dev.md` for the current evidence and open blocker.
 
-The accepted run reports one benchmark-valid intended cut, zero unsafe
-contacts, and the full `grasped -> orphan_retained -> transported -> released ->
-deposited` sequence. See `dev.md` for the exact force/work evidence and the
-current rigid-tissue severance approximation.
+When a bimanual probe is run visibly, the GUI remains open after completion or
+safe rejection. The visible scheduler advances exactly one 240 Hz physics sample per
+control sample and performs a render-only refresh every fourth sample. It does
+not use `SimulationContext.step(render=True)`, which would execute four physics
+substeps at the configured 60 Hz rendering rate before the force, grasp, and cut
+monitors run. Target-conditioned runs reuse the already accepted distal grasp
+selection before beginning motion, while still resolving live IK at every
+approach waypoint. After a visible probe finishes, the GUI remains open on the
+final state until it is closed manually.
 
 Post-cut retract is target-conditioned as well. The planner evaluates both
 knife-wing choices and multiple right-tool routes against live vine capsules.
@@ -318,12 +351,65 @@ python examples/greenhouse_sim/rby1_leader_to_sim.py \
 
 Hold each leader tool button to enable only that simulated arm; releasing it
 holds the measured pose. The left trigger closes the simulated left gripper.
-The bridge never connects to or commands the physical RB-Y1. Commands are
-watchdog-, joint-limit-, speed-, deadman-, and contact-gated. Each recording
-episode contains JSONL state/action/task/safety samples plus the selected head
+The bridge never connects to or commands the physical RB-Y1. Commands remain
+watchdog-, joint-limit-, speed-, and deadman-gated. PhysX still resolves every
+contact and records it in the safety ledger; default `monitor` mode does not
+pause teleop after contact, while opt-in `rollback` mode returns toward the last
+contact-free pose. Each recording episode contains JSONL state/action/task/safety
+samples plus the selected head
 and wrist D405 RGB frames. Use `--dry-run` to publish one disabled command for a
 hardware-free integration check.
 
+#### Read-only physical RB-Y1 state mirroring
+
+This connected-hardware adapter is owned by `koh-dev/rby1`; that branch includes
+the latest `koh-dev/deleaf` simulator and keeps hardware I/O out of the benchmark
+foundation branch.
+
+To mirror the connected robot rather than the leader devices, start the read-only
+publisher first from the Python environment containing `rby1_sdk`:
+
+```bash
+python examples/greenhouse_sim/rby1_robot_state_to_sim.py \
+    --address 192.168.12.1:50051 \
+    --command-file data/greenhouse_sim/teleop_command.json
+```
+
+It reads the 24-position Model A state vector and publishes the six torso, seven
+left-arm, seven right-arm, and two head joints. The simulated left gripper polls
+`http://192.168.50.243:8765/status` at no more than 10 Hz and normalizes motor
+ID 1 with that homing session's `gripper_min_q`/`gripper_max_q`. On the left
+motor the numeric minimum is physically open and the numeric maximum is closed,
+so openness is `(max_q - position) / (max_q - min_q)`. The physical right
+gripper is intentionally ignored because the simulated right wrist carries the
+knife. Neither state source contains a physical robot or gripper command API. Add
+`--record` to the read-only publisher only after manual grasp/cut validation to
+set the simulator mailbox recording flag; recording still writes only simulator
+state, actions, task/safety labels, and D405 frames.
+
+For the current `Vine_0002/SubStem_00` teleop station, the validated
+collision-clear startup command is:
+
+```bash
+$ISAACSIM/python.sh examples/greenhouse_sim/interactive_greenhouse.py \
+    --teleop-command-file data/greenhouse_sim/teleop_command.json \
+    --target-vine Vine_0002 --target-organ SubStem_00 \
+    --robot-position-mode fixed \
+    --robot-position 10.639221515539253 4.25 -0.15254085567917297
+```
+
+The 4.25 m aisle coordinate includes 50 mm of measured-pose leaf clearance;
+launching the same live pose at 4.30 m correctly latched on a 2.0 mm
+neighbouring-leaf overlap before accepting motion.
+
+Teleop initialization consumes a fresh mailbox sample before PhysX starts, so
+the simulator begins at the measured upper-body pose rather than the scripted
+knife pre-contact pose. If no fresh sample exists, it uses the symmetric SDK
+ready pose. The benchmark base remains fixed: mirroring mobile-base odometry is
+deliberately excluded until a separate greenhouse collision envelope is
+implemented. Malformed or stale mailbox input still captures and holds one safe pose; the
+hold target never follows a gravity-driven falling state. Contact alone does
+not hold under the default `monitor` policy.
 ## Cutting demo
 
 Rigs one vine with compliant physics, settles it, cuts the lowest petiole, and
@@ -351,7 +437,7 @@ without booting Kit.
 **`Failed to read texture file /home/.../Desktop/...`.** The greenhouse asset's
 DomeLight points at an absolute path from the machine it was authored on. The
 scene layer clears it automatically, so this should only appear if you open
-`greenhouse/green_house.usd` directly rather than the built scene.
+`greenhouse/gh_tomato_test.usd` directly rather than the built scene.
 
 **The scene is slow or the GPU runs out of memory.** Reduce
 `--plants-per-bed`; each vine is ~750k triangles.
@@ -443,7 +529,11 @@ motion, and complete grasp/contact/cut/transport/floor-deposit acceptance on
 `Vine_0000/SubStem_00` and the formerly blocked `SubStem_01` are verified in
 Isaac Sim with zero unsafe contacts. Deterministic target
 selection, strict repeatability aggregation, and the simulator-only
-teleoperation/D405 recorder are implemented and hardware-free validated. Next:
-lab leader-arm validation, the full target/seed matrix, then 32.5 N tear
-calibration, task metrics, benchmark randomisation, policy interfaces, and RL.
+teleoperation/D405 recorder are implemented and hardware-free validated. Live
+read-only whole-body mirroring is now running. Zero-load contact filtering,
+automatic opposed-pinch target selection, and the exposed long-side cutting
+semantic pass the full regression suite; next is manual selected-leaf pinch/cut
+acceptance, synchronized trajectory capture for π0.5, the full
+target/seed matrix, then 32.5 N tear calibration, metrics, randomisation, policy
+interfaces, and RL.
 See `dev.md` at the repository root for evidence and remaining work.

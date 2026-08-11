@@ -45,6 +45,8 @@ from greenhouse_sim import usd_env
 
 
 PETIOLE_CUT_ZONE_LENGTH_M = 0.025
+FOLIAGE_CONTACT_MINIMUM_THICKNESS_M = 0.003
+FOLIAGE_CONTACT_PADDING_M = 0.001
 
 usd_env.ensure_pxr()
 
@@ -451,6 +453,171 @@ def _filter_cut_zones_from_plant(
                 relation.AddTarget(Sdf.Path(body_path))
 
 
+def _oriented_proxy_box(
+    points: np.ndarray,
+    *,
+    minimum_thickness_m: float = FOLIAGE_CONTACT_MINIMUM_THICKNESS_M,
+    padding_m: float = FOLIAGE_CONTACT_PADDING_M,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Fit a padded, right-handed PCA box around one leaf blade."""
+    vertices = np.asarray(points, dtype=np.float64)
+    if vertices.ndim != 2 or vertices.shape[0] < 3 or vertices.shape[1] != 3:
+        raise ValueError("foliage proxy points must have shape (N>=3, 3)")
+    if not np.isfinite(vertices).all():
+        raise ValueError("foliage proxy points must be finite")
+    if minimum_thickness_m <= 0.0 or padding_m < 0.0:
+        raise ValueError("foliage proxy dimensions must be positive")
+
+    mean = vertices.mean(axis=0)
+    _, _, right_vectors = np.linalg.svd(vertices - mean, full_matrices=False)
+    rotation = right_vectors.T
+    if np.linalg.det(rotation) < 0.0:
+        rotation[:, -1] *= -1.0
+    coordinates = (vertices - mean) @ rotation
+    minimum = coordinates.min(axis=0)
+    maximum = coordinates.max(axis=0)
+    local_centre = 0.5 * (minimum + maximum)
+    half_extents = 0.5 * (maximum - minimum) + float(padding_m)
+    half_extents = np.maximum(half_extents, 0.5 * float(minimum_thickness_m))
+    centre = mean + rotation @ local_centre
+    return centre, rotation, half_extents
+
+
+def _gf_transform(rotation: np.ndarray, translation: np.ndarray) -> Gf.Matrix4d:
+    values = np.asarray(rotation, dtype=np.float64)
+    matrix = Gf.Matrix4d(1.0)
+    # Gf matrices transform row vectors, whereas NumPy's columns above are the
+    # box's local axes expressed in its parent frame.
+    matrix.SetRotate(Gf.Matrix3d(*values.T.reshape(-1).tolist()))
+    matrix.SetTranslateOnly(
+        Gf.Vec3d(*np.asarray(translation, dtype=np.float64).tolist())
+    )
+    return matrix
+
+
+def _labelled_stem_ancestor(
+    plant: organs.Plant,
+    organ_index: int,
+    prefix: str,
+) -> organs.Organ | None:
+    index: int | None = int(organ_index)
+    while index is not None:
+        organ = plant.organs[index]
+        if organ.tissue is organs.Tissue.STEM and organ.label.startswith(prefix):
+            return organ
+        index = organ.parent
+    return None
+
+
+def author_foliage_contact_proxies(
+    stage: Usd.Stage,
+    rig: PlantRig,
+    plant: organs.Plant,
+    to_stage_frame,
+    *,
+    visible: bool = False,
+) -> tuple[ColliderInfo, ...]:
+    """Add stable leaf-blade contact without enabling raw plant self-contact.
+
+    Each visual foliage organ gets one thin oriented box on the same rigid body
+    that carries its render mesh. Every box is filtered from every other plant
+    body, so artistic rest-pose intersections cannot explode the vine, while
+    external robot fingers, arms, and tools still receive normal PhysX contact.
+    The proxy retains its owning ``SubStem_*`` identity so a two-finger pinch
+    on a target leaflet can establish the same branch grasp as its petiole.
+    """
+    try:
+        from pxr import PhysxSchema  # noqa: PLC0415
+    except ImportError:  # Standalone USD tests do not load Kit's PhysX schema.
+        PhysxSchema = None
+
+    base_links: dict[int, Link] = {}
+    for link in rig.links:
+        current = base_links.get(link.organ)
+        if current is None or link.index < current.index:
+            base_links[link.organ] = link
+    plant_body_paths = tuple(dict.fromkeys(link.path for link in rig.links))
+    authored: list[ColliderInfo] = []
+
+    for foliage in plant.organs:
+        if foliage.tissue is not organs.Tissue.FOLIAGE:
+            continue
+        branch = _labelled_stem_ancestor(plant, foliage.index, "SubStem_")
+        if branch is None:
+            continue
+        carrier_index: int | None = foliage.index
+        while carrier_index is not None and carrier_index not in base_links:
+            carrier_index = plant.organs[carrier_index].parent
+        if carrier_index is None:
+            continue
+        carrier = base_links[carrier_index]
+        body_prim = stage.GetPrimAtPath(carrier.path)
+        body_world = UsdGeom.Xformable(body_prim).ComputeLocalToWorldTransform(
+            Usd.TimeCode.Default()
+        )
+        body_inverse = body_world.GetInverse()
+        world_vertices = np.asarray(
+            to_stage_frame(foliage.component.vertices), dtype=np.float64
+        )
+        local_vertices = np.asarray(
+            [
+                body_inverse.Transform(Gf.Vec3d(*point.tolist()))
+                for point in world_vertices
+            ],
+            dtype=np.float64,
+        )
+        centre, rotation, half_extents = _oriented_proxy_box(local_vertices)
+
+        path = Sdf.Path(carrier.path).AppendChild(
+            f"FoliageContact_{foliage.index:04d}"
+        )
+        cube = UsdGeom.Cube.Define(stage, path)
+        cube.CreateSizeAttr(2.0)
+        transformable = UsdGeom.Xformable(cube.GetPrim())
+        transformable.AddTransformOp().Set(_gf_transform(rotation, centre))
+        transformable.AddScaleOp().Set(Gf.Vec3f(*half_extents.tolist()))
+        UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+        if PhysxSchema is not None:
+            physx_collision = PhysxSchema.PhysxCollisionAPI.Apply(cube.GetPrim())
+            physx_collision.CreateContactOffsetAttr(0.003)
+            physx_collision.CreateRestOffsetAttr(0.0005)
+        if visible:
+            cube.CreateDisplayColorAttr([Gf.Vec3f(0.18, 0.62, 0.20)])
+            cube.CreateDisplayOpacityAttr([0.25])
+        else:
+            UsdGeom.Imageable(cube).CreatePurposeAttr(UsdGeom.Tokens.guide)
+
+        prim = cube.GetPrim()
+        prim.CreateAttribute(
+            "tomato:organIndex", Sdf.ValueTypeNames.Int, custom=True
+        ).Set(int(branch.index))
+        prim.CreateAttribute(
+            "tomato:sourceFoliageOrganIndex", Sdf.ValueTypeNames.Int, custom=True
+        ).Set(int(foliage.index))
+        prim.CreateAttribute(
+            "tomato:organLabel", Sdf.ValueTypeNames.String, custom=True
+        ).Set(branch.label)
+        prim.CreateAttribute(
+            "tomato:interactionRole", Sdf.ValueTypeNames.String, custom=True
+        ).Set("foliage_grasp")
+
+        relation = UsdPhysics.FilteredPairsAPI.Apply(prim).CreateFilteredPairsRel()
+        for body_path in plant_body_paths:
+            if body_path != carrier.path:
+                relation.AddTarget(Sdf.Path(body_path))
+        authored.append(
+            ColliderInfo(
+                path=str(path),
+                body_path=carrier.path,
+                organ=branch.index,
+                organ_label=branch.label,
+                segment=carrier.index,
+                role="foliage_grasp",
+            )
+        )
+    return tuple(authored)
+
+
 def author_plant_physics(
     stage: Usd.Stage,
     plant: organs.Plant,
@@ -484,14 +651,15 @@ def author_plant_physics(
     anyway, since `breakForce` is ignored inside an articulation.
 
     Structural links and contact geometry are deliberately separate concerns.
-    "interaction" (the default) enables contact only on the main stem and the
-    18 labelled SubStem petioles used by the deleafing benchmark. The remaining
-    capsules still carry mass, inertia, joints, and the original render mesh,
-    but do not enter the contact solver. This matters because the source asset
-    is an artistic rest pose with leaflets and trusses already intersecting;
-    making every structural capsule collide asks PhysX to violently resolve a
-    pose that is intentionally interpenetrating. "all" is retained only for
-    diagnosing that raw collider set, and "none" isolates constraints.
+    "interaction" (the default) enables main-stem and labelled SubStem petiole
+    contact here; :func:`author_foliage_contact_proxies` adds robot-contactable
+    leaf boxes after the render meshes are attached. The remaining structural
+    capsules still carry mass, inertia, joints, and art but do not enter the
+    contact solver. This matters because the source asset is an artistic rest
+    pose with leaflets and trusses already intersecting; making every raw
+    structural capsule collide asks PhysX to violently resolve a pose that is
+    intentionally interpenetrating. "all" is retained only for diagnosing
+    that raw collider set, and "none" isolates constraints.
     """
     properties = properties or TissueProperties()
     if collision_mode not in {"interaction", "none", "all"}:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from greenhouse_sim import organs
 from greenhouse_sim import vine_physics
 from pxr import Sdf
 from pxr import Usd
@@ -137,3 +138,119 @@ def test_flush_cut_zone_is_filtered_from_every_plant_contact_body() -> None:
         for info in infos
         if info.body_path != cut_zone.body_path
     }
+
+
+def test_oriented_foliage_proxy_has_right_handed_frame_and_minimum_thickness() -> None:
+    angle = np.radians(31.0)
+    rotation = np.asarray(
+        [
+            [np.cos(angle), -np.sin(angle), 0.0],
+            [np.sin(angle), np.cos(angle), 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    rectangle = np.asarray(
+        [
+            [-0.04, -0.015, 0.0],
+            [0.04, -0.015, 0.0],
+            [0.04, 0.015, 0.0],
+            [-0.04, 0.015, 0.0],
+        ]
+    ) @ rotation.T
+
+    centre, frame, half_extents = vine_physics._oriented_proxy_box(rectangle)
+
+    np.testing.assert_allclose(centre, np.zeros(3), atol=1e-12)
+    np.testing.assert_allclose(frame.T @ frame, np.eye(3), atol=1e-12)
+    assert np.linalg.det(frame) > 0.999999
+    assert (
+        2.0 * np.min(half_extents)
+        >= vine_physics.FOLIAGE_CONTACT_MINIMUM_THICKNESS_M
+    )
+
+
+def test_foliage_proxy_is_robot_contactable_but_filtered_from_plant_bodies() -> None:
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.Xform.Define(stage, "/World")
+    UsdGeom.Xform.Define(stage, "/World/Vine")
+    root_body = "/World/Vine/Root"
+    branch_body = "/World/Vine/Branch"
+    for path in (root_body, branch_body):
+        UsdGeom.Xform.Define(stage, path)
+    component = organs.Component(
+        index=2,
+        material="Leaf",
+        tissue=organs.Tissue.FOLIAGE,
+        vertices=np.asarray(
+            [
+                [-0.03, -0.01, 0.0],
+                [0.03, -0.01, 0.0],
+                [0.03, 0.01, 0.0],
+                [-0.03, 0.01, 0.0],
+            ]
+        ),
+        triangles=np.asarray([[0, 1, 2], [0, 2, 3]], dtype=np.int64),
+    )
+    stem_component = organs.Component(
+        index=0,
+        material="TomatoStem",
+        tissue=organs.Tissue.STEM,
+        vertices=np.asarray([[0.0, 0.0, 0.0]]),
+        triangles=np.empty((0, 3), dtype=np.int64),
+    )
+    plant = organs.Plant(
+        name="test",
+        root=0,
+        metadata={},
+        organs=[
+            organs.Organ(0, stem_component, None, None, 0.0, "MainStem"),
+            organs.Organ(1, stem_component, 0, np.zeros(3), 0.0, "SubStem_00"),
+            organs.Organ(2, component, 1, np.zeros(3), 0.0, "Foliage_002"),
+        ],
+    )
+    rig = vine_physics.PlantRig(
+        root_path="/World/Vine",
+        links=[
+            vine_physics.Link(
+                root_body,
+                0,
+                0,
+                np.zeros(3),
+                np.asarray([0.0, 0.0, 0.1]),
+                0.005,
+            ),
+            vine_physics.Link(
+                branch_body,
+                1,
+                0,
+                np.zeros(3),
+                np.asarray([0.1, 0.0, 0.0]),
+                0.003,
+            ),
+        ],
+        joints={},
+        cut_joints={},
+    )
+
+    infos = vine_physics.author_foliage_contact_proxies(
+        stage,
+        rig,
+        plant,
+        lambda points: np.asarray(points, dtype=np.float64),
+    )
+
+    assert len(infos) == 1
+    assert infos[0].organ_label == "SubStem_00"
+    assert infos[0].role == "foliage_grasp"
+    proxy = stage.GetPrimAtPath(infos[0].path)
+    assert proxy.HasAPI(UsdPhysics.CollisionAPI)
+    bounds = UsdGeom.BBoxCache(
+        Usd.TimeCode.Default(),
+        [UsdGeom.Tokens.default_, UsdGeom.Tokens.guide],
+    ).ComputeWorldBound(proxy).ComputeAlignedRange()
+    minimum = np.asarray(bounds.GetMin(), dtype=np.float64)
+    maximum = np.asarray(bounds.GetMax(), dtype=np.float64)
+    assert np.all(component.vertices >= minimum - 1e-12)
+    assert np.all(component.vertices <= maximum + 1e-12)
+    filtered = UsdPhysics.FilteredPairsAPI.Get(stage, proxy.GetPath())
+    assert filtered.GetFilteredPairsRel().GetTargets() == [Sdf.Path(root_body)]

@@ -39,12 +39,17 @@ RIGHT_GRIPPER_LINKS = ("ee_right", "ee_finger_r1", "ee_finger_r2")
 # Local mounts in the corresponding RBY1 link frame.  RBY1 tools extend along
 # -Z.  The wrist-camera transform is measured from the supplied
 # RBY1_Example_setup.FCStd reference, not fitted by eye.  In that assembly the
-# bracket's two M3 axes are at x=+/-9, y=-39, z=38.5 mm in either local gripper
-# frame.  The extracted STL was re-origined at the source bracket bounds, so its
-# same bolt axes are x=+/-9, y=56.919538, z=30.119184 mm.  This translation
-# aligns those axes exactly and seats the bracket against the wrist screw face.
+# bracket's two M3 axes are at x=+/-9, y=-39, z=38.5 mm in the FreeCAD gripper
+# component frame.  That component frame is 50 mm below the official URDF EE
+# flange: the supplied gripper's top face is z=+50 mm while ``EE_BODY.dae`` has
+# the same face at z=0.  Therefore the screw axes are z=-11.5 mm in the actual
+# ``ee_left``/``ee_right`` link frame used by Isaac.  The extracted STL was
+# re-origined at its bounds and has the same bolt axes at x=+/-9,
+# y=56.919538, z=30.119184 mm.  This translation aligns those axes exactly and
+# seats the bracket against the wrist screw face without the former 50 mm
+# vertical offset.
 WRIST_REFERENCE_BOLT_CENTRES_M = np.array(
-    [[-0.009, -0.039, 0.0385], [0.009, -0.039, 0.0385]], dtype=np.float64
+    [[-0.009, -0.039, -0.0115], [0.009, -0.039, -0.0115]], dtype=np.float64
 )
 WRIST_BRACKET_BOLT_CENTRES_M = np.array(
     [
@@ -53,41 +58,72 @@ WRIST_BRACKET_BOLT_CENTRES_M = np.array(
     ],
     dtype=np.float64,
 )
-WRIST_CAMERA_TRANSLATION_M = np.array(
-    [0.0, -0.0959195383671445, 0.0083808164884455], dtype=np.float64
+RIGHT_CAMERA_TRANSLATION_M = np.array(
+    [0.0, -0.0959195383671445, -0.0416191835115545], dtype=np.float64
 )
-LEFT_CAMERA_TRANSLATION_M = WRIST_CAMERA_TRANSLATION_M.copy()
-RIGHT_CAMERA_TRANSLATION_M = WRIST_CAMERA_TRANSLATION_M.copy()
+LEFT_CAMERA_TRANSLATION_M = np.array(
+    [0.0, 0.0959195383671445, -0.0416191835115545], dtype=np.float64
+)
+# Backward-compatible right-mount datum; side-aware helpers below should be
+# used by new collision-planning code.
+WRIST_CAMERA_TRANSLATION_M = RIGHT_CAMERA_TRANSLATION_M.copy()
+
 # The right gripper body is removed for the deleafing configuration.  The
 # knife's CAD origin is its mounting face, so it mounts directly at the
 # retained ee_right kinematic frame rather than at the old jaw tip.
 KNIFE_TRANSLATION_M = np.zeros(3, dtype=np.float64)
 CUTTING_EDGE_DEPTH_M = 0.002
+# The U-support projects beyond the distal local -Y end of the plate. The
+# exposed straight cutting edge is the long local -X side of the flat blade.
+KNIFE_CUT_DIRECTION_LOCAL = np.array([-1.0, 0.0, 0.0], dtype=np.float64)
+KNIFE_EDGE_AXIS_LOCAL = np.array([0.0, 1.0, 0.0], dtype=np.float64)
 HEAD_BRACKET_TRANSLATION_M = np.array([0.022, 0.0, 0.040], dtype=np.float64)
 
 
 def wrist_d405_body_sphere(
     manifest: dict | None = None,
+    *,
+    side: str = "right",
 ) -> tuple[np.ndarray, float]:
-    """Return the conservative D405 body sphere in either wrist EE frame."""
-    centre, _, half_extents = wrist_d405_body_box(manifest)
+    """Return the conservative D405 body sphere in one wrist EE frame."""
+    centre, _, half_extents = wrist_d405_body_box(manifest, side=side)
     return centre, float(np.linalg.norm(half_extents))
 
 
 def wrist_d405_body_box(
     manifest: dict | None = None,
+    *,
+    side: str = "right",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return D405 body box centre, rotation, and half extents in wrist EE."""
+    """Return D405 body box centre, rotation, and half extents in one EE."""
     manifest = load_manifest() if manifest is None else manifest
     body_minimum, body_maximum = _bounds_m(_part(manifest, "d405_body"))
     body_centre = 0.5 * (body_minimum + body_maximum)
     half_extents = 0.5 * (body_maximum - body_minimum)
     mount = manifest["mounts"]["camera_bracket_to_d405"]
     mount_rotation = np.asarray(mount["rotation_matrix"], dtype=np.float64)
-    mount_translation = np.asarray(mount["translation_mm"], dtype=np.float64) * 0.001
-    centre = WRIST_CAMERA_TRANSLATION_M + mount_translation + mount_rotation @ body_centre
-    return centre, mount_rotation, half_extents
+    mount_translation = (
+        np.asarray(mount["translation_mm"], dtype=np.float64) * 0.001
+    )
+    assembly_rotation, assembly_translation = wrist_camera_mount(side)
+    centre = assembly_translation + assembly_rotation @ (
+        mount_translation + mount_rotation @ body_centre
+    )
+    return centre, assembly_rotation @ mount_rotation, half_extents
 
+
+def wrist_camera_bracket_box(
+    manifest: dict | None = None,
+    *,
+    side: str = "right",
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return the conservative screw-mounted bracket box in one wrist EE."""
+    manifest = load_manifest() if manifest is None else manifest
+    minimum, maximum = _bounds_m(_part(manifest, "camera_bracket_d405"))
+    centre = 0.5 * (minimum + maximum)
+    half_extents = 0.5 * (maximum - minimum)
+    rotation, translation = wrist_camera_mount(side)
+    return translation + rotation @ centre, rotation, half_extents
 
 def knife_blade_box(
     manifest: dict | None = None,
@@ -119,6 +155,44 @@ def knife_support_box(
     minimum = np.asarray(support["min_mm"], dtype=np.float64) * 0.001
     maximum = np.asarray(support["max_mm"], dtype=np.float64) * 0.001
     return 0.5 * (minimum + maximum), 0.5 * (maximum - minimum)
+
+
+def knife_support_boxes(
+    slice_count: int = 6,
+    padding_m: float = 0.00025,
+) -> tuple[tuple[np.ndarray, np.ndarray], ...]:
+    """Return a conservative segmented proxy of the curved U-support.
+
+    A single bounds box fills the U-shaped opening and reports collisions in
+    empty space. These triangle-aware Y slices enclose the supplied STL while
+    retaining that opening for planning and runtime clearance checks.
+    """
+    if slice_count < 2:
+        raise ValueError("knife support proxy requires at least two slices")
+    mesh = read_binary_stl(DERIVED_DIR / "deleaf_knife_arc.stl")
+    triangles = mesh.points[mesh.triangles]
+    minimum, maximum = mesh.bounds
+    edges = np.linspace(minimum[1], maximum[1], slice_count + 1)
+    boxes = []
+    for low_y, high_y in zip(edges[:-1], edges[1:], strict=True):
+        intersects = np.logical_and(
+            triangles[:, :, 1].max(axis=1) >= low_y,
+            triangles[:, :, 1].min(axis=1) <= high_y,
+        )
+        points = triangles[intersects].reshape(-1, 3)
+        box_minimum = points.min(axis=0)
+        box_maximum = points.max(axis=0)
+        box_minimum[1] = low_y
+        box_maximum[1] = high_y
+        box_minimum -= padding_m
+        box_maximum += padding_m
+        boxes.append(
+            (
+                0.5 * (box_minimum + box_maximum),
+                0.5 * (box_maximum - box_minimum),
+            )
+        )
+    return tuple(boxes)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -162,11 +236,21 @@ def rotation_z(degrees: float) -> np.ndarray:
     return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
 
 
-# Both reference camera assemblies have the same transform relative to their
-# mirrored local gripper frames.  Mirroring is supplied by the robot kinematic
-# chain; adding another right-side 180-degree rotation misaligns the M3 pair.
-LEFT_CAMERA_ROTATION = np.eye(3, dtype=np.float64)
+# The FreeCAD left gripper component is rotated 180 degrees about Z relative to
+# the URDF ``ee_left`` frame. Mirror the complete assembly so each camera sits
+# on the outside wrist face, matching the CAD bracket placements at y=+/-259 mm.
+LEFT_CAMERA_ROTATION = rotation_z(180.0)
 RIGHT_CAMERA_ROTATION = np.eye(3, dtype=np.float64)
+
+
+def wrist_camera_mount(side: str) -> tuple[np.ndarray, np.ndarray]:
+    """Return assembly rotation/translation for one handed wrist mount."""
+    if side == "left":
+        return LEFT_CAMERA_ROTATION.copy(), LEFT_CAMERA_TRANSLATION_M.copy()
+    if side == "right":
+        return RIGHT_CAMERA_ROTATION.copy(), RIGHT_CAMERA_TRANSLATION_M.copy()
+    raise ValueError(f"unknown wrist side: {side!r}")
+
 # Preserve CAD -Y along tool -Z, but roll the plate around that blade axis so
 # the U-shaped support on CAD +Z faces tool +X. In the greenhouse ready pose,
 # tool +X is the most upward transverse direction.
@@ -200,9 +284,10 @@ def cut_aligned_knife_rotation(
 ) -> np.ndarray:
     """Orient the CAD knife for a transverse cut with its support facing up.
 
-    The flat plate's local X axis is its edge, local -Y is cutting travel, and
-    local +Z points toward the U-shaped support.  A valid guillotine-like cut
-    therefore places both X and -Y transverse to the contacted petiole tangent.
+    The flat plate's local Y axis is its long exposed edge, local -X is cutting
+    travel, and local +Z points toward the U-shaped support. A valid
+    guillotine-like cut therefore places both Y and -X transverse to the
+    contacted petiole tangent.
     The support normal is selected from the two tangent directions so it has a
     positive world-up component, then the preferred aisle motion is projected
     into the transverse plane.
@@ -226,10 +311,10 @@ def cut_aligned_knife_rotation(
     if cut_norm <= 1e-12:
         raise ValueError("preferred cut direction is parallel to the target axis")
     cut_direction /= cut_norm
-    knife_y = -cut_direction
-    edge_axis = np.cross(knife_y, support)
+    knife_x = -cut_direction
+    edge_axis = np.cross(support, knife_x)
     edge_axis /= float(np.linalg.norm(edge_axis))
-    return np.column_stack((edge_axis, knife_y, support))
+    return np.column_stack((knife_x, edge_axis, support))
 
 
 def read_binary_stl(path: pathlib.Path, *, scale: float = 0.001) -> TriangleMesh:
@@ -471,13 +556,14 @@ def _author_knife(
     _hardware_attr(blade_collision_prim, "hardwareRole", "blade_plate")
     _hardware_attr(blade_collision_prim, "cuttingSurface", False)
 
-    # Only the distal two millimetres of the flat plate are the leading edge.
-    # This non-colliding semantic volume is evaluated against contact points
-    # from the full physical plate collider, avoiding duplicate/overlapping
-    # PhysX shapes while ensuring a face or arc scrape cannot sever a petiole.
+    # Only the outer two millimetres of the long flat-plate side are the
+    # leading edge. The U-support is centred within the plate width and cannot
+    # occlude this local -X strip, unlike the former distal -Y semantic edge.
+    # The semantic volume is non-colliding and evaluates contact points from
+    # the full physical plate collider, so broad-face and arc scrapes cannot cut.
     edge_min = blade_min.copy()
     edge_max = blade_max.copy()
-    edge_max[1] = min(edge_min[1] + CUTTING_EDGE_DEPTH_M, blade_max[1])
+    edge_max[0] = min(edge_min[0] + CUTTING_EDGE_DEPTH_M, blade_max[0])
     edge_path = _author_box_collider(
         stage,
         f"{root_path}/CuttingEdge",
@@ -491,10 +577,10 @@ def _author_knife(
     _hardware_attr(edge_prim, "edgeDepthMillimeters", CUTTING_EDGE_DEPTH_M * 1000.0)
     edge_prim.CreateAttribute(
         "tomato:cuttingDirection", Sdf.ValueTypeNames.Float3, custom=True
-    ).Set(Gf.Vec3f(0.0, -1.0, 0.0))
+    ).Set(Gf.Vec3f(*KNIFE_CUT_DIRECTION_LOCAL.tolist()))
     edge_prim.CreateAttribute(
         "tomato:edgeAxis", Sdf.ValueTypeNames.Float3, custom=True
-    ).Set(Gf.Vec3f(1.0, 0.0, 0.0))
+    ).Set(Gf.Vec3f(*KNIFE_EDGE_AXIS_LOCAL.tolist()))
 
     arc_path = f"{root_path}/Arc"
     arc_mesh = _author_mesh(stage, arc_path, DERIVED_DIR / "deleaf_knife_arc.stl", (0.16, 0.18, 0.20))

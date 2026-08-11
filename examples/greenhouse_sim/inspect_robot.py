@@ -54,6 +54,7 @@ def main() -> int:
     from pxr import UsdGeom
     from pxr import UsdLux
 
+    from greenhouse_sim import robot_hardware
     from greenhouse_sim import robot_scene
     from greenhouse_sim import vine_physics
 
@@ -160,7 +161,11 @@ def main() -> int:
         Usd.TimeCode.Default()
     )
     knife_axes = {
-        "blade_extension": list(blade_matrix.TransformDir(Gf.Vec3d(0.0, -1.0, 0.0)).GetNormalized()),
+        "blade_extension": list(
+            blade_matrix.TransformDir(
+                Gf.Vec3d(*robot_hardware.KNIFE_CUT_DIRECTION_LOCAL.tolist())
+            ).GetNormalized()
+        ),
         "arc_facing": list(blade_matrix.TransformDir(Gf.Vec3d(0.0, 0.0, 1.0)).GetNormalized()),
     }
 
