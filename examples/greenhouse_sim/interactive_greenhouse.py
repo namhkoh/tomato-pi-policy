@@ -1573,6 +1573,7 @@ class BladeContactMonitor:
     def __init__(self, stage, runtimes, robot_placement, parameters) -> None:
         from greenhouse_sim import cutting as cutting_module
         from greenhouse_sim import robot_hardware
+        from greenhouse_sim import robot_kinematics
         import numpy as np
         from pxr import Gf
         from pxr import PhysxSchema
@@ -1581,8 +1582,12 @@ class BladeContactMonitor:
 
         self._cutting = cutting_module
         self._np = np
+        self._robot_kinematics = robot_kinematics
         self._cut_direction_local = robot_hardware.KNIFE_CUT_DIRECTION_LOCAL.copy()
         self._edge_axis_local = robot_hardware.KNIFE_EDGE_AXIS_LOCAL.copy()
+        _, blade_half_extents = robot_hardware.knife_blade_box()
+        self._edge_half_length_m = float(blade_half_extents[1])
+        self._geometry_contact_tolerance_m = 0.0015
         self._stage = stage
         self._runtimes = {runtime.name: runtime for runtime in runtimes}
         self._gate = cutting_module.DirectionalCutGate(parameters)
@@ -1603,6 +1608,7 @@ class BladeContactMonitor:
         self._counterhold_provider = lambda _key: False
         self._violations: dict[tuple[str, str, str], dict] = {}
         self._physical_cuts: list[dict] = []
+        self._latest_geometric_contact: dict | None = None
 
         for runtime in runtimes:
             for info in runtime.rig.colliders:
@@ -1901,6 +1907,7 @@ class BladeContactMonitor:
                         "inside_edge": (
                             tool == "blade" and self._inside_cutting_edge(point)
                         ),
+                        "source": "physx",
                     }
                 )
 
@@ -1934,6 +1941,91 @@ class BladeContactMonitor:
         )
         self._previous_edge_centre = centre.copy()
         return centre, edge_axis, cut_direction, velocity
+
+    def _geometric_counterheld_contact(
+        self,
+        centre,
+        edge_axis,
+        cut_direction,
+        dt_s: float,
+    ) -> tuple[str, dict] | None:
+        """Model thin rigid-tissue reaction only for the grasp-held target."""
+        key = self._active_target or ""
+        if key not in self._targets:
+            self._latest_geometric_contact = None
+            return None
+
+        edge_start = centre - edge_axis * self._edge_half_length_m
+        edge_end = centre + edge_axis * self._edge_half_length_m
+        nearest = None
+        for collider_path, target_key in self._target_colliders.items():
+            if target_key != key:
+                continue
+            runtime, target = self._current_target(key, collider_path)
+            target_start = (
+                target.centre_m
+                - target.axis * self._gate.parameters.cut_zone_before_m
+            )
+            target_end = (
+                target.centre_m
+                + target.axis * self._gate.parameters.cut_zone_after_m
+            )
+            distance = self._robot_kinematics._segment_segment_distance(
+                edge_start,
+                edge_end,
+                target_start,
+                target_end,
+            )
+            candidate = (distance, collider_path, runtime, target)
+            if nearest is None or candidate[0] < nearest[0]:
+                nearest = candidate
+
+        if nearest is None:
+            self._latest_geometric_contact = None
+            return None
+        distance, collider_path, runtime, target = nearest
+        counterhold_active = bool(self._counterhold_provider(key))
+        reaction_force = _geometric_cut_reaction_force(
+            distance,
+            target.radius_m,
+            target.cut_force_n,
+            self._geometry_contact_tolerance_m,
+            self._gate.parameters.force_cap_multiple,
+        )
+        stub_m = float(
+            self._np.clip(
+                self._np.dot(centre - target.centre_m, target.axis),
+                -self._gate.parameters.cut_zone_before_m,
+                self._gate.parameters.cut_zone_after_m,
+            )
+        )
+        point = target.centre_m + target.axis * stub_m
+        self._latest_geometric_contact = {
+            "target": key,
+            "collider": collider_path,
+            "edge_segment_m": [edge_start.tolist(), edge_end.tolist()],
+            "target_segment_m": [target_start.tolist(), target_end.tolist()],
+            "clearance_to_centreline_m": float(distance),
+            "contact_limit_m": float(
+                target.radius_m + self._geometry_contact_tolerance_m
+            ),
+            "reaction_force_n": float(reaction_force),
+            "counterhold_active": counterhold_active,
+            "evidence_active": bool(counterhold_active and reaction_force > 0.0),
+            "source": "counterheld_rigid_tissue_geometry",
+        }
+        if not counterhold_active or reaction_force <= 0.0:
+            return None
+
+        impulse = cut_direction * reaction_force * dt_s
+        weight = max(float(self._np.linalg.norm(impulse)), 1e-12)
+        return key, {
+            "point_sum": weight * point,
+            "weight": weight,
+            "impulse": impulse,
+            "collider_weights": {collider_path: weight},
+            "sources": {"counterheld_rigid_tissue_geometry"},
+        }
 
     def _record_violation(self, event: dict, dt_s: float) -> None:
         info = self._collider_info.get(event["other"])
@@ -1992,6 +2084,7 @@ class BladeContactMonitor:
                         "weight": 0.0,
                         "impulse": self._np.zeros(3),
                         "collider_weights": {},
+                        "sources": set(),
                     },
                 )
                 weight = max(float(self._np.linalg.norm(event["impulse"])), 1e-12)
@@ -2002,9 +2095,22 @@ class BladeContactMonitor:
                     aggregate["collider_weights"].get(event["other"], 0.0)
                     + weight
                 )
+                aggregate["sources"].add(event.get("source", "physx"))
             else:
                 self._record_violation(event, dt_s)
         self._pending.clear()
+
+        geometric = self._geometric_counterheld_contact(
+            centre,
+            edge_axis,
+            cut_direction,
+            dt_s,
+        )
+        if geometric is not None:
+            key, aggregate = geometric
+            # A real edge callback remains the preferred evidence. The
+            # geometry path only fills the thin-collider callback gap.
+            aggregates.setdefault(key, aggregate)
 
         decisions = []
         contacted = set(aggregates)
@@ -2034,6 +2140,7 @@ class BladeContactMonitor:
                         "runtime": runtime,
                         "decision": decision,
                         "intended_target": key == self._active_target,
+                        "contact_sources": sorted(aggregate["sources"]),
                     }
                 )
         self._gate.finish_step(contacted)
@@ -2064,7 +2171,7 @@ class BladeContactMonitor:
         return {
             "model": (
                 "directional leading-edge force/work gate with "
-                "physical-counterhold rigid-tissue fracture"
+                "counterheld rigid-tissue reaction + force/work fracture"
             ),
             "cutting_edge": self._edge_path,
             "physical_blade_collider": self._blade_collider,
@@ -2083,6 +2190,7 @@ class BladeContactMonitor:
             "parameters": dataclasses.asdict(self._gate.parameters),
             "progress": self._gate.summary(),
             "physical_cuts": list(self._physical_cuts),
+            "latest_geometric_contact": self._latest_geometric_contact,
             "safety_clear": self.safety_clear,
             "blocking_safety_violations": sorted(
                 self.blocking_safety_violations,
@@ -2136,8 +2244,11 @@ class LeftGraspManager:
         self._close_overtravel_m = float(close_overtravel_m)
         self._close_requested = False
         self._requested_openness = 1.0
-        self._close_request_threshold = 0.95
-        self._release_threshold = 0.75
+        # A pinch is eligible only near the mechanically closed position. The
+        # previous 0.95 threshold accepted a branch while the jaws were almost
+        # fully open and made visual grasp placement inherently inaccurate.
+        self._close_request_threshold = 0.20
+        self._release_threshold = 0.65
         self._pending: list[dict] = []
         self._subscription = None
         self._active_target: str | None = None
@@ -2157,6 +2268,7 @@ class LeftGraspManager:
         self._latest_orphan_state = None
         self._latest_finger_contact: dict | None = None
         self._finger_contact_serial = 0
+        self._latest_geometric_jaw: dict | None = None
 
         self._finger_colliders = {
             f"{self._root_path}/ee_finger_l1/restored_collisions/contact_proxy":
@@ -2502,6 +2614,7 @@ class LeftGraspManager:
                         "finger": finger,
                         "point": self._vector(contact.position),
                         "impulse": impulse,
+                        "source": "physx",
                     }
                 )
 
@@ -2594,6 +2707,188 @@ class LeftGraspManager:
             }
         return {"target_position_ee_m": target_local, "fingers": fingers}
 
+    def _grasp_collider_geometry(self, path: str) -> dict | None:
+        """Return one target proxy's exact EE bounds and jaw anchor point."""
+        prim = self._stage.GetPrimAtPath(path)
+        if not prim.IsValid():
+            return None
+        ee = self._body_matrix(f"{self._root_path}/ee_left")
+        ee_inverse = ee.GetInverse()
+        collider_world = self._body_matrix(path)
+        jaw_centre = self._np.asarray(
+            [0.0, 0.0, -0.1025], dtype=self._np.float64
+        )
+        jaw_world = ee.Transform(self._Gf.Vec3d(*jaw_centre.tolist()))
+
+        if prim.IsA(self._UsdGeom.Cube):
+            size = float(self._UsdGeom.Cube(prim).GetSizeAttr().Get() or 2.0)
+            half = 0.5 * size
+            corners = []
+            for x in (-half, half):
+                for y in (-half, half):
+                    for z in (-half, half):
+                        world = collider_world.Transform(self._Gf.Vec3d(x, y, z))
+                        corners.append(
+                            self._np.asarray(
+                                ee_inverse.Transform(world), dtype=self._np.float64
+                            )
+                        )
+            local_jaw = collider_world.GetInverse().Transform(jaw_world)
+            local_anchor = self._Gf.Vec3d(
+                *self._np.clip(
+                    self._np.asarray(local_jaw, dtype=self._np.float64),
+                    -half,
+                    half,
+                ).tolist()
+            )
+            anchor_world = collider_world.Transform(local_anchor)
+        elif prim.IsA(self._UsdGeom.Capsule):
+            capsule = self._UsdGeom.Capsule(prim)
+            height = float(capsule.GetHeightAttr().Get() or 0.0)
+            radius = float(capsule.GetRadiusAttr().Get() or 0.0)
+            endpoints = []
+            for z in (-0.5 * height, 0.5 * height):
+                world = collider_world.Transform(self._Gf.Vec3d(0.0, 0.0, z))
+                endpoints.append(
+                    self._np.asarray(
+                        ee_inverse.Transform(world), dtype=self._np.float64
+                    )
+                )
+            endpoints = self._np.asarray(endpoints)
+            radius_point = collider_world.Transform(self._Gf.Vec3d(radius, 0.0, 0.0))
+            origin = collider_world.Transform(self._Gf.Vec3d(0.0))
+            radius_ee = float(
+                self._np.linalg.norm(
+                    self._np.asarray(ee_inverse.Transform(radius_point))
+                    - self._np.asarray(ee_inverse.Transform(origin))
+                )
+            )
+            minimum = self._np.min(endpoints, axis=0) - radius_ee
+            maximum = self._np.max(endpoints, axis=0) + radius_ee
+            direction = endpoints[1] - endpoints[0]
+            denominator = float(self._np.dot(direction, direction))
+            fraction = (
+                0.0
+                if denominator <= 1e-15
+                else float(
+                    self._np.clip(
+                        self._np.dot(jaw_centre - endpoints[0], direction)
+                        / denominator,
+                        0.0,
+                        1.0,
+                    )
+                )
+            )
+            centreline_ee = endpoints[0] + fraction * direction
+            radial = jaw_centre - centreline_ee
+            radial_distance = float(self._np.linalg.norm(radial))
+            anchor_ee = (
+                jaw_centre.copy()
+                if radial_distance <= radius_ee
+                else centreline_ee + radial * (radius_ee / radial_distance)
+            )
+            anchor_world = ee.Transform(self._Gf.Vec3d(*anchor_ee.tolist()))
+            return {
+                "minimum_ee_m": minimum,
+                "maximum_ee_m": maximum,
+                "anchor_world_m": self._np.asarray(
+                    anchor_world, dtype=self._np.float64
+                ),
+                "anchor_ee_m": anchor_ee,
+                "distance_to_jaw_centre_m": float(
+                    self._np.linalg.norm(anchor_ee - jaw_centre)
+                ),
+            }
+        else:
+            return None
+
+        corners = self._np.asarray(corners)
+        anchor_ee = self._np.asarray(
+            ee_inverse.Transform(anchor_world), dtype=self._np.float64
+        )
+        return {
+            "minimum_ee_m": self._np.min(corners, axis=0),
+            "maximum_ee_m": self._np.max(corners, axis=0),
+            "anchor_world_m": self._np.asarray(
+                anchor_world, dtype=self._np.float64
+            ),
+            "anchor_ee_m": anchor_ee,
+            "distance_to_jaw_centre_m": float(
+                self._np.linalg.norm(anchor_ee - jaw_centre)
+            ),
+        }
+
+    def _geometric_jaw_events(self, dt_s: float) -> list[dict]:
+        """Confirm that visible target geometry lies inside the closed jaws."""
+        candidates = []
+        for path, info in self._grasp_colliders.items():
+            geometry = self._grasp_collider_geometry(path)
+            if geometry is None or not _closing_jaw_corridor_overlap(
+                geometry["minimum_ee_m"],
+                geometry["maximum_ee_m"],
+                self._requested_openness,
+                self._close_request_threshold,
+            ):
+                continue
+            # The broad-phase AABB can overlap the channel while a rotated
+            # foliage OBB does not. Its exact closest point must also lie in
+            # the visible channel before a grasp can be synthesized.
+            if not _closing_jaw_corridor_overlap(
+                geometry["anchor_ee_m"],
+                geometry["anchor_ee_m"],
+                self._requested_openness,
+                self._close_request_threshold,
+            ):
+                continue
+            candidates.append(
+                (
+                    geometry["distance_to_jaw_centre_m"],
+                    path,
+                    info,
+                    geometry,
+                )
+            )
+
+        if not candidates:
+            self._latest_geometric_jaw = {
+                "evidence_active": False,
+                "requested_openness": self._requested_openness,
+                "source": "closing_jaw_geometry",
+            }
+            return []
+        _, path, info, geometry = min(candidates, key=lambda item: item[0])
+        closure = 1.0 - self._requested_openness / self._close_request_threshold
+        force_n = 4.0 + 20.0 * float(self._np.clip(closure, 0.0, 1.0))
+        impulse_per_finger = 0.5 * force_n * dt_s
+        self._latest_geometric_jaw = {
+            "evidence_active": True,
+            "key": info["key"],
+            "collider": path,
+            "collider_minimum_ee_m": geometry["minimum_ee_m"].tolist(),
+            "collider_maximum_ee_m": geometry["maximum_ee_m"].tolist(),
+            "anchor_world_m": geometry["anchor_world_m"].tolist(),
+            "anchor_ee_m": geometry["anchor_ee_m"].tolist(),
+            "distance_to_jaw_centre_m": geometry["distance_to_jaw_centre_m"],
+            "requested_openness": self._requested_openness,
+            "modeled_force_n": force_n,
+            "source": "closing_jaw_geometry",
+        }
+        events = []
+        for finger, sign in (("left_finger_1", -1.0), ("left_finger_2", 1.0)):
+            events.append(
+                {
+                    **info,
+                    "finger": finger,
+                    "point": geometry["anchor_world_m"].copy(),
+                    "impulse": self._np.asarray(
+                        [sign * impulse_per_finger, 0.0, 0.0],
+                        dtype=self._np.float64,
+                    ),
+                    "source": "closing_jaw_geometry",
+                }
+            )
+        return events
+
     def _activate_joint(
         self,
         key: str,
@@ -2647,6 +2942,10 @@ class LeftGraspManager:
             self._pending.clear()
             return
         self._task.advance()
+        if self._close_requested and self._active_joint_key is None:
+            self._pending.extend(self._geometric_jaw_events(dt_s))
+        elif not self._close_requested:
+            self._latest_geometric_jaw = None
         grouped: dict[tuple[str, str], dict] = {}
         for event in self._pending:
             aggregate = grouped.setdefault(
@@ -2661,6 +2960,7 @@ class LeftGraspManager:
                     "impulse": 0.0,
                     "point_sum": self._np.zeros(3),
                     "weight": 0.0,
+                    "sources": set(),
                 },
             )
             magnitude = float(self._np.linalg.norm(event["impulse"]))
@@ -2668,6 +2968,7 @@ class LeftGraspManager:
             aggregate["impulse"] += magnitude
             aggregate["point_sum"] += max(magnitude, 1e-12) * event["point"]
             aggregate["weight"] += max(magnitude, 1e-12)
+            aggregate["sources"].add(event.get("source", "physx"))
         self._pending.clear()
 
         if grouped:
@@ -2690,6 +2991,7 @@ class LeftGraspManager:
                 "collider": contacted["collider"],
                 "fingers": sorted(contacted["fingers"]),
                 "force_n": contacted["impulse"] / max(dt_s, 1e-12),
+                "sources": sorted(contacted["sources"]),
             }
 
         active_candidates = [
@@ -2825,7 +3127,7 @@ class LeftGraspManager:
             else None
         )
         return {
-            "model": "opposed-left-finger fixed-joint grasp",
+            "model": "visible closed-jaw corridor + opposed-finger fixed-joint grasp",
             "active_target": self._active_target,
             "planned_grasp_body": planned_body,
             "active_grasp_body": target_body,
@@ -2836,6 +3138,8 @@ class LeftGraspManager:
             "close_requested": self._close_requested,
             "requested_openness": self._requested_openness,
             "latest_finger_contact": self.latest_finger_contact,
+            "latest_geometric_jaw": self._latest_geometric_jaw,
+            "close_request_threshold": self._close_request_threshold,
             "active_joint": (
                 self._joint_paths.get(self._active_joint_key)
                 if self._active_joint_key is not None
@@ -2893,6 +3197,7 @@ def _apply_blade_cut_decisions(
                 **dataclasses.asdict(record),
                 "vine": runtime.name,
                 "intended_target": bool(event["intended_target"]),
+                "contact_sources": list(event.get("contact_sources", ())),
                 "safety_clear": monitor.safety_clear,
                 "blocking_safety_violations": monitor.blocking_safety_violations,
             }
@@ -2938,6 +3243,71 @@ def _apply_blade_cut_decisions(
         if report_path is not None:
             _emit(report, report_path)
     return applied
+
+
+def _closing_jaw_corridor_overlap(
+    bounds_minimum_ee_m,
+    bounds_maximum_ee_m,
+    openness: float,
+    maximum_openness: float = 0.20,
+) -> bool:
+    """Return whether geometry crosses the visible channel of near-closed jaws."""
+    import numpy as np
+
+    minimum = np.asarray(bounds_minimum_ee_m, dtype=np.float64)
+    maximum = np.asarray(bounds_maximum_ee_m, dtype=np.float64)
+    if (
+        minimum.shape != (3,)
+        or maximum.shape != (3,)
+        or not np.isfinite(minimum).all()
+        or not np.isfinite(maximum).all()
+        or np.any(minimum > maximum)
+        or not 0.0 <= float(openness) <= float(maximum_openness)
+    ):
+        return False
+    channel_minimum = np.asarray([-0.0015, -0.0180, -0.1340])
+    channel_maximum = np.asarray([0.0015, 0.0180, -0.0710])
+    return bool(
+        np.all(maximum >= channel_minimum)
+        and np.all(minimum <= channel_maximum)
+    )
+
+
+def _geometric_cut_reaction_force(
+    centreline_distance_m: float,
+    tissue_radius_m: float,
+    cut_force_n: float,
+    tolerance_m: float = 0.0015,
+    force_cap_multiple: float = 3.0,
+) -> float:
+    """Return a compliant reaction for an edge entering counter-held tissue."""
+    import numpy as np
+
+    distance = float(centreline_distance_m)
+    radius = float(tissue_radius_m)
+    required_force = float(cut_force_n)
+    tolerance = float(tolerance_m)
+    cap = float(force_cap_multiple)
+    if (
+        not all(
+            np.isfinite(value)
+            for value in (distance, radius, required_force, tolerance, cap)
+        )
+        or distance < 0.0
+        or radius <= 0.0
+        or required_force <= 0.0
+        or tolerance < 0.0
+        or cap <= 0.0
+    ):
+        return 0.0
+    penetration = radius + tolerance - distance
+    if penetration <= 0.0:
+        return 0.0
+    stiffness_n_m = required_force / max(0.5 * radius, 1e-4)
+    reaction = stiffness_n_m * penetration
+    if penetration >= 0.5 * radius - 1e-12:
+        reaction = max(reaction, required_force)
+    return float(min(required_force * cap, reaction))
 
 
 def _opposed_finger_contact(contact: dict | None) -> bool:

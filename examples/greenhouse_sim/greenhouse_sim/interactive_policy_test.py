@@ -10,6 +10,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).parents[1]))
 from interactive_greenhouse import (
     RobotContactDiagnostics,
     parse_args,
+    _closing_jaw_corridor_overlap,
+    _geometric_cut_reaction_force,
     _opposed_finger_contact,
     _probe_unsafe_contacts,
     _required_probe_payload_clearance,
@@ -28,6 +30,38 @@ def test_opposed_finger_contact_requires_both_fingers_and_nonzero_load() -> None
     assert _opposed_finger_contact(
         {"fingers": ["left_finger_1", "left_finger_2"], "force_n": 5.0}
     )
+
+
+def test_closed_jaw_corridor_requires_real_channel_intersection() -> None:
+    assert _closing_jaw_corridor_overlap(
+        [-0.003, -0.005, -0.110],
+        [0.003, 0.005, -0.090],
+        0.10,
+    )
+    assert not _closing_jaw_corridor_overlap(
+        [-0.003, -0.005, -0.110],
+        [0.003, 0.005, -0.090],
+        0.50,
+    )
+    assert not _closing_jaw_corridor_overlap(
+        [0.004, -0.005, -0.110],
+        [0.010, 0.005, -0.090],
+        0.0,
+    )
+    assert not _closing_jaw_corridor_overlap(
+        [-0.003, -0.005, -0.060],
+        [0.003, 0.005, -0.040],
+        0.0,
+    )
+
+
+def test_geometric_cut_reaction_requires_edge_penetration_and_is_capped() -> None:
+    radius = 0.004
+    required = 60.0
+    assert _geometric_cut_reaction_force(0.006, radius, required) == 0.0
+    assert 0.0 < _geometric_cut_reaction_force(0.005, radius, required) < required
+    assert _geometric_cut_reaction_force(0.0035, radius, required) >= required
+    assert _geometric_cut_reaction_force(0.0, radius, required) <= 3.0 * required
 
 
 class _Prim:
