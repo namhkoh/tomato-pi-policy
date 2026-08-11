@@ -1250,6 +1250,45 @@ The software gate is accepted on `koh-dev/deleaf`. The remaining acceptance is
 deliberate live blade traversal after this commit is merged into
 `koh-dev/rby1`; that manual confirmation must not be inferred from unit tests.
 
+### Bounded RB-Y1 fixed-base UI preposition, 2026-08-11
+
+The source greenhouse and vine placement remain unchanged. To let the operator
+close the final reach gap without editing the scene or enabling unbounded mobile
+base motion, the `koh-dev/rby1` interaction window now exposes **Robot forward
++10 mm** and **Robot back -10 mm**. The base is still world-fixed after each
+action.
+
+The controller reads the live articulation-root pose, computes robot-forward
+from the authored yaw, and intersects two independent intervals: a per-session
+offset of -50 to +30 mm and the already measured chassis-clear greenhouse aisle
+bounds. It then pauses physics, updates
+`/World/RBY1/joints/benchmark_world_fixed.physics:localPos0`, teleports the
+initialized articulation root to the same pose through Isaac's supported tensor
+API, zeros root linear/angular velocity, and resumes. An exception restores the
+previous fixed-joint anchor and is written to `robot_base_ui_errors`; successful
+moves are written to `robot_base_ui_nudges`.
+
+Movement is refused while the grasp joint is active. After any successful
+teleport, measured and commanded blade-velocity history is synchronized and
+interaction cutting is suppressed for four simulation steps, preventing the
+10 mm chassis adjustment from appearing as a blade traversal. The known
+4.30 m two-millimetre leaf overlap cannot be reached from the 4.25 m station
+because the forward session cap stops at 4.28 m even if the aisle bound is
+looser.
+
+**Verification:**
+
+| Check | Result | Evidence |
+|---|---|---|
+| Bounded nudge policy | +10 mm applies; +30 mm session cap applies; tighter aisle bound takes precedence | `interactive_policy_test.py` |
+| Focused interaction/contact/UI policy regressions | 11 passed | `D:\isaac-sim\python.bat -m pytest -q examples\greenhouse_sim\greenhouse_sim\interactive_policy_test.py` |
+| Complete RB-Y1 greenhouse regressions | 122 passed, 1 PhysX-only skip | `D:\isaac-sim\python.bat -m pytest -q examples\greenhouse_sim\greenhouse_sim` |
+| Updated visible station launch | report reached `stage=running`; interaction cut enabled; blade safety clear; Kit responding | `data/greenhouse_sim/physical_robot_teleop_blade_traversal_base_ui_20260811.json` |
+
+The visible station is relaunched for operator confirmation. The mailbox was
+stale at launch, so live physical-arm motion and a manual button click remain
+acceptance observations rather than claims in this automated verification.
+
 ## Research findings, 2026-08-06 (pre-implementation)
 
 ### Stiffness — the current E is 5–15× too low
@@ -1443,3 +1482,8 @@ One logical change per commit; no AI attribution trailers.
   kept the arc/main stem protected, labelled traversal cuts non-benchmark, and
   disabled the convenience path during strict full-IK runs; passed 121
   regressions with one PhysX-only skip on `koh-dev/deleaf`.
+- 2026-08-11 — Added bounded ±10 mm fixed-base preposition buttons on
+  `koh-dev/rby1`, capped session travel at +30/-50 mm inside measured aisle
+  bounds, synchronized the world fixed anchor and articulation pose, blocked
+  movement during grasp, and suppressed teleport-induced cut evidence; passed
+  122 regressions with one PhysX-only skip and relaunched the visible station.

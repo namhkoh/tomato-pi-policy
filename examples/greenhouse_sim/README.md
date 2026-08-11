@@ -400,14 +400,22 @@ $ISAACSIM/python.sh examples/greenhouse_sim/interactive_greenhouse.py \
 
 The 4.25 m aisle coordinate includes 50 mm of measured-pose leaf clearance;
 launching the same live pose at 4.30 m correctly latched on a 2.0 mm
-neighbouring-leaf overlap before accepting motion.
+neighbouring-leaf overlap before accepting motion. The interaction window now
+provides **Robot forward +10 mm** and **Robot back -10 mm** fixed-base
+preposition controls. Session travel is capped at +30/-50 mm and clipped again
+to the measured greenhouse aisle interval, keeping the known 4.30 m collision
+pose outside the forward range. The action is refused while a branch is
+grasped. It atomically updates the PhysX articulation root and world fixed-joint
+anchor, zeros root velocity, and suppresses interaction-cut evidence for four
+steps so repositioning cannot be mistaken for a knife stroke.
 
 Teleop initialization consumes a fresh mailbox sample before PhysX starts, so
 the simulator begins at the measured upper-body pose rather than the scripted
 knife pre-contact pose. If no fresh sample exists, it uses the symmetric SDK
-ready pose. The benchmark base remains fixed: mirroring mobile-base odometry is
-deliberately excluded until a separate greenhouse collision envelope is
-implemented. Malformed or stale mailbox input still captures and holds one safe pose; the
+ready pose. The benchmark base remains fixed at the selected UI pose: mirroring
+mobile-base odometry is deliberately excluded until a separate greenhouse
+collision envelope is implemented. Malformed or stale mailbox input still
+captures and holds one safe pose; the
 hold target never follows a gravity-driven falling state. Contact alone does
 not hold under the default `monitor` policy.
 

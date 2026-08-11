@@ -1015,6 +1015,7 @@ def main() -> int:
         blade_cutting,
         grasp_manager,
         selected_target,
+        robot_placement=robot_placement,
         run_full_ik=run_full_ik_from_ui,
     )
     teleop_controller = None
@@ -1660,6 +1661,7 @@ class BladeContactMonitor:
         self._interaction_contact_steps: dict[str, int] = {}
         self._interaction_completed: set[str] = set()
         self._latest_interaction_contact: dict | None = None
+        self._interaction_suppressed_steps = 0
 
         for runtime in runtimes:
             for info in runtime.rig.colliders:
@@ -1778,6 +1780,18 @@ class BladeContactMonitor:
         """Enable direct manual traversal cuts without changing benchmark gates."""
         self._interaction_cut_enabled = bool(enabled)
         self._interaction_contact_steps.clear()
+
+    def suppress_interaction_after_base_teleport(self, steps: int = 4) -> None:
+        """Prevent a fixed-base teleport from looking like a knife stroke."""
+        count = int(steps)
+        if count < 1:
+            raise ValueError("base-teleport suppression requires at least one step")
+        self._previous_edge_centre = self.edge_centre_m.copy()
+        self._commanded_edge_velocity = self._np.zeros(3, dtype=self._np.float64)
+        self._interaction_contact_steps.clear()
+        self._interaction_suppressed_steps = max(
+            self._interaction_suppressed_steps, count
+        )
 
     @property
     def edge_centre_m(self):
@@ -2154,6 +2168,9 @@ class BladeContactMonitor:
 
     def process(self, dt_s: float = 1.0 / 240.0) -> list[dict]:
         centre, edge_axis, cut_direction, velocity = self._edge_kinematics(dt_s)
+        interaction_suppressed = self._interaction_suppressed_steps > 0
+        if interaction_suppressed:
+            self._interaction_suppressed_steps -= 1
         aggregates: dict[str, dict] = {}
         interaction_aggregates: dict[str, dict] = {}
         for event in self._pending:
@@ -2161,6 +2178,7 @@ class BladeContactMonitor:
             interaction = self._interaction_colliders.get(event["other"])
             if (
                 self._interaction_cut_enabled
+                and not interaction_suppressed
                 and event["tool"] == "blade"
                 and interaction is not None
                 and interaction["key"] not in self._interaction_completed
@@ -2382,6 +2400,7 @@ class BladeContactMonitor:
                 "eligible_colliders": len(self._interaction_colliders),
                 "minimum_speed_m_s": self._interaction_minimum_speed_m_s,
                 "required_consecutive_steps": self._interaction_required_steps,
+                "suppressed_steps_remaining": self._interaction_suppressed_steps,
                 "latest_contact": self._latest_interaction_contact,
                 "completed_targets": sorted(self._interaction_completed),
             },
@@ -3564,6 +3583,78 @@ def _opposed_finger_contact(contact: dict | None) -> bool:
     )
 
 
+def _bounded_robot_forward_nudge(
+    current_position_m,
+    origin_position_m,
+    yaw_degrees: float,
+    requested_delta_m: float,
+    minimum_base_y_m: float,
+    maximum_base_y_m: float,
+    *,
+    maximum_forward_offset_m: float = 0.03,
+    maximum_backward_offset_m: float = 0.05,
+) -> dict:
+    """Return a forward nudge clipped to both session and aisle limits."""
+    import numpy as np
+
+    current = np.asarray(current_position_m, dtype=np.float64)
+    origin = np.asarray(origin_position_m, dtype=np.float64)
+    values = np.asarray(
+        [
+            yaw_degrees,
+            requested_delta_m,
+            minimum_base_y_m,
+            maximum_base_y_m,
+            maximum_forward_offset_m,
+            maximum_backward_offset_m,
+        ],
+        dtype=np.float64,
+    )
+    if (
+        current.shape != (3,)
+        or origin.shape != (3,)
+        or not np.isfinite(current).all()
+        or not np.isfinite(origin).all()
+        or not np.isfinite(values).all()
+        or minimum_base_y_m > maximum_base_y_m
+        or maximum_forward_offset_m < 0.0
+        or maximum_backward_offset_m < 0.0
+    ):
+        raise ValueError("invalid bounded robot nudge geometry")
+
+    yaw = np.radians(float(yaw_degrees))
+    forward = np.asarray([np.cos(yaw), np.sin(yaw), 0.0])
+    if abs(float(forward[1])) < 0.5:
+        raise ValueError("bounded greenhouse nudging requires a +/-Y heading")
+    aisle_offsets = sorted(
+        (
+            (float(minimum_base_y_m) - origin[1]) / forward[1],
+            (float(maximum_base_y_m) - origin[1]) / forward[1],
+        )
+    )
+    minimum_offset = max(-float(maximum_backward_offset_m), aisle_offsets[0])
+    maximum_offset = min(float(maximum_forward_offset_m), aisle_offsets[1])
+    if minimum_offset > maximum_offset:
+        raise ValueError("robot nudge origin lies outside the bounded aisle")
+
+    current_offset = float(np.dot(current - origin, forward))
+    requested_offset = current_offset + float(requested_delta_m)
+    offset = float(np.clip(requested_offset, minimum_offset, maximum_offset))
+    applied = offset - current_offset
+    position = current + forward * applied
+    position[1] = float(
+        np.clip(position[1], minimum_base_y_m, maximum_base_y_m)
+    )
+    return {
+        "position_m": position,
+        "applied_delta_m": applied,
+        "forward_offset_m": offset,
+        "minimum_forward_offset_m": minimum_offset,
+        "maximum_forward_offset_m": maximum_offset,
+        "limited": bool(abs(offset - requested_offset) > 1e-9),
+    }
+
+
 class InteractionController:
     """Queue UI/input actions and apply them between simulation steps."""
 
@@ -3578,6 +3669,8 @@ class InteractionController:
         "left_grasp_open_release": "O",
         "target_pinched_leaf": "T (explicit manual target change)",
         "run_full_ik": "Run Full IK Sequence button",
+        "robot_forward": "bounded +10 mm fixed-base preposition button",
+        "robot_backward": "bounded -10 mm fixed-base preposition button",
         "camera_views": "1 inspection, 2 head, 3 left wrist, 4 right wrist",
     }
 
@@ -3593,6 +3686,7 @@ class InteractionController:
         blade_cutting: BladeContactMonitor | None,
         grasp_manager: LeftGraspManager | None,
         selected_target,
+        robot_placement=None,
         run_full_ik=None,
     ):
         import carb
@@ -3600,6 +3694,7 @@ class InteractionController:
         import omni.ui as ui
 
         self._carb = carb
+        self._stage = stage
         self._runtimes = runtimes
         self._report = report
         self._report_path = report_path
@@ -3607,6 +3702,11 @@ class InteractionController:
         self._camera_views = camera_views
         self._blade_cutting = blade_cutting
         self._grasp_manager = grasp_manager
+        self._robot_placement = robot_placement
+        self._robot_base_articulation = None
+        self._robot_base_origin_m = None
+        preposition = report.get("robot_preposition") or {}
+        self._robot_aisle_bounds = preposition.get("opposite_aisle")
         self._active_camera = "inspection"
         self._targets = [self._target_labels(runtime) for runtime in runtimes]
         self._vine = next(
@@ -3619,7 +3719,7 @@ class InteractionController:
         self._ik_running = False
         self._reported_contact_serial = None
 
-        self._window = ui.Window("Vine Interaction", width=420, height=495)
+        self._window = ui.Window("Vine Interaction", width=420, height=545)
         with self._window.frame:
             with ui.VStack(spacing=6):
                 ui.Label("Pull: Shift + left-drag visible vine geometry", height=24)
@@ -3644,6 +3744,21 @@ class InteractionController:
                     clicked_fn=lambda: self._queue("run_full_ik"),
                     height=38,
                 )
+                with ui.HStack(spacing=6, height=34):
+                    self._robot_forward_button = ui.Button(
+                        "Robot forward +10 mm",
+                        clicked_fn=lambda: self._queue("robot_forward"),
+                    )
+                    self._robot_backward_button = ui.Button(
+                        "Robot back -10 mm",
+                        clicked_fn=lambda: self._queue("robot_backward"),
+                    )
+                robot_move_available = bool(
+                    self._robot_placement is not None
+                    and self._robot_aisle_bounds is not None
+                )
+                self._robot_forward_button.enabled = robot_move_available
+                self._robot_backward_button.enabled = robot_move_available
                 ui.Label("Viewport camera / video observation", height=22)
                 with ui.HStack(spacing=6, height=34):
                     ui.Button("Inspection 1", clicked_fn=lambda: self._queue("camera:inspection"))
@@ -3772,6 +3887,12 @@ class InteractionController:
             if action.startswith("camera:"):
                 self._set_camera(action.partition(":")[2])
                 continue
+            if action == "robot_forward":
+                self._nudge_robot(context, 0.01)
+                continue
+            if action == "robot_backward":
+                self._nudge_robot(context, -0.01)
+                continue
             targets = self._targets[self._vine]
             if not targets:
                 self._status_label.text = "No deleafing targets on this vine"
@@ -3882,6 +4003,119 @@ class InteractionController:
             elif action == "cut":
                 self._cut(context)
             self._refresh()
+
+    def _nudge_robot(self, context, requested_delta_m: float) -> None:
+        if self._robot_placement is None or self._robot_aisle_bounds is None:
+            self._status_label.text = "Bounded robot base movement is unavailable"
+            return
+        if self._ik_running:
+            self._status_label.text = "Wait for the IK sequence before moving the base"
+            return
+        grasp = self._grasp_manager.summary if self._grasp_manager is not None else {}
+        if grasp.get("active_joint") is not None:
+            self._status_label.text = "Release the grasped branch before moving the base"
+            return
+
+        import numpy as np
+        from isaacsim.core.prims import Articulation
+        from pxr import Gf
+        from pxr import UsdPhysics
+
+        try:
+            if self._robot_base_articulation is None:
+                self._robot_base_articulation = Articulation(
+                    prim_paths_expr=self._robot_placement.root_path,
+                    name="greenhouse_ui_base_nudge",
+                    reset_xform_properties=False,
+                )
+                self._robot_base_articulation.initialize()
+            positions, orientations = (
+                self._robot_base_articulation.get_world_poses()
+            )
+            positions = np.asarray(positions, dtype=np.float64).copy()
+            orientations = np.asarray(orientations, dtype=np.float64).copy()
+            if positions.shape != (1, 3) or orientations.shape != (1, 4):
+                raise RuntimeError(
+                    "RB-Y1 articulation returned an unexpected root-pose shape"
+                )
+            current = positions[0].copy()
+            if self._robot_base_origin_m is None:
+                self._robot_base_origin_m = current.copy()
+            result = _bounded_robot_forward_nudge(
+                current,
+                self._robot_base_origin_m,
+                self._robot_placement.yaw_degrees,
+                requested_delta_m,
+                self._robot_aisle_bounds["minimum_base_y_m"],
+                self._robot_aisle_bounds["maximum_base_y_m"],
+            )
+            applied = float(result["applied_delta_m"])
+            if abs(applied) <= 1e-9:
+                self._status_label.text = "Robot base is at its bounded movement limit"
+                return
+            target = np.asarray(result["position_m"], dtype=np.float64)
+
+            fixed_path = (
+                f"{self._robot_placement.root_path}/joints/"
+                "benchmark_world_fixed"
+            )
+            fixed = UsdPhysics.FixedJoint.Get(self._stage, fixed_path)
+            if not fixed.GetPrim().IsValid():
+                raise RuntimeError(f"fixed RB-Y1 base joint is missing: {fixed_path}")
+            anchor = fixed.GetLocalPos0Attr()
+            previous_anchor = anchor.Get()
+            context.pause()
+            try:
+                anchor.Set(Gf.Vec3f(*target.tolist()))
+                positions[0] = target
+                self._robot_base_articulation.set_world_poses(
+                    positions=positions,
+                    orientations=orientations,
+                )
+                zero_velocity = np.zeros((1, 3), dtype=np.float64)
+                self._robot_base_articulation.set_linear_velocities(
+                    zero_velocity
+                )
+                self._robot_base_articulation.set_angular_velocities(
+                    zero_velocity
+                )
+                if self._blade_cutting is not None:
+                    self._blade_cutting.suppress_interaction_after_base_teleport()
+            except Exception:
+                anchor.Set(previous_anchor)
+                raise
+            finally:
+                context.play()
+        except Exception as exc:
+            error = {
+                "requested_delta_m": float(requested_delta_m),
+                "error": str(exc),
+            }
+            self._report.setdefault("robot_base_ui_errors", []).append(error)
+            self._status_label.text = f"Robot base movement failed: {exc}"
+            _emit(self._report, self._report_path)
+            return
+
+        entry = {
+            "requested_delta_m": float(requested_delta_m),
+            "applied_delta_m": applied,
+            "position_m": target.tolist(),
+            "forward_offset_m": float(result["forward_offset_m"]),
+            "limited": bool(result["limited"]),
+            "fixed_joint": fixed_path,
+            "cut_suppression_steps": 4,
+        }
+        self._report.setdefault("robot_base_ui_nudges", []).append(entry)
+        self._report.setdefault("robot_preposition", {})[
+            "ui_position_m"
+        ] = entry["position_m"]
+        qualifier = " (limit reached)" if entry["limited"] else ""
+        self._status_label.text = (
+            f"Robot base moved {applied * 1000.0:+.0f} mm; "
+            f"session offset {entry['forward_offset_m'] * 1000.0:+.0f} mm"
+            f"{qualifier}"
+        )
+        _emit(self._report, self._report_path)
 
     def _set_camera(self, name: str) -> None:
         camera_path = self._camera_views.get(name)

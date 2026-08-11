@@ -11,6 +11,7 @@ from interactive_greenhouse import (
     RobotContactDiagnostics,
     parse_args,
     _blade_traversal_contact_step,
+    _bounded_robot_forward_nudge,
     _closing_jaw_corridor_overlap,
     _geometric_cut_reaction_force,
     _opposed_finger_contact,
@@ -34,6 +35,43 @@ def test_blade_traversal_requires_moving_consecutive_contact() -> None:
 
     steps, ready = _blade_traversal_contact_step(False, 0.02, steps)
     assert (steps, ready) == (0, False)
+
+
+def test_bounded_robot_nudge_respects_session_and_aisle_limits() -> None:
+    first = _bounded_robot_forward_nudge(
+        [0.0, 4.25, 0.0],
+        [0.0, 4.25, 0.0],
+        90.0,
+        0.01,
+        4.0,
+        4.40,
+    )
+    assert abs(first["position_m"][1] - 4.26) < 1e-9
+    assert abs(first["applied_delta_m"] - 0.01) < 1e-9
+    assert not first["limited"]
+
+    session_limited = _bounded_robot_forward_nudge(
+        [0.0, 4.27, 0.0],
+        [0.0, 4.25, 0.0],
+        90.0,
+        0.02,
+        4.0,
+        4.40,
+    )
+    assert abs(session_limited["position_m"][1] - 4.28) < 1e-9
+    assert abs(session_limited["forward_offset_m"] - 0.03) < 1e-9
+    assert session_limited["limited"]
+
+    aisle_limited = _bounded_robot_forward_nudge(
+        [0.0, 4.25, 0.0],
+        [0.0, 4.25, 0.0],
+        90.0,
+        0.03,
+        4.0,
+        4.27,
+    )
+    assert abs(aisle_limited["position_m"][1] - 4.27) < 1e-9
+    assert aisle_limited["limited"]
 
 
 def test_opposed_finger_contact_requires_both_fingers_and_nonzero_load() -> None:
