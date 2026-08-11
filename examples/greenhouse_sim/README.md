@@ -418,11 +418,24 @@ contact boxes match the supplied finger CAD; they do not extend invisibly into
 the channel. PhysX opposed-finger events remain preferred, with the reported
 closed-jaw geometry path covering thin-shape callback misses.
 
-For cutting, a real flat-edge PhysX impulse remains preferred. If the thin rigid
-petiole misses that callback, only the exact active target already retained by
-the left grasp can produce a reported compliant reaction when the finite blade
-edge enters its radius. Direction, speed, transverse alignment, 66.3 N force,
-full-diameter work/crossing, and protected-contact gates remain mandatory.
+For benchmark cutting, a real flat-edge PhysX impulse remains preferred. If the
+thin rigid petiole misses that callback, only the exact active target already
+retained by the left grasp can produce a reported compliant reaction when the
+finite blade edge enters its radius. Direction, speed, transverse alignment,
+66.3 N force, full-diameter work/crossing, and protected-contact gates remain
+mandatory.
+
+Live teleop also enables a separate interaction cut path so the supplied flat
+blade behaves like a usable knife against the plant's broad contact proxies.
+A non-zero PhysX contact from `BladeCollision` against a severable foliage,
+petiole-grasp, or petiole-cut proxy must persist for two consecutive physics
+steps while the commanded cutting edge moves at least 0.01 m/s. It then releases
+that proxy's associated pre-authored `SubStem_XX` junction. The curved support
+and protected main stem remain non-cutting. Because Isaac does not split the
+render mesh at an arbitrary contact point, a leaf-blade hit releases the whole
+associated branch at its authored junction. These events are recorded in
+`blade_traversal_cuts` with `benchmark_valid=false`; the strict IK/benchmark
+sequence temporarily disables this convenience path.
 
 ## Cutting demo
 
