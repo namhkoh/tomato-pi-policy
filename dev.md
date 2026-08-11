@@ -306,16 +306,23 @@ decisive: flush pruning wounds are near-absolutely resistant to *Botrytis cinere
 while petiole stubs are highly susceptible (Beyers et al. 2014), with lesions
 advancing 0.3–0.5 cm/day. Bins: ≤5 mm flush / 5–20 mm marginal / >20 mm risk.
 
-### D6 — Benchmark cuts require physical leading-edge evidence and bi-manual order
+### D6 — Benchmark cuts require verified leading-edge evidence and bi-manual order
 
 The full flat knife plate remains a physical collider, but it is not itself a
-cutting semantic. Only contact points inside the outer 2 mm strip along the
-unobstructed long local `-X` plate side can accumulate cut work. A valid
-severance requires the measured petiole
-cut zone, transverse edge and motion alignment, forward edge motion, at least the
-petiole's 66.3 N cut force, sustained work through its diameter, and a sweep
-across the target centre. Separate taps do not combine. The U support, blade
-face, direct `C` debug release, and tensile tear cannot produce a benchmark cut.
+cutting semantic. Only the outer 2 mm strip along the unobstructed long local
+`-X` plate side can accumulate cut work. PhysX leading-edge impulses are the
+preferred evidence. Thin rigid petiole capsules can miss those callbacks even
+when the exact edge segment intersects them, so the already counter-held active
+target may instead produce a reported compliant reaction from exact
+edge-to-centreline distance. This path is unavailable without a prior opposed
+left grasp and outside the target radius plus 1.5 mm contact tolerance.
+
+A valid severance still requires the measured petiole cut zone, transverse edge
+and motion alignment, forward edge motion, at least the petiole's 66.3 N cut
+force, sustained work through its diameter, and a sweep across the target
+centre. Separate taps do not combine. The U support, blade face, direct `C`
+debug release, tensile tear, unheld target, wrong direction, low force, and
+non-target geometry cannot produce a benchmark cut.
 
 The required task order is explicitly bi-manual: both left fingers establish a
 loaded grasp on the selected petiole, the right leading edge physically severs
@@ -1151,6 +1158,50 @@ The visible simulator is running at the preflight-checked fixed base
 `Vine_0002/SubStem_00`. Deliberate lab motion plus physical grasp/pull/cut
 acceptance remains pending and must not be inferred from the stationary and
 watchdog soaks.
+
+### Closed-jaw grasp and counter-held thin-petiole cut reliability, 2026-08-11
+
+Live physical-robot mirroring exposed two independent interaction defects. The
+left grasp manager treated any measured openness below `0.95` as a close
+request, so nearly open jaws could qualify. Its finger collision boxes also
+extended 5 mm inward beyond the supplied `EE_FINGER.dae` mesh, allowing an
+invisible capture before the rendered tongs enclosed the plant. Grasp
+eligibility now begins only at openness `<=0.20`. The rebuilt robot USD uses
+the exact mesh bounds `(-3,-16,-60.5)` to `(13,16,1.5)` mm in each finger
+frame. A three-consecutive-step grasp may fill a missing thin-shape PhysX
+callback only when the exact closest point on a petiole capsule or foliage OBB
+lies in the visible closed-jaw channel. The fixed joint anchors at that actual
+point, and every contact report records whether evidence came from `physx` or
+`closing_jaw_geometry`.
+
+The knife failure had a separate cause: the rigid 3.7 mm-radius petiole and the
+thin semantic edge did not emit a non-zero PhysX callback in the live run, so
+the existing strict cut gate never received a sample. The monitor now computes
+the exact finite distance between the exposed leading-edge segment and each
+collider segment of the active target. It synthesizes a compliant tissue
+reaction only when the same target is already held by the verified left grasp,
+the edge is within the tissue radius plus 1.5 mm, and no real edge callback is
+available that step. Reaction force ramps with penetration and is capped by the
+existing `3x` force cap. The existing target, direction, transverse alignment,
+minimum speed, 66.3 N force, full-diameter work/crossing, consecutive-contact,
+and protected-contact gates are unchanged. Reports identify this evidence as
+`counterheld_rigid_tissue_geometry`; stationary, distant, open-jaw, unheld,
+wrong-direction, and low-force states cannot cut.
+
+**Verification:**
+
+| Check | Result | Evidence |
+|---|---|---|
+| Focused grasp/cut policy regressions | 9 passed | `D:\isaac-sim\python.bat -m pytest -q examples\greenhouse_sim\greenhouse_sim\interactive_policy_test.py` |
+| Complete greenhouse regressions | 120 passed, 1 PhysX-only skip | `D:\isaac-sim\python.bat -m pytest -q examples\greenhouse_sim\greenhouse_sim` |
+| Rebuilt finger proxy audit | both proxies are 16 x 32 x 62 mm and centered at `(5,0,-29.5)` mm in their finger frames | direct generated-USD inspection of `data/greenhouse_sim/robots/rby1a_v1.0.usd` |
+| 480-step fixed-station Isaac smoke | stage done; 34 robot bodies finite; base displacement under 0.001 mm; 129 vine bodies finite; 0 runaway organs; blade safety clear; contacts limited to floor support; no stationary grasp or cut evidence | `data/greenhouse_sim/grasp_cut_runtime_smoke_20260811.json` |
+
+Automated implementation and stability acceptance are complete. Deliberate live
+lab pinch, pull, and blade traversal in the relaunched `koh-dev/rby1` simulator
+remains the final manual acceptance gate before demonstration recording is
+enabled.
+
 ## Research findings, 2026-08-06 (pre-implementation)
 
 ### Stiffness — the current E is 5–15× too low
@@ -1332,3 +1383,9 @@ One logical change per commit; no AI attribution trailers.
   and the generated robot USD, and passed 126 tests with one PhysX-only skip.
   Manual lab pinch/cut acceptance and the dense-canopy autonomous route remain
   open gates; `tomato_glb_30` is recorded as a non-drop-in future migration.
+- 2026-08-11 — Corrected inaccurate live grasps by requiring <=20% openness,
+  matching finger proxies to visible CAD, and validating the exact closest
+  plant point inside the closed jaw channel; added a counter-held, finite-edge
+  rigid-tissue reaction for missing thin-petiole callbacks while preserving all
+  direction/force/work/crossing/safety gates; passed 120 regressions plus a
+  clean 480-step Isaac stability smoke on `koh-dev/deleaf`.

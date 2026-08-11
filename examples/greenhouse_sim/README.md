@@ -410,6 +410,20 @@ deliberately excluded until a separate greenhouse collision envelope is
 implemented. Malformed or stale mailbox input still captures and holds one safe pose; the
 hold target never follows a gravity-driven falling state. Contact alone does
 not hold under the default `monitor` policy.
+
+Plant capture is accepted only below 20% gripper openness and only when the
+exact closest point on a petiole capsule or foliage proxy lies inside the
+visible closed-jaw channel for three consecutive steps. The generated finger
+contact boxes match the supplied finger CAD; they do not extend invisibly into
+the channel. PhysX opposed-finger events remain preferred, with the reported
+closed-jaw geometry path covering thin-shape callback misses.
+
+For cutting, a real flat-edge PhysX impulse remains preferred. If the thin rigid
+petiole misses that callback, only the exact active target already retained by
+the left grasp can produce a reported compliant reaction when the finite blade
+edge enters its radius. Direction, speed, transverse alignment, 66.3 N force,
+full-diameter work/crossing, and protected-contact gates remain mandatory.
+
 ## Cutting demo
 
 Rigs one vine with compliant physics, settles it, cuts the lowest petiole, and
