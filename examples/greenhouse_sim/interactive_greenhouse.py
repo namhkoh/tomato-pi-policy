@@ -775,6 +775,7 @@ def main() -> int:
                     np.sin(np.radians(args.cut_max_axis_angle))
                 ),
             ),
+            interaction_cut_enabled=(args.teleop_command_file is not None),
         )
         blade_cutting.add_safety_colliders(safety_colliders)
         blade_cutting.set_active_target(
@@ -962,7 +963,9 @@ def main() -> int:
                 "error": "fitted robot and safety monitors are required",
             }
         original_mode = args.bimanual_probe
+        original_interaction_cut = blade_cutting.interaction_cut_enabled
         args.bimanual_probe = "full"
+        blade_cutting.set_interaction_cut_enabled(False)
         try:
             baseline_clear = _run_headless_checks(
                 stage,
@@ -987,6 +990,9 @@ def main() -> int:
             )
         finally:
             args.bimanual_probe = original_mode
+            blade_cutting.set_interaction_cut_enabled(
+                original_interaction_cut
+            )
         report["bimanual_probe"] = probe
         report["robot_contacts"] = contact_diagnostics.summary
         report["blade_cutting"] = blade_cutting.summary
@@ -1557,6 +1563,36 @@ class RobotContactDiagnostics:
         self._subscription = None
 
 
+def _blade_traversal_contact_step(
+    contacting: bool,
+    commanded_speed_m_s: float,
+    previous_steps: int,
+    *,
+    minimum_speed_m_s: float = 0.01,
+    required_steps: int = 2,
+) -> tuple[int, bool]:
+    """Gate manual blade traversal against idle contact and one-frame noise."""
+    import math
+
+    speed = float(commanded_speed_m_s)
+    previous = int(previous_steps)
+    minimum = float(minimum_speed_m_s)
+    required = int(required_steps)
+    if (
+        not math.isfinite(speed)
+        or not math.isfinite(minimum)
+        or speed < 0.0
+        or minimum < 0.0
+        or previous < 0
+        or required < 1
+    ):
+        raise ValueError("invalid blade-traversal contact gate state")
+    if not contacting or speed < minimum:
+        return 0, False
+    steps = previous + 1
+    return steps, steps >= required
+
+
 class BladeContactMonitor:
     """Translate real knife contacts into cut work and safety evidence."""
 
@@ -1570,7 +1606,15 @@ class BladeContactMonitor:
         }
     )
 
-    def __init__(self, stage, runtimes, robot_placement, parameters) -> None:
+    def __init__(
+        self,
+        stage,
+        runtimes,
+        robot_placement,
+        parameters,
+        *,
+        interaction_cut_enabled: bool = False,
+    ) -> None:
         from greenhouse_sim import cutting as cutting_module
         from greenhouse_sim import robot_hardware
         from greenhouse_sim import robot_kinematics
@@ -1598,6 +1642,7 @@ class BladeContactMonitor:
         self._targets = {}
         self._target_frames = {}
         self._target_colliders = {}
+        self._interaction_colliders = {}
         self._collider_target_frames = {}
         self._collider_info = {}
         self._pending: list[dict] = []
@@ -1609,6 +1654,12 @@ class BladeContactMonitor:
         self._violations: dict[tuple[str, str, str], dict] = {}
         self._physical_cuts: list[dict] = []
         self._latest_geometric_contact: dict | None = None
+        self._interaction_cut_enabled = bool(interaction_cut_enabled)
+        self._interaction_minimum_speed_m_s = 0.01
+        self._interaction_required_steps = 2
+        self._interaction_contact_steps: dict[str, int] = {}
+        self._interaction_completed: set[str] = set()
+        self._latest_interaction_contact: dict | None = None
 
         for runtime in runtimes:
             for info in runtime.rig.colliders:
@@ -1617,12 +1668,30 @@ class BladeContactMonitor:
                     "label": info.organ_label,
                     "role": info.role,
                 }
+                key = f"{runtime.name}/{info.organ_label}"
+                if (
+                    info.organ_label in runtime.rig.cut_joints
+                    and info.role != "protected_main_stem"
+                    and any(
+                        marker in info.role
+                        for marker in (
+                            "foliage_grasp",
+                            "petiole_grasp",
+                            "petiole_cut_zone",
+                        )
+                    )
+                ):
+                    self._interaction_colliders[info.path] = {
+                        "key": key,
+                        "runtime": runtime,
+                        "organ_label": info.organ_label,
+                        "role": info.role,
+                    }
                 if "petiole_cut_zone" not in info.role:
                     continue
                 junction = runtime.rig.junctions.get(info.organ_label)
                 if junction is None:
                     continue
-                key = f"{runtime.name}/{info.organ_label}"
                 self._target_colliders[info.path] = key
                 if key not in self._targets:
                     self._targets[key] = (
@@ -1700,6 +1769,15 @@ class BladeContactMonitor:
         if velocity.shape != (3,) or not self._np.isfinite(velocity).all():
             raise ValueError("commanded edge velocity must be a finite three-vector")
         self._commanded_edge_velocity = velocity.copy()
+
+    @property
+    def interaction_cut_enabled(self) -> bool:
+        return self._interaction_cut_enabled
+
+    def set_interaction_cut_enabled(self, enabled: bool) -> None:
+        """Enable direct manual traversal cuts without changing benchmark gates."""
+        self._interaction_cut_enabled = bool(enabled)
+        self._interaction_contact_steps.clear()
 
     @property
     def edge_centre_m(self):
@@ -2030,6 +2108,9 @@ class BladeContactMonitor:
     def _record_violation(self, event: dict, dt_s: float) -> None:
         info = self._collider_info.get(event["other"])
         target_key = self._target_colliders.get(event["other"])
+        interaction = self._interaction_colliders.get(event["other"])
+        if target_key is None and interaction is not None:
+            target_key = interaction["key"]
         if info is None:
             if event["other"].startswith("/World/RBY1/"):
                 category = "robot_self_contact"
@@ -2074,8 +2155,36 @@ class BladeContactMonitor:
     def process(self, dt_s: float = 1.0 / 240.0) -> list[dict]:
         centre, edge_axis, cut_direction, velocity = self._edge_kinematics(dt_s)
         aggregates: dict[str, dict] = {}
+        interaction_aggregates: dict[str, dict] = {}
         for event in self._pending:
             target_key = self._target_colliders.get(event["other"])
+            interaction = self._interaction_colliders.get(event["other"])
+            if (
+                self._interaction_cut_enabled
+                and event["tool"] == "blade"
+                and interaction is not None
+                and interaction["key"] not in self._interaction_completed
+            ):
+                direct = interaction_aggregates.setdefault(
+                    interaction["key"],
+                    {
+                        **interaction,
+                        "point_sum": self._np.zeros(3),
+                        "weight": 0.0,
+                        "collider_weights": {},
+                        "sources": set(),
+                    },
+                )
+                direct_weight = max(
+                    float(self._np.linalg.norm(event["impulse"])), 1e-12
+                )
+                direct["point_sum"] += direct_weight * event["point"]
+                direct["weight"] += direct_weight
+                direct["collider_weights"][event["other"]] = (
+                    direct["collider_weights"].get(event["other"], 0.0)
+                    + direct_weight
+                )
+                direct["sources"].add(event.get("source", "physx"))
             if event["tool"] == "blade" and event["inside_edge"] and target_key is not None:
                 aggregate = aggregates.setdefault(
                     target_key,
@@ -2144,10 +2253,83 @@ class BladeContactMonitor:
                     }
                 )
         self._gate.finish_step(contacted)
+        strict_decision_keys = {
+            event["decision"].target_key for event in decisions
+        }
+
+        commanded_speed = float(
+            self._np.linalg.norm(self._commanded_edge_velocity)
+        )
+        interaction_decisions = []
+        contacted_interactions = set(interaction_aggregates)
+        for key, aggregate in interaction_aggregates.items():
+            if key in strict_decision_keys:
+                self._interaction_contact_steps.pop(key, None)
+                continue
+            steps, ready = _blade_traversal_contact_step(
+                True,
+                commanded_speed,
+                self._interaction_contact_steps.get(key, 0),
+                minimum_speed_m_s=self._interaction_minimum_speed_m_s,
+                required_steps=self._interaction_required_steps,
+            )
+            self._interaction_contact_steps[key] = steps
+            dominant_collider = max(
+                aggregate["collider_weights"],
+                key=aggregate["collider_weights"].get,
+            )
+            latest = {
+                "target": key,
+                "collider": dominant_collider,
+                "role": aggregate["role"],
+                "point_m": (
+                    aggregate["point_sum"] / aggregate["weight"]
+                ).tolist(),
+                "commanded_speed_m_s": commanded_speed,
+                "contact_steps": steps,
+                "required_steps": self._interaction_required_steps,
+                "minimum_speed_m_s": self._interaction_minimum_speed_m_s,
+                "ready": ready,
+                "source": "physx_flat_blade_traversal",
+            }
+            self._latest_interaction_contact = latest
+            if ready:
+                interaction_decisions.append(
+                    {
+                        "runtime": aggregate["runtime"],
+                        "interaction_cut": True,
+                        "target_key": key,
+                        "organ_label": aggregate["organ_label"],
+                        "collider": dominant_collider,
+                        "point_m": list(latest["point_m"]),
+                        "commanded_speed_m_s": commanded_speed,
+                        "contact_steps": steps,
+                        "intended_target": key == self._active_target,
+                        "contact_sources": sorted(aggregate["sources"]),
+                    }
+                )
+        for key in list(self._interaction_contact_steps):
+            if key in contacted_interactions:
+                continue
+            steps, _ = _blade_traversal_contact_step(
+                False,
+                commanded_speed,
+                self._interaction_contact_steps[key],
+                minimum_speed_m_s=self._interaction_minimum_speed_m_s,
+                required_steps=self._interaction_required_steps,
+            )
+            if steps:
+                self._interaction_contact_steps[key] = steps
+            else:
+                self._interaction_contact_steps.pop(key, None)
+        decisions.extend(interaction_decisions)
         return decisions
 
     def record_cut(self, event: dict) -> None:
         self._physical_cuts.append(event)
+        if event.get("interaction_cut"):
+            self._interaction_completed.add(event["target_key"])
+            self._interaction_contact_steps.pop(event["target_key"], None)
 
     @property
     def blocking_safety_violations(self) -> list[dict]:
@@ -2191,6 +2373,18 @@ class BladeContactMonitor:
             "progress": self._gate.summary(),
             "physical_cuts": list(self._physical_cuts),
             "latest_geometric_contact": self._latest_geometric_contact,
+            "interaction_cut": {
+                "enabled": self._interaction_cut_enabled,
+                "model": (
+                    "moving flat-blade contact severs the associated pre-authored "
+                    "branch joint; never benchmark-valid"
+                ),
+                "eligible_colliders": len(self._interaction_colliders),
+                "minimum_speed_m_s": self._interaction_minimum_speed_m_s,
+                "required_consecutive_steps": self._interaction_required_steps,
+                "latest_contact": self._latest_interaction_contact,
+                "completed_targets": sorted(self._interaction_completed),
+            },
             "safety_clear": self.safety_clear,
             "blocking_safety_violations": sorted(
                 self.blocking_safety_violations,
@@ -3178,6 +3372,57 @@ def _apply_blade_cut_decisions(
     applied = []
     for event in monitor.process():
         runtime = event["runtime"]
+        if event.get("interaction_cut"):
+            context.pause()
+            try:
+                record = runtime.severer.cut(
+                    event["organ_label"],
+                    trigger="blade_traversal_interaction",
+                )
+            except Exception as exc:
+                report.setdefault("blade_cut_errors", []).append(
+                    {
+                        "target": event["target_key"],
+                        "mode": "blade_traversal_interaction",
+                        "error": str(exc),
+                    }
+                )
+            else:
+                persisted = {
+                    **dataclasses.asdict(record),
+                    "vine": runtime.name,
+                    "interaction_cut": True,
+                    "interaction_valid": True,
+                    "benchmark_valid": False,
+                    "benchmark_invalid_reason": (
+                        "direct_interaction_not_bimanual_benchmark"
+                    ),
+                    "bimanual_sequence_valid": False,
+                    "target_key": event["target_key"],
+                    "intended_target": bool(event["intended_target"]),
+                    "contact_collider": event["collider"],
+                    "contact_point_m": list(event["point_m"]),
+                    "commanded_speed_m_s": float(
+                        event["commanded_speed_m_s"]
+                    ),
+                    "contact_steps": int(event["contact_steps"]),
+                    "contact_sources": list(
+                        event.get("contact_sources", ())
+                    ),
+                    "topology_note": (
+                        "contact severs the foliage/petiole proxy's associated "
+                        "pre-authored SubStem joint; the mesh is not split at "
+                        "the arbitrary contact point"
+                    ),
+                }
+                report.setdefault("blade_traversal_cuts", []).append(
+                    persisted
+                )
+                monitor.record_cut(persisted)
+                applied.append(persisted)
+            finally:
+                context.play()
+            continue
         decision = event["decision"]
         context.pause()
         try:
@@ -3508,10 +3753,18 @@ class InteractionController:
             if applied:
                 latest = applied[-1]
                 qualifier = "intended" if latest["intended_target"] else "UNINTENDED"
-                self._status_label.text = (
-                    f"Physical blade cut {latest['vine']}/{latest['organ_label']} "
-                    f"({qualifier}, {latest['peak_force_n']:.1f} N)"
-                )
+                if latest.get("interaction_cut"):
+                    self._status_label.text = (
+                        f"Blade traversal cut "
+                        f"{latest['vine']}/{latest['organ_label']} "
+                        f"({qualifier}; interaction mode, not benchmark-valid)"
+                    )
+                else:
+                    self._status_label.text = (
+                        f"Physical blade cut "
+                        f"{latest['vine']}/{latest['organ_label']} "
+                        f"({qualifier}, {latest['peak_force_n']:.1f} N)"
+                    )
         self._airflow.step()
         self._visual_pull.step()
         while self._pending:

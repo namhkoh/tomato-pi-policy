@@ -10,6 +10,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parents[1]))
 from interactive_greenhouse import (
     RobotContactDiagnostics,
     parse_args,
+    _blade_traversal_contact_step,
     _closing_jaw_corridor_overlap,
     _geometric_cut_reaction_force,
     _opposed_finger_contact,
@@ -17,6 +18,22 @@ from interactive_greenhouse import (
     _required_probe_payload_clearance,
     _select_physics_vines,
 )
+
+
+def test_blade_traversal_requires_moving_consecutive_contact() -> None:
+    steps, ready = _blade_traversal_contact_step(False, 0.10, 1)
+    assert (steps, ready) == (0, False)
+
+    steps, ready = _blade_traversal_contact_step(True, 0.0, 0)
+    assert (steps, ready) == (0, False)
+
+    steps, ready = _blade_traversal_contact_step(True, 0.02, 0)
+    assert (steps, ready) == (1, False)
+    steps, ready = _blade_traversal_contact_step(True, 0.02, steps)
+    assert (steps, ready) == (2, True)
+
+    steps, ready = _blade_traversal_contact_step(False, 0.02, steps)
+    assert (steps, ready) == (0, False)
 
 
 def test_opposed_finger_contact_requires_both_fingers_and_nonzero_load() -> None:

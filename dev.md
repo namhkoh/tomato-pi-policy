@@ -1202,6 +1202,54 @@ lab pinch, pull, and blade traversal in the relaunched `koh-dev/rby1` simulator
 remains the final manual acceptance gate before demonstration recording is
 enabled.
 
+### Direct flat-blade traversal interaction cut, 2026-08-11
+
+The live report showed that the knife was already making real contact, but the
+contact was being routed to the wrong semantic gate. `BladeCollision` produced
+repeated non-zero PhysX impulses against `foliage_grasp` proxies (including 34
+events on one branch, with 2.80 mm maximum penetration), while
+`BladeContactMonitor._target_colliders` accepted only `petiole_cut_zone`
+paths. Consequently, visible blade-through-leaf contact was recorded as
+diagnostics but could never reach `Severer`.
+
+Live teleop now has a separate direct interaction path. Every severable
+`foliage_grasp`, `petiole_grasp`, and `petiole_cut_zone` collider maps back to
+its owning `Vine_XXXX/SubStem_XX` cut joint. A cut requires all of:
+
+- the physical flat `BladeCollision`, never the non-cutting U-shaped arc;
+- a non-zero PhysX impulse against one of those mapped proxies;
+- commanded cutting-edge speed of at least 0.01 m/s, preventing idle jitter or
+  a resting overlap from cutting; and
+- two consecutive contact steps, rejecting a one-frame solver spike.
+
+The protected main stem is never entered into this map. A successful traversal
+releases the contacted proxy's associated pre-authored `SubStem_XX` junction
+and is recorded under `blade_traversal_cuts`. Isaac 5.1 still cannot split the
+render mesh at an arbitrary contact coordinate, so a blade hit on broad foliage
+severs the whole associated branch at its authored junction; this approximation
+is stated in every cut record.
+
+This path is deliberately isolated from benchmark scoring:
+`interaction_valid=true`, `benchmark_valid=false`, and
+`benchmark_invalid_reason=direct_interaction_not_bimanual_benchmark`. The
+strict physical gate remains unchanged, and **Run Full IK Sequence** disables
+interaction cutting for its duration so only target, direction, force, work,
+crossing, counterhold, ordering, and safety evidence can produce a benchmark
+cut. If a strict and interaction decision could coincide in one frame, the
+strict decision takes precedence.
+
+**Verification:**
+
+| Check | Result | Evidence |
+|---|---|---|
+| Direct traversal gate policy | stationary contact resets; first moving contact waits; second consecutive moving contact cuts; a gap resets | `interactive_policy_test.py` |
+| Focused interaction/contact regressions | 10 passed | `D:\\isaac-sim\\python.bat -m pytest -q examples\\greenhouse_sim\\greenhouse_sim\\interactive_policy_test.py` |
+| Complete deleaf simulator regressions | 121 passed, 1 PhysX-only skip | `D:\\isaac-sim\\python.bat -m pytest -q examples\\greenhouse_sim\\greenhouse_sim` |
+
+The software gate is accepted on `koh-dev/deleaf`. The remaining acceptance is
+deliberate live blade traversal after this commit is merged into
+`koh-dev/rby1`; that manual confirmation must not be inferred from unit tests.
+
 ## Research findings, 2026-08-06 (pre-implementation)
 
 ### Stiffness — the current E is 5–15× too low
@@ -1389,3 +1437,9 @@ One logical change per commit; no AI attribution trailers.
   rigid-tissue reaction for missing thin-petiole callbacks while preserving all
   direction/force/work/crossing/safety gates; passed 120 regressions plus a
   clean 480-step Isaac stability smoke on `koh-dev/deleaf`.
+- 2026-08-11 — Routed real moving flat-blade contact on severable foliage and
+  petiole interaction proxies to their associated pre-authored branch joints,
+  guarded by 0.01 m/s commanded speed and two consecutive PhysX contact steps;
+  kept the arc/main stem protected, labelled traversal cuts non-benchmark, and
+  disabled the convenience path during strict full-IK runs; passed 121
+  regressions with one PhysX-only skip on `koh-dev/deleaf`.
