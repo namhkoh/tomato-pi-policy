@@ -183,15 +183,18 @@ minimum=open and numeric maximum=closed. The read-only publisher now computes
 exactly matching the endpoint-derived value. No physical robot or gripper
 command path was added.
 
-The wrist-camera brackets were also 50 mm high because the supplied FreeCAD
-component origin was treated as the official URDF EE origin. In the reference
-assembly the M3 pair is Z=+38.5 mm and the gripper flange is Z=+50 mm; in
-`EE_BODY.dae` that flange is Z=0. The correct Isaac screw datum is therefore
-Z=-11.5 mm. The generated right mount uses
-`(0, -0.095919538, -0.041619184)` m with identity rotation; the generated left
-mount uses `(0, +0.095919538, -0.041619184)` m with a 180-degree Z rotation.
-This matches the outside wrist faces at CAD Y=+/-259 mm, and the robot
-USD/manifest were rebuilt.
+A later read-only audit against the operator's wrist screenshot, the supplied
+`RBY1_Example_setup.FCStd`, and the standalone bent-bracket STEP corrected this
+initial interpretation. The desired screw pair is on the wrist force-sensor
+plate above the tool: bolt origins are `(+/-9, -42, 38.5)` mm and the mounting
+face is at `y=-39` mm. The normalized bracket bolt centres are
+`(+/-9, 56.919538, 30.119184)` mm, giving the exact root translation
+`(0, -0.098919538, 0.008380816)` m on the right. Operator visual verification
+showed that the generated left EE frame still requires an explicit outside-face
+mirror: its root is `(0, +0.098919538, 0.008380816)` m with a 180-degree local Z
+rotation. The earlier negative-Z transforms placed both cameras beside the
+knife/gripper; the corrected positive screw-plate height is retained on both
+sides. The generated robot USD/manifest were rebuilt.
 
 The first live post-change report captured an active `Foliage_155`/left-finger
 contact with `contact_policy=monitor`, `unsafe_latched=false`, and
@@ -760,20 +763,22 @@ authored bracket-to-camera transform. The first wrist fit incorrectly treated
 the re-origin of that extracted STL as its mounting face, so the assemblies
 were only approximately placed on the outer wrist surfaces. The authoritative
 RB-Y1 v1.1 assembly `RBY1_Example_setup.FCStd` fixes the actual interface at the
-18 mm-spaced M3 pair: bolt centres are `(x, y, z) = (+/-9, -39, 38.5)` mm in
-each mirrored end-effector frame. In the normalized bracket STL those same
-centres are `(+/-9, 56.919538, 30.119184)` mm, which gives the exact bracket-root
-translation `(0, -95.919538, 8.380816)` mm with identity assembly rotation on
-both wrists. Robot-chain mirroring supplies the left/right reflection; rotating
-the right bracket again would misalign the screw pair.
+18 mm-spaced M3 pair: bolt origins are `(x, y, z) = (+/-9, -42, 38.5)` mm,
+3 mm outside the force-sensor mounting face at `y=-39` mm, in each mirrored
+end-effector frame. In the normalized bracket mesh those same centres are
+`(+/-9, 56.919538, 30.119184)` mm, which gives the exact bracket-root translation
+`(0, -98.919538, 8.380816)` mm with identity assembly rotation on the right and
+`(0, +98.919538, 8.380816)` mm with a 180-degree local Z rotation on the left.
+The explicit left mirror is required by the generated handed EE frames and puts
+the camera on the operator-confirmed opposite outer wrist face.
 
 The supplied head bracket carries the same D405 body on `link_head_2`. All three
 USD cameras use the D405's 84 by 58 degree depth FOV and 40 mm near clip. Head
 optical forward/up are +robot-X/+robot-Z; wrist cameras look down the tool and
-outward. A sensor-only 180 degree roll remains on the right optical prim to
-normalize policy-image orientation without rotating the physical CAD or its
-mounting holes. Authored metadata records `rby1_wrist_m3_pair` and the 18 mm
-bolt spacing on both wrist assemblies.
+outward. Sensor-only rolls of 180 degrees right and 0 degrees left normalize
+policy-image orientation without rotating the physical CAD or its mounting
+holes. Authored metadata records `rby1_wrist_m3_pair` and the 18 mm bolt spacing
+on both wrist assemblies.
 
 A real transform bug was caught during rendered-camera validation: the CAD and
 NumPy matrices use column vectors, but `Gf.Matrix4d` transforms row vectors.
@@ -814,7 +819,7 @@ separation, and maximum impulse for future task-pose acceptance.
 | Check | Result | Evidence |
 |---|---|---|
 | Hardware semantics | 3 D405 cameras; both wrist brackets aligned to the v1.1 18 mm M3 pair; original right EE/finger visuals and collisions inactive; 1 blade pair marked cutting; U arc pair non-cutting; 31 collision shapes | `robot_hardware_test.py`, `data/greenhouse_sim/robots/rby1a_v1.0.json` |
-| Authored transforms and placement | exact bracket and reference bolt centres coincide on both wrists; physical mount rotations are identity in mirrored EE frames; right tool faces world -Y with its U arc upward; opposite-aisle clearances are regression checked | 10 passed, 1 PhysX-only test skipped outside SimulationApp |
+| Authored transforms and placement | exact bracket and mirrored reference bolt centres coincide on both wrists; right mount is identity and left mount uses the explicit 180-degree outside-face mirror; right tool faces world -Y with its U arc upward; opposite-aisle clearances are regression checked | 10 passed, 1 PhysX-only test skipped outside SimulationApp |
 | Visual fit | brackets seat against the actual wrist screw faces; the right end remains knife-only; opposite-aisle robot, greenhouse, and vine render together | `data/greenhouse_sim/wrist_mount_reference_left.png`, `data/greenhouse_sim/wrist_mount_reference_right.png` |
 | Opposite-aisle knife-only 480-step soak | 34/34 rigid bodies finite; base settled 11.524 mm toward the target row and 8.203 mm vertically; 2.078 degree tilt; succeeded=true | `data/greenhouse_sim/robot_wrist_screw_mount_acceptance.json` |
 | Vine during robot soak | 121/121 tracked organs finite; 68.710 mm maximum compliant settling; 0 runaway organs | same report |
@@ -1260,8 +1265,8 @@ action.
 
 The controller reads the live articulation-root pose, computes robot-forward
 from the authored yaw, and intersects two independent intervals: a per-session
-offset of -50 to +30 mm and the already measured chassis-clear greenhouse aisle
-bounds. It then pauses physics, updates
+offset of -50 to +100 mm and the already measured chassis-clear greenhouse
+aisle bounds. It then pauses physics, updates
 `/World/RBY1/joints/benchmark_world_fixed.physics:localPos0`, teleports the
 initialized articulation root to the same pose through Isaac's supported tensor
 API, zeros root linear/angular velocity, and resumes. An exception restores the
@@ -1271,23 +1276,35 @@ moves are written to `robot_base_ui_nudges`.
 Movement is refused while the grasp joint is active. After any successful
 teleport, measured and commanded blade-velocity history is synchronized and
 interaction cutting is suppressed for four simulation steps, preventing the
-10 mm chassis adjustment from appearing as a blade traversal. The known
-4.30 m two-millimetre leaf overlap cannot be reached from the 4.25 m station
-because the forward session cap stops at 4.28 m even if the aisle bound is
-looser.
+10 mm chassis adjustment from appearing as a blade traversal. The expanded
+allowance intentionally permits controlled foliage contact beyond the former
++30 mm cap while the measured gutter/chassis aisle bounds remain authoritative.
+At the current 4.28 m station the session cap is 4.38 m.
+
+The same update refits both bent D405 brackets to the actual wrist force-sensor
+screw plates. FreeCAD and STEP bolt-centre alignment gives the right local root
+`(0, -0.098919538, 0.008380816)` m with identity rotation and the left root
+`(0, +0.098919538, 0.008380816)` m with a 180-degree Z rotation. The explicit
+left mirror places that camera on the opposite outer wrist face. Optical-only
+rolls are 180 degrees right and 0 degrees left. The D405-to-bracket CAD transform
+and the right knife transform are unchanged.
 
 **Verification:**
 
 | Check | Result | Evidence |
 |---|---|---|
-| Bounded nudge policy | +10 mm applies; +30 mm session cap applies; tighter aisle bound takes precedence | `interactive_policy_test.py` |
-| Focused interaction/contact/UI policy regressions | 11 passed | `D:\isaac-sim\python.bat -m pytest -q examples\greenhouse_sim\greenhouse_sim\interactive_policy_test.py` |
+| Bounded nudge policy | +10 mm applies; +100 mm session cap applies; tighter aisle bound takes precedence | `interactive_policy_test.py` |
+| Focused hardware/UI regressions | 23 passed | `robot_hardware_test.py`, `interactive_policy_test.py` |
 | Complete RB-Y1 greenhouse regressions | 122 passed, 1 PhysX-only skip | `D:\isaac-sim\python.bat -m pytest -q examples\greenhouse_sim\greenhouse_sim` |
-| Updated visible station launch | report reached `stage=running`; interaction cut enabled; blade safety clear; Kit responding | `data/greenhouse_sim/physical_robot_teleop_blade_traversal_base_ui_20260811.json` |
+| Rendered wrist fit | both D405 bodies attach through the supplied bent brackets at the force-sensor screw plates; the left uses the explicit opposite-side mirror confirmed by the operator | `data/greenhouse_sim/wrist_mount_left_outer_20260811.png`, `data/greenhouse_sim/wrist_mount_wrist_plate_right_20260811.png` |
+| 240-step integrated fixed-station soak | 129/129 vine organs and 34/34 robot rigid bodies finite; 0 runaway organs; base tilt 0.000099 degrees; contacts limited to wheel/floor support; initial tool safety clear | `data/greenhouse_sim/grasp_validation_left_outer_mount_smoke_20260811.json` |
+| Updated visible station launch | `stage=running`; exact `Vine_0002/SubStem_02` target; 20 graspable target segments; fresh read-only teleop mailbox; contact policy `monitor`; no unsafe latch; recording off | `data/greenhouse_sim/physical_robot_teleop_grasp_left_outer_20260811.json` |
 
-The visible station is relaunched for operator confirmation. The mailbox was
-stale at launch, so live physical-arm motion and a manual button click remain
-acceptance observations rather than claims in this automated verification.
+The visible station and read-only physical-robot bridge are relaunched for
+operator confirmation. The report had accepted 384 fresh whole-body commands,
+a fresh 0-16 ms watchdog, zero watchdog holds, and no rate limiting at the
+verification snapshot. Manual opposed-finger grasp remains the open acceptance
+observation; demonstration recording stays disabled until it succeeds.
 
 ## Research findings, 2026-08-06 (pre-implementation)
 
@@ -1487,3 +1504,11 @@ One logical change per commit; no AI attribution trailers.
   bounds, synchronized the world fixed anchor and articulation pose, blocked
   movement during grasp, and suppressed teleport-induced cut evidence; passed
   122 regressions with one PhysX-only skip and relaunched the visible station.
+- 2026-08-11 — Expanded fixed-base forward preposition from +30 mm to +100 mm
+  while retaining 10 mm steps, the -50 mm reverse cap, measured gutter/chassis
+  bounds, grasp lockout, and cut-history suppression. Refit both D405 assemblies
+  to the actual wrist force-sensor screw plates using the FreeCAD/STEP bolt
+  datums, explicitly mirrored the left assembly to the operator-confirmed
+  opposite outer face, normalized its optical view separately, rebuilt the robot
+  USD, passed 23 focused and 122 full regressions, and completed a clean
+  240-step robot/vine/contact soak.

@@ -1,0 +1,807 @@
+{
+  "id": "tomato_000",
+  "seed": 0,
+  "units": "meters",
+  "height": 2.9094,
+  "counts": {
+    "sub_stems": 43,
+    "leaves": 340,
+    "trusses": 11,
+    "fruits": 30,
+    "flowers": 4
+  },
+  "attachments": [
+    {
+      "id": "SubStem_00",
+      "parent": "MainStem",
+      "attach": [
+        -0.00019,
+        0.24192,
+        0.20634
+      ]
+    },
+    {
+      "id": "SubStem_01",
+      "parent": "MainStem",
+      "attach": [
+        0.0031,
+        0.28554,
+        0.27301
+      ]
+    },
+    {
+      "id": "SubStem_02",
+      "parent": "MainStem",
+      "attach": [
+        0.00664,
+        0.3222,
+        0.34402
+      ]
+    },
+    {
+      "id": "SubStem_03",
+      "parent": "MainStem",
+      "attach": [
+        0.01228,
+        0.35679,
+        0.41588
+      ]
+    },
+    {
+      "id": "SubStem_04",
+      "parent": "MainStem",
+      "attach": [
+        0.01878,
+        0.38722,
+        0.48956
+      ]
+    },
+    {
+      "id": "SubStem_05",
+      "parent": "MainStem",
+      "attach": [
+        0.02627,
+        0.41252,
+        0.56499
+      ]
+    },
+    {
+      "id": "SubStem_06",
+      "parent": "MainStem",
+      "attach": [
+        0.03072,
+        0.42307,
+        0.60331
+      ]
+    },
+    {
+      "id": "SubStem_07",
+      "parent": "MainStem",
+      "attach": [
+        0.03917,
+        0.44545,
+        0.67962
+      ]
+    },
+    {
+      "id": "SubStem_08",
+      "parent": "MainStem",
+      "attach": [
+        0.04677,
+        0.46696,
+        0.75628
+      ]
+    },
+    {
+      "id": "SubStem_09",
+      "parent": "MainStem",
+      "attach": [
+        0.05112,
+        0.49718,
+        0.82929
+      ]
+    },
+    {
+      "id": "SubStem_10",
+      "parent": "MainStem",
+      "attach": [
+        0.05285,
+        0.53469,
+        0.8999
+      ]
+    },
+    {
+      "id": "SubStem_11",
+      "parent": "MainStem",
+      "attach": [
+        0.05343,
+        0.55115,
+        0.93632
+      ]
+    },
+    {
+      "id": "SubStem_12",
+      "parent": "MainStem",
+      "attach": [
+        0.0454,
+        0.58978,
+        1.00442
+      ]
+    },
+    {
+      "id": "SubStem_13",
+      "parent": "MainStem",
+      "attach": [
+        0.02002,
+        0.66514,
+        1.0941
+      ]
+    },
+    {
+      "id": "SubStem_14",
+      "parent": "MainStem",
+      "attach": [
+        -0.0042,
+        0.72952,
+        1.19213
+      ]
+    },
+    {
+      "id": "SubStem_15",
+      "parent": "MainStem",
+      "attach": [
+        -0.02521,
+        0.77607,
+        1.25213
+      ]
+    },
+    {
+      "id": "SubStem_16",
+      "parent": "MainStem",
+      "attach": [
+        -0.04977,
+        0.83035,
+        1.30541
+      ]
+    },
+    {
+      "id": "SubStem_17",
+      "parent": "MainStem",
+      "attach": [
+        -0.07134,
+        0.88403,
+        1.36064
+      ]
+    },
+    {
+      "id": "SubStem_18",
+      "parent": "MainStem",
+      "attach": [
+        -0.08231,
+        0.94292,
+        1.41238
+      ]
+    },
+    {
+      "id": "SubStem_19",
+      "parent": "MainStem",
+      "attach": [
+        -0.08383,
+        0.9745,
+        1.43683
+      ]
+    },
+    {
+      "id": "SubStem_20",
+      "parent": "MainStem",
+      "attach": [
+        -0.09136,
+        1.03588,
+        1.48749
+      ]
+    },
+    {
+      "id": "SubStem_21",
+      "parent": "MainStem",
+      "attach": [
+        -0.09642,
+        1.06593,
+        1.51313
+      ]
+    },
+    {
+      "id": "SubStem_22",
+      "parent": "MainStem",
+      "attach": [
+        -0.12279,
+        1.16296,
+        1.57821
+      ]
+    },
+    {
+      "id": "SubStem_23",
+      "parent": "MainStem",
+      "attach": [
+        -0.13486,
+        1.22491,
+        1.62725
+      ]
+    },
+    {
+      "id": "SubStem_24",
+      "parent": "MainStem",
+      "attach": [
+        -0.13878,
+        1.25637,
+        1.65138
+      ]
+    },
+    {
+      "id": "SubStem_25",
+      "parent": "MainStem",
+      "attach": [
+        -0.13429,
+        1.32106,
+        1.69793
+      ]
+    },
+    {
+      "id": "SubStem_26",
+      "parent": "MainStem",
+      "attach": [
+        -0.13054,
+        1.3827,
+        1.74875
+      ]
+    },
+    {
+      "id": "SubStem_27",
+      "parent": "MainStem",
+      "attach": [
+        -0.11924,
+        1.44603,
+        1.79515
+      ]
+    },
+    {
+      "id": "SubStem_28",
+      "parent": "MainStem",
+      "attach": [
+        -0.09854,
+        1.50725,
+        1.84193
+      ]
+    },
+    {
+      "id": "SubStem_29",
+      "parent": "MainStem",
+      "attach": [
+        -0.07758,
+        1.55892,
+        1.89899
+      ]
+    },
+    {
+      "id": "SubStem_30",
+      "parent": "MainStem",
+      "attach": [
+        -0.06326,
+        1.60529,
+        1.96225
+      ]
+    },
+    {
+      "id": "SubStem_31",
+      "parent": "MainStem",
+      "attach": [
+        -0.05902,
+        1.64123,
+        2.03308
+      ]
+    },
+    {
+      "id": "SubStem_32",
+      "parent": "MainStem",
+      "attach": [
+        -0.05814,
+        1.65853,
+        2.11076
+      ]
+    },
+    {
+      "id": "SubStem_33",
+      "parent": "MainStem",
+      "attach": [
+        -0.06052,
+        1.66898,
+        2.18987
+      ]
+    },
+    {
+      "id": "SubStem_34",
+      "parent": "MainStem",
+      "attach": [
+        -0.06311,
+        1.67303,
+        2.26957
+      ]
+    },
+    {
+      "id": "SubStem_35",
+      "parent": "MainStem",
+      "attach": [
+        -0.06329,
+        1.67271,
+        2.34957
+      ]
+    },
+    {
+      "id": "SubStem_36",
+      "parent": "MainStem",
+      "attach": [
+        -0.06572,
+        1.67488,
+        2.42941
+      ]
+    },
+    {
+      "id": "SubStem_37",
+      "parent": "MainStem",
+      "attach": [
+        -0.06627,
+        1.67583,
+        2.50936
+      ]
+    },
+    {
+      "id": "SubStem_38",
+      "parent": "MainStem",
+      "attach": [
+        -0.0665,
+        1.67552,
+        2.58935
+      ]
+    },
+    {
+      "id": "SubStem_39",
+      "parent": "MainStem",
+      "attach": [
+        -0.06647,
+        1.67627,
+        2.66934
+      ]
+    },
+    {
+      "id": "SubStem_40",
+      "parent": "MainStem",
+      "attach": [
+        -0.06642,
+        1.67649,
+        2.70934
+      ]
+    },
+    {
+      "id": "SubStem_41",
+      "parent": "MainStem",
+      "attach": [
+        -0.06641,
+        1.67652,
+        2.78934
+      ]
+    },
+    {
+      "id": "SubStem_42",
+      "parent": "MainStem",
+      "attach": [
+        -0.06641,
+        1.67653,
+        2.81734
+      ]
+    },
+    {
+      "id": "Truss_00",
+      "parent": "MainStem",
+      "attach": [
+        0.04677,
+        0.46696,
+        0.75628
+      ]
+    },
+    {
+      "id": "Fruit_00",
+      "parent": "Truss_00",
+      "attach": [
+        0.0418,
+        0.45683,
+        0.72753
+      ]
+    },
+    {
+      "id": "Fruit_01",
+      "parent": "Truss_00",
+      "attach": [
+        0.06937,
+        0.4399,
+        0.71568
+      ]
+    },
+    {
+      "id": "Fruit_02",
+      "parent": "Truss_00",
+      "attach": [
+        0.07737,
+        0.39625,
+        0.71238
+      ]
+    },
+    {
+      "id": "Truss_01",
+      "parent": "MainStem",
+      "attach": [
+        0.05343,
+        0.55115,
+        0.93632
+      ]
+    },
+    {
+      "id": "Fruit_03",
+      "parent": "Truss_01",
+      "attach": [
+        0.06003,
+        0.53187,
+        0.91649
+      ]
+    },
+    {
+      "id": "Fruit_04",
+      "parent": "Truss_01",
+      "attach": [
+        0.07684,
+        0.54579,
+        0.89418
+      ]
+    },
+    {
+      "id": "Fruit_05",
+      "parent": "Truss_01",
+      "attach": [
+        0.10813,
+        0.54331,
+        0.88306
+      ]
+    },
+    {
+      "id": "Truss_02",
+      "parent": "MainStem",
+      "attach": [
+        -0.0042,
+        0.72952,
+        1.19213
+      ]
+    },
+    {
+      "id": "Fruit_06",
+      "parent": "Truss_02",
+      "attach": [
+        -0.0026,
+        0.72844,
+        1.16431
+      ]
+    },
+    {
+      "id": "Fruit_07",
+      "parent": "Truss_02",
+      "attach": [
+        0.00588,
+        0.74953,
+        1.1481
+      ]
+    },
+    {
+      "id": "Fruit_08",
+      "parent": "Truss_02",
+      "attach": [
+        0.03444,
+        0.75394,
+        1.13613
+      ]
+    },
+    {
+      "id": "Truss_03",
+      "parent": "MainStem",
+      "attach": [
+        -0.07134,
+        0.88403,
+        1.36064
+      ]
+    },
+    {
+      "id": "Fruit_09",
+      "parent": "Truss_03",
+      "attach": [
+        -0.09064,
+        0.8745,
+        1.3345
+      ]
+    },
+    {
+      "id": "Fruit_10",
+      "parent": "Truss_03",
+      "attach": [
+        -0.09017,
+        0.89432,
+        1.31539
+      ]
+    },
+    {
+      "id": "Fruit_11",
+      "parent": "Truss_03",
+      "attach": [
+        -0.07153,
+        0.89014,
+        1.29555
+      ]
+    },
+    {
+      "id": "Truss_04",
+      "parent": "MainStem",
+      "attach": [
+        -0.09136,
+        1.03588,
+        1.48749
+      ]
+    },
+    {
+      "id": "Fruit_12",
+      "parent": "Truss_04",
+      "attach": [
+        -0.09294,
+        1.03135,
+        1.46145
+      ]
+    },
+    {
+      "id": "Fruit_13",
+      "parent": "Truss_04",
+      "attach": [
+        -0.08852,
+        1.04749,
+        1.44215
+      ]
+    },
+    {
+      "id": "Fruit_14",
+      "parent": "Truss_04",
+      "attach": [
+        -0.06692,
+        1.04378,
+        1.43042
+      ]
+    },
+    {
+      "id": "Truss_05",
+      "parent": "MainStem",
+      "attach": [
+        -0.13486,
+        1.22491,
+        1.62725
+      ]
+    },
+    {
+      "id": "Fruit_15",
+      "parent": "Truss_05",
+      "attach": [
+        -0.15595,
+        1.21389,
+        1.60801
+      ]
+    },
+    {
+      "id": "Fruit_16",
+      "parent": "Truss_05",
+      "attach": [
+        -0.15879,
+        1.22931,
+        1.58838
+      ]
+    },
+    {
+      "id": "Fruit_17",
+      "parent": "Truss_05",
+      "attach": [
+        -0.14725,
+        1.22266,
+        1.57053
+      ]
+    },
+    {
+      "id": "Truss_06",
+      "parent": "MainStem",
+      "attach": [
+        -0.13054,
+        1.3827,
+        1.74875
+      ]
+    },
+    {
+      "id": "Fruit_18",
+      "parent": "Truss_06",
+      "attach": [
+        -0.13968,
+        1.37017,
+        1.73288
+      ]
+    },
+    {
+      "id": "Fruit_19",
+      "parent": "Truss_06",
+      "attach": [
+        -0.15719,
+        1.35224,
+        1.74274
+      ]
+    },
+    {
+      "id": "Fruit_20",
+      "parent": "Truss_06",
+      "attach": [
+        -0.17797,
+        1.36389,
+        1.72908
+      ]
+    },
+    {
+      "id": "Truss_07",
+      "parent": "MainStem",
+      "attach": [
+        -0.07758,
+        1.55892,
+        1.89899
+      ]
+    },
+    {
+      "id": "Fruit_21",
+      "parent": "Truss_07",
+      "attach": [
+        -0.07004,
+        1.54974,
+        1.88013
+      ]
+    },
+    {
+      "id": "Fruit_22",
+      "parent": "Truss_07",
+      "attach": [
+        -0.0522,
+        1.54592,
+        1.87378
+      ]
+    },
+    {
+      "id": "Fruit_23",
+      "parent": "Truss_07",
+      "attach": [
+        -0.04326,
+        1.52401,
+        1.876
+      ]
+    },
+    {
+      "id": "Truss_08",
+      "parent": "MainStem",
+      "attach": [
+        -0.05814,
+        1.65853,
+        2.11076
+      ]
+    },
+    {
+      "id": "Fruit_24",
+      "parent": "Truss_08",
+      "attach": [
+        -0.04809,
+        1.65788,
+        2.09171
+      ]
+    },
+    {
+      "id": "Fruit_25",
+      "parent": "Truss_08",
+      "attach": [
+        -0.04257,
+        1.67144,
+        2.08419
+      ]
+    },
+    {
+      "id": "Fruit_26",
+      "parent": "Truss_08",
+      "attach": [
+        -0.02398,
+        1.67267,
+        2.08186
+      ]
+    },
+    {
+      "id": "Truss_09",
+      "parent": "MainStem",
+      "attach": [
+        -0.06329,
+        1.67271,
+        2.34957
+      ]
+    },
+    {
+      "id": "Fruit_27",
+      "parent": "Truss_09",
+      "attach": [
+        -0.0585,
+        1.6846,
+        2.33587
+      ]
+    },
+    {
+      "id": "Fruit_28",
+      "parent": "Truss_09",
+      "attach": [
+        -0.05858,
+        1.69467,
+        2.33185
+      ]
+    },
+    {
+      "id": "Fruit_29",
+      "parent": "Truss_09",
+      "attach": [
+        -0.04756,
+        1.69904,
+        2.32772
+      ]
+    },
+    {
+      "id": "Truss_10",
+      "parent": "MainStem",
+      "attach": [
+        -0.0665,
+        1.67552,
+        2.58935
+      ]
+    },
+    {
+      "id": "Flower_00",
+      "parent": "Truss_10",
+      "attach": [
+        -0.06158,
+        1.70414,
+        2.58806
+      ]
+    },
+    {
+      "id": "Flower_01",
+      "parent": "Truss_10",
+      "attach": [
+        -0.0654,
+        1.69631,
+        2.56652
+      ]
+    },
+    {
+      "id": "Flower_02",
+      "parent": "Truss_10",
+      "attach": [
+        -0.08496,
+        1.69741,
+        2.56324
+      ]
+    },
+    {
+      "id": "Flower_03",
+      "parent": "Truss_10",
+      "attach": [
+        -0.09914,
+        1.71672,
+        2.57182
+      ]
+    }
+  ]
+}

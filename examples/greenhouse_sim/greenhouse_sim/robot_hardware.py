@@ -38,18 +38,27 @@ RIGHT_GRIPPER_LINKS = ("ee_right", "ee_finger_r1", "ee_finger_r2")
 
 # Local mounts in the corresponding RBY1 link frame.  RBY1 tools extend along
 # -Z.  The wrist-camera transform is measured from the supplied
-# RBY1_Example_setup.FCStd reference, not fitted by eye.  In that assembly the
-# bracket's two M3 axes are at x=+/-9, y=-39, z=38.5 mm in the FreeCAD gripper
-# component frame.  That component frame is 50 mm below the official URDF EE
-# flange: the supplied gripper's top face is z=+50 mm while ``EE_BODY.dae`` has
-# the same face at z=0.  Therefore the screw axes are z=-11.5 mm in the actual
-# ``ee_left``/``ee_right`` link frame used by Isaac.  The extracted STL was
-# re-origined at its bounds and has the same bolt axes at x=+/-9,
-# y=56.919538, z=30.119184 mm.  This translation aligns those axes exactly and
-# seats the bracket against the wrist screw face without the former 50 mm
-# vertical offset.
+# RBY1_Example_setup.FCStd and the supplied standalone bracket STEP, not fitted
+# by eye.  In the end-effector frame the two M3 bolt origins are at x=+/-9,
+# y=-42, z=38.5 mm; their heads sit 3 mm outside the y=-39 mm mounting face.
+# The bracket top is z=43 mm, exactly where the FCStd force-sensor plate begins.
+# The generated handed EE frames require an explicit x/y mirror for the left
+# outer screw face, confirmed in the rendered operator view.  The extracted STL
+# was normalized by moving its original minimum corner to zero, so subtracting
+# the normalized bolt datum recovers the supplied assembly height without the
+# former erroneous 50 mm flange correction.
+WRIST_MOUNT_FACE_Y_M = -0.039
+WRIST_BOLT_HEAD_STANDOFF_M = 0.003
+WRIST_SENSOR_PLATE_BASE_Z_M = 0.043
 WRIST_REFERENCE_BOLT_CENTRES_M = np.array(
-    [[-0.009, -0.039, -0.0115], [0.009, -0.039, -0.0115]], dtype=np.float64
+    [
+        [-0.009, WRIST_MOUNT_FACE_Y_M - WRIST_BOLT_HEAD_STANDOFF_M, 0.0385],
+        [0.009, WRIST_MOUNT_FACE_Y_M - WRIST_BOLT_HEAD_STANDOFF_M, 0.0385],
+    ],
+    dtype=np.float64,
+)
+LEFT_WRIST_REFERENCE_BOLT_CENTRES_M = WRIST_REFERENCE_BOLT_CENTRES_M * np.array(
+    [-1.0, -1.0, 1.0], dtype=np.float64
 )
 WRIST_BRACKET_BOLT_CENTRES_M = np.array(
     [
@@ -58,11 +67,12 @@ WRIST_BRACKET_BOLT_CENTRES_M = np.array(
     ],
     dtype=np.float64,
 )
-RIGHT_CAMERA_TRANSLATION_M = np.array(
-    [0.0, -0.0959195383671445, -0.0416191835115545], dtype=np.float64
+RIGHT_CAMERA_TRANSLATION_M = (
+    WRIST_REFERENCE_BOLT_CENTRES_M.mean(axis=0)
+    - WRIST_BRACKET_BOLT_CENTRES_M.mean(axis=0)
 )
-LEFT_CAMERA_TRANSLATION_M = np.array(
-    [0.0, 0.0959195383671445, -0.0416191835115545], dtype=np.float64
+LEFT_CAMERA_TRANSLATION_M = RIGHT_CAMERA_TRANSLATION_M * np.array(
+    [1.0, -1.0, 1.0], dtype=np.float64
 )
 # Backward-compatible right-mount datum; side-aware helpers below should be
 # used by new collision-planning code.
@@ -236,9 +246,9 @@ def rotation_z(degrees: float) -> np.ndarray:
     return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
 
 
-# The FreeCAD left gripper component is rotated 180 degrees about Z relative to
-# the URDF ``ee_left`` frame. Mirror the complete assembly so each camera sits
-# on the outside wrist face, matching the CAD bracket placements at y=+/-259 mm.
+# The generated URDF/USD handed EE frames require an explicit local mirror to
+# place the left camera on the operator-confirmed outer screw face.  Preserve
+# the corrected force-sensor-plate height while rotating the left assembly.
 LEFT_CAMERA_ROTATION = rotation_z(180.0)
 RIGHT_CAMERA_ROTATION = np.eye(3, dtype=np.float64)
 

@@ -218,8 +218,8 @@ contact proxies, and fits the supplied hardware under `greenhouse/robot_assets/`
 
 - one Intel RealSense D405 and bracket on the head;
 - one D405 and bent bracket on the exact 18 mm-spaced M3 screw pair of each
-  end effector, using the mirrored RB-Y1 v1.1 CAD mounting datum converted from
-  the FreeCAD component origin to the official v1.0 URDF EE flange frame;
+  wrist force-sensor plate, using the RB-Y1 v1.1 CAD datum and the robot chain's
+  native left/right mirroring;
 - the supplied deleafing knife directly on the right end-effector flange.
 
 The original right gripper body and both tongs are fully removed from rendering
@@ -267,14 +267,18 @@ $ISAACSIM/python.sh examples/greenhouse_sim/interactive_greenhouse.py \
     --report data/greenhouse_sim/robot_wrist_screw_mount_acceptance.json
 ```
 
-The wrist mount conversion is important: the supplied FreeCAD gripper component
-origin is 50 mm below the official `EE_BODY.dae` flange origin. The bracket M3
-axes are therefore at Z=-11.5 mm in each Isaac EE link, not Z=+38.5 mm. The
-rebuilt asset places the right bracket root at
-`(0, -0.095919538, -0.041619184)` m with identity rotation and the left root at
-`(0, +0.095919538, -0.041619184)` m with a 180-degree Z rotation. This matches
-the outside wrist faces in the supplied CAD and keeps all three optical frames
-valid.
+The wrist datum is important. A read-only audit of the supplied v1.1 FreeCAD
+assembly and bent-bracket STEP places the two bolt origins at
+`(+/-9, -42, 38.5)` mm, 3 mm outside the `y=-39` mm force-sensor mounting face.
+The same centres in the normalized bracket mesh are
+`(+/-9, 56.919538, 30.119184)` mm. The rebuilt asset therefore places each
+right bracket root at `(0, -0.098919538, 0.008380816)` m with identity local
+rotation and the left root at `(0, +0.098919538, 0.008380816)` m with a local
+180-degree Z rotation. The explicit left mirror puts it on the operator-confirmed
+outer screw face in the generated URDF/USD chain. Sensor-only rolls of 180
+degrees right and 0 degrees left keep the policy observations upright without
+changing either physical CAD fit.
+
 A 480-step fixed-station soak with 127 plant contact shapes kept all 34 robot
 bodies finite, recorded no robot-vine contact, and reported zero runaway vine
 organs.
@@ -402,12 +406,13 @@ The 4.25 m aisle coordinate includes 50 mm of measured-pose leaf clearance;
 launching the same live pose at 4.30 m correctly latched on a 2.0 mm
 neighbouring-leaf overlap before accepting motion. The interaction window now
 provides **Robot forward +10 mm** and **Robot back -10 mm** fixed-base
-preposition controls. Session travel is capped at +30/-50 mm and clipped again
-to the measured greenhouse aisle interval, keeping the known 4.30 m collision
-pose outside the forward range. The action is refused while a branch is
-grasped. It atomically updates the PhysX articulation root and world fixed-joint
-anchor, zeros root velocity, and suppresses interaction-cut evidence for four
-steps so repositioning cannot be mistaken for a knife stroke.
+preposition controls. Session travel is capped at +100/-50 mm and clipped again
+to the measured gutter/chassis-safe greenhouse aisle interval. This deliberately
+lets the operator advance beyond the former +30 mm cap and enter foliage contact;
+the live contact monitor remains active. The action is refused while a branch
+is grasped. It atomically updates the PhysX articulation root and world
+fixed-joint anchor, zeros root velocity, and suppresses interaction-cut evidence
+for four steps so repositioning cannot be mistaken for a knife stroke.
 
 Teleop initialization consumes a fresh mailbox sample before PhysX starts, so
 the simulator begins at the measured upper-body pose rather than the scripted

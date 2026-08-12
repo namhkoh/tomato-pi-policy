@@ -118,15 +118,13 @@ def test_wrist_camera_brackets_align_the_reference_m3_pair() -> None:
         robot_hardware.LEFT_CAMERA_ROTATION
         @ robot_hardware.WRIST_BRACKET_BOLT_CENTRES_M.T
     ).T + robot_hardware.LEFT_CAMERA_TRANSLATION_M
-    expected_left = (
-        robot_hardware.rotation_z(180.0)
-        @ robot_hardware.WRIST_REFERENCE_BOLT_CENTRES_M.T
-    ).T
 
     np.testing.assert_allclose(
         right, robot_hardware.WRIST_REFERENCE_BOLT_CENTRES_M, atol=1e-12
     )
-    np.testing.assert_allclose(left, expected_left, atol=1e-12)
+    np.testing.assert_allclose(
+        left, robot_hardware.LEFT_WRIST_REFERENCE_BOLT_CENTRES_M, atol=1e-12
+    )
     np.testing.assert_allclose(
         robot_hardware.LEFT_CAMERA_ROTATION,
         robot_hardware.rotation_z(180.0),
@@ -136,15 +134,14 @@ def test_wrist_camera_brackets_align_the_reference_m3_pair() -> None:
         robot_hardware.RIGHT_CAMERA_ROTATION, np.eye(3), atol=0.0
     )
 
-def test_wrist_camera_mount_converts_freecad_component_frame_to_urdf_ee() -> None:
-    # RBY1_Example_setup.FCStd locates the M3 pair at z=+38.5 mm relative to
-    # its gripper component origin.  The matching official EE_BODY.dae flange
-    # is z=0 while that FreeCAD flange is z=+50 mm.
-    freecad_bolt_z_m = 0.0385
-    freecad_to_urdf_flange_m = 0.0500
-
+def test_wrist_camera_mount_preserves_the_freecad_ee_component_frame() -> None:
     assert robot_hardware.WRIST_REFERENCE_BOLT_CENTRES_M[0, 2] == pytest.approx(
-        freecad_bolt_z_m - freecad_to_urdf_flange_m,
+        0.0385,
+        abs=1e-12,
+    )
+    assert robot_hardware.WRIST_REFERENCE_BOLT_CENTRES_M[0, 1] == pytest.approx(
+        robot_hardware.WRIST_MOUNT_FACE_Y_M
+        - robot_hardware.WRIST_BOLT_HEAD_STANDOFF_M,
         abs=1e-12,
     )
 
@@ -166,10 +163,22 @@ def test_wrist_camera_bracket_box_matches_authored_mount() -> None:
         2.0 * half_extents, [0.027, 0.05991954, 0.03461918], atol=1e-9
     )
     np.testing.assert_allclose(
-        left_centre,
-        robot_hardware.rotation_z(180.0) @ right_centre,
-        atol=1e-12,
+        left_centre, robot_hardware.rotation_z(180.0) @ right_centre, atol=1e-12
     )
+    assert right_centre[1] + half_extents[1] == pytest.approx(
+        robot_hardware.WRIST_MOUNT_FACE_Y_M,
+        abs=5e-9,
+    )
+    assert left_centre[1] - left_half_extents[1] == pytest.approx(
+        -robot_hardware.WRIST_MOUNT_FACE_Y_M,
+        abs=5e-9,
+    )
+
+    assert right_centre[2] + half_extents[2] == pytest.approx(
+        robot_hardware.WRIST_SENSOR_PLATE_BASE_Z_M,
+        abs=5e-9,
+    )
+
 
 def test_wrist_camera_cad_axes_match_the_reference_mount() -> None:
     manifest = robot_hardware.load_manifest()
@@ -183,6 +192,7 @@ def test_wrist_camera_cad_axes_match_the_reference_mount() -> None:
     assert left[1] < -0.3 and left[2] < -0.9
     assert right[1] > 0.3 and right[2] < -0.9
     np.testing.assert_allclose(left[2], right[2], atol=1e-12)
+
 
 def test_head_camera_faces_forward_through_bracket_window() -> None:
     head_forward = robot_hardware.HEAD_BRACKET_ROTATION @ robot_hardware.HEAD_CAMERA_ROTATION @ np.array(

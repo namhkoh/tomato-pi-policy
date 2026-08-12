@@ -51,22 +51,22 @@ def test_bounded_robot_nudge_respects_session_and_aisle_limits() -> None:
     assert not first["limited"]
 
     session_limited = _bounded_robot_forward_nudge(
-        [0.0, 4.27, 0.0],
+        [0.0, 4.33, 0.0],
         [0.0, 4.25, 0.0],
         90.0,
-        0.02,
+        0.05,
         4.0,
         4.40,
     )
-    assert abs(session_limited["position_m"][1] - 4.28) < 1e-9
-    assert abs(session_limited["forward_offset_m"] - 0.03) < 1e-9
+    assert abs(session_limited["position_m"][1] - 4.35) < 1e-9
+    assert abs(session_limited["forward_offset_m"] - 0.10) < 1e-9
     assert session_limited["limited"]
 
     aisle_limited = _bounded_robot_forward_nudge(
         [0.0, 4.25, 0.0],
         [0.0, 4.25, 0.0],
         90.0,
-        0.03,
+        0.10,
         4.0,
         4.27,
     )

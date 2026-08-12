@@ -3591,7 +3591,7 @@ def _bounded_robot_forward_nudge(
     minimum_base_y_m: float,
     maximum_base_y_m: float,
     *,
-    maximum_forward_offset_m: float = 0.03,
+    maximum_forward_offset_m: float = 0.10,
     maximum_backward_offset_m: float = 0.05,
 ) -> dict:
     """Return a forward nudge clipped to both session and aisle limits."""
