@@ -101,10 +101,75 @@ def test_action_validation_and_clipping():
     env.reset()
     _, _, _, _, info = env.step(np.full(15, 2.0))
     assert info["action_clipped"]
-    assert np.all(runtime.actions[0][0] == 1.0)
+    np.testing.assert_array_equal(runtime.actions[0][0][:7], np.ones(7))
+    np.testing.assert_array_equal(runtime.actions[0][0][7:], np.zeros(8))
     assert runtime.actions[0][1] == 12
     with pytest.raises(RuntimeError):
         rl_env.OnlineDeleafEnv(_Runtime([])).step(np.zeros(15))
+
+
+def test_seek_grasp_masks_right_arm_and_far_gripper():
+    observation = _state().vector()
+    mask = rl_env.phase_action_mask(observation)
+    np.testing.assert_array_equal(mask[:7], np.ones(7))
+    np.testing.assert_array_equal(mask[7:14], np.zeros(7))
+    assert mask[14] == 0.0
+
+    runtime = _Runtime([_state(), _state()])
+    env = rl_env.OnlineDeleafEnv(runtime)
+    env.reset()
+    _, _, _, _, info = env.step(np.ones(15))
+    np.testing.assert_array_equal(runtime.actions[0][0][:7], np.ones(7))
+    np.testing.assert_array_equal(runtime.actions[0][0][7:], np.zeros(8))
+    assert info["action_phase_masked"]
+
+
+def test_seek_grasp_enables_gripper_near_target_and_batch_masking():
+    far = _state().vector()
+    near = _state(left_grasp_delta_m=np.asarray([0.02, 0.0, 0.0])).vector()
+    grasped = _state("grasped").vector()
+    mask = rl_env.phase_action_mask(np.stack((far, near, grasped)))
+    assert mask.shape == (3, rl_env.ACTION_SIZE)
+    assert mask[0, 14] == 0.0
+    assert mask[1, 14] == 1.0
+    np.testing.assert_array_equal(mask[2], np.ones(rl_env.ACTION_SIZE))
+
+
+def test_grasp_curriculum_terminates_without_claiming_full_task_success():
+    runtime = _Runtime([_state(), _state("grasped", grasp_force_fraction=1.1)])
+    env = rl_env.OnlineDeleafEnv(runtime, terminal_phase="grasped")
+    env.reset()
+    _, reward, terminated, truncated, info = env.step(np.zeros(15))
+    assert reward > 9.0
+    assert terminated and not truncated
+    assert info["objective_reached"]
+    assert not info["success"]
+    assert info["termination_reason"] == "curriculum_grasped"
+
+
+def test_unsafe_grasp_does_not_count_as_curriculum_objective():
+    runtime = _Runtime(
+        [
+            _state(),
+            _state(
+                "grasped", grasp_force_fraction=1.1,
+                unsafe_contact_count=1, safety_clear=False,
+            ),
+        ]
+    )
+    env = rl_env.OnlineDeleafEnv(runtime, terminal_phase="grasped")
+    env.reset()
+    _, _, terminated, _, info = env.step(np.zeros(15))
+    assert terminated
+    assert not info["objective_reached"]
+    assert info["termination_reason"] == "unsafe_contact"
+
+
+def test_curriculum_terminal_validation():
+    with pytest.raises(ValueError):
+        rl_env.OnlineDeleafEnv(_Runtime([]), terminal_phase="seek_grasp")
+    with pytest.raises(ValueError):
+        rl_env.OnlineDeleafEnv(_Runtime([]), terminal_phase="failed")
 
 
 
@@ -121,7 +186,7 @@ def test_action_change_penalty_discourages_command_reversals():
     _, steady_reward, _, _, steady_info = steady.step(action)
     _, reversing_reward, _, _, reversing_info = reversing.step(-action)
     assert steady_info["action_delta_rms"] == pytest.approx(0.0)
-    assert reversing_info["action_delta_rms"] == pytest.approx(1.0)
+    assert reversing_info["action_delta_rms"] == pytest.approx(np.sqrt(7.0 / 15.0))
     assert reversing_reward < steady_reward
 
 

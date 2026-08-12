@@ -511,16 +511,52 @@ observations remain on the policy/VLA track and are not claimed by this state
 environment. The included PPO smoke verifies rollout, reset, update, and
 checkpoint plumbing; it is not a converged deleafing policy.
 
-## Cutting demo
+### Parallel PPO and grasp-first curriculum
+
+For grasp curriculum collection, launch the server from the validated 100 mm
+`SubStem_02` start and terminate the episode at the strict grasp event:
+
+```powershell
+D:\isaac-sim\python.bat examples\greenhouse_sim\interactive_greenhouse.py `
+  --headless --rl-server --rl-terminal-phase grasped `
+  --target-vine Vine_0002 --target-organ SubStem_02 `
+  --robot-position-mode fixed `
+  --robot-position 10.639221515539253 4.38 -0.15254085567917297 `
+  --rl-initial-left-arm -29.348612 -0.999427 -38.306154 `
+    -93.646180 126.029107 -56.984894 46.707186 `
+  --rl-reset-joint-noise 0.25 --rl-max-arm-acceleration 60 `
+  --rl-max-episode-steps 96
+```
+
+Collect accepted physical demonstrations through that same server API:
+
+```powershell
+D:\isaac-sim\python.bat examples\greenhouse_sim\collect_online_rl_grasp_demo.py `
+  --episodes 8 `
+  --output data\greenhouse_sim\rl\grasp_expert.npz
+```
+
+The collector velocity-controls the validated collision-clear IK waypoints and
+writes an episode only after the physical task reaches `grasped` without an
+unsafe contact. It does not set joint state or create a synthetic grasp.
+During `seek_grasp`, the environment freezes the right arm and prevents gripper
+closure outside 50 mm. PPO applies the identical mask to log probabilities and
+entropy. `--rl-terminal-phase grasped` reports `objective_reached`; full-task
+`success` remains reserved for safe floor deposit.
+
 For shared-policy process-parallel collection, launch one headless server per
 port, then pass those ports to the parallel trainer:
 
 ```powershell
 D:\isaac-sim\python.bat examples\greenhouse_sim\train_online_rl_parallel.py `
   --ports 8766 8767 8768 8769 `
-  --total-steps 1000000 --rollout-steps 256 `
-  --checkpoint data\greenhouse_sim\rl\ppo_deleaf_parallel.pt `
-  --report data\greenhouse_sim\rl\ppo_deleaf_parallel.json
+  --total-steps 8192 --rollout-steps 128 --epochs 4 `
+  --learning-rate 1e-4 --target-kl 0.02 `
+  --entropy-coefficient 0.001 `
+  --demonstrations data\greenhouse_sim\rl\grasp_expert.npz `
+  --bc-epochs 300 --bc-log-std -2.3 `
+  --checkpoint data\greenhouse_sim\rl\grasp_ppo.pt `
+  --report data\greenhouse_sim\rl\grasp_ppo.json
 ```
 
 Each port owns a complete independent Isaac physics process. Network actions
@@ -529,10 +565,20 @@ and GAE is computed independently along each worker trajectory. This is not an
 Isaac Lab in-stage vector environment, so GPU memory scales approximately with
 the worker count. Use `nvidia-smi` to choose a safe count.
 
-The included 8,192-step four-worker acceptance run verified this path but did
-not learn a grasp. Treat successful strict task transitions—not training step
-count or smooth motion—as the convergence criterion.
+The accepted grasp run behavior-cloned 618 physical transitions, then collected
+8,192 PPO actions. Its final deterministic policy reached `grasped` in 8/8
+unseen-seed trials with zero unsafe contacts and a 40.25-action mean. This is a
+validated grasp curriculum, not a complete deleafing policy: right-arm cut,
+transport, drop, image observations, and multi-target generalization remain
+gated stages.
 
+Rendered RL ticks advance physics with `step(render=False)` and call
+`context.render()` separately. Do not replace this with `step(render=True)`:
+at the authored 60 Hz render / 240 Hz physics rates it advances four physics
+samples and changes the learned trajectory.
+
+
+## Cutting demo
 
 Rigs one vine with compliant physics, settles it, cuts the lowest petiole, and
 measures whether the organ came away without disturbing the rest of the plant:

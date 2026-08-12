@@ -16,6 +16,18 @@ from greenhouse_sim import rl_env
 
 _LEFT_JAW_CENTRE_M = np.asarray([0.0, 0.0, -0.1025], dtype=np.float64)
 
+def _advance_one_physics_step(context, *, render: bool) -> None:
+    """Advance one physics sample, then optionally refresh rendered UI.
+
+    ``SimulationContext.step(render=True)`` advances one rendering interval,
+    which is four physics samples at this scene's 60/240 Hz timing.
+    """
+
+    context.step(render=False)
+    if render:
+        context.render()
+
+
 
 @dataclasses.dataclass
 class _ArticulationSnapshot:
@@ -212,7 +224,7 @@ class IsaacDeleafRuntime:
     def _physics_tick(self, *, render: bool = False) -> None:
         previous_edge = self._blade.edge_centre_m.copy()
         self._airflow.step()
-        self._context.step(render=render)
+        _advance_one_physics_step(self._context, render=render)
         current_edge = self._blade.edge_centre_m.copy()
         self._blade.set_commanded_edge_velocity(
             (current_edge - previous_edge) * 240.0

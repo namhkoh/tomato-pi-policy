@@ -12,6 +12,7 @@ import torch
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
+from greenhouse_sim import rl_policy  # noqa: E402
 from greenhouse_sim.rl_client import DeleafClient  # noqa: E402
 from train_online_rl import ActorCritic  # noqa: E402
 
@@ -55,11 +56,13 @@ def run(args: argparse.Namespace) -> dict:
             truncated = False
             while not (terminated or truncated) and remaining > 0:
                 with torch.no_grad():
-                    distribution, _ = model.distribution_and_value(
-                        torch.as_tensor(observation, dtype=torch.float32, device=device)
+                    tensor = torch.as_tensor(
+                        observation, dtype=torch.float32, device=device
                     )
+                    distribution, _ = model.distribution_and_value(tensor)
                     latent = distribution.sample() if args.stochastic else distribution.mean
-                    action = torch.tanh(latent).cpu().numpy()
+                    action_mask = rl_policy.phase_action_mask_tensor(tensor)
+                    action = (torch.tanh(latent) * action_mask).cpu().numpy()
                 observation, reward, terminated, truncated, info = client.step(action)
                 records.append(
                     {
@@ -69,6 +72,7 @@ def run(args: argparse.Namespace) -> dict:
                         "unsafe_contact_count": info["unsafe_contact_count"],
                         "left_grasp_distance_m": info["left_grasp_distance_m"],
                         "blade_cut_distance_m": info["blade_cut_distance_m"],
+                        "action_delta_rms": info.get("action_delta_rms", 0.0),
                     }
                 )
                 episode_return += reward
@@ -83,6 +87,14 @@ def run(args: argparse.Namespace) -> dict:
                     "terminated": terminated,
                     "truncated": truncated,
                     "final": info if records else reset_info,
+                    "minimum_grasp_distance_m": min(
+                        (record["left_grasp_distance_m"] for record in records),
+                        default=reset_info["left_grasp_distance_m"],
+                    ),
+                    "maximum_action_delta_rms": max(
+                        (record["action_delta_rms"] for record in records),
+                        default=0.0,
+                    ),
                     "records": records,
                 }
             )
@@ -96,6 +108,9 @@ def run(args: argparse.Namespace) -> dict:
         "trials": trials,
         "successful_trials": sum(
             bool(trial["final"].get("success")) for trial in trials
+        ),
+        "objective_trials": sum(
+            bool(trial["final"].get("objective_reached")) for trial in trials
         ),
     }
     args.report.parent.mkdir(parents=True, exist_ok=True)

@@ -40,6 +40,10 @@ _MINIMUM_BASE_STRUCTURE_CLEARANCE_M = 0.03
 _MINIMUM_GREENHOUSE_CLEARANCE_M = 0.01
 _WARM_START_COMFORTABLE_CLEARANCE_M = 0.012
 
+# At 240 Hz this impulse ceiling is about 2.4 N average contact force.
+# Rigid stem/petiole and greenhouse contacts have no such allowance.
+_INCIDENTAL_FOLIAGE_IMPULSE_NS = 0.01
+
 
 @dataclasses.dataclass
 class VineRuntime:
@@ -224,6 +228,18 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=1200,
         help="time limit in policy steps (60 s at the default rate)",
+    )
+    parser.add_argument(
+        "--rl-terminal-phase",
+        choices=(
+            "grasped",
+            "orphan_retained",
+            "transported",
+            "released",
+            "deposited",
+        ),
+        default=None,
+        help="optional curriculum objective that terminates when reached",
     )
     parser.add_argument(
         "--rl-reset-settle-steps",
@@ -1065,6 +1081,7 @@ def main() -> int:
                 control_hz=args.rl_control_hz,
             ),
             maximum_episode_steps=args.rl_max_episode_steps,
+            terminal_phase=args.rl_terminal_phase,
         )
         report.update(
             stage="rl_server",
@@ -1085,6 +1102,7 @@ def main() -> int:
                 ),
                 "observation_size": rl_env.OBSERVATION_SIZE,
                 "maximum_episode_steps": args.rl_max_episode_steps,
+                "terminal_phase": args.rl_terminal_phase,
                 "maximum_arm_speed_degrees_s": args.rl_max_arm_speed,
                 "maximum_arm_acceleration_degrees_s2": (
                     args.rl_max_arm_acceleration
@@ -5880,7 +5898,8 @@ def _probe_unsafe_contacts(contact_summary: dict, blade_geometry: dict, grasp_ge
     )
     unsafe = []
     for pair in contact_summary["pairs"]:
-        if float(pair.get("maximum_impulse_ns", 0.0)) <= 1e-12:
+        impulse_ns = float(pair.get("maximum_impulse_ns", 0.0))
+        if impulse_ns <= 1e-12:
             continue
         paths = (pair["collider0"], pair["collider1"])
         robot = next((path for path in paths if path.startswith("/World/RBY1/")), None)
@@ -5892,6 +5911,11 @@ def _probe_unsafe_contacts(contact_summary: dict, blade_geometry: dict, grasp_ge
         if other in grasp_colliders and "/ee_finger_l" in robot:
             continue
         if other in cut_colliders and robot.endswith(("/BladeCollision", "/ArcCollision")):
+            continue
+        if (
+            "/FoliageContact_" in other
+            and impulse_ns <= _INCIDENTAL_FOLIAGE_IMPULSE_NS
+        ):
             continue
         if other.startswith(("/World/InteractiveVines/", "/World/NeighbourSafety/")):
             unsafe.append(dict(pair))

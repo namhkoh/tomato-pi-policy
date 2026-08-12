@@ -16,6 +16,12 @@ import numpy as np
 
 
 ACTION_SIZE = 15
+LEFT_ARM_ACTION_SLICE = slice(0, 7)
+RIGHT_ARM_ACTION_SLICE = slice(7, 14)
+GRIPPER_ACTION_INDEX = 14
+LEFT_GRASP_DELTA_SLICE = slice(29, 32)
+PHASE_OBSERVATION_SLICE = slice(44, 51)
+DEFAULT_GRIPPER_ACTIVATION_DISTANCE_M = 0.05
 PHASES = (
     "seek_grasp",
     "grasped",
@@ -182,6 +188,42 @@ class DeleafState:
         }
 
 
+def phase_action_mask(
+    observation,
+    *,
+    gripper_activation_distance_m: float = DEFAULT_GRIPPER_ACTIVATION_DISTANCE_M,
+) -> np.ndarray:
+    """Return deterministic task-order masks for one or batched observations.
+
+    The cutter arm cannot move before a strict grasp exists. The gripper also
+    stays open while its jaw centre is outside the local grasp neighbourhood;
+    this prevents the policy from collecting closure shaping at a distance.
+    """
+
+    values = np.asarray(observation, dtype=np.float32)
+    if values.shape[-1:] != (OBSERVATION_SIZE,) or not np.isfinite(values).all():
+        raise ValueError(
+            f"observation must end in a finite {OBSERVATION_SIZE}-vector"
+        )
+    if (
+        not math.isfinite(float(gripper_activation_distance_m))
+        or gripper_activation_distance_m <= 0.0
+    ):
+        raise ValueError("gripper activation distance must be finite and positive")
+    mask = np.ones(values.shape[:-1] + (ACTION_SIZE,), dtype=np.float32)
+    phases = values[..., PHASE_OBSERVATION_SLICE]
+    seek_grasp = phases[..., PHASES.index("seek_grasp")] > 0.5
+    mask[..., RIGHT_ARM_ACTION_SLICE] = np.where(
+        np.expand_dims(seek_grasp, axis=-1), 0.0, 1.0
+    )
+    grasp_distance = np.linalg.norm(values[..., LEFT_GRASP_DELTA_SLICE], axis=-1)
+    enable_gripper = np.logical_or(
+        ~seek_grasp, grasp_distance <= gripper_activation_distance_m
+    )
+    mask[..., GRIPPER_ACTION_INDEX] = enable_gripper.astype(np.float32)
+    return mask
+
+
 class DeleafRuntime(Protocol):
     """Physics adapter implemented by the running Isaac greenhouse."""
 
@@ -208,13 +250,17 @@ class OnlineDeleafEnv:
         action_parameters: ActionParameters | None = None,
         reward_parameters: RewardParameters | None = None,
         maximum_episode_steps: int = 1200,
+        terminal_phase: str | None = None,
     ) -> None:
         if maximum_episode_steps < 1:
             raise ValueError("maximum_episode_steps must be positive")
+        if terminal_phase is not None and terminal_phase not in PHASES[1:-1]:
+            raise ValueError("terminal_phase must be a reachable non-failure task phase")
         self.runtime = runtime
         self.action_parameters = action_parameters or ActionParameters()
         self.reward_parameters = reward_parameters or RewardParameters()
         self.maximum_episode_steps = int(maximum_episode_steps)
+        self.terminal_phase = terminal_phase
         self._steps = 0
         self._state: DeleafState | None = None
         self._previous_action = np.zeros(ACTION_SIZE, dtype=np.float32)
@@ -268,7 +314,11 @@ class OnlineDeleafEnv:
         values = np.asarray(action, dtype=np.float32)
         if values.shape != (ACTION_SIZE,) or not np.isfinite(values).all():
             raise ValueError(f"action must be a finite {ACTION_SIZE}-vector")
-        values = np.clip(values, -1.0, 1.0)
+        requested = values.copy()
+        values = np.clip(requested, -1.0, 1.0)
+        mask = phase_action_mask(self._state.vector())
+        clipped_values = values.copy()
+        values *= mask
         action_delta = values - self._previous_action
         previous = self._state
         current = self.runtime.apply_action(values, self.action_parameters)
@@ -299,7 +349,10 @@ class OnlineDeleafEnv:
             reward += transitions.get(current.phase, 0.0)
 
         unsafe = not current.safety_clear or current.unsafe_contact_count > 0
-        terminated = current.phase in {"deposited", "failed"} or unsafe
+        objective_reached = (
+            self.terminal_phase is not None and current.phase == self.terminal_phase
+        )
+        terminated = current.phase in {"deposited", "failed"} or unsafe or objective_reached
         truncated = self._steps >= self.maximum_episode_steps and not terminated
         termination_reason = None
         if unsafe:
@@ -310,6 +363,8 @@ class OnlineDeleafEnv:
             termination_reason = "task_failed"
         elif current.phase == "deposited":
             termination_reason = "success"
+        elif objective_reached:
+            termination_reason = f"curriculum_{self.terminal_phase}"
         elif truncated:
             termination_reason = "time_limit"
 
@@ -317,8 +372,14 @@ class OnlineDeleafEnv:
         info.update(
             episode_step=self._steps,
             success=current.phase == "deposited" and not unsafe,
+            objective_reached=bool(
+                (objective_reached or current.phase == "deposited") and not unsafe
+            ),
+            terminal_phase=self.terminal_phase,
             termination_reason=termination_reason,
-            action_clipped=not np.array_equal(values, np.asarray(action, dtype=np.float32)),
+            action_clipped=not np.array_equal(clipped_values, requested),
+            action_phase_masked=not np.array_equal(values, clipped_values),
+            action_mask=mask.tolist(),
             action_delta_rms=float(np.sqrt(np.mean(np.square(action_delta)))),
         )
         return current.vector(), float(reward), terminated, truncated, info

@@ -19,6 +19,7 @@ import torch
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
+from greenhouse_sim import rl_policy  # noqa: E402
 from greenhouse_sim.rl_client import DeleafClient  # noqa: E402
 from train_online_rl import ActorCritic  # noqa: E402
 
@@ -40,11 +41,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--gae-lambda", type=float, default=0.95)
     parser.add_argument("--clip-ratio", type=float, default=0.2)
+    parser.add_argument("--target-kl", type=float, default=0.02)
     parser.add_argument("--entropy-coefficient", type=float, default=0.003)
     parser.add_argument("--value-coefficient", type=float, default=0.5)
     parser.add_argument("--maximum-gradient-norm", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--demonstrations", type=pathlib.Path, nargs="+", default=())
+    parser.add_argument("--bc-only", action="store_true")
+    parser.add_argument("--bc-epochs", type=int, default=200)
+    parser.add_argument("--bc-minibatch-size", type=int, default=256)
+    parser.add_argument("--bc-learning-rate", type=float, default=1e-3)
+    parser.add_argument(
+        "--bc-log-std",
+        type=float,
+        default=-2.3,
+        help="initial PPO log standard deviation after behavior cloning",
+    )
     parser.add_argument(
         "--checkpoint",
         type=pathlib.Path,
@@ -107,11 +120,21 @@ def train(args: argparse.Namespace) -> dict:
         args.epochs,
         args.minibatch_size,
         args.learning_rate,
+        args.target_kl,
     )
     if any(value <= 0 for value in positive):
         raise ValueError("training counts and learning rate must be positive")
     if args.total_steps % worker_count:
         raise ValueError("total steps must be divisible by the worker count")
+    if args.demonstrations and (
+        args.bc_epochs < 1
+        or args.bc_minibatch_size < 1
+        or args.bc_learning_rate <= 0.0
+        or not np.isfinite(args.bc_log_std)
+    ):
+        raise ValueError("behavior-cloning settings must be finite and positive")
+    if args.bc_only and not args.demonstrations:
+        raise ValueError("--bc-only requires --demonstrations")
 
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -129,6 +152,7 @@ def train(args: argparse.Namespace) -> dict:
         "device": str(device),
         "episodes": [],
         "updates": [],
+        "demonstrations": [str(path) for path in args.demonstrations],
         "status": "connecting",
     }
     _write_report(args.report, report)
@@ -145,7 +169,60 @@ def train(args: argparse.Namespace) -> dict:
             raise RuntimeError("parallel workers expose different RL contracts")
 
         model = ActorCritic(observation_size, action_size).to(device)
+        behavior_cloning = None
+        demonstration_sources = []
+        if args.demonstrations:
+            demo_observations, demo_actions, demonstration_sources = (
+                rl_policy.load_demonstrations(
+                    args.demonstrations,
+                    observation_size=observation_size,
+                    action_size=action_size,
+                )
+            )
+            behavior_cloning = rl_policy.behavior_clone(
+                model,
+                demo_observations,
+                demo_actions,
+                epochs=args.bc_epochs,
+                minibatch_size=args.bc_minibatch_size,
+                learning_rate=args.bc_learning_rate,
+                maximum_gradient_norm=args.maximum_gradient_norm,
+                device=device,
+                seed=args.seed,
+            )
+            with torch.no_grad():
+                model.log_std.fill_(args.bc_log_std)
+            report["behavior_cloning"] = behavior_cloning
+            report["demonstration_sources"] = demonstration_sources
+            _write_report(args.report, report)
+            print(f"behavior cloning: {behavior_cloning}", flush=True)
         optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+        if args.bc_only:
+            args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(
+                {
+                    "model": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "total_steps": 0,
+                    "update_index": 0,
+                    "episode_counts": [0] * worker_count,
+                    "observation_size": observation_size,
+                    "action_size": action_size,
+                    "seed": args.seed,
+                    "workers": worker_count,
+                    "ports": list(args.ports),
+                    "behavior_cloning": behavior_cloning,
+                    "demonstration_sources": demonstration_sources,
+                    "phase_action_mask": True,
+                },
+                args.checkpoint,
+            )
+            report.update(
+                status="complete", total_steps=0, successful_episodes=0,
+                objective_episodes=0, elapsed_s=time.time() - start_time,
+            )
+            _write_report(args.report, report)
+            return report
         executor = ThreadPoolExecutor(max_workers=worker_count)
         futures = [
             executor.submit(client.reset, seed=args.seed + worker * 1_000_000)
@@ -190,8 +267,11 @@ def train(args: argparse.Namespace) -> dict:
                 with torch.no_grad():
                     distribution, value = model.distribution_and_value(tensor)
                     latent = distribution.sample()
-                    actions = torch.tanh(latent)
-                    log_probability = distribution.log_prob(latent).sum(-1)
+                    action_mask = rl_policy.phase_action_mask_tensor(tensor)
+                    actions = torch.tanh(latent) * action_mask
+                    log_probability = (
+                        distribution.log_prob(latent) * action_mask
+                    ).sum(-1)
                 action_array = actions.cpu().numpy()
                 results = _parallel(
                     executor,
@@ -237,6 +317,7 @@ def train(args: argparse.Namespace) -> dict:
                         "phase": info["phase"],
                         "reason": info["termination_reason"],
                         "success": bool(info.get("success")),
+                        "objective_reached": bool(info.get("objective_reached")),
                         "minimum_grasp_distance_m": float(
                             minimum_grasp_distances[worker]
                         ),
@@ -311,6 +392,7 @@ def train(args: argparse.Namespace) -> dict:
             entropies = []
             approximate_kls = []
             clip_fractions = []
+            early_stopped = False
 
             for _ in range(args.epochs):
                 np.random.shuffle(indices)
@@ -319,9 +401,21 @@ def train(args: argparse.Namespace) -> dict:
                     distribution, value = model.distribution_and_value(
                         observation_tensor[batch]
                     )
-                    log_probability = distribution.log_prob(latent_tensor[batch]).sum(-1)
+                    action_mask = rl_policy.phase_action_mask_tensor(
+                        observation_tensor[batch]
+                    )
+                    log_probability = (
+                        distribution.log_prob(latent_tensor[batch]) * action_mask
+                    ).sum(-1)
                     log_ratio = log_probability - old_log_probability[batch]
                     ratio = torch.exp(log_ratio)
+                    approximate_kl = float(
+                        ((ratio - 1.0) - log_ratio).mean().detach().cpu()
+                    )
+                    if approximate_kl > args.target_kl:
+                        approximate_kls.append(approximate_kl)
+                        early_stopped = True
+                        break
                     unclipped = ratio * advantage_tensor[batch]
                     clipped = torch.clamp(
                         ratio, 1.0 - args.clip_ratio, 1.0 + args.clip_ratio
@@ -330,7 +424,9 @@ def train(args: argparse.Namespace) -> dict:
                     value_loss = torch.nn.functional.mse_loss(
                         value, return_tensor[batch]
                     )
-                    entropy = distribution.entropy().sum(-1).mean()
+                    entropy = (
+                        distribution.entropy() * action_mask
+                    ).sum(-1).mean()
                     loss = (
                         policy_loss
                         + args.value_coefficient * value_loss
@@ -345,12 +441,12 @@ def train(args: argparse.Namespace) -> dict:
                     with torch.no_grad():
                         losses.append(float(loss.cpu()))
                         entropies.append(float(entropy.cpu()))
-                        approximate_kls.append(
-                            float(((ratio - 1.0) - log_ratio).mean().cpu())
-                        )
+                        approximate_kls.append(approximate_kl)
                         clip_fractions.append(
                             float((torch.abs(ratio - 1.0) > args.clip_ratio).float().mean().cpu())
                         )
+                if early_stopped:
+                    break
 
             update_index += 1
             update_record = {
@@ -361,12 +457,17 @@ def train(args: argparse.Namespace) -> dict:
                 "mean_entropy": float(np.mean(entropies)),
                 "mean_approximate_kl": float(np.mean(approximate_kls)),
                 "mean_clip_fraction": float(np.mean(clip_fractions)),
+                "target_kl": args.target_kl,
+                "kl_early_stopped": early_stopped,
                 "elapsed_s": time.time() - start_time,
             }
             report["updates"].append(update_record)
             report["total_steps"] = total_steps
             report["successful_episodes"] = sum(
                 bool(episode["success"]) for episode in report["episodes"]
+            )
+            report["objective_episodes"] = sum(
+                bool(episode["objective_reached"]) for episode in report["episodes"]
             )
             report["status"] = (
                 "complete" if total_steps >= args.total_steps else "training"
@@ -384,6 +485,9 @@ def train(args: argparse.Namespace) -> dict:
                     "seed": args.seed,
                     "workers": worker_count,
                     "ports": list(args.ports),
+                    "behavior_cloning": behavior_cloning,
+                    "demonstration_sources": demonstration_sources,
+                    "phase_action_mask": True,
                 },
                 args.checkpoint,
             )

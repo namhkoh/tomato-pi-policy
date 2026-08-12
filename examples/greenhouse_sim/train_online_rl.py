@@ -16,6 +16,7 @@ import torch
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
+from greenhouse_sim import rl_policy  # noqa: E402
 from greenhouse_sim.rl_client import DeleafClient  # noqa: E402
 
 
@@ -121,8 +122,11 @@ def train(args: argparse.Namespace) -> None:
                 with torch.no_grad():
                     distribution, value = model.distribution_and_value(tensor)
                     latent = distribution.sample()
-                    action = torch.tanh(latent)
-                    log_probability = distribution.log_prob(latent).sum()
+                    action_mask = rl_policy.phase_action_mask_tensor(tensor)
+                    action = torch.tanh(latent) * action_mask
+                    log_probability = (
+                        distribution.log_prob(latent) * action_mask
+                    ).sum()
                 next_observation, reward, terminated, truncated, info = client.step(
                     action.cpu().numpy()
                 )
@@ -174,7 +178,12 @@ def train(args: argparse.Namespace) -> None:
                     distribution, value = model.distribution_and_value(
                         observation_tensor[batch]
                     )
-                    log_probability = distribution.log_prob(latent_tensor[batch]).sum(-1)
+                    action_mask = rl_policy.phase_action_mask_tensor(
+                        observation_tensor[batch]
+                    )
+                    log_probability = (
+                        distribution.log_prob(latent_tensor[batch]) * action_mask
+                    ).sum(-1)
                     ratio = torch.exp(log_probability - old_log_probability[batch])
                     unclipped = ratio * advantage_tensor[batch]
                     clipped = torch.clamp(
@@ -182,7 +191,9 @@ def train(args: argparse.Namespace) -> None:
                     ) * advantage_tensor[batch]
                     policy_loss = -torch.minimum(unclipped, clipped).mean()
                     value_loss = torch.nn.functional.mse_loss(value, return_tensor[batch])
-                    entropy = distribution.entropy().sum(-1).mean()
+                    entropy = (
+                        distribution.entropy() * action_mask
+                    ).sum(-1).mean()
                     loss = (
                         policy_loss
                         + args.value_coefficient * value_loss

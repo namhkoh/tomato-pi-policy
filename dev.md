@@ -5,7 +5,7 @@ orphan/lower leaves from high-wire vines), targeting demo collection → π0.5
 finetuning → deployment on the Rainbow Robotics **RB-Y1** (sim and real).
 
 Environment: Isaac Sim **5.1.0-rc.19** (Kit 107.3.3, omni.physx 107.3.26, USD 0.24.5)
-at `D:\isaac-sim`, Windows 11. Current integration branch `koh-dev/rby1`
+at `D:\isaac-sim`, Windows 11. Current integration branch `koh-dev/online-rl`
 (fork of openpi).
 
 Branch ownership: `koh-dev/deleaf` contains the simulator physics, grasp/cut
@@ -45,6 +45,8 @@ the latest deleaf commit. Teleoperation is stopped for the online-RL phase.
 - [x] Synchronous online-RL environment: bounded bimanual actions, strict state/reward/termination, full articulation reset, seeded airflow/pose variation
 - [x] Loopback client, optional Gymnasium wrapper, and reference PPO rollout/update/checkpoint path
 - [x] Four-worker shared-policy PPO collection with independent live Isaac physics servers
+- [x] Grasp-first RL curriculum: strict expert replay, behavior cloning, guarded PPO, and 8/8 unseen-seed physical grasp evaluation
+- [x] Rendered/headless RL timing parity with synchronized four-camera policy evidence
 - [ ] Live lab-teleop selected-leaf pinch/grasp/cut acceptance
 - [ ] Record synchronized successful trajectories and prepare the π0.5 dataset/export contract
 - [ ] Lab leader-arm hardware validation + multi-target physical repeatability acceptance
@@ -1429,6 +1431,89 @@ multi-target randomisation, and policy convergence remain open. The current
 deterministic full-IK sequence
 also still needs a new collision-clear right-arm route after the accepted grasp;
 the RL interface does not hide or mark that scripted route blocker as success.
+
+### Grasp-first curriculum, stable PPO, and rendered parity, 2026-08-12
+
+This section supersedes the baseline's proposal to add an expert-seeded grasp
+curriculum. The accepted `SubStem_02` route is now replayed through the same
+15-value online-RL action API; it never teleports joints, creates a grasp, or
+bypasses the physical contact/task gates. Five collision-clear IK waypoints
+move from the 100 mm curriculum start to the exact distal `Link_003` grasp
+pose. The gripper closes only within the 50 mm grasp neighbourhood. A trace is
+saved for behavior cloning only if the strict task reaches `grasped` without an
+unsafe contact.
+
+The task now supports an optional `--rl-terminal-phase`. Grasp training uses
+`grasped`, while full-task runs retain the original `deposited` success
+definition. Curriculum completion is reported separately as
+`objective_reached`; it never claims full deleafing success and a simultaneous
+unsafe contact takes precedence. During `seek_grasp`, a deterministic action
+mask freezes all seven right-arm dimensions and keeps the gripper open outside
+50 mm. The environment enforces the mask, and PPO excludes inactive dimensions
+from action log probability and entropy so masked exploration cannot corrupt
+the policy ratio.
+
+Eight episodes with +/-0.25 degree joint reset variation and independently
+seeded airflow all established strict physical grasps. They produced 618
+accepted state/action transitions. Behavior cloning reduced active-action MSE
+from 0.080918 to 0.001191 and MAE from 0.16150 to 0.02212. Before PPO, the
+deterministic cloned actor independently reached `grasped` in 4/4 unseen-seed
+trials with no expert controller active.
+
+The first PPO attempt used eight epochs at `3e-4`; approximate KL reached 0.131
+and 58.7% of samples were clipped, so it was stopped rather than allowed to
+erase the cloned policy. The trainer now supports a positive `--target-kl` and
+stops an update before applying a candidate minibatch above that threshold.
+The accepted run used four workers, 8,192 physical actions, four epochs,
+`1e-4` learning rate, 0.001 entropy coefficient, and 0.02 target KL. It
+completed in 1,074.97 s. Of 152 completed stochastic episodes, 133 reached a
+safe grasp, 18 were safe time limits, and one stronger protected-contact event
+was rejected. The last 24 completions contained 22 safe grasps. Full-task
+`success` remains zero because cutting and deposit were intentionally locked.
+
+A fresh deterministic evaluation used eight unseen reset seeds. All 8/8
+reached the strict grasp objective with zero unsafe contacts in 39-42 actions
+(`40.25` mean), at 1.23-20.34 mm closest jaw-target distance. Requested action
+delta RMS averaged 0.0807 over all steps and 0.0750 after the initial command;
+the physical controller additionally enforces 60 degree/s^2 acceleration.
+This satisfies the gate for beginning a right-arm cut curriculum, but does not
+yet claim a learned cut, transport, deposit, multi-target policy, or D405-image
+policy.
+
+The first rendered replay exposed a timing defect: calling
+`SimulationContext.step(render=True)` advances one 60 Hz rendering interval, or four physics samples,
+instead of one 240 Hz sample. It changed the trained trajectory and timed out
+at 61 mm. RL now always calls `step(render=False)` exactly once per physics
+sample and separately calls `context.render()` on the requested final substep.
+The corrected four-camera replay reached `grasped` in 39 actions with zero
+unsafe contacts and captured 39 synchronized inspection/head/left-wrist/
+right-wrist frames. The verified MP4 is 1280 x 720 at 20 FPS.
+
+Low-force contact with flexible leaf-area proxies also needed an explicit
+benchmark distinction. The accepted deterministic probe itself brushes dense
+foliage. Contacts on `FoliageContact_*` up to 0.01 N s (about 2.4 N average at
+240 Hz) are now incidental canopy brushing; stronger foliage contact and every
+rigid stem, petiole, neighbour, and greenhouse-structure contact remain unsafe.
+The expert, policy, and safety tests cover both sides of this threshold.
+
+**Verification:**
+
+| Check | Result | Evidence |
+|---|---|---|
+| Strict deterministic expert replay | 74 actions; 3.83 mm minimum distance; `curriculum_grasped`; zero unsafe contacts | `data/greenhouse_sim/rl/grasp_curriculum_20260812/expert_tolerance125.json` |
+| Randomized expert set | 8/8 accepted; 618 transitions; +/-0.25 degree reset variation; seeded airflow | `data/greenhouse_sim/rl/grasp_curriculum_20260812/grasp_expert_seeded8.json` and `.npz` |
+| Behavior-cloned policy | MSE 0.080918 -> 0.001191; MAE 0.16150 -> 0.02212 | `data/greenhouse_sim/rl/grasp_curriculum_20260812/grasp_bc.json` and `grasp_bc.pt` |
+| BC-only unseen-seed evaluation | 4/4 strict grasp objectives; zero unsafe contacts | `data/greenhouse_sim/rl/grasp_curriculum_20260812/grasp_bc_eval4.json` |
+| Stabilized grasp PPO | 8,192 actions; 133 safe grasps, 18 timeouts, one rejected unsafe contact; 1,074.97 s | `data/greenhouse_sim/rl/grasp_curriculum_20260812/ppo8192_stable/grasp_ppo8192_stable.json` and `.pt` |
+| Final deterministic evaluation | 8/8 unseen-seed strict grasps; zero unsafe contacts; 39-42 actions | `data/greenhouse_sim/rl/grasp_curriculum_20260812/deterministic_eval8/policy_eval8.json` |
+| Corrected rendered replay | strict grasp in 39 actions; 39 synchronized frame sets; four views; 1280 x 720 at 20 FPS | `data/greenhouse_sim/rl/grasp_curriculum_20260812/policy_video4_fixed/grasp_policy_8192_4view.mp4` |
+| Focused curriculum/policy/timing/safety regressions | passing | `rl_env_test.py`, `rl_policy_test.py`, `grasp_demo_test.py`, `isaac_rl_tick_test.py`, `contact_safety_test.py` |
+
+**Next gated stage:** use the now-independent left grasp as the initial state
+for `--rl-terminal-phase orphan_retained`, solve and validate a collision-clear
+right-knife approach/sweep through the strict API, collect accepted cut
+demonstrations, and only then fine-tune PPO for cut. Transport/release/deposit
+and target randomisation remain later curriculum stages.
 
 ## Research findings, 2026-08-06 (pre-implementation)
 
