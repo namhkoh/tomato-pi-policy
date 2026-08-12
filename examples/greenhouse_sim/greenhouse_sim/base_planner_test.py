@@ -67,6 +67,54 @@ def test_planner_advances_until_a_distal_segment_is_reachable() -> None:
     np.testing.assert_allclose(plan.position_m, (0.0, -0.03, 0.0))
 
 
+class _PointingDirectionFakeModel(_FakeModel):
+    def __init__(self) -> None:
+        self.pointing_directions = []
+
+    def solve_position_axes(
+        self, _side, *, target_point_m, pointing_direction, **_kwargs
+    ):
+        self.pointing_directions.append(tuple(float(value) for value in pointing_direction))
+        return robot_kinematics.IKResult(
+            joint_degrees=(float(target_point_m[2]),) + (0.0,) * 6,
+            position_error_m=0.0,
+            orientation_error_rad=0.0,
+            cost=0.0,
+            succeeded=True,
+        )
+
+
+def test_planner_points_left_ee_positive_z_away_from_robot_forward() -> None:
+    candidate = base_planner.GraspCandidate(
+        collider="target",
+        body="target_body",
+        segment=1,
+        role="petiole_grasp",
+        centre_m=(0.0, 1.0, 1.0),
+        axis=(1.0, 0.0, 0.0),
+    )
+    for yaw_degrees, expected in (
+        (90.0, (0.0, -1.0, 0.0)),
+        (-90.0, (0.0, 1.0, 0.0)),
+    ):
+        model = _PointingDirectionFakeModel()
+        plan = base_planner.plan_target_conditioned_base(
+            model,
+            nominal_position_m=(0.0, 0.0, 0.0),
+            yaw_degrees=yaw_degrees,
+            candidates=(candidate,),
+            obstacles=(),
+            jaw_local_point_m=(0.0, 0.0, 0.0),
+            camera_local_centre_m=(0.0, 0.0, 0.0),
+            camera_radius_m=0.0,
+            seeds=((0.0,) * 7,),
+            advances_m=(0.0,),
+            minimum_camera_clearance_m=0.0,
+        )
+        assert plan is not None
+        np.testing.assert_allclose(model.pointing_directions[-1], expected, atol=1e-12)
+
+
 class _BodyClearanceFakeModel(_FakeModel):
     def fixed_body_clearance(self, base_matrix, _obstacles):
         clearance = abs(float(base_matrix[1, 3])) - 0.1

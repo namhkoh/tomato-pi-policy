@@ -52,7 +52,10 @@ SDK_READY_POSE_DEGREES = {
     "head_1": 0.0,
 }
 
-# Numerical IK from the exact RB-Y1 Model A v1.0 URDF. This preserves the
+# Historical deterministic-route seed for the old -90 degree station. At the
+# current +90 degree station this pose folds the knife arm backward, so it must
+# not be used as the generic startup state.
+# This numerical IK from the exact RB-Y1 Model A v1.0 URDF preserves the
 # knife's flat cutting orientation while moving its root 150 mm rearward and
 # 100 mm upward from the old high-gutter precontact pose. The old pose overlaps
 # upper foliage when used with gh_tomato_test's lower gutter. The torso, left
@@ -66,17 +69,10 @@ GREENHOUSE_PRECONTACT_RIGHT_ARM_DEGREES = (
     109.99942703110308,
     -67.89880648450034,
 )
-READY_POSE_DEGREES = {
-    **SDK_READY_POSE_DEGREES,
-    **{
-        name: value
-        for name, value in zip(
-            (f"right_arm_{index}" for index in range(7)),
-            GREENHOUSE_PRECONTACT_RIGHT_ARM_DEGREES,
-            strict=True,
-        )
-    },
-}
+# Start interactive and online-RL runs from the symmetric Model A SDK pose.
+# Scripted planners compute task approaches from this measured state.
+READY_POSE_DEGREES = dict(SDK_READY_POSE_DEGREES)
+
 
 
 @dataclasses.dataclass(frozen=True)

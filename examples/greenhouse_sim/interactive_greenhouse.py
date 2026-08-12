@@ -189,6 +189,89 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--teleop-width", type=int, default=640)
     parser.add_argument("--teleop-height", type=int, default=360)
+    parser.add_argument(
+        "--rl-server",
+        action="store_true",
+        help="serve the strict physics task through a synchronous online-RL API",
+    )
+    parser.add_argument(
+        "--rl-host",
+        default="127.0.0.1",
+        help="loopback address for the online-RL JSON-lines server",
+    )
+    parser.add_argument("--rl-port", type=int, default=8766)
+    parser.add_argument(
+        "--rl-control-hz",
+        type=float,
+        default=20.0,
+        help="policy actions per simulated second; must divide 240 Hz",
+    )
+    parser.add_argument(
+        "--rl-max-arm-speed",
+        type=float,
+        default=35.0,
+        metavar="DEG_S",
+    )
+    parser.add_argument(
+        "--rl-max-arm-acceleration",
+        type=float,
+        default=120.0,
+        metavar="DEG_S2",
+        help="per-joint command acceleration limit used to reject 20 Hz reversals",
+    )
+    parser.add_argument(
+        "--rl-max-episode-steps",
+        type=int,
+        default=1200,
+        help="time limit in policy steps (60 s at the default rate)",
+    )
+    parser.add_argument(
+        "--rl-reset-settle-steps",
+        type=int,
+        default=24,
+        help="240 Hz settling steps excluded from each episode",
+    )
+    parser.add_argument(
+        "--rl-reset-joint-noise",
+        type=float,
+        default=1.0,
+        metavar="DEG",
+    )
+    parser.add_argument(
+        "--rl-initial-left-arm",
+        type=float,
+        nargs=7,
+        default=None,
+        metavar=("J0", "J1", "J2", "J3", "J4", "J5", "J6"),
+        help="optional fixed seven-joint left-arm curriculum start in degrees",
+    )
+    parser.add_argument(
+        "--rl-frame-dir",
+        type=pathlib.Path,
+        default=None,
+        help="save one rendered PNG per selected camera and policy action",
+    )
+    parser.add_argument(
+        "--rl-video-cameras",
+        nargs="+",
+        choices=("inspection", "head", "left_wrist", "right_wrist"),
+        default=("inspection",),
+    )
+    parser.add_argument(
+        "--rl-video-width",
+        type=int,
+        default=640,
+    )
+    parser.add_argument(
+        "--rl-video-height",
+        type=int,
+        default=360,
+    )
+    parser.add_argument(
+        "--rl-render",
+        action="store_true",
+        help="render the final physics substep of each policy action",
+    )
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--warmup", type=int, default=40)
@@ -233,6 +316,43 @@ def main() -> int:
     if args.teleop_record_hz <= 0.0 or args.teleop_width < 1 or args.teleop_height < 1:
         print("teleop recording rate and dimensions must be positive")
         return 1
+    if args.rl_server and args.no_robot:
+        print("--rl-server requires the fitted robot")
+        return 1
+    if args.rl_server and args.teleop_command_file is not None:
+        print("--rl-server and --teleop-command-file are mutually exclusive")
+        return 1
+    if args.rl_server and args.bimanual_probe is not None:
+        print("--rl-server and --bimanual-probe are mutually exclusive")
+        return 1
+    if args.rl_server and args.rl_host not in {"127.0.0.1", "localhost", "::1"}:
+        print("--rl-host must be loopback; remote control is deliberately disabled")
+        return 1
+    if not 1 <= args.rl_port <= 65535:
+        print("--rl-port must be between 1 and 65535")
+        return 1
+    if (
+        args.rl_control_hz <= 0.0
+        or args.rl_max_arm_speed <= 0.0
+        or args.rl_max_arm_acceleration <= 0.0
+        or args.rl_max_episode_steps < 1
+        or args.rl_reset_settle_steps < 0
+        or args.rl_reset_joint_noise < 0.0
+    ):
+        print("RL rates and episode limits must be positive")
+        return 1
+    if args.rl_frame_dir is not None and not args.rl_server:
+        print("--rl-frame-dir requires --rl-server")
+        return 1
+    if args.rl_initial_left_arm is not None and not args.rl_server:
+        print("--rl-initial-left-arm requires --rl-server")
+        return 1
+    if args.rl_video_width < 1 or args.rl_video_height < 1:
+        print("RL video dimensions must be positive")
+        return 1
+    if abs(240.0 / args.rl_control_hz - round(240.0 / args.rl_control_hz)) > 1e-9:
+        print("--rl-control-hz must divide the 240 Hz physics rate exactly")
+        return 1
     if not args.no_robot and not robot_path.exists():
         print(f"fitted robot not found: {robot_path}; run build_robot.py first or pass --no-robot")
         return 1
@@ -256,7 +376,9 @@ def main() -> int:
     from greenhouse_sim import deleaf_task
     from greenhouse_sim import episode
     from greenhouse_sim import glb
+    from greenhouse_sim import isaac_rl
     from greenhouse_sim import organs
+    from greenhouse_sim import rl_env
     from greenhouse_sim import robot_hardware
     from greenhouse_sim import robot_kinematics
     from greenhouse_sim import robot_scene
@@ -630,6 +752,13 @@ def main() -> int:
             position_m=args.robot_position,
             yaw_degrees=args.robot_yaw,
         )
+        if args.rl_initial_left_arm is not None:
+            _set_joint_group_initial_state(
+                stage,
+                "left",
+                tuple(float(value) for value in args.rl_initial_left_arm),
+            )
+            report["online_rl_curriculum_start_left_degrees"] = list(args.rl_initial_left_arm)
         if args.teleop_command_file is not None:
             startup_targets = {
                 "left": tuple(
@@ -758,6 +887,7 @@ def main() -> int:
             args.contact_diagnostics
             or args.bimanual_probe is not None
             or args.teleop_command_file is not None
+            or args.rl_server
             or (not headless and robot_placement is not None)
         )
         else None
@@ -881,6 +1011,129 @@ def main() -> int:
             "geometry_source": "post_settle_live_vines",
         }
         _emit(report, args.report)
+    if args.rl_server:
+        rl_airflow = vine_interaction.Airflow(
+            stage,
+            runtimes,
+            speed_m_s=args.airflow_speed,
+            frequency_hz=args.airflow_frequency,
+            direction_deg=args.airflow_direction,
+        )
+        rl_frame_recorder = None
+        if args.rl_frame_dir is not None:
+            rl_camera_views = {
+                "inspection": camera_path,
+                "head": robot_placement.cameras[0],
+                "left_wrist": robot_placement.cameras[1],
+                "right_wrist": robot_placement.cameras[2],
+            }
+            args.rl_frame_dir.mkdir(parents=True, exist_ok=True)
+            context.pause()
+            try:
+                rl_frame_recorder = _TeleopCameraRecorder(
+                    rl_camera_views,
+                    args.rl_video_cameras,
+                    (args.rl_video_width, args.rl_video_height),
+                    args.rl_frame_dir,
+                )
+            finally:
+                context.play()
+        runtime = isaac_rl.IsaacDeleafRuntime(
+            stage=stage,
+            context=context,
+            runtimes=runtimes,
+            selected_target=selected_target,
+            blade_monitor=blade_cutting,
+            grasp_manager=grasp_manager,
+            contact_diagnostics=contact_diagnostics,
+            report=report,
+            apply_cut_decisions=_apply_blade_cut_decisions,
+            unsafe_contacts=_probe_unsafe_contacts,
+            airflow=rl_airflow,
+            frame_recorder=rl_frame_recorder,
+            render=args.rl_render or rl_frame_recorder is not None,
+            reset_settle_steps=args.rl_reset_settle_steps,
+            reset_joint_noise_degrees=args.rl_reset_joint_noise,
+        )
+        environment = rl_env.OnlineDeleafEnv(
+            runtime,
+            action_parameters=rl_env.ActionParameters(
+                maximum_arm_speed_degrees_s=args.rl_max_arm_speed,
+                maximum_arm_acceleration_degrees_s2=(
+                    args.rl_max_arm_acceleration
+                ),
+                control_hz=args.rl_control_hz,
+            ),
+            maximum_episode_steps=args.rl_max_episode_steps,
+        )
+        report.update(
+            stage="rl_server",
+            succeeded=False,
+            online_rl_configuration={
+                "target": selected_target.key,
+                "strict_bimanual_benchmark": True,
+                "direct_interaction_cut_enabled": False,
+                "teleoperation_enabled": False,
+                "control_hz": args.rl_control_hz,
+                "physics_hz": 240.0,
+                "physics_steps_per_action": (
+                    environment.action_parameters.physics_steps_per_action
+                ),
+                "action": (
+                    "normalized left arm joint velocity[7], right arm joint "
+                    "velocity[7], left gripper aperture velocity[1]"
+                ),
+                "observation_size": rl_env.OBSERVATION_SIZE,
+                "maximum_episode_steps": args.rl_max_episode_steps,
+                "maximum_arm_speed_degrees_s": args.rl_max_arm_speed,
+                "maximum_arm_acceleration_degrees_s2": (
+                    args.rl_max_arm_acceleration
+                ),
+                "initial_left_arm_degrees": args.rl_initial_left_arm,
+                "randomization": {
+                    "arm_joint_uniform_degrees": args.rl_reset_joint_noise,
+                    "airflow_speed_m_s": args.airflow_speed,
+                    "seeded_gust_phase": True,
+                },
+                "frame_capture": {
+                    "enabled": rl_frame_recorder is not None,
+                    "directory": (
+                        str(args.rl_frame_dir) if args.rl_frame_dir is not None else None
+                    ),
+                    "cameras": list(args.rl_video_cameras),
+                    "resolution": [args.rl_video_width, args.rl_video_height],
+                },
+            },
+        )
+        _emit(report, args.report)
+        try:
+            summary = isaac_rl.serve(
+                environment,
+                host=args.rl_host,
+                port=args.rl_port,
+                app=app,
+                report=report,
+                report_path=args.report,
+                emit=_emit,
+            )
+            report["online_rl"] = summary
+            report.update(stage="done", succeeded=summary["steps"] > 0)
+        finally:
+            if blade_cutting is not None:
+                report["blade_cutting"] = blade_cutting.summary
+                blade_cutting.close()
+            if grasp_manager is not None:
+                report["bimanual_task"] = grasp_manager.summary
+                grasp_manager.close()
+            if contact_diagnostics is not None:
+                report["robot_contacts"] = contact_diagnostics.summary
+                contact_diagnostics.close()
+            if rl_frame_recorder is not None:
+                rl_frame_recorder.close()
+            _emit(report, args.report)
+            context.stop()
+            app.close()
+        return 0
     if headless:
         success = _run_headless_checks(
             stage,
@@ -1560,6 +1813,13 @@ class RobotContactDiagnostics:
             reverse=True,
         )
         return {"reported_bodies": self._reported_bodies, "pairs": pairs}
+
+    def reset_episode(self) -> None:
+        """Discard cumulative and active contact history at an RL reset."""
+        self._pairs.clear()
+        self._active_pairs.clear()
+        self._phase = "rl_reset"
+
     def close(self) -> None:
         self._subscription = None
 
@@ -1760,6 +2020,23 @@ class BladeContactMonitor:
 
     def set_active_target(self, vine_name: str, organ_label: str) -> None:
         self._active_target = f"{vine_name}/{organ_label}"
+
+    def reset_episode(self, vine_name: str, organ_label: str) -> None:
+        """Clear all cut, contact, and safety evidence between RL episodes."""
+        self.set_active_target(vine_name, organ_label)
+        self._gate.reset()
+        self._pending.clear()
+        self._previous_edge_centre = None
+        self._commanded_edge_velocity = self._np.zeros(3, dtype=self._np.float64)
+        self._violations.clear()
+        self._physical_cuts.clear()
+        self._latest_geometric_contact = None
+        self._interaction_contact_steps.clear()
+        self._interaction_completed.clear()
+        self._latest_interaction_contact = None
+        self._interaction_suppressed_steps = 0
+        # Online-RL success always uses the strict bimanual benchmark path.
+        self._interaction_cut_enabled = False
 
     def set_counterhold_provider(self, provider) -> None:
         """Supply verified physical-grasp state for rigid-tissue fracture."""
@@ -2631,6 +2908,33 @@ class LeftGraspManager:
             organ_label,
             self._task_parameters,
         )
+
+    def reset_episode(self, vine_name: str, organ_label: str) -> None:
+        """Open the fingers and create a fresh strict bimanual task."""
+        key = f"{vine_name}/{organ_label}"
+        if key not in self._joint_paths:
+            raise ValueError(f"target is not graspable: {key}")
+        if self._active_joint_key is not None:
+            self._set_joint_enabled(self._active_joint_key, False)
+        self._active_joint_key = None
+        self._active_grasp_body = None
+        self._active_grasp_collider = None
+        self._active_grasp_point_local = None
+        self._cut_grasp_position = None
+        self._previous_orphan_centroid = None
+        self._latest_orphan_state = None
+        self._latest_finger_contact = None
+        self._latest_geometric_jaw = None
+        self._pending.clear()
+        self._active_target = key
+        self._task = self._task_module.BimanualDeleafTask(
+            vine_name,
+            organ_label,
+            self._task_parameters,
+        )
+        self._requested_openness = 1.0
+        self._close_requested = False
+        self._set_finger_targets(opened=True)
 
     @property
     def target_candidates(self) -> list[dict]:
@@ -6213,7 +6517,7 @@ def _bimanual_probe(
                     seed_degrees=seed,
                     base_matrix=base_matrix,
                     pointing_axis=2,
-                    pointing_direction=(0.0, 1.0, 0.0),
+                    pointing_direction=-robot_forward,
                     transverse_axis=0,
                     transverse_to=candidate["axis"],
                     position_scale_m=0.002,
@@ -6266,6 +6570,16 @@ def _bimanual_probe(
         }
         _emit(report, args.report)
         if selected_collider is None:
+            ik_feasible = any(
+                bool(record["solution"]["succeeded"])
+                for candidate in selection_diagnostics
+                for record in candidate.get("solutions", ())
+            )
+            error = (
+                "no selected-petiole grasp collider has sufficient wrist-camera clearance"
+                if ik_feasible
+                else "no selected-petiole grasp collider has a valid yaw-relative IK pose"
+            )
             return {
                 "mode": args.bimanual_probe,
                 "stages": stages,
@@ -6274,10 +6588,7 @@ def _bimanual_probe(
                 "blade_safety_clear": blade_monitor.safety_clear,
                 "task": grasp_manager.summary,
                 "succeeded": False,
-                "error": (
-                    "no selected-petiole grasp collider is reachable with "
-                    "wrist-camera clearance"
-                ),
+                "error": error,
             }
         grasp_manager.set_planned_grasp_collider(selected_collider)
         grasp_geometry = grasp_manager.target_geometry
@@ -6797,7 +7108,7 @@ def _bimanual_probe(
             seed_degrees=seed,
             base_matrix=base_matrix,
             pointing_axis=2,
-            pointing_direction=(0.0, 1.0, 0.0),
+            pointing_direction=-robot_forward,
             transverse_axis=0,
             transverse_to=grasp_geometry["axis"],
             position_scale_m=0.005,
@@ -6871,7 +7182,7 @@ def _bimanual_probe(
                 seed_degrees=candidate_seed,
                 base_matrix=base_matrix,
                 pointing_axis=2,
-                pointing_direction=(0.0, 1.0, 0.0),
+                pointing_direction=-robot_forward,
                 transverse_axis=0,
                 transverse_to=grasp_geometry["axis"],
                 position_scale_m=position_scale_m,

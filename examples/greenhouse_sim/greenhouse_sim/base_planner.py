@@ -503,7 +503,7 @@ def plan_target_conditioned_base(
                     seed_degrees=seed_degrees,
                     base_matrix=base_matrix,
                     pointing_axis=2,
-                    pointing_direction=(0.0, 1.0, 0.0),
+                    pointing_direction=-base_matrix[:3, 0],
                     transverse_axis=0,
                     transverse_to=candidate.axis,
                     position_scale_m=0.002,

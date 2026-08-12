@@ -183,6 +183,12 @@ class DirectionalCutGate:
     def progress_for(self, target_key: str) -> CutProgress:
         return self._progress.setdefault(target_key, CutProgress())
 
+    def reset(self) -> None:
+        """Clear all per-episode contact work and completed targets."""
+
+        self._progress.clear()
+        self._completed.clear()
+
     @staticmethod
     def _unit(vector: np.ndarray) -> np.ndarray | None:
         values = np.asarray(vector, dtype=np.float64)
@@ -517,6 +523,19 @@ class Severer:
     def severable(self) -> list[str]:
         """Organ labels that can still be cut."""
         return [label for label in self._rig.cut_joints if not self._is_severed(label)]
+
+    def reset(self) -> None:
+        """Restore authored severance joints and clear per-episode records.
+
+        Dynamic body poses are restored by the simulator runtime. Keeping the
+        joint and record reset here ensures no irreversible cut state leaks
+        into the next online-RL episode.
+        """
+
+        for cut in self._cuts:
+            self._set_joint_enabled(cut.joint_path, enabled=True)
+        self._cuts.clear()
+        self._sustained.clear()
 
     def cut(
         self,

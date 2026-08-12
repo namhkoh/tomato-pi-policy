@@ -36,12 +36,11 @@ def test_ready_pose_matches_official_model_a_vector() -> None:
     ]
 
 
-def test_greenhouse_pose_replaces_only_right_arm_for_safe_precontact() -> None:
+def test_greenhouse_startup_uses_neutral_sdk_pose_for_both_arms() -> None:
     for name, expected in robot_scene.SDK_READY_POSE_DEGREES.items():
-        if not name.startswith("right_arm_"):
-            assert robot_scene.READY_POSE_DEGREES[name] == expected
+        assert robot_scene.READY_POSE_DEGREES[name] == expected
     assert [robot_scene.READY_POSE_DEGREES[f"right_arm_{index}"] for index in range(7)] == list(
-        robot_scene.GREENHOUSE_PRECONTACT_RIGHT_ARM_DEGREES
+        robot_scene.SDK_READY_POSE_DEGREES[f"right_arm_{index}"] for index in range(7)
     )
     assert [robot_scene.READY_POSE_DEGREES[f"left_arm_{index}"] for index in range(7)] == [
         robot_scene.SDK_READY_POSE_DEGREES[f"left_arm_{index}"] for index in range(7)

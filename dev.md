@@ -5,13 +5,13 @@ orphan/lower leaves from high-wire vines), targeting demo collection → π0.5
 finetuning → deployment on the Rainbow Robotics **RB-Y1** (sim and real).
 
 Environment: Isaac Sim **5.1.0-rc.19** (Kit 107.3.3, omni.physx 107.3.26, USD 0.24.5)
-at `D:\isaac-sim`, Windows 11. Active deleafing branch `koh-dev/deleaf`
+at `D:\isaac-sim`, Windows 11. Current integration branch `koh-dev/rby1`
 (fork of openpi).
 
 Branch ownership: `koh-dev/deleaf` contains the simulator physics, grasp/cut
 benchmark, IK, and generic simulator mailbox/recorder. The connected physical
 RB-Y1 read-only state publisher is isolated on `koh-dev/rby1`, which starts from
-the latest deleaf commit.
+the latest deleaf commit. Teleoperation is stopped for the online-RL phase.
 
 ## Status
 
@@ -41,9 +41,14 @@ the latest deleaf commit.
 - [x] Hardware-bounded dual-arm approach + complete grasp/cut/transport/deposit acceptance
 - [x] Simulator-only leader-arm command bridge + synchronized D405/action recording
 - [x] Deterministic target selection + strict isolated-process repeatability runner
+- [x] Fresh opposed grasp acceptance on `Vine_0002/SubStem_02`: exact distal body retained through 15 mm pre-tension
+- [x] Synchronous online-RL environment: bounded bimanual actions, strict state/reward/termination, full articulation reset, seeded airflow/pose variation
+- [x] Loopback client, optional Gymnasium wrapper, and reference PPO rollout/update/checkpoint path
+- [x] Four-worker shared-policy PPO collection with independent live Isaac physics servers
 - [ ] Live lab-teleop selected-leaf pinch/grasp/cut acceptance
 - [ ] Record synchronized successful trajectories and prepare the π0.5 dataset/export contract
 - [ ] Lab leader-arm hardware validation + multi-target physical repeatability acceptance
+- [ ] Converged deleafing policy, D405 RL observations, and benchmark-wide target curriculum
 - [ ] Benchmark task definition + metrics
 
 ## Findings
@@ -1305,6 +1310,125 @@ operator confirmation. The report had accepted 384 fresh whole-body commands,
 a fresh 0-16 ms watchdog, zero watchdog holds, and no rate limiting at the
 verification snapshot. Manual opposed-finger grasp remains the open acceptance
 observation; demonstration recording stays disabled until it succeeds.
+
+### Fresh grasp acceptance and synchronous online RL baseline, 2026-08-12
+
+The requested clean asset baseline is commit `b58c9f8` on `koh-dev/rby1`
+(`feat(greenhouse): finalize wrist mounts and add optimized vines`). It includes
+the complete `greenhouse/tomato_glb_30` collaborator asset set and the previously
+accepted wrist/base work. The physical-robot state bridge, leader publisher,
+and interactive simulator were stopped before the following checks; the RL mode
+rejects `--teleop-command-file`, so physical-robot mirroring cannot silently
+remain active during training.
+
+A fresh `Vine_0002/SubStem_02` deterministic probe found a real grasp-planning
+bug. The grasp pose still required EE local `+Z` to point toward fixed world
+`+Y`, which was valid for the old -90 degree station but turns the wrist backward
+at the current +90 degree station. Candidate search therefore reported a camera
+clearance failure even when measured D405 clearance was 67-71 mm; the actual IK
+orientation error was 119-160 degrees. Candidate selection, live left-arm IK,
+multistart fallback, and base planning now all use `-robot_forward`. A regression
+covers both +90 and -90 degree base yaw.
+
+The rerun physically closed on the exact selected distal body
+`/World/InteractiveVines/Vine_0002/Physics/Organ_0106/Link_003`, established
+a 24.0 N opposed-jaw grasp, enabled
+`/World/RBY1/ee_left/BenchmarkGrasps/Vine_0002_SubStem_02`, and placed the
+anchor 1.105 mm from the visible jaw centre. It then retained that same body
+through the 15 mm pre-tension pull and static counterhold. The episode later
+stopped at `right IK failed at side -0.100 m, servo attempt 0`; that is a
+right-arm route blocker after accepted grasp retention, not a grasp failure.
+
+The first online-RL baseline now runs in the same Isaac process and consumes the
+same `BimanualDeleafTask`, `LeftGraspManager`, `BladeContactMonitor`, `Severer`,
+and protected-contact ledger as manual and deterministic execution:
+
+- One normalized 15-value action commands bounded left-arm joint velocity (7),
+  right-arm joint velocity (7), and left-gripper aperture velocity (1). At the
+  default 20 Hz policy rate, every action advances exactly twelve 240 Hz physics
+  samples. URDF joint limits and a configurable 35 degree/s arm cap remain
+  authoritative.
+- The stable 56-value state contains normalized arm positions/velocities,
+  gripper openness, left-jaw-to-grasp and blade-to-cut vectors, target/tool axes,
+  strict task phase, grasp/cut/transport progress, and protected-contact state.
+- Potential differences shape approach motion. Event bonuses come only from the
+  strict `grasped -> orphan_retained -> transported -> released -> deposited`
+  state sequence. Unsafe contacts and task failure terminate with penalties.
+  Direct two-frame interaction cutting is forcibly disabled in RL mode and
+  cannot produce benchmark reward.
+- Reset removes an active grasp, re-enables every severance joint, clears cut
+  work, task events, and contact ledgers, restores every robot and per-organ vine
+  articulation root/joint/velocity snapshot, opens the gripper, and settles
+  outside episode time. The seed applies bounded +/-1 degree arm-start variation
+  and a seeded phase of the accepted 1.0 m/s foliage airflow.
+- A loopback-only synchronous JSON-lines server decouples Kit/PhysX from policy
+  dependencies. `rl_client.py` provides direct and optional Gymnasium APIs;
+  `train_online_rl.py` provides a reference tanh-Gaussian PPO trainer and
+  checkpoint writer. Closing the trainer shuts down the server cleanly.
+
+The first policy video's high-frequency arm motion had three independent
+causes. The initial Gaussian standard deviation was `exp(-0.5)=0.607`, the
+randomly initialized actor emitted non-zero means before any learning, and
+every 50 ms action rebuilt its position-drive target from the already moving
+measured joint state. Therefore zero action followed physical drift instead of
+holding the previous command, while alternating exploration samples could
+reverse a joint at the full 35 degree/s speed limit.
+
+The runtime now integrates acceleration-limited velocity from a persistent
+position target and resets that target with every episode. Zero action is a
+real position hold. The policy starts at exactly zero mean with standard
+deviation 0.223; arm and gripper acceleration are bounded; reward includes an
+action-change cost; and near-target gripper closing has dense shaping without
+awarding a grasp event. A 16-action live zero-command check at the validated
+SubStem_02 approach held jaw distance within 17.8-23.1 mm with zero unsafe
+contact, instead of drifting from 23.2 mm to 194.4 mm under the old controller.
+
+`train_online_rl_parallel.py` batches one actor-critic across independent
+loopback Isaac workers. Socket steps execute concurrently and generalized
+advantage estimation remains separated along each worker trajectory. Four
+workers used 19.6-21.3 GB on the RTX 5090 and completed 8,192 physical actions
+in 888.0 s. This is process-parallel physics, not an in-stage GPU-vectorized
+Isaac Lab environment. A validated collision-clear 100 mm left-grasp approach
+was used as the first curriculum start; the neutral right arm was preserved.
+
+The first non-smoke PPO launch also exposed why the right arm looked abnormal
+at startup. `READY_POSE_DEGREES` still replaced the official SDK right-arm
+ready vector with `GREENHOUSE_PRECONTACT_RIGHT_ARM_DEGREES`, a numerical IK
+seed authored for the old -90 degree robot station. At the current +90 degree
+station that seed folds the knife arm backward. Generic interactive and RL
+startup now uses the symmetric Model A SDK ready pose on both arms; the legacy
+pre-contact tuple remains labelled as historical route data, and task planners
+compute their own approaches after reset.
+
+**Verification:**
+
+| Check | Result | Evidence |
+|---|---|---|
+| Fresh opposed grasp and retention | exact `Link_003`; 24.0 N; active fixed grasp; 1.105 mm jaw-centre distance; retained through 15 mm pre-tension and counterhold | `data/greenhouse_sim/grasp_validation_yaw_axis_fix_20260812.json` |
+| Focused grasp/cut/reset/RL regressions | 36 passed | focused Isaac-Python pytest run |
+| Complete greenhouse regressions | 134 passed, 1 expected PhysX-only skip | `D:\isaac-sim\python.bat -m pytest -q examples\greenhouse_sim\greenhouse_sim` |
+| Randomized live reset/action/reset | stage `done`; three clean resets and one 12-substep action; finite 56-value observations; same-seed delta 0.003894; different seed changed state; zero unsafe contacts/cuts; empty stderr | `data/greenhouse_sim/online_rl_randomized_reset_smoke_20260812.json` |
+| PPO process-to-physics smoke | four live actions, two time-limit episodes, three resets, one CPU gradient update, 1,025,669-byte checkpoint, clear blade safety, no server error | `data/greenhouse_sim/online_rl_ppo_smoke_20260812.json` and `data/greenhouse_sim/rl/ppo_smoke_20260812.pt` |
+| Neutral startup regression | both arms exactly use the official Model A SDK vectors; focused startup/kinematics/RL suite 27 passed with one expected PhysX-only skip | `robot_scene_test.py`, `robot_kinematics_test.py`, and `rl_env_test.py` |
+| Simple live PPO run | 512 physical actions; four 128-step rollout updates; three safe time limits near -1.38 return and one correct unsafe-contact termination at step 510; 56-state/15-action checkpoint | `data/greenhouse_sim/rl/ppo_simple_neutral_20260812.pt` and `data/greenhouse_sim/rl/ppo_simple_neutral_20260812_sim_report.json` |
+| Deterministic checkpoint trial | 128 steps; return -1.346; zero unsafe contacts; stayed in `seek_grasp`; no grasp/cut/success | `data/greenhouse_sim/rl/ppo_simple_neutral_20260812_eval.json` |
+| Zero-action physical hold | 16 actions; jaw distance 17.8-23.1 mm; zero command delta and zero unsafe contacts | `data/greenhouse_sim/rl/parallel_ppo_20260812/preflight_hold_sim_report.json` |
+| Four-worker PPO run | 8,192 physical actions; eight 1,024-sample PPO updates; 32 episodes; 28 safe time limits, four protected-contact terminations, zero grasps/successes; 888.0 s | `data/greenhouse_sim/rl/parallel_ppo_20260812/ppo_8192_training.json` and `ppo_8192.pt` |
+| Deterministic parallel-checkpoint trial | 64 safe actions; return -0.666; action-delta RMS 0.0437; stayed in `seek_grasp`; no grasp/cut/success | `data/greenhouse_sim/rl/parallel_ppo_20260812/ppo_8192_eval.json` |
+| Stabilized rendered trial | four synchronized views, 64/64 frame sets, 1280 x 720 at 20 FPS | `data/greenhouse_sim/rl/parallel_ppo_20260812/post_stability_video/ppo_8192_stabilized_4view.mp4` |
+
+This verifies the reusable online environment, stable command semantics,
+physical safety termination, and shared-policy parallel PPO; it does **not**
+claim a converged deleafing policy. The 8,192-step run never left `seek_grasp`,
+and its deterministic policy held approximately 0.10 m from the target. More
+blind steps with the same 15-dimensional direct-joint action space are not a
+justified route to success. The next training stage must shorten grasp-only
+episodes and add an expert/IK-seeded or task-space grasp curriculum before
+unlocking right-arm cut and transport actions. D405 observations,
+multi-target randomisation, and policy convergence remain open. The current
+deterministic full-IK sequence
+also still needs a new collision-clear right-arm route after the accepted grasp;
+the RL interface does not hide or mark that scripted route blocker as success.
 
 ## Research findings, 2026-08-06 (pre-implementation)
 

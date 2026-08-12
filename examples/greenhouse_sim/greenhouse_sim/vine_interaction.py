@@ -322,6 +322,13 @@ class Airflow:
     def body_paths(self) -> list[str]:
         return [target.body for target in self._targets]
 
+    def reset(self, *, phase_s: float = 0.0) -> None:
+        """Reset the gust clock to a finite seeded episode phase."""
+        phase = float(phase_s)
+        if not math.isfinite(phase) or phase < 0.0:
+            raise ValueError("airflow phase_s must be finite and non-negative")
+        self._time = phase
+
     def step(self) -> None:
         self._time += self._dt
         if self._speed <= 0.0:

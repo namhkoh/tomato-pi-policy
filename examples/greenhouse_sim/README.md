@@ -450,7 +450,89 @@ associated branch at its authored junction. These events are recorded in
 `blade_traversal_cuts` with `benchmark_valid=false`; the strict IK/benchmark
 sequence temporarily disables this convenience path.
 
+## Online RL environment
+
+Teleoperation is not part of the RL control path. Start the simulator as a
+loopback-only synchronous environment in one terminal:
+
+```powershell
+D:\isaac-sim\python.bat examples\greenhouse_sim\interactive_greenhouse.py `
+  --headless --rl-server `
+  --target-vine Vine_0002 --target-organ SubStem_02 `
+  --robot-position-mode fixed `
+  --robot-position 10.639221515539253 4.38 -0.15254085567917297
+```
+
+The server advances no unrequested policy steps. Each action advances exactly
+12 physics samples at the default 20 Hz policy / 240 Hz physics rates. The
+15-value normalized action is:
+
+1. left-arm joint velocities, seven values;
+2. right-arm joint velocities, seven values; and
+3. left-gripper aperture velocity, where `-1` closes and `+1` opens.
+
+The stable 56-value state observation contains normalized arm positions and
+velocities, gripper openness, left-jaw-to-grasp and blade-to-cut vectors,
+target/tool axes, strict task-phase one-hot state, grasp/cut/transport progress,
+and protected-contact state. Rewards use distance-potential differences plus
+bonuses only for strict `grasped`, `orphan_retained`, `transported`, `released`,
+and `deposited` transitions. An unsafe contact, wrong sequence, or task failure
+terminates the episode. The manual two-frame blade-traversal convenience path
+is disabled, so it cannot become an RL shortcut.
+
+Reset restores every robot and per-organ vine articulation root, joint state,
+velocity, severance joint, fixed grasp, task state, cut work, and contact
+Policy velocity is integrated from a persistent drive target, so zero action
+holds position rather than following gravity-driven measured-state drift. Arm
+and gripper commands are acceleration-limited, and reward penalizes consecutive
+action reversals. `--rl-max-arm-acceleration` exposes the arm limit. An optional
+seven-value `--rl-initial-left-arm` provides an explicit fixed curriculum start;
+it does not bypass contact, grasp, cut, task-order, or safety gates.
+
+ledger. The seed applies bounded +/-1 degree arm-start variation and a seeded
+phase of the accepted foliage airflow. The target is fixed for one server
+process; change the launch target or run multiple workers for a target
+curriculum.
+
+A trainer can use the small client directly or construct the optional
+Gymnasium wrapper from `greenhouse_sim.rl_client.gymnasium_env`. A reference
+single-environment PPO implementation is included:
+
+```powershell
+D:\isaac-sim\python.bat examples\greenhouse_sim\train_online_rl.py `
+  --total-steps 1000000 `
+  --checkpoint data\greenhouse_sim\rl\ppo_deleaf.pt
+```
+
+The trainer runs outside Kit, keeping policy dependencies and GPU allocations
+separate from the simulator. Closing it asks the simulator server to shut down
+cleanly. This is a low-dimensional online-RL baseline; synchronized D405 image
+observations remain on the policy/VLA track and are not claimed by this state
+environment. The included PPO smoke verifies rollout, reset, update, and
+checkpoint plumbing; it is not a converged deleafing policy.
+
 ## Cutting demo
+For shared-policy process-parallel collection, launch one headless server per
+port, then pass those ports to the parallel trainer:
+
+```powershell
+D:\isaac-sim\python.bat examples\greenhouse_sim\train_online_rl_parallel.py `
+  --ports 8766 8767 8768 8769 `
+  --total-steps 1000000 --rollout-steps 256 `
+  --checkpoint data\greenhouse_sim\rl\ppo_deleaf_parallel.pt `
+  --report data\greenhouse_sim\rl\ppo_deleaf_parallel.json
+```
+
+Each port owns a complete independent Isaac physics process. Network actions
+are issued concurrently, observations are batched through one actor-critic,
+and GAE is computed independently along each worker trajectory. This is not an
+Isaac Lab in-stage vector environment, so GPU memory scales approximately with
+the worker count. Use `nvidia-smi` to choose a safe count.
+
+The included 8,192-step four-worker acceptance run verified this path but did
+not learn a grasp. Treat successful strict task transitions—not training step
+count or smooth motion—as the convergence criterion.
+
 
 Rigs one vine with compliant physics, settles it, cuts the lowest petiole, and
 measures whether the organ came away without disturbing the rest of the plant:
@@ -533,6 +615,9 @@ depends on), and never falls back to grafting.
 | `greenhouse_sim/episode.py` | Deterministic exact/seeded physical target selection |
 | `greenhouse_sim/repeatability.py` | Strict repeated-episode acceptance aggregation |
 | `greenhouse_sim/teleop.py` | Simulator-only mailbox safety gate and demonstration recorder |
+| `greenhouse_sim/rl_env.py` | Framework-neutral action, observation, reward, and termination contract |
+| `greenhouse_sim/isaac_rl.py` | Live Isaac physics adapter, full episode reset, and loopback server |
+| `greenhouse_sim/rl_client.py` | JSON-lines client and optional Gymnasium wrapper |
 | `greenhouse_sim/greenhouse_scene.py` | Vine placement over the greenhouse stage |
 | `greenhouse_sim/robot_hardware.py` | D405/bracket mounts and flat-blade cut semantics |
 | `greenhouse_sim/robot_kinematics.py` | Exact RB-Y1 v1.0 FK/IK, Jacobian, and effort-capacity checks |
@@ -548,6 +633,7 @@ depends on), and never falls back to grafting.
 | `interactive_greenhouse.py` | Physics greenhouse, mouse pulling, cutting UI, and acceptance probes |
 | `run_bimanual_repeatability.py` | One-Isaac-process-per-target/seed repeatability runner |
 | `rby1_leader_to_sim.py` | One-way lab leader-arm input publisher; never commands the real RB-Y1 |
+| `train_online_rl.py` | Reference PPO trainer for the synchronous Isaac environment |
 
 Run the tests with Isaac's interpreter (they are hermetic and use synthetic
 assets, so they need no GLB files):
@@ -567,13 +653,16 @@ knife-only end-effector semantics are also verified. Physical leading-edge cut
 qualification, protected-contact accounting, hardware-effort-limited dual-arm
 motion, and complete grasp/contact/cut/transport/floor-deposit acceptance on
 `Vine_0000/SubStem_00` and the formerly blocked `SubStem_01` are verified in
-Isaac Sim with zero unsafe contacts. Deterministic target
-selection, strict repeatability aggregation, and the simulator-only
-teleoperation/D405 recorder are implemented and hardware-free validated. Live
-read-only whole-body mirroring is now running. Zero-load contact filtering,
-automatic opposed-pinch target selection, and the exposed long-side cutting
-semantic pass the full regression suite; next is manual selected-leaf pinch/cut
-acceptance, synchronized trajectory capture for π0.5, the full
-target/seed matrix, then 32.5 N tear calibration, metrics, randomisation, policy
-interfaces, and RL.
+| `train_online_rl_parallel.py` | Shared-policy PPO over independent live Isaac server processes |
+Isaac Sim with zero unsafe contacts. A fresh `Vine_0002/SubStem_02` run also
+verified a 24 N opposed grasp retained through a 15 mm pre-tension pull.
+Deterministic target selection, strict repeatability aggregation, and the
+simulator-only teleoperation/D405 recorder are implemented and hardware-free
+validated. Zero-load contact filtering, automatic opposed-pinch target
+selection, and the exposed long-side cutting semantic pass the full regression
+suite. The single-environment online-RL state baseline now has bounded bimanual
+control, strict rewards/termination, seeded resets, a Gymnasium client, and a
+PPO trainer. Remaining work is autonomous-policy convergence, D405 observations,
+multi-worker batching, the full target/seed matrix, 32.5 N tear calibration,
+and benchmark metrics.
 See `dev.md` at the repository root for evidence and remaining work.
