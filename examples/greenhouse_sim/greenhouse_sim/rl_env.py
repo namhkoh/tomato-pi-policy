@@ -195,9 +195,11 @@ def phase_action_mask(
 ) -> np.ndarray:
     """Return deterministic task-order masks for one or batched observations.
 
-    The cutter arm cannot move before a strict grasp exists. The gripper also
-    stays open while its jaw centre is outside the local grasp neighbourhood;
-    this prevents the policy from collecting closure shaping at a distance.
+    The cutter arm cannot move before a strict grasp exists. During the cut
+    phase the accepted left-arm and gripper targets are held so right-arm
+    exploration cannot unlearn the grasp. The gripper also stays open while
+    its jaw centre is outside the local grasp neighbourhood, and remains held
+    through orphan transport until the task reaches the release phase.
     """
 
     values = np.asarray(observation, dtype=np.float32)
@@ -213,12 +215,20 @@ def phase_action_mask(
     mask = np.ones(values.shape[:-1] + (ACTION_SIZE,), dtype=np.float32)
     phases = values[..., PHASE_OBSERVATION_SLICE]
     seek_grasp = phases[..., PHASES.index("seek_grasp")] > 0.5
+    grasped = phases[..., PHASES.index("grasped")] > 0.5
+    orphan_retained = phases[..., PHASES.index("orphan_retained")] > 0.5
+    mask[..., LEFT_ARM_ACTION_SLICE] = np.where(
+        np.expand_dims(grasped, axis=-1), 0.0, 1.0
+    )
     mask[..., RIGHT_ARM_ACTION_SLICE] = np.where(
         np.expand_dims(seek_grasp, axis=-1), 0.0, 1.0
     )
     grasp_distance = np.linalg.norm(values[..., LEFT_GRASP_DELTA_SLICE], axis=-1)
     enable_gripper = np.logical_or(
         ~seek_grasp, grasp_distance <= gripper_activation_distance_m
+    )
+    enable_gripper = np.logical_and(
+        enable_gripper, ~(grasped | orphan_retained)
     )
     mask[..., GRIPPER_ACTION_INDEX] = enable_gripper.astype(np.float32)
     return mask

@@ -1515,6 +1515,54 @@ right-knife approach/sweep through the strict API, collect accepted cut
 demonstrations, and only then fine-tune PPO for cut. Transport/release/deposit
 and target randomisation remain later curriculum stages.
 
+### Dense-vine geometry, contact capture, and opposed-grasp checkpoint, 2026-08-13
+
+The deterministic full-task probe has been hardened for the optimized
+`tomato_glb_30` vine without weakening its safety gates. Long foliage contact
+shapes are decomposed into bounded local OBB proxies, and robot/vine screening
+now uses exact capsule/OBB geometry for the arm, cameras, fingers, knife, and
+greenhouse. Target-conditioned base planning searches bounded grasp-yaw and
+transverse alternatives, verifies the complete joint-space route, and retries
+only foliage-clearance rejections after measured live-vine settling. The
+required foliage clearance remains 0.5 mm plus the measured sway envelope;
+rigid/payload, greenhouse, and runtime inter-arm requirements remain 5, 10,
+and 5 mm respectively.
+
+The left final approach is now receding-horizon and drive-lag aware. It accepts
+only IK updates that reduce measured jaw error and freezes the command at the
+first current-step structural contact, preventing the old open-finger
+push/chase behavior. Capture then performs a bounded lateral disengage,
+tangential Y/Z centering, independent-finger backstop closure, and at most two
+measured X seating corrections. The contacted structural body is locked for
+the capture attempt; foliage-only or one-finger load cannot activate the grasp
+joint. The existing three-consecutive-step, opposed-finger, minimum-1-N task
+gate remains authoritative.
+
+Four strict `Vine_0002/SubStem_02` full-probe iterations isolated the remaining
+blocker. The first contact-aware run reduced target displacement from roughly
+59 mm and 36.4 N in the old chase to 7.3 mm and 1.69 N at capture. Subsequent
+backstop runs stayed finite with zero protected contacts and zero cuts. In the
+latest run, the first bounded seat reduced the opposite-jaw gap from 18.785 to
+12.992 mm; closure and a 3.927 mm reseat reduced the remaining gap from 2.927
+to 1.346 mm. Only `left_finger_1` carried load, so the validator correctly
+stopped before pretension or right-arm cutting. This checkpoint therefore does
+not claim a full optimized-vine grasp/cut/deposit pass.
+
+**Verification:**
+
+| Check | Result | Evidence |
+|---|---|---|
+| Focused planner/IK/vine/grasp/RL regressions | 93 passed | `base_planner_test.py`, `robot_kinematics_test.py`, `vine_physics_test.py`, `interactive_policy_test.py`, `rl_env_test.py`, `rl_policy_test.py` |
+| Backstop-first physical probe | stable base and route; no unsafe contact; no cut; opposed grasp rejected | `data/greenhouse_sim/rl/cut_curriculum_20260812/full_substem02_backstop_capture.json` |
+| Bounded seat physical probe | gap improved 19.031 -> 13.114 mm; no unsafe contact; opposed grasp rejected | `data/greenhouse_sim/rl/cut_curriculum_20260812/full_substem02_backstop_seat.json` |
+| Bounded reseat physical probe | final backstop gap 1.346 mm; 6.53 N one-finger load; no unsafe contact/cut | `data/greenhouse_sim/rl/cut_curriculum_20260812/full_substem02_backstop_reseat.json` |
+
+**Next gated stage:** close the measured 1.346 mm residual with one bounded
+near-contact micro-seat, require persistent physical opposition, and only then
+execute pretension, right-arm force/direction/work-qualified cutting, orphan
+retention, transport, and floor deposit. Cut-stage demonstrations and PPO stay
+locked until that complete strict physical replay passes.
+
 ## Research findings, 2026-08-06 (pre-implementation)
 
 ### Stiffness — the current E is 5–15× too low
@@ -1721,3 +1769,9 @@ One logical change per commit; no AI attribution trailers.
   opposite outer face, normalized its optical view separately, rebuilt the robot
   USD, passed 23 focused and 122 full regressions, and completed a clean
   240-step robot/vine/contact soak.
+- 2026-08-13 ? Added exact dense-vine collision screening, sway-conditioned
+  route retries, measured receding-horizon contact capture, independent-finger
+  backstop closure, and bounded live-geometry seating on `koh-dev/online-rl`.
+  Passed 93 focused regressions and four strict physical probes with zero unsafe
+  contacts; recorded the remaining 1.346 mm opposed-jaw residual without
+  falsely advancing to cutting.

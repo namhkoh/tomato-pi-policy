@@ -40,6 +40,15 @@ def test_physical_cut_zone_covers_every_segment_through_25_mm_stub() -> None:
     assert vine_physics._petiole_grasp_segment(arcs) == 4
 
 
+def test_long_petiole_grasp_is_distal_from_main_stem_junction() -> None:
+    arcs = np.linspace(0.0, 0.40, 21)
+
+    segment = vine_physics._petiole_grasp_segment(arcs)
+
+    assert segment == 4
+    assert 0.08 <= 0.5 * (arcs[segment] + arcs[segment + 1]) <= 0.10
+
+
 def test_cut_segment_frame_follows_bent_collider_and_preserves_stub_arc() -> None:
     links = [
         vine_physics.Link(
@@ -167,6 +176,31 @@ def test_oriented_foliage_proxy_has_right_handed_frame_and_minimum_thickness() -
         2.0 * np.min(half_extents)
         >= vine_physics.FOLIAGE_CONTACT_MINIMUM_THICKNESS_M
     )
+
+
+def test_decomposed_foliage_proxies_cover_long_tapered_mesh_without_one_large_box() -> None:
+    x = np.asarray((-0.12, -0.04, 0.04, 0.12))
+    widths = np.asarray((0.008, 0.030, 0.018, 0.004))
+    vertices = np.asarray(
+        [(x_value, side * width, 0.0) for x_value, width in zip(x, widths) for side in (-1.0, 1.0)]
+    )
+    triangles = []
+    for index in range(3):
+        lower = 2 * index
+        upper = lower + 2
+        triangles.extend(((lower, upper, lower + 1), (lower + 1, upper, upper + 1)))
+    triangles = np.asarray(triangles, dtype=np.int64)
+
+    boxes = vine_physics._decomposed_oriented_proxy_boxes(vertices, triangles)
+
+    assert 1 < len(boxes) <= vine_physics.FOLIAGE_CONTACT_MAX_PROXY_BOXES
+    global_half_extents = vine_physics._oriented_proxy_box(vertices)[2]
+    assert max(np.max(box[2]) for box in boxes) < np.max(global_half_extents)
+    for vertex in vertices:
+        assert any(
+            np.all(np.abs(box[1].T @ (vertex - box[0])) <= box[2] + 1e-12)
+            for box in boxes
+        )
 
 
 def test_foliage_proxy_is_robot_contactable_but_filtered_from_plant_bodies() -> None:

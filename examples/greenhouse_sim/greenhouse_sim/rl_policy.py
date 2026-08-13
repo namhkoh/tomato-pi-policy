@@ -27,6 +27,23 @@ def phase_action_mask_tensor(observation: torch.Tensor) -> torch.Tensor:
         ]
         > 0.5
     )
+    grasped = (
+        observation[
+            ..., rl_env.PHASE_OBSERVATION_SLICE.start
+            + rl_env.PHASES.index("grasped")
+        ]
+        > 0.5
+    )
+    orphan_retained = (
+        observation[
+            ..., rl_env.PHASE_OBSERVATION_SLICE.start
+            + rl_env.PHASES.index("orphan_retained")
+        ]
+        > 0.5
+    )
+    mask[..., rl_env.LEFT_ARM_ACTION_SLICE] = (~grasped).to(
+        observation.dtype
+    ).unsqueeze(-1)
     mask[..., rl_env.RIGHT_ARM_ACTION_SLICE] = (~seek_grasp).to(
         observation.dtype
     ).unsqueeze(-1)
@@ -36,6 +53,9 @@ def phase_action_mask_tensor(observation: torch.Tensor) -> torch.Tensor:
     enable_gripper = torch.logical_or(
         ~seek_grasp,
         grasp_distance <= rl_env.DEFAULT_GRIPPER_ACTIVATION_DISTANCE_M,
+    )
+    enable_gripper = torch.logical_and(
+        enable_gripper, ~(grasped | orphan_retained)
     )
     mask[..., rl_env.GRIPPER_ACTION_INDEX] = enable_gripper.to(observation.dtype)
     return mask

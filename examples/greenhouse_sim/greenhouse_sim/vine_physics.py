@@ -47,6 +47,8 @@ from greenhouse_sim import usd_env
 PETIOLE_CUT_ZONE_LENGTH_M = 0.025
 FOLIAGE_CONTACT_MINIMUM_THICKNESS_M = 0.003
 FOLIAGE_CONTACT_PADDING_M = 0.001
+FOLIAGE_CONTACT_MAX_PROXY_SPAN_M = 0.075
+FOLIAGE_CONTACT_MAX_PROXY_BOXES = 4
 
 usd_env.ensure_pxr()
 
@@ -483,6 +485,56 @@ def _oriented_proxy_box(
     return centre, rotation, half_extents
 
 
+def _decomposed_oriented_proxy_boxes(
+    points: np.ndarray,
+    triangles: np.ndarray,
+    *,
+    maximum_span_m: float = FOLIAGE_CONTACT_MAX_PROXY_SPAN_M,
+    maximum_boxes: int = FOLIAGE_CONTACT_MAX_PROXY_BOXES,
+) -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray], ...]:
+    """Cover a leaf mesh with a bounded sequence of thin oriented boxes.
+
+    One PCA box around a tapered or serrated leaflet fills its empty corners
+    and can reject a physically open gripper corridor. Triangles are ordered
+    along the leaf's longest principal axis and partitioned into short groups;
+    fitting each group separately preserves complete triangle coverage while
+    substantially reducing that false convex volume.
+    """
+    vertices = np.asarray(points, dtype=np.float64)
+    faces = np.asarray(triangles, dtype=np.int64)
+    if vertices.ndim != 2 or vertices.shape[0] < 3 or vertices.shape[1] != 3:
+        raise ValueError("foliage proxy points must have shape (N>=3, 3)")
+    if faces.ndim != 2 or faces.shape[1:] != (3,):
+        raise ValueError("foliage proxy triangles must have shape (N, 3)")
+    if maximum_span_m <= 0.0 or maximum_boxes < 1:
+        raise ValueError("foliage proxy decomposition limits must be positive")
+    if not len(faces):
+        return (_oriented_proxy_box(vertices),)
+    if np.any(faces < 0) or np.any(faces >= len(vertices)):
+        raise ValueError("foliage proxy triangle index is out of bounds")
+
+    mean = vertices.mean(axis=0)
+    _, _, right_vectors = np.linalg.svd(vertices - mean, full_matrices=False)
+    principal_axis = right_vectors[0]
+    coordinates = (vertices - mean) @ principal_axis
+    span_m = float(np.ptp(coordinates))
+    box_count = min(
+        int(maximum_boxes),
+        len(faces),
+        max(1, int(math.ceil(span_m / float(maximum_span_m)))),
+    )
+    if box_count == 1:
+        return (_oriented_proxy_box(vertices),)
+
+    triangle_centres = vertices[faces].mean(axis=1)
+    order = np.argsort((triangle_centres - mean) @ principal_axis)
+    boxes = []
+    for group in np.array_split(order, box_count):
+        used_vertices = np.unique(faces[group].reshape(-1))
+        boxes.append(_oriented_proxy_box(vertices[used_vertices]))
+    return tuple(boxes)
+
+
 def _gf_transform(rotation: np.ndarray, translation: np.ndarray) -> Gf.Matrix4d:
     values = np.asarray(rotation, dtype=np.float64)
     matrix = Gf.Matrix4d(1.0)
@@ -566,55 +618,62 @@ def author_foliage_contact_proxies(
             ],
             dtype=np.float64,
         )
-        centre, rotation, half_extents = _oriented_proxy_box(local_vertices)
-
-        path = Sdf.Path(carrier.path).AppendChild(
-            f"FoliageContact_{foliage.index:04d}"
+        proxy_boxes = _decomposed_oriented_proxy_boxes(
+            local_vertices,
+            foliage.component.triangles,
         )
-        cube = UsdGeom.Cube.Define(stage, path)
-        cube.CreateSizeAttr(2.0)
-        transformable = UsdGeom.Xformable(cube.GetPrim())
-        transformable.AddTransformOp().Set(_gf_transform(rotation, centre))
-        transformable.AddScaleOp().Set(Gf.Vec3f(*half_extents.tolist()))
-        UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
-        if PhysxSchema is not None:
-            physx_collision = PhysxSchema.PhysxCollisionAPI.Apply(cube.GetPrim())
-            physx_collision.CreateContactOffsetAttr(0.003)
-            physx_collision.CreateRestOffsetAttr(0.0005)
-        if visible:
-            cube.CreateDisplayColorAttr([Gf.Vec3f(0.18, 0.62, 0.20)])
-            cube.CreateDisplayOpacityAttr([0.25])
-        else:
-            UsdGeom.Imageable(cube).CreatePurposeAttr(UsdGeom.Tokens.guide)
-
-        prim = cube.GetPrim()
-        prim.CreateAttribute(
-            "tomato:organIndex", Sdf.ValueTypeNames.Int, custom=True
-        ).Set(int(branch.index))
-        prim.CreateAttribute(
-            "tomato:sourceFoliageOrganIndex", Sdf.ValueTypeNames.Int, custom=True
-        ).Set(int(foliage.index))
-        prim.CreateAttribute(
-            "tomato:organLabel", Sdf.ValueTypeNames.String, custom=True
-        ).Set(branch.label)
-        prim.CreateAttribute(
-            "tomato:interactionRole", Sdf.ValueTypeNames.String, custom=True
-        ).Set("foliage_grasp")
-
-        relation = UsdPhysics.FilteredPairsAPI.Apply(prim).CreateFilteredPairsRel()
-        for body_path in plant_body_paths:
-            if body_path != carrier.path:
-                relation.AddTarget(Sdf.Path(body_path))
-        authored.append(
-            ColliderInfo(
-                path=str(path),
-                body_path=carrier.path,
-                organ=branch.index,
-                organ_label=branch.label,
-                segment=carrier.index,
-                role="foliage_grasp",
+        for proxy_index, (centre, rotation, half_extents) in enumerate(proxy_boxes):
+            suffix = "" if len(proxy_boxes) == 1 else f"_{proxy_index:02d}"
+            path = Sdf.Path(carrier.path).AppendChild(
+                f"FoliageContact_{foliage.index:04d}{suffix}"
             )
-        )
+            cube = UsdGeom.Cube.Define(stage, path)
+            cube.CreateSizeAttr(2.0)
+            transformable = UsdGeom.Xformable(cube.GetPrim())
+            transformable.AddTransformOp().Set(_gf_transform(rotation, centre))
+            transformable.AddScaleOp().Set(Gf.Vec3f(*half_extents.tolist()))
+            UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+            if PhysxSchema is not None:
+                physx_collision = PhysxSchema.PhysxCollisionAPI.Apply(cube.GetPrim())
+                physx_collision.CreateContactOffsetAttr(0.003)
+                physx_collision.CreateRestOffsetAttr(0.0005)
+            if visible:
+                cube.CreateDisplayColorAttr([Gf.Vec3f(0.18, 0.62, 0.20)])
+                cube.CreateDisplayOpacityAttr([0.25])
+            else:
+                UsdGeom.Imageable(cube).CreatePurposeAttr(UsdGeom.Tokens.guide)
+
+            prim = cube.GetPrim()
+            prim.CreateAttribute(
+                "tomato:organIndex", Sdf.ValueTypeNames.Int, custom=True
+            ).Set(int(branch.index))
+            prim.CreateAttribute(
+                "tomato:sourceFoliageOrganIndex", Sdf.ValueTypeNames.Int, custom=True
+            ).Set(int(foliage.index))
+            prim.CreateAttribute(
+                "tomato:sourceFoliageProxyIndex", Sdf.ValueTypeNames.Int, custom=True
+            ).Set(int(proxy_index))
+            prim.CreateAttribute(
+                "tomato:organLabel", Sdf.ValueTypeNames.String, custom=True
+            ).Set(branch.label)
+            prim.CreateAttribute(
+                "tomato:interactionRole", Sdf.ValueTypeNames.String, custom=True
+            ).Set("foliage_grasp")
+
+            relation = UsdPhysics.FilteredPairsAPI.Apply(prim).CreateFilteredPairsRel()
+            for body_path in plant_body_paths:
+                if body_path != carrier.path:
+                    relation.AddTarget(Sdf.Path(body_path))
+            authored.append(
+                ColliderInfo(
+                    path=str(path),
+                    body_path=carrier.path,
+                    organ=branch.index,
+                    organ_label=branch.label,
+                    segment=carrier.index,
+                    role="foliage_grasp",
+                )
+            )
     return tuple(authored)
 
 
@@ -919,15 +978,40 @@ def _petiole_cut_zone_segments(
     )
 
 
-def _petiole_grasp_segment(arc_lengths: np.ndarray) -> int:
-    """Choose the first physical segment just distal to the cut zone."""
+def _petiole_grasp_segment(
+    arc_lengths: np.ndarray,
+    preferred_distance_m: float = 0.10,
+) -> int:
+    """Choose a distal petiole pinch site, clear of the main-stem junction."""
     arcs = np.asarray(arc_lengths, dtype=np.float64)
-    if arcs.ndim != 1 or arcs.size < 2:
+    if (
+        arcs.ndim != 1
+        or arcs.size < 2
+        or preferred_distance_m <= 0.0
+    ):
         raise ValueError("arc lengths must contain at least one segment")
     cut_segments = _petiole_cut_zone_segments(arcs)
     if not cut_segments:
         return 0
-    return min(cut_segments[-1] + 1, len(arcs) - 2)
+    minimum_segment = min(cut_segments[-1] + 1, len(arcs) - 2)
+    centres = 0.5 * (arcs[:-1] + arcs[1:])
+    target_distance_m = min(
+        float(preferred_distance_m),
+        float(centres[-1]),
+    )
+    preferred_segment = int(
+        np.clip(
+            np.searchsorted(
+                arcs,
+                target_distance_m,
+                side="left",
+            )
+            - 1,
+            0,
+            len(centres) - 1,
+        )
+    )
+    return max(minimum_segment, preferred_segment)
 
 
 def _nearest_link(chain: list[Link], point: np.ndarray) -> Link | None:

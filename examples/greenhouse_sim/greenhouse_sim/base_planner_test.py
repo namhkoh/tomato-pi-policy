@@ -84,19 +84,20 @@ class _PointingDirectionFakeModel(_FakeModel):
         )
 
 
-def test_planner_points_left_ee_positive_z_away_from_robot_forward() -> None:
-    candidate = base_planner.GraspCandidate(
-        collider="target",
-        body="target_body",
-        segment=1,
-        role="petiole_grasp",
-        centre_m=(0.0, 1.0, 1.0),
-        axis=(1.0, 0.0, 0.0),
-    )
-    for yaw_degrees, expected in (
-        (90.0, (0.0, -1.0, 0.0)),
-        (-90.0, (0.0, 1.0, 0.0)),
+def test_planner_points_left_ee_positive_z_away_from_target_bearing() -> None:
+    for yaw_degrees, target, expected in (
+        (90.0, (0.0, 1.0, 1.0), (0.0, -1.0, 0.0)),
+        (-90.0, (0.0, 1.0, 1.0), (0.0, -1.0, 0.0)),
+        (90.0, (1.0, 1.0, 1.0), (-2**-0.5, -2**-0.5, 0.0)),
     ):
+        candidate = base_planner.GraspCandidate(
+            collider="target",
+            body="target_body",
+            segment=1,
+            role="petiole_grasp",
+            centre_m=target,
+            axis=(1.0, 0.0, 0.0),
+        )
         model = _PointingDirectionFakeModel()
         plan = base_planner.plan_target_conditioned_base(
             model,
@@ -113,6 +114,84 @@ def test_planner_points_left_ee_positive_z_away_from_robot_forward() -> None:
         )
         assert plan is not None
         np.testing.assert_allclose(model.pointing_directions[-1], expected, atol=1e-12)
+
+
+class _TransverseDirectionFakeModel(_FakeModel):
+    def __init__(self) -> None:
+        self.pointing_directions = []
+        self.transverse_directions = []
+
+    def solve_position_axes(
+        self,
+        _side,
+        *,
+        target_point_m,
+        pointing_direction,
+        transverse_direction,
+        **_kwargs,
+    ):
+        self.pointing_directions.append(
+            tuple(float(value) for value in pointing_direction)
+        )
+        self.transverse_directions.append(
+            tuple(float(value) for value in transverse_direction)
+        )
+        return robot_kinematics.IKResult(
+            joint_degrees=(float(target_point_m[2]),) + (0.0,) * 6,
+            position_error_m=0.0,
+            orientation_error_rad=0.0,
+            cost=0.0,
+            succeeded=True,
+        )
+
+
+def test_planner_evaluates_and_records_angle_and_jaw_roll_orientations() -> None:
+    candidate = base_planner.GraspCandidate(
+        collider="target",
+        body="target_body",
+        segment=1,
+        role="petiole_grasp",
+        centre_m=(0.0, -1.0, 1.0),
+        axis=(0.0, 0.0, 1.0),
+    )
+    model = _TransverseDirectionFakeModel()
+    diagnostics = {}
+
+    plan = base_planner.plan_target_conditioned_base(
+        model,
+        nominal_position_m=(0.0, 0.0, 0.0),
+        yaw_degrees=0.0,
+        candidates=(candidate,),
+        obstacles=(),
+        jaw_local_point_m=(0.0, 0.0, 0.0),
+        camera_local_centre_m=(0.0, 0.0, 0.0),
+        camera_radius_m=0.0,
+        seeds=((0.0,) * 7,),
+        advances_m=(0.0,),
+        minimum_camera_clearance_m=0.0,
+        grasp_approach_yaw_offsets_degrees=(0.0, 20.0),
+        grasp_transverse_signs=(1.0, -1.0),
+        diagnostics=diagnostics,
+    )
+
+    assert plan is not None
+    assert set(model.transverse_directions) == {
+        (1.0, 0.0, 0.0),
+        (-1.0, 0.0, 0.0),
+        (0.9396926207859084, 0.3420201433256687, 0.0),
+        (-0.9396926207859084, -0.3420201433256687, 0.0),
+    }
+    assert len(model.pointing_directions) == 4
+    assert {
+        attempt["grasp_approach_yaw_offset_degrees"]
+        for attempt in diagnostics["attempts"]
+    } == {0.0, 20.0}
+    assert {attempt["grasp_transverse_sign"] for attempt in diagnostics["attempts"]} == {
+        1.0,
+        -1.0,
+    }
+    assert plan.selected_grasp_approach_yaw_offset_degrees in (0.0, 20.0)
+    assert plan.selected_grasp_transverse_sign in (-1.0, 1.0)
 
 
 class _BodyClearanceFakeModel(_FakeModel):
@@ -248,6 +327,70 @@ def test_planner_rejects_clear_endpoint_with_colliding_approach_chord() -> None:
     assert diagnostics["attempts"][0]["grasp_arm_clearance_m"] == 0.05
     assert diagnostics["attempts"][0]["trajectory_arm_clearance_m"] == -0.02
 
+
+class _FoliageTrajectoryClearanceFakeModel(_TrajectoryClearanceFakeModel):
+    def fixed_body_oriented_box_clearance(self, _base_matrix, _obstacles):
+        return robot_kinematics.ClearanceResult(float("inf"), None)
+
+    def arm_oriented_box_clearance(
+        self,
+        _side,
+        arm_degrees,
+        base_matrix,
+        _obstacles,
+    ):
+        progress = float(arm_degrees[0])
+        nominal_lane = abs(float(base_matrix[1, 3])) < 0.1
+        clearance = -0.02 if nominal_lane and 0.25 < progress < 0.75 else 0.05
+        return robot_kinematics.ClearanceResult(clearance, "arm/foliage")
+
+
+def test_planner_rejects_foliage_intersection_on_clear_capsule_route() -> None:
+    candidate = base_planner.GraspCandidate(
+        collider="link_1",
+        body="body_1",
+        segment=1,
+        role="petiole_grasp",
+        centre_m=(0.0, -1.0, 1.0),
+        axis=(0.0, 0.0, 1.0),
+    )
+    foliage = robot_kinematics.OrientedBoxObstacle(
+        path="foliage",
+        centre_m=(100.0, 100.0, 100.0),
+        rotation=((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+        half_extents_m=(0.01, 0.01, 0.01),
+    )
+    diagnostics = {}
+
+    plan = base_planner.plan_target_conditioned_base(
+        _FoliageTrajectoryClearanceFakeModel(),
+        nominal_position_m=(0.0, 0.0, 0.0),
+        yaw_degrees=0.0,
+        candidates=(candidate,),
+        obstacles=(),
+        foliage_obstacles=(foliage,),
+        jaw_local_point_m=(0.0, 0.0, 0.0),
+        camera_local_centre_m=(0.0, 0.0, 0.0),
+        camera_radius_m=0.0,
+        seeds=((0.0,) * 7,),
+        advances_m=(0.0,),
+        lateral_offsets_m=(0.0, 0.3),
+        left_waiting_degrees=(0.0,) * 7,
+        left_approach_start_degrees=(0.0,) * 7,
+        minimum_camera_clearance_m=0.0,
+        minimum_trajectory_clearance_m=0.01,
+        minimum_foliage_clearance_m=0.001,
+        trajectory_samples=5,
+        diagnostics=diagnostics,
+    )
+
+    assert plan is not None
+    assert plan.lateral_m == 0.3
+    assert diagnostics["attempts"][0][
+        "trajectory_arm_foliage_clearance_m"
+    ] == -0.02
+    assert diagnostics["minimum_foliage_clearance_m"] == 0.001
+
 class _PayloadClearanceFakeModel(_FakeModel):
     def forward(self, _side, arm_degrees, base_matrix):
         matrix = np.eye(4, dtype=np.float64)
@@ -305,6 +448,33 @@ def test_planner_rejects_neighbour_collision_with_finger_payload() -> None:
     assert "ee_finger_l1" in plan.nearest_payload_obstacle
 
 
+def test_open_finger_must_clear_target_branch_foliage_during_approach() -> None:
+    model = _PayloadClearanceFakeModel()
+    foliage = robot_kinematics.OrientedBoxObstacle(
+        path="target_branch_foliage",
+        centre_m=(0.0, 0.0, 0.0),
+        rotation=((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+        half_extents_m=(0.02, 0.02, 0.02),
+    )
+    finger_box = ((
+        "ee_finger_l1",
+        (0.0, 0.0, 0.0),
+        np.eye(3),
+        (0.01, 0.01, 0.01),
+    ),)
+    clearance = base_planner._tool_payload_foliage_clearance(
+        model,
+        (0.0,) * 7,
+        np.eye(4),
+        (foliage,),
+        finger_box,
+        (foliage.path,),
+    )
+
+    assert clearance.clearance_m < 0.0
+    assert clearance.nearest_obstacle.startswith("ee_finger_l1")
+
+
 def test_joint_space_route_search_goes_around_blocked_direct_chord() -> None:
     def valid(values):
         return float(np.linalg.norm(values)) > 0.30
@@ -328,6 +498,95 @@ def test_joint_space_route_search_goes_around_blocked_direct_chord() -> None:
     for first, second in zip(points, points[1:]):
         for fraction in np.linspace(0.0, 1.0, 51):
             assert valid(first + fraction * (second - first))
+
+
+def test_planner_bounds_expensive_joint_space_route_searches(monkeypatch) -> None:
+    model = _TrajectoryClearanceFakeModel()
+    model.arm_limits_degrees = lambda _side: (
+        np.full(7, -180.0),
+        np.full(7, 180.0),
+    )
+    searches = []
+
+    def no_route(*args, **kwargs):
+        searches.append((args, kwargs))
+        return None
+
+    monkeypatch.setattr(base_planner, "_plan_joint_space_route", no_route)
+    candidate = base_planner.GraspCandidate(
+        collider="link_1",
+        body="body_1",
+        segment=1,
+        role="petiole_grasp",
+        centre_m=(0.0, -1.0, 1.0),
+        axis=(0.0, 0.0, 1.0),
+    )
+    diagnostics = {}
+
+    plan = base_planner.plan_target_conditioned_base(
+        model,
+        nominal_position_m=(0.0, 0.0, 0.0),
+        yaw_degrees=0.0,
+        candidates=(candidate,),
+        obstacles=(),
+        jaw_local_point_m=(0.0, 0.0, 0.0),
+        camera_local_centre_m=(0.0, 0.0, 0.0),
+        camera_radius_m=0.0,
+        seeds=((0.0,) * 7, (1.0,) * 7),
+        advances_m=(0.0,),
+        lateral_offsets_m=(0.0,),
+        left_waiting_degrees=(0.0,) * 7,
+        left_approach_start_degrees=(0.0,) * 7,
+        minimum_camera_clearance_m=0.0,
+        minimum_trajectory_clearance_m=0.01,
+        trajectory_samples=5,
+        joint_space_search_iterations=100,
+        maximum_joint_space_route_searches=1,
+        diagnostics=diagnostics,
+    )
+
+    assert plan is None
+    assert len(searches) == 1
+    assert diagnostics["joint_space_route_searches"] == 1
+    assert diagnostics["maximum_joint_space_route_searches"] == 1
+
+
+def test_online_planner_stops_after_first_safe_plan() -> None:
+    class CountingModel(_FakeModel):
+        def __init__(self):
+            self.solve_calls = 0
+
+        def solve_position_axes(self, *args, **kwargs):
+            self.solve_calls += 1
+            return super().solve_position_axes(*args, **kwargs)
+
+    model = CountingModel()
+    candidate = base_planner.GraspCandidate(
+        collider="link_1",
+        body="body_1",
+        segment=1,
+        role="petiole_grasp",
+        centre_m=(0.0, -1.0, 1.0),
+        axis=(0.0, 0.0, 1.0),
+    )
+
+    plan = base_planner.plan_target_conditioned_base(
+        model,
+        nominal_position_m=(0.0, 0.0, 0.0),
+        yaw_degrees=0.0,
+        candidates=(candidate,),
+        obstacles=(),
+        jaw_local_point_m=(0.0, 0.0, 0.0),
+        camera_local_centre_m=(0.0, 0.0, 0.0),
+        camera_radius_m=0.0,
+        seeds=((0.0,) * 7, (1.0,) * 7),
+        advances_m=(0.03, 0.06),
+        minimum_camera_clearance_m=0.0,
+        stop_on_first_feasible=True,
+    )
+
+    assert plan is not None
+    assert model.solve_calls == 1
 
 class _BimanualFakeModel(_FakeModel):
     def solve_position_axes(self, _side, *, target_point_m, base_matrix, **_kwargs):

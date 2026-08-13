@@ -22,6 +22,7 @@ import argparse
 import contextlib
 import dataclasses
 import json
+import math
 import pathlib
 import re
 import sys
@@ -38,6 +39,7 @@ _RBY1_CHASSIS_MIN_LOCAL_M = (-0.325, -0.250)
 _RBY1_CHASSIS_MAX_LOCAL_M = (0.295, 0.250)
 _MINIMUM_BASE_STRUCTURE_CLEARANCE_M = 0.03
 _MINIMUM_GREENHOUSE_CLEARANCE_M = 0.01
+_MINIMUM_FOLIAGE_CLEARANCE_M = 0.0005
 _WARM_START_COMFORTABLE_CLEARANCE_M = 0.012
 
 # At 240 Hz this impulse ceiling is about 2.4 N average contact force.
@@ -59,6 +61,7 @@ class VineRuntime:
     severer: object
     organ_indices: dict[str, int]
     cut_sites: dict[str, tuple[float, float, float]]
+    placement_m: tuple[float, float, float]
     rest_positions: object | None = None
 
 
@@ -77,11 +80,34 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--robot-position-mode",
-        choices=("target-conditioned", "fixed"),
+        choices=("target-conditioned", "planned-fixed", "fixed"),
         default="target-conditioned",
-        help="pre-position for a distal collision-clear target grasp, or preserve --robot-position exactly",
+        help=(
+            "search a target-conditioned base, validate an exact supplied base "
+            "with target-conditioned planning, or preserve it without preplanning"
+        ),
     )
     parser.add_argument("--robot-yaw", type=float, default=90.0)
+    parser.add_argument(
+        "--base-planning-budget",
+        choices=("online", "exhaustive"),
+        default="online",
+        help=(
+            "use one short joint-space fallback for RL resets, or unbounded "
+            "offline route precomputation"
+        ),
+    )
+    parser.add_argument(
+        "--left-grasp-approach-yaw",
+        type=float,
+        nargs="+",
+        default=None,
+        metavar="DEG",
+        help=(
+            "optional ordered jaw-approach yaw offsets for deterministic "
+            "validation; defaults to the complete bounded search"
+        ),
+    )
     parser.add_argument("--physics-vines", type=int, default=1)
     parser.add_argument(
         "--target-vine",
@@ -125,9 +151,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--visual-pull-probe", action="store_true")
     parser.add_argument(
         "--bimanual-probe",
-        choices=("left_approach", "right_approach", "full"),
+        choices=("target_screen", "left_approach", "right_approach", "full"),
         default=None,
-        help="run a staged robot approach or full deleafing acceptance",
+        help="screen petiole tool corridors, run a staged approach, or run full deleafing acceptance",
     )
     parser.add_argument(
         "--motion-steps",
@@ -319,6 +345,12 @@ def main() -> int:
         return 1
     if args.neighbor_safety_vines < 0:
         print("--neighbor-safety-vines cannot be negative")
+        return 1
+    if args.left_grasp_approach_yaw is not None and any(
+        not math.isfinite(value) or abs(value) > 60.0
+        for value in args.left_grasp_approach_yaw
+    ):
+        print("--left-grasp-approach-yaw values must be finite and within +/-60 degrees")
         return 1
     if args.teleop_command_file is not None and args.no_robot:
         print("--teleop-command-file requires the fitted robot")
@@ -518,6 +550,7 @@ def main() -> int:
                 severer=cutting.Severer(stage, rig, skeletons, organ_indices),
                 organ_indices=organ_indices,
                 cut_sites=cut_sites,
+                placement_m=tuple(float(value) for value in placement_centre),
             )
         )
 
@@ -571,11 +604,15 @@ def main() -> int:
         runtime for runtime in runtimes if runtime.name == selected_target.vine_name
     )
 
+    planning_foliage_clearance_m = _MINIMUM_FOLIAGE_CLEARANCE_M
+
     def target_conditioned_base_plan(
         nominal_position_m,
         lateral_offsets_m,
         diagnostics,
         gripper_geometry=None,
+        advances_m=(0.0,),
+        candidates_override=None,
     ):
         camera_centre_m, camera_radius_m = robot_hardware.wrist_d405_body_sphere(side="left")
         payload_boxes = [
@@ -585,8 +622,13 @@ def main() -> int:
                 *robot_hardware.wrist_camera_bracket_box(side="left"),
             ),
         ]
+        planning_gripper_geometry = (
+            _LEFT_GRIPPER_PLANNING_GEOMETRY
+            if gripper_geometry is None
+            else gripper_geometry
+        )
         for name, geometry in (
-            (gripper_geometry or {}).get("fingers") or {}
+            planning_gripper_geometry.get("fingers") or {}
         ).items():
             minimum = np.asarray(
                 geometry["collider_min_ee_m"], dtype=np.float64
@@ -602,17 +644,26 @@ def main() -> int:
                     0.5 * (maximum - minimum),
                 )
             )
+        exhaustive_base_planning = args.base_planning_budget == "exhaustive"
         return base_planner.plan_target_conditioned_base(
             robot_kinematics.Rby1Kinematics(),
             nominal_position_m=nominal_position_m,
             yaw_degrees=args.robot_yaw,
-            candidates=_target_grasp_candidates(
-                stage,
-                selected_runtime,
-                selected_target.organ_label,
-                base_planner,
+            candidates=(
+                _target_grasp_candidates(
+                    stage,
+                    selected_runtime,
+                    selected_target.organ_label,
+                    base_planner,
+                )
+                if candidates_override is None
+                else tuple(candidates_override)
             ),
             obstacles=_vine_capsule_obstacles(stage, robot_kinematics),
+            foliage_obstacles=_VineFoliageBoxObstacleCache(
+                stage,
+                robot_kinematics,
+            ).snapshot(),
             jaw_local_point_m=_LEFT_JAW_CENTRE_M,
             camera_local_centre_m=camera_centre_m,
             camera_radius_m=camera_radius_m,
@@ -623,10 +674,10 @@ def main() -> int:
                 _LEFT_APPROACH_SEEDS_DEGREES[0.0],
                 *_LEFT_MULTISTART_SEEDS_DEGREES,
             ),
-            advances_m=(0.0,),
+            advances_m=advances_m,
             lateral_offsets_m=lateral_offsets_m,
-            left_waiting_degrees=_LEFT_READY_DEGREES,
-            left_approach_start_degrees=_LEFT_READY_DEGREES,
+            left_waiting_degrees=_LEFT_GREENHOUSE_WAITING_DEGREES,
+            left_approach_start_degrees=_LEFT_GREENHOUSE_WAITING_DEGREES,
             left_approach_waypoint_routes=(
                 (),
                 (_LEFT_APPROACH_SEEDS_DEGREES[0.10],),
@@ -642,12 +693,149 @@ def main() -> int:
             right_waiting_degrees=_RIGHT_SAFE_DEGREES,
             reach_reserve_m=0.0,
             minimum_trajectory_clearance_m=0.005,
+            minimum_foliage_clearance_m=planning_foliage_clearance_m,
             trajectory_samples=31,
-            joint_space_search_iterations=2500,
+            joint_space_search_iterations=(2500 if exhaustive_base_planning else 400),
+            maximum_joint_space_route_searches=(
+                None if exhaustive_base_planning else 3
+            ),
+            maximum_ik_evaluations=(
+                5000 if exhaustive_base_planning else 250
+            ),
+            grasp_approach_yaw_offsets_degrees=(
+                _LEFT_GRASP_APPROACH_YAW_OFFSETS_DEGREES
+                if args.left_grasp_approach_yaw is None
+                else tuple(args.left_grasp_approach_yaw)
+            ),
+            grasp_transverse_signs=(1.0, -1.0),
             joint_space_search_seed=args.episode_seed,
+            stop_on_first_feasible=not exhaustive_base_planning,
             minimum_inter_arm_clearance_m=0.05,
             diagnostics=diagnostics,
         )
+    context = None
+    if (
+        not args.no_robot
+        and args.robot_position_mode
+        in {"target-conditioned", "planned-fixed"}
+    ):
+        # Let gravity and trellis constraints establish the plant geometry
+        # before selecting or validating a parked base and arm route. Planning
+        # either mode against the imported pose allowed leaves to sag 10--30 mm
+        # into an otherwise clear endpoint during normal startup settling.
+        from isaacsim.core.api import SimulationContext
+
+        context = SimulationContext(
+            physics_dt=1.0 / 240.0,
+            rendering_dt=1.0 / 60.0,
+            stage_units_in_meters=1.0,
+        )
+        context.initialize_physics()
+        context.get_physics_context().set_gravity(-9.81)
+        context.play()
+        tracked_paths = [
+            path
+            for runtime in runtimes
+            for path in _base_link_paths(runtime.rig)
+        ]
+        previous_positions = _positions(stage, tracked_paths)
+        settle_window_steps = 120
+        minimum_settle_steps = max(args.settle_steps, 240)
+        maximum_settle_steps = max(minimum_settle_steps, 2880)
+        # A damped live vine should retain bounded natural motion rather than
+        # become numerically frozen. Require a repeatable <=2 mm half-second
+        # sway envelope, then add that measured envelope to the immutable
+        # 0.5 mm collision reserve used by every planning check.
+        settle_tolerance_m = 0.002
+        required_stable_windows = 3
+        stable_windows = 0
+        settle_history = []
+        settle_steps = 0
+        for settle_steps in range(1, maximum_settle_steps + 1):
+            context.step(render=False)
+            if settle_steps % settle_window_steps:
+                continue
+            current_positions = _positions(stage, tracked_paths)
+            finite = bool(np.isfinite(current_positions).all())
+            maximum_displacement_m = (
+                float(
+                    np.max(
+                        np.linalg.norm(
+                            current_positions - previous_positions,
+                            axis=1,
+                        )
+                    )
+                )
+                if finite
+                else float("inf")
+            )
+            stable_windows = (
+                stable_windows + 1
+                if (
+                    finite
+                    and settle_steps >= minimum_settle_steps
+                    and maximum_displacement_m <= settle_tolerance_m
+                )
+                else 0
+            )
+            settle_history.append(
+                {
+                    "steps": settle_steps,
+                    "maximum_window_displacement_mm": (
+                        maximum_displacement_m * 1000.0
+                    ),
+                    "stable_windows": stable_windows,
+                }
+            )
+            previous_positions = current_positions
+            if stable_windows >= required_stable_windows:
+                break
+        # Pause rather than stop: stop restores authored rigid-body transforms
+        # and silently discards the equilibrium geometry we need to plan
+        # against. PhysX observes the subsequently authored robot prims while
+        # the live vine scene remains paused.
+        context.pause()
+        measured_sway_m = (
+            max(
+                record["maximum_window_displacement_mm"]
+                for record in settle_history[-required_stable_windows:]
+            )
+            * 0.001
+            if stable_windows >= required_stable_windows
+            else float("inf")
+        )
+        if np.isfinite(measured_sway_m):
+            planning_foliage_clearance_m = (
+                _MINIMUM_FOLIAGE_CLEARANCE_M + measured_sway_m
+            )
+        report["preplanning_vine_settle"] = {
+            "enabled": True,
+            "steps": settle_steps,
+            "physics_dt_s": 1.0 / 240.0,
+            "robot_authored": False,
+            "state_preservation": "paused_live_physics_scene",
+            "converged": stable_windows >= required_stable_windows,
+            "window_steps": settle_window_steps,
+            "tolerance_mm": settle_tolerance_m * 1000.0,
+            "required_stable_windows": required_stable_windows,
+            "measured_sway_envelope_mm": measured_sway_m * 1000.0,
+            "planning_foliage_clearance_mm": (
+                planning_foliage_clearance_m * 1000.0
+            ),
+            "history": settle_history,
+        }
+        if stable_windows < required_stable_windows:
+            report.update(
+                stage="failed",
+                error=(
+                    "vine physics did not enter bounded stationary sway before "
+                    "target-conditioned planning"
+                ),
+            )
+            _emit(report, args.report)
+            context.stop()
+            app.close()
+            return 1
     greenhouse_structure_obstacles = ()
     greenhouse_wall_colliders = ()
     if not args.no_robot:
@@ -655,9 +843,13 @@ def main() -> int:
             selected_runtime.cut_sites[selected_target.organ_label],
             dtype=np.float64,
         )
+        aisle_reference = np.asarray(
+            selected_runtime.placement_m,
+            dtype=np.float64,
+        )
         aisle_bounds = _approach_aisle_base_bounds(
             stage,
-            target_reference,
+            aisle_reference,
             args.robot_yaw,
             Usd,
             UsdGeom,
@@ -669,13 +861,19 @@ def main() -> int:
             else tuple(float(value) for value in args.robot_position)
         )
         if args.robot_position is None:
+            nominal_base_reference = (
+                aisle_reference
+                if "auto" in (args.target_vine, args.target_organ)
+                else target_reference
+            )
             args.robot_position = _default_robot_position(
                 stage,
-                target_reference,
+                nominal_base_reference,
                 args.robot_yaw,
                 Usd,
                 UsdGeom,
                 np,
+                aisle_reference=aisle_reference,
             )
         elif args.robot_position_mode == "target-conditioned":
             args.robot_position = (
@@ -697,11 +895,48 @@ def main() -> int:
             app.close()
             return 1
         nominal_robot_position = tuple(float(value) for value in args.robot_position)
-        if args.robot_position_mode == "target-conditioned":
+        base_depth_advances_m = (0.0,)
+        if args.robot_position_mode in {
+            "target-conditioned",
+            "planned-fixed",
+        }:
+            # Search from a safely retreated aisle pose toward the crop row.
+            # The previous single-depth search parked at y=4.800 m; a distal
+            # grasp could be endpoint-clear there while its incoming D405 and
+            # bracket chord intersected the main stem. Keep every sample
+            # inside the measured aisle and retain the original near-row pose
+            # as the final candidate.
+            if args.robot_position_mode == "target-conditioned":
+                maximum_retreat_m = 0.20
+                far_y_m = max(
+                    float(aisle_bounds["minimum_base_y_m"]) + 0.05,
+                    float(nominal_robot_position[1]) - maximum_retreat_m,
+                )
+                depth_span_m = float(nominal_robot_position[1]) - far_y_m
+                nominal_robot_position = (
+                    float(nominal_robot_position[0]),
+                    far_y_m,
+                    float(nominal_robot_position[2]),
+                )
+                base_depth_advances_m = tuple(
+                    dict.fromkeys(
+                        float(value)
+                        for value in (
+                            min(0.03, depth_span_m),
+                            0.5 * depth_span_m,
+                            depth_span_m,
+                        )
+                        if value >= 0.0
+                    )
+                )
             base_diagnostics = {}
-            base_plan = target_conditioned_base_plan(
-                nominal_robot_position,
-                (
+            base_lateral_offsets_m = (
+                (0.0,)
+                if (
+                    requested_robot_position is not None
+                    or args.robot_position_mode == "planned-fixed"
+                )
+                else (
                     0.0,
                     -0.15,
                     0.15,
@@ -709,9 +944,152 @@ def main() -> int:
                     0.30,
                     -0.45,
                     0.45,
-                ),
-                base_diagnostics,
+                )
             )
+            automatic_target_records = []
+            automatic_target_by_collider = {}
+            automatic_candidates = None
+            if "auto" in (args.target_vine, args.target_organ):
+                runtime_by_name = {
+                    runtime.name: runtime for runtime in runtimes
+                }
+                target_options = tuple(
+                    (vine_name, organ_label)
+                    for vine_name, organ_label in episode.candidate_targets(runtimes)
+                    if (
+                        args.target_vine == "auto"
+                        or vine_name == args.target_vine
+                    )
+                    and (
+                        args.target_organ == "auto"
+                        or organ_label == args.target_organ
+                    )
+                )
+                for target_index, (vine_name, organ_label) in enumerate(
+                    target_options
+                ):
+                    runtime = runtime_by_name[vine_name]
+                    target_candidates = _target_grasp_candidates(
+                        stage,
+                        runtime,
+                        organ_label,
+                        base_planner,
+                    )
+                    if not target_candidates:
+                        continue
+                    preferred = max(
+                        target_candidates,
+                        key=lambda candidate: (
+                            candidate.role == "petiole_grasp",
+                            candidate.segment,
+                        ),
+                    )
+                    height_from_floor_m = (
+                        float(preferred.centre_m[2])
+                        - float(nominal_robot_position[2])
+                    )
+                    # Keep a deliberately broad RB-Y1 work-height gate. It
+                    # removes obviously unreachable upper/lower branches
+                    # before exact IK while retaining every petiole around the
+                    # demonstrated 1.1--1.8 m greenhouse work band.
+                    work_height_eligible = 0.85 <= height_from_floor_m <= 2.10
+                    record = {
+                        "candidate_index": target_index,
+                        "vine_name": vine_name,
+                        "organ_label": organ_label,
+                        "key": f"{vine_name}/{organ_label}",
+                        "collider": preferred.collider,
+                        "body": preferred.body,
+                        "segment": preferred.segment,
+                        "centre_m": list(preferred.centre_m),
+                        "height_from_floor_m": height_from_floor_m,
+                        "work_height_eligible": work_height_eligible,
+                    }
+                    automatic_target_records.append(record)
+                    if work_height_eligible:
+                        automatic_target_by_collider[preferred.collider] = record
+                automatic_target_records.sort(
+                    key=lambda record: (
+                        not record["work_height_eligible"],
+                        abs(record["height_from_floor_m"] - 1.85),
+                        record["key"],
+                    )
+                )
+                automatic_candidates = tuple(
+                    next(
+                        candidate
+                        for candidate in _target_grasp_candidates(
+                            stage,
+                            runtime_by_name[record["vine_name"]],
+                            record["organ_label"],
+                            base_planner,
+                        )
+                        if candidate.collider == record["collider"]
+                    )
+                    for record in automatic_target_records
+                    if record["work_height_eligible"]
+                )
+                report["automatic_target_screen"] = {
+                    "mode": "joint_feasibility_before_seeded_selection",
+                    "requested_vine": args.target_vine,
+                    "requested_organ": args.target_organ,
+                    "candidate_count": len(target_options),
+                    "work_height_candidate_count": len(automatic_candidates),
+                    "candidates": automatic_target_records,
+                }
+            maximum_initial_foliage_retries = 8
+            initial_foliage_retry_steps = 30
+            initial_planning_history = []
+            base_plan = None
+            for planning_index in range(
+                maximum_initial_foliage_retries + 1
+            ):
+                attempt_diagnostics = {}
+                base_plan = target_conditioned_base_plan(
+                    nominal_robot_position,
+                    base_lateral_offsets_m,
+                    attempt_diagnostics,
+                    advances_m=base_depth_advances_m,
+                    candidates_override=automatic_candidates,
+                )
+                initial_planning_history.append(attempt_diagnostics)
+                if base_plan is not None:
+                    break
+                rejection_reasons = {
+                    rejection.get("reason")
+                    for rejection in attempt_diagnostics.get(
+                        "position_rejections", ()
+                    )
+                }
+                retryable_foliage_rejection = bool(
+                    rejection_reasons
+                ) and (
+                    rejection_reasons
+                    <= {
+                        "fixed_body_foliage_clearance",
+                        "waiting_arm_foliage_clearance",
+                    }
+                )
+                if (
+                    automatic_candidates is not None
+                    or not retryable_foliage_rejection
+                    or planning_index >= maximum_initial_foliage_retries
+                ):
+                    break
+                context.play()
+                for _ in range(initial_foliage_retry_steps):
+                    context.step(render=False)
+                context.pause()
+            base_diagnostics = {
+                **initial_planning_history[-1],
+                "live_foliage_retry": {
+                    "attempts": len(initial_planning_history),
+                    "maximum_retries": maximum_initial_foliage_retries,
+                    "steps_per_retry": initial_foliage_retry_steps,
+                    "succeeded": base_plan is not None,
+                    "history": initial_planning_history,
+                },
+            }
             if base_plan is None:
                 report.update(
                     stage="failed",
@@ -724,12 +1102,48 @@ def main() -> int:
                 _emit(report, args.report)
                 app.close()
                 return 1
+            if automatic_candidates is not None:
+                selected_record = automatic_target_by_collider.get(
+                    base_plan.selected_grasp_collider
+                )
+                if selected_record is None:
+                    raise RuntimeError(
+                        "automatic base plan lost selected target identity"
+                    )
+                selected_target = episode.EpisodeTarget(
+                    vine_name=selected_record["vine_name"],
+                    organ_label=selected_record["organ_label"],
+                    candidate_index=selected_record["candidate_index"],
+                    candidate_count=len(target_options),
+                    seed=int(args.episode_seed),
+                )
+                selected_runtime = runtime_by_name[selected_target.vine_name]
+                target_reference = np.asarray(
+                    selected_runtime.cut_sites[selected_target.organ_label],
+                    dtype=np.float64,
+                )
+                aisle_bounds = _approach_aisle_base_bounds(
+                    stage,
+                    selected_runtime.placement_m,
+                    args.robot_yaw,
+                    Usd,
+                    UsdGeom,
+                    np,
+                )
+                report["automatic_target_screen"].update(
+                    selected_target=selected_target.key,
+                    selected_grasp_collider=(
+                        base_plan.selected_grasp_collider
+                    ),
+                )
             args.robot_position = base_plan.position_m
             report["robot_preposition"] = {
                 "mode": args.robot_position_mode,
                 **dataclasses.asdict(base_plan),
                 "requested_position_m": requested_robot_position,
                 "opposite_aisle": aisle_bounds,
+                "aisle_depth_advances_m": base_depth_advances_m,
+                "lateral_offsets_m": base_lateral_offsets_m,
             }
         else:
             report["robot_preposition"] = {
@@ -768,23 +1182,35 @@ def main() -> int:
             position_m=args.robot_position,
             yaw_degrees=args.robot_yaw,
         )
-        if args.rl_initial_left_arm is not None:
+        if args.teleop_command_file is None:
+            initial_left_degrees = (
+                _LEFT_GREENHOUSE_WAITING_DEGREES
+                if args.rl_initial_left_arm is None
+                else tuple(float(value) for value in args.rl_initial_left_arm)
+            )
             _set_joint_group_initial_state(
                 stage,
                 "left",
-                tuple(float(value) for value in args.rl_initial_left_arm),
+                initial_left_degrees,
             )
-            report["online_rl_curriculum_start_left_degrees"] = list(args.rl_initial_left_arm)
+            _set_joint_group_initial_state(stage, "right", _RIGHT_SAFE_DEGREES)
+            report["greenhouse_robot_startup_pose"] = {
+                "source": (
+                    "online_rl_curriculum_override"
+                    if args.rl_initial_left_arm is not None
+                    else "greenhouse_safe_waiting"
+                ),
+                "left_degrees": list(initial_left_degrees),
+                "right_degrees": list(_RIGHT_SAFE_DEGREES),
+            }
+            if args.rl_initial_left_arm is not None:
+                report["online_rl_curriculum_start_left_degrees"] = list(
+                    args.rl_initial_left_arm
+                )
         if args.teleop_command_file is not None:
             startup_targets = {
-                "left": tuple(
-                    robot_scene.SDK_READY_POSE_DEGREES[f"left_arm_{index}"]
-                    for index in range(7)
-                ),
-                "right": tuple(
-                    robot_scene.SDK_READY_POSE_DEGREES[f"right_arm_{index}"]
-                    for index in range(7)
-                ),
+                "left": _LEFT_GREENHOUSE_WAITING_DEGREES,
+                "right": _RIGHT_SAFE_DEGREES,
                 "torso": tuple(
                     robot_scene.SDK_READY_POSE_DEGREES[f"torso_{index}"]
                     for index in range(6)
@@ -794,7 +1220,7 @@ def main() -> int:
                     for index in range(2)
                 ),
             }
-            startup_source = "sdk_ready_fallback"
+            startup_source = "greenhouse_safe_waiting_fallback"
             startup_error = None
             startup_age_ms = None
             try:
@@ -951,16 +1377,19 @@ def main() -> int:
             selected_target.vine_name,
             selected_target.organ_label,
         )
+        if args.bimanual_probe == "full" or args.rl_server:
+            grasp_manager.require_structural_counterhold()
         if teleop_startup_gripper_openness is not None:
             grasp_manager.request_openness(teleop_startup_gripper_openness)
         blade_cutting.set_counterhold_provider(grasp_manager.holds_target)
         report["bimanual_task"] = grasp_manager.summary
-    context = SimulationContext(
-        physics_dt=1.0 / 240.0,
-        rendering_dt=1.0 / 60.0,
-        stage_units_in_meters=1.0,
-    )
-    context.initialize_physics()
+    if context is None:
+        context = SimulationContext(
+            physics_dt=1.0 / 240.0,
+            rendering_dt=1.0 / 60.0,
+            stage_units_in_meters=1.0,
+        )
+        context.initialize_physics()
     if contact_diagnostics is not None:
         contact_diagnostics.subscribe()
     if blade_cutting is not None:
@@ -990,16 +1419,63 @@ def main() -> int:
 
     if (
         robot_placement is not None
-        and args.robot_position_mode == "target-conditioned"
+        and args.robot_position_mode in {
+            "target-conditioned",
+            "planned-fixed",
+        }
     ):
-        settled_base_diagnostics = {}
-        settled_base_plan = target_conditioned_base_plan(
-            tuple(float(value) for value in args.robot_position),
-            (0.0,),
-            settled_base_diagnostics,
-            grasp_manager.summary.get("gripper_geometry"),
-        )
-        report["settled_base_planning"] = settled_base_diagnostics
+        maximum_live_foliage_retries = 8
+        live_foliage_retry_steps = 30
+        settled_planning_history = []
+        settled_base_plan = None
+        for planning_index in range(maximum_live_foliage_retries + 1):
+            settled_base_diagnostics = {}
+            settled_base_plan = target_conditioned_base_plan(
+                tuple(float(value) for value in args.robot_position),
+                (0.0,),
+                settled_base_diagnostics,
+                grasp_manager.summary.get("gripper_geometry"),
+            )
+            settled_planning_history.append(settled_base_diagnostics)
+            if settled_base_plan is not None:
+                break
+            rejection_reasons = {
+                rejection.get("reason")
+                for rejection in settled_base_diagnostics.get(
+                    "position_rejections", ()
+                )
+            }
+            retryable_foliage_rejection = bool(rejection_reasons) and (
+                rejection_reasons
+                <= {
+                    "fixed_body_foliage_clearance",
+                    "waiting_arm_foliage_clearance",
+                }
+            )
+            if (
+                not retryable_foliage_rejection
+                or planning_index >= maximum_live_foliage_retries
+            ):
+                break
+            for _ in range(live_foliage_retry_steps):
+                context.step(render=False)
+                grasp_manager.process()
+                _apply_blade_cut_decisions(
+                    context,
+                    blade_cutting,
+                    report,
+                    grasp_manager=grasp_manager,
+                )
+        report["settled_base_planning"] = {
+            **settled_planning_history[-1],
+            "live_foliage_retry": {
+                "attempts": len(settled_planning_history),
+                "maximum_retries": maximum_live_foliage_retries,
+                "steps_per_retry": live_foliage_retry_steps,
+                "succeeded": settled_base_plan is not None,
+                "history": settled_planning_history,
+            },
+        }
         if settled_base_plan is None:
             report.update(
                 stage="failed",
@@ -1616,7 +2092,14 @@ def _approach_aisle_base_bounds(
 
 
 def _default_robot_position(
-    stage, placement, yaw_degrees, Usd, UsdGeom, np
+    stage,
+    placement,
+    yaw_degrees,
+    Usd,
+    UsdGeom,
+    np,
+    *,
+    aisle_reference=None,
 ) -> tuple[float, float, float]:
     """Place the base beside the selected gutter on its local cultivation floor."""
     target = np.asarray(placement, dtype=np.float64)
@@ -1641,7 +2124,12 @@ def _default_robot_position(
             f"no ground plane below selected vine placement {tuple(float(v) for v in target)}"
         )
     aisle = _approach_aisle_base_bounds(
-        stage, placement, yaw_degrees, Usd, UsdGeom, np
+        stage,
+        placement if aisle_reference is None else aisle_reference,
+        yaw_degrees,
+        Usd,
+        UsdGeom,
+        np,
     )
     return (
         float(target[0] + 0.12),
@@ -2149,6 +2637,11 @@ class BladeContactMonitor:
             "radius_m": target.radius_m,
             "colliders": tuple(colliders),
         }
+
+    @property
+    def target_keys(self) -> tuple[str, ...]:
+        """Return every severable petiole target authored for the live vines."""
+        return tuple(sorted(self._targets))
 
     @property
     def active_cut_feedback(self) -> dict | None:
@@ -2726,7 +3219,7 @@ class LeftGraspManager:
         robot_placement,
         task_parameters,
         *,
-        open_width_m: float = 0.025,
+        open_width_m: float = 0.050,
         close_overtravel_m: float = 0.006,
     ) -> None:
         from greenhouse_sim import deleaf_task as task_module
@@ -2752,6 +3245,10 @@ class LeftGraspManager:
         self._close_overtravel_m = float(close_overtravel_m)
         self._close_requested = False
         self._requested_openness = 1.0
+        self._requested_finger_openness = {
+            "left_finger_1": 1.0,
+            "left_finger_2": 1.0,
+        }
         # A pinch is eligible only near the mechanically closed position. The
         # previous 0.95 threshold accepted a branch while the jaws were almost
         # fully open and made visual grasp placement inherently inaccurate.
@@ -2775,8 +3272,10 @@ class LeftGraspManager:
         self._previous_orphan_centroid = None
         self._latest_orphan_state = None
         self._latest_finger_contact: dict | None = None
+        self._current_finger_contact: dict | None = None
         self._finger_contact_serial = 0
         self._latest_geometric_jaw: dict | None = None
+        self._structural_counterhold_required = False
 
         self._finger_colliders = {
             f"{self._root_path}/ee_finger_l1/restored_collisions/contact_proxy":
@@ -2900,14 +3399,24 @@ class LeftGraspManager:
             )
         self._set_finger_targets(opened=True)
 
-    def _set_finger_openness(self, openness: float) -> None:
-        for drive, open_target in self._finger_drives:
+    def _set_finger_openness_pair(
+        self,
+        finger_1_openness: float,
+        finger_2_openness: float,
+    ) -> None:
+        for (drive, open_target), openness in zip(
+            self._finger_drives,
+            (finger_1_openness, finger_2_openness),
+        ):
             closed_target = (
                 -self._np.sign(open_target) * self._close_overtravel_m
             )
             target = closed_target + openness * (open_target - closed_target)
             drive.CreateTargetPositionAttr(float(target))
             drive.CreateTargetVelocityAttr(0.0)
+
+    def _set_finger_openness(self, openness: float) -> None:
+        self._set_finger_openness_pair(openness, openness)
 
     def _set_finger_targets(self, *, opened: bool) -> None:
         self._set_finger_openness(1.0 if opened else 0.0)
@@ -2942,6 +3451,7 @@ class LeftGraspManager:
         self._previous_orphan_centroid = None
         self._latest_orphan_state = None
         self._latest_finger_contact = None
+        self._current_finger_contact = None
         self._latest_geometric_jaw = None
         self._pending.clear()
         self._active_target = key
@@ -2951,6 +3461,10 @@ class LeftGraspManager:
             self._task_parameters,
         )
         self._requested_openness = 1.0
+        self._requested_finger_openness = {
+            "left_finger_1": 1.0,
+            "left_finger_2": 1.0,
+        }
         self._close_requested = False
         self._set_finger_targets(opened=True)
 
@@ -3100,6 +3614,67 @@ class LeftGraspManager:
         )
 
     @property
+    def current_finger_contact(self) -> dict | None:
+        """Return target contact observed during the current physics step."""
+        return (
+            None
+            if self._current_finger_contact is None
+            else dict(self._current_finger_contact)
+        )
+
+    @property
+    def target_capture_geometry(self) -> dict | None:
+        """Return selected structural tissue currently between the open jaws."""
+        return self.capture_geometry()
+
+    def capture_geometry(self, body_path: str | None = None) -> dict | None:
+        """Return structural tissue in the jaw, optionally locked to one body."""
+        candidates = []
+        for path in self._grasp_colliders_for_key.get(
+            self._active_target or "", ()
+        ):
+            info = self._grasp_colliders[path]
+            if body_path is not None and info["body"] != body_path:
+                continue
+            if info["role"] not in {
+                "petiole_grasp",
+                "petiole_cut_zone",
+            }:
+                continue
+            geometry = self._grasp_collider_geometry(path)
+            if geometry is None or not _open_jaw_capture_corridor_overlap(
+                geometry["minimum_ee_m"],
+                geometry["maximum_ee_m"],
+            ):
+                continue
+            candidates.append(
+                (
+                    geometry["distance_to_jaw_centre_m"],
+                    path,
+                    info,
+                    geometry,
+                )
+            )
+        if not candidates:
+            return None
+        _, path, info, geometry = min(
+            candidates, key=lambda item: item[0]
+        )
+        return {
+            "key": info["key"],
+            "collider": path,
+            "body": info["body"],
+            "role": info["role"],
+            "minimum_ee_m": geometry["minimum_ee_m"].tolist(),
+            "maximum_ee_m": geometry["maximum_ee_m"].tolist(),
+            "anchor_ee_m": geometry["anchor_ee_m"].tolist(),
+            "anchor_world_m": geometry["anchor_world_m"].tolist(),
+            "distance_to_jaw_centre_m": geometry[
+                "distance_to_jaw_centre_m"
+            ],
+        }
+
+    @property
     def close_requested(self) -> bool:
         """Return whether the measured physical aperture requests a pinch."""
         return self._close_requested
@@ -3167,23 +3742,49 @@ class LeftGraspManager:
 
     def request_openness(self, openness: float) -> None:
         """Track the measured physical aperture and preserve contact semantics."""
-        openness = float(openness)
-        if not self._np.isfinite(openness) or not 0.0 <= openness <= 1.0:
+        self.request_finger_openness(openness, openness)
+
+    def request_finger_openness(
+        self,
+        finger_1_openness: float,
+        finger_2_openness: float,
+    ) -> None:
+        """Set each jaw independently while preserving strict grasp semantics."""
+        values = (
+            float(finger_1_openness),
+            float(finger_2_openness),
+        )
+        if (
+            not all(self._np.isfinite(value) for value in values)
+            or not all(0.0 <= value <= 1.0 for value in values)
+        ):
             raise ValueError("left gripper openness must be between 0 and 1")
+        openness = max(values)
         if (
             self._active_joint_key is not None
             and openness >= self._release_threshold
         ):
             self._release_active_grasp()
         self._requested_openness = openness
+        self._requested_finger_openness = {
+            "left_finger_1": values[0],
+            "left_finger_2": values[1],
+        }
         self._close_requested = openness <= self._close_request_threshold
-        self._set_finger_openness(openness)
+        self._set_finger_openness_pair(*values)
 
     def request_close(self) -> None:
         self.request_openness(0.0)
 
     def request_open(self) -> None:
         self.request_openness(1.0)
+
+    def require_structural_counterhold(self, required: bool = True) -> None:
+        """Restrict automated counterhold to petiole tissue, not leaf proxies."""
+        if self._active_joint_key is not None:
+            raise RuntimeError("counterhold mode cannot change during an active grasp")
+        self._structural_counterhold_required = bool(required)
+
     def _set_joint_enabled(self, key: str, enabled: bool) -> None:
         joint = self._UsdPhysics.Joint(
             self._stage.GetPrimAtPath(self._joint_paths[key])
@@ -3357,6 +3958,11 @@ class LeftGraspManager:
         """Confirm that visible target geometry lies inside the closed jaws."""
         candidates = []
         for path, info in self._grasp_colliders.items():
+            if (
+                self._structural_counterhold_required
+                and info["role"] == "foliage_grasp"
+            ):
+                continue
             geometry = self._grasp_collider_geometry(path)
             if geometry is None or not _closing_jaw_corridor_overlap(
                 geometry["minimum_ee_m"],
@@ -3391,7 +3997,19 @@ class LeftGraspManager:
                 "source": "closing_jaw_geometry",
             }
             return []
-        _, path, info, geometry = min(candidates, key=lambda item: item[0])
+        active_candidates = [
+            candidate
+            for candidate in candidates
+            if candidate[2]["key"] == (self._active_target or "")
+        ]
+        # When the selected branch and incidental foliage overlap the closing
+        # jaw channel, preserve target evidence for the task state machine.
+        # The contact ledger still records and rejects protected non-target
+        # collisions; a nearer leaf must not starve a valid target pinch.
+        _, path, info, geometry = min(
+            active_candidates or candidates,
+            key=lambda item: item[0],
+        )
         closure = 1.0 - self._requested_openness / self._close_request_threshold
         force_n = 4.0 + 20.0 * float(self._np.clip(closure, 0.0, 1.0))
         impulse_per_finger = 0.5 * force_n * dt_s
@@ -3405,6 +4023,9 @@ class LeftGraspManager:
             "anchor_ee_m": geometry["anchor_ee_m"].tolist(),
             "distance_to_jaw_centre_m": geometry["distance_to_jaw_centre_m"],
             "requested_openness": self._requested_openness,
+            "requested_finger_openness": dict(
+                self._requested_finger_openness
+            ),
             "modeled_force_n": force_n,
             "source": "closing_jaw_geometry",
         }
@@ -3491,6 +4112,7 @@ class LeftGraspManager:
                     "organ": event["organ"],
                     "body": event["body"],
                     "collider": event["collider"],
+                    "role": event["role"],
                     "fingers": set(),
                     "impulse": 0.0,
                     "point_sum": self._np.zeros(3),
@@ -3506,6 +4128,7 @@ class LeftGraspManager:
             aggregate["sources"].add(event.get("source", "physx"))
         self._pending.clear()
 
+        self._current_finger_contact = None
         if grouped:
             contacted = max(
                 grouped.values(),
@@ -3524,15 +4147,26 @@ class LeftGraspManager:
                 "organ": contacted["organ"],
                 "body": contacted["body"],
                 "collider": contacted["collider"],
+                "role": contacted["role"],
                 "fingers": sorted(contacted["fingers"]),
                 "force_n": contacted["impulse"] / max(dt_s, 1e-12),
+                "point_m": (
+                    contacted["point_sum"] / max(contacted["weight"], 1e-12)
+                ).tolist(),
                 "sources": sorted(contacted["sources"]),
             }
+            self._current_finger_contact = dict(
+                self._latest_finger_contact
+            )
 
         active_candidates = [
             aggregate
             for (key, _), aggregate in grouped.items()
             if key == (self._active_target or "")
+            and (
+                not self._structural_counterhold_required
+                or aggregate["role"] != "foliage_grasp"
+            )
         ]
         active = (
             max(
@@ -3673,6 +4307,8 @@ class LeftGraspManager:
             "close_requested": self._close_requested,
             "requested_openness": self._requested_openness,
             "latest_finger_contact": self.latest_finger_contact,
+            "current_finger_contact": self.current_finger_contact,
+            "target_capture_geometry": self.target_capture_geometry,
             "latest_geometric_jaw": self._latest_geometric_jaw,
             "close_request_threshold": self._close_request_threshold,
             "active_joint": (
@@ -3695,6 +4331,9 @@ class LeftGraspManager:
             ],
             "finger_drive_configuration": dict(self._finger_drive_configuration),
             "finger_close_overtravel_m": self._close_overtravel_m,
+            "structural_counterhold_required": (
+                self._structural_counterhold_required
+            ),
             "orphan_state": self._latest_orphan_state,
             "task": self._task.summary if self._task is not None else None,
         }
@@ -3859,6 +4498,195 @@ def _closing_jaw_corridor_overlap(
     )
 
 
+def _open_jaw_capture_corridor_overlap(
+    bounds_minimum_ee_m,
+    bounds_maximum_ee_m,
+    half_opening_m: float = 0.052,
+) -> bool:
+    """Return whether target tissue lies between the open finger envelopes."""
+    import numpy as np
+
+    minimum = np.asarray(bounds_minimum_ee_m, dtype=np.float64)
+    maximum = np.asarray(bounds_maximum_ee_m, dtype=np.float64)
+    half_opening = float(half_opening_m)
+    if (
+        minimum.shape != (3,)
+        or maximum.shape != (3,)
+        or not np.isfinite(minimum).all()
+        or not np.isfinite(maximum).all()
+        or np.any(minimum > maximum)
+        or not np.isfinite(half_opening)
+        or half_opening <= 0.0
+    ):
+        return False
+    channel_minimum = np.asarray(
+        [-half_opening, -0.0180, -0.1340]
+    )
+    channel_maximum = np.asarray(
+        [half_opening, 0.0180, -0.0710]
+    )
+    return bool(
+        np.all(maximum >= channel_minimum)
+        and np.all(minimum <= channel_maximum)
+    )
+
+
+def _tangential_jaw_capture_target(
+    ee_world_matrix,
+    jaw_local_point_m,
+    contact_world_m,
+    maximum_correction_m: float = 0.025,
+) -> dict:
+    """Centre a finger contact along the jaw without crossing the tissue."""
+    import numpy as np
+
+    ee = np.asarray(ee_world_matrix, dtype=np.float64)
+    jaw = np.asarray(jaw_local_point_m, dtype=np.float64)
+    contact = np.asarray(contact_world_m, dtype=np.float64)
+    maximum = float(maximum_correction_m)
+    if (
+        ee.shape != (4, 4)
+        or jaw.shape != (3,)
+        or contact.shape != (3,)
+        or not np.isfinite(ee).all()
+        or not np.isfinite(jaw).all()
+        or not np.isfinite(contact).all()
+        or not np.isfinite(maximum)
+        or maximum <= 0.0
+    ):
+        raise ValueError("capture geometry must be finite with a positive limit")
+    contact_ee = (
+        np.linalg.inv(ee) @ np.append(contact, 1.0)
+    )[:3]
+    correction_ee = contact_ee - jaw
+    # Local X spans the two fingers.  Preserving that offset prevents the
+    # wrist from crossing a one-finger contact and pushing the petiole ahead
+    # of the closing jaw.  Only centre along the finger length/depth (Y/Z).
+    correction_ee[0] = 0.0
+    requested = float(np.linalg.norm(correction_ee))
+    limited = requested > maximum
+    if limited:
+        correction_ee *= maximum / requested
+    target_local = jaw + correction_ee
+    target_world = (ee @ np.append(target_local, 1.0))[:3]
+    return {
+        "target_point_m": target_world,
+        "contact_point_ee_m": contact_ee,
+        "correction_ee_m": correction_ee,
+        "requested_correction_m": requested,
+        "applied_correction_m": float(np.linalg.norm(correction_ee)),
+        "lateral_contact_offset_m": float(contact_ee[0] - jaw[0]),
+        "limited": limited,
+    }
+
+
+def _lateral_jaw_disengage_target(
+    ee_world_matrix,
+    jaw_local_point_m,
+    contact_world_m,
+    clearance_m: float = 0.012,
+) -> dict:
+    """Move the touching finger outward before centring compliant tissue."""
+    import numpy as np
+
+    ee = np.asarray(ee_world_matrix, dtype=np.float64)
+    jaw = np.asarray(jaw_local_point_m, dtype=np.float64)
+    contact = np.asarray(contact_world_m, dtype=np.float64)
+    clearance = float(clearance_m)
+    if (
+        ee.shape != (4, 4)
+        or jaw.shape != (3,)
+        or contact.shape != (3,)
+        or not np.isfinite(ee).all()
+        or not np.isfinite(jaw).all()
+        or not np.isfinite(contact).all()
+        or not np.isfinite(clearance)
+        or clearance <= 0.0
+    ):
+        raise ValueError("disengage geometry must be finite with positive clearance")
+    contact_ee = (
+        np.linalg.inv(ee) @ np.append(contact, 1.0)
+    )[:3]
+    lateral_offset = float(contact_ee[0] - jaw[0])
+    if abs(lateral_offset) <= 1e-6:
+        raise ValueError("finger contact has no resolvable lateral side")
+    translation_ee = np.asarray(
+        [np.copysign(clearance, lateral_offset), 0.0, 0.0],
+        dtype=np.float64,
+    )
+    target_pose = ee.copy()
+    target_pose[:3, 3] += ee[:3, :3] @ translation_ee
+    return {
+        "target_pose": target_pose,
+        "contact_point_ee_m": contact_ee,
+        "translation_ee_m": translation_ee,
+        "lateral_contact_offset_m": lateral_offset,
+        "clearance_m": clearance,
+        "predicted_contact_offset_after_m": (
+            lateral_offset - translation_ee[0]
+        ),
+    }
+
+
+def _lateral_backstop_seat_target(
+    ee_world_matrix,
+    bounds_minimum_ee_m,
+    bounds_maximum_ee_m,
+    loaded_finger: str,
+    seating_overlap_m: float = 0.001,
+    maximum_correction_m: float = 0.012,
+) -> dict:
+    """Seat structural tissue against the closed opposite jaw in local X."""
+    import numpy as np
+
+    ee = np.asarray(ee_world_matrix, dtype=np.float64)
+    minimum = np.asarray(bounds_minimum_ee_m, dtype=np.float64)
+    maximum = np.asarray(bounds_maximum_ee_m, dtype=np.float64)
+    overlap = float(seating_overlap_m)
+    limit = float(maximum_correction_m)
+    if (
+        ee.shape != (4, 4)
+        or minimum.shape != (3,)
+        or maximum.shape != (3,)
+        or not np.isfinite(ee).all()
+        or not np.isfinite(minimum).all()
+        or not np.isfinite(maximum).all()
+        or np.any(minimum > maximum)
+        or loaded_finger not in {"left_finger_1", "left_finger_2"}
+        or not np.isfinite(overlap)
+        or overlap < 0.0
+        or not np.isfinite(limit)
+        or limit <= 0.0
+    ):
+        raise ValueError("backstop seating geometry must be finite and valid")
+    # Finger 1 occupies +X and finger 2 occupies -X when closed.  If finger
+    # 1 made the original contact, translate +X until the target's near side
+    # reaches the finger-2 centre plane (and mirror for finger 2 contact).
+    requested = (
+        float(minimum[0] + overlap)
+        if loaded_finger == "left_finger_1"
+        else float(maximum[0] - overlap)
+    )
+    correction = float(np.clip(requested, -limit, limit))
+    target_pose = ee.copy()
+    translation_ee = np.asarray([correction, 0.0, 0.0])
+    target_pose[:3, 3] += ee[:3, :3] @ translation_ee
+    predicted_minimum = minimum.copy()
+    predicted_maximum = maximum.copy()
+    predicted_minimum[0] -= correction
+    predicted_maximum[0] -= correction
+    return {
+        "target_pose": target_pose,
+        "translation_ee_m": translation_ee,
+        "requested_correction_m": requested,
+        "applied_correction_m": correction,
+        "limited": not np.isclose(correction, requested),
+        "loaded_finger": loaded_finger,
+        "predicted_minimum_ee_m": predicted_minimum,
+        "predicted_maximum_ee_m": predicted_maximum,
+    }
+
+
 def _geometric_cut_reaction_force(
     centreline_distance_m: float,
     tissue_radius_m: float,
@@ -3903,6 +4731,112 @@ def _opposed_finger_contact(contact: dict | None) -> bool:
     return {"left_finger_1", "left_finger_2"}.issubset(
         set(contact.get("fingers", ()))
     )
+
+
+def _opposed_backstop_closure_schedule(
+    contact: dict | None,
+) -> tuple[dict, ...]:
+    """Close the free finger first, then advance the contacting finger."""
+    if contact is None:
+        return ()
+    fingers = set(contact.get("fingers", ()))
+    known = {"left_finger_1", "left_finger_2"}
+    loaded = fingers & known
+    if len(loaded) != 1:
+        return ()
+    loaded_finger = next(iter(loaded))
+    backstop_finger = next(iter(known - loaded))
+    records = []
+    for name, loaded_openness in (
+        ("opposite_finger_backstop", 1.0),
+        ("loaded_finger_65_percent", 0.65),
+        ("loaded_finger_40_percent", 0.40),
+        ("loaded_finger_20_percent", 0.20),
+        ("loaded_finger_closed", 0.0),
+    ):
+        openness = {
+            loaded_finger: loaded_openness,
+            backstop_finger: 0.0,
+        }
+        records.append(
+            {
+                "stage": name,
+                "loaded_finger": loaded_finger,
+                "backstop_finger": backstop_finger,
+                "left_finger_1": openness["left_finger_1"],
+                "left_finger_2": openness["left_finger_2"],
+            }
+        )
+    return tuple(records)
+
+
+def _target_contact_supports_guarded_close(
+    contact: dict | None,
+    target_key: str,
+    *,
+    structural_only: bool = False,
+) -> bool:
+    """Allow closure after one loaded finger touches the selected branch."""
+    return bool(
+        contact is not None
+        and contact.get("key") == target_key
+        and (
+            not structural_only
+            or contact.get("role") in {"petiole_grasp", "petiole_cut_zone"}
+        )
+        and contact.get("fingers")
+        and float(contact.get("force_n", 0.0)) > 0.0
+    )
+
+
+def _target_contact_point(
+    contact: dict | None,
+    target_key: str,
+    *,
+    structural_only: bool = False,
+) -> tuple[float, float, float] | None:
+    """Return a finite live contact point for the selected branch."""
+    import math
+
+    if not _target_contact_supports_guarded_close(
+        contact,
+        target_key,
+        structural_only=structural_only,
+    ):
+        return None
+    point = contact.get("point_m")
+    if not isinstance(point, (list, tuple)) or len(point) != 3:
+        return None
+    values = tuple(float(value) for value in point)
+    return values if all(math.isfinite(value) for value in values) else None
+
+
+def _measured_state_reconstruction_acceptable(
+    position_error_m: float,
+    orientation_error_rad: float,
+    *,
+    maximum_position_error_m: float = 0.001,
+    maximum_orientation_error_rad: float = 0.017453292519943295,
+) -> bool:
+    """Accept a bounded PhysX-to-rigid-kinematics reconstruction residual.
+
+    Commanded-pose IK keeps its stricter solver gate. This helper is only for
+    reconstructing a planning seed from a physically settled wrist whose
+    compliant articulation can differ slightly from the rigid URDF model.
+    """
+    import math
+
+    values = (
+        float(position_error_m),
+        float(orientation_error_rad),
+        float(maximum_position_error_m),
+        float(maximum_orientation_error_rad),
+    )
+    if not all(math.isfinite(value) for value in values):
+        return False
+    if values[2] < 0.0 or values[3] < 0.0:
+        raise ValueError("measured-state reconstruction limits cannot be negative")
+    return values[0] <= values[2] and values[1] <= values[3]
 
 
 def _bounded_robot_forward_nudge(
@@ -5378,6 +6312,15 @@ _LEFT_AISLE_CLEARANCE_WAYPOINTS_DEGREES = (
     (-69.063, -0.999, 7.054, -106.906, 80.808, 52.222, 0.0),
 )
 _LEFT_READY_DEGREES = (0.0, 5.0, 0.0, -120.0, 0.0, 70.0, 0.0)
+_LEFT_GREENHOUSE_WAITING_DEGREES = (
+    -40.773,
+    9.0,
+    -11.053,
+    -121.094,
+    149.459,
+    100.0,
+    -30.239,
+)
 _RIGHT_SAFE_DEGREES = (
     -146.58120585198483,
     -83.52711902452849,
@@ -5388,6 +6331,47 @@ _RIGHT_SAFE_DEGREES = (
     -67.89880648450034,
 )
 _LEFT_JAW_CENTRE_M = (0.0, 0.0, -0.1025)
+# The approach is planned with the physical jaws open. In the Model A URDF,
+# finger 1 moves along local -X with a -50 mm limit while finger 2's pi-yawed
+# joint moves along local +X with a +50 mm limit. The earlier 25 mm command
+# used only half of the RB-Y1A v1.0 URDF travel and needlessly made dense
+# petiole corridors appear obstructed.
+_LEFT_GRIPPER_OPEN_WIDTH_M = 0.050
+_LEFT_GRASP_APPROACH_YAW_OFFSETS_DEGREES = (
+    0.0,
+    -20.0,
+    -30.0,
+    20.0,
+    30.0,
+)
+_LEFT_GRIPPER_PLANNING_GEOMETRY = {
+    "fingers": {
+        "ee_finger_l1": {
+            "collider_min_ee_m": (
+                _LEFT_GRIPPER_OPEN_WIDTH_M,
+                -0.016,
+                -0.1335,
+            ),
+            "collider_max_ee_m": (
+                0.016 + _LEFT_GRIPPER_OPEN_WIDTH_M,
+                0.016,
+                -0.0715,
+            ),
+        },
+        "ee_finger_l2": {
+            "collider_min_ee_m": (
+                -0.016 - _LEFT_GRIPPER_OPEN_WIDTH_M,
+                -0.016,
+                -0.1335,
+            ),
+            "collider_max_ee_m": (
+                -_LEFT_GRIPPER_OPEN_WIDTH_M,
+                0.016,
+                -0.0715,
+            ),
+        },
+    },
+}
 _RIGHT_MULTISTART_SEEDS_DEGREES = (
     (-74.089, -77.473, 61.273, -109.016, 26.816, 40.399, -61.070),
     (-141.544, -59.888, 102.853, -128.673, -43.169, 109.999, -118.738),
@@ -5482,6 +6466,46 @@ _RIGHT_TARGET_ORPHAN_SUPPORT_PLANNING_CLEARANCE_M = 0.0005
 _MINIMUM_INTER_ARM_CLEARANCE_M = 0.005
 
 
+def _left_pretension_pull_specs(
+    petiole_axis,
+    aisle_direction,
+    maximum_pull_m: float = _LEFT_PRETENSION_PULL_M,
+):
+    """Return largest-first, aisle-oriented counterhold pull candidates."""
+    import numpy as np
+
+    if maximum_pull_m <= 0.0:
+        raise ValueError("maximum pre-tension pull must be positive")
+    aisle = np.asarray(aisle_direction, dtype=np.float64).copy()
+    aisle_norm = float(np.linalg.norm(aisle))
+    axis = np.asarray(petiole_axis, dtype=np.float64).copy()
+    axis_norm = float(np.linalg.norm(axis))
+    if aisle_norm <= 1e-9 or axis_norm <= 1e-9:
+        raise ValueError("pre-tension directions must be non-zero")
+    aisle /= aisle_norm
+    axis /= axis_norm
+    if float(np.dot(axis, aisle)) < 0.0:
+        axis *= -1.0
+
+    directions = [("petiole_axis_to_aisle", axis)]
+    if not np.allclose(axis, aisle, atol=1e-6):
+        directions.append(("direct_aisle", aisle))
+    distances = (
+        float(maximum_pull_m),
+        float(2.0 * maximum_pull_m / 3.0),
+        float(maximum_pull_m / 3.0),
+    )
+    return tuple(
+        {
+            "mode": mode,
+            "distance_m": distance_m,
+            "direction": direction.copy(),
+        }
+        for distance_m in distances
+        for mode, direction in directions
+    )
+
+
 def _target_grasp_candidates(stage, runtime, organ_label: str, base_planner):
     """Read startup grasp geometry from the same authored physical colliders."""
     import numpy as np
@@ -5536,6 +6560,7 @@ def _vine_capsule_obstacles(stage, robot_kinematics):
     from pxr import Gf
     from pxr import Usd
     from pxr import UsdGeom
+    from pxr import UsdPhysics
 
     axis_vectors = {
         "X": Gf.Vec3d(1.0, 0.0, 0.0),
@@ -5547,7 +6572,10 @@ def _vine_capsule_obstacles(stage, robot_kinematics):
         path = str(prim.GetPath())
         if not path.startswith(("/World/InteractiveVines/", "/World/NeighbourSafety/")):
             continue
-        if not prim.IsA(UsdGeom.Capsule):
+        if (
+            not prim.IsA(UsdGeom.Capsule)
+            or not prim.HasAPI(UsdPhysics.CollisionAPI)
+        ):
             continue
         capsule = UsdGeom.Capsule(prim)
         radius = float(capsule.GetRadiusAttr().Get() or 0.0)
@@ -5577,6 +6605,7 @@ class _VineCapsuleObstacleCache:
 
     def __init__(self, stage, robot_kinematics):
         from pxr import UsdGeom
+        from pxr import UsdPhysics
 
         self._stage = stage
         self._robot_kinematics = robot_kinematics
@@ -5587,7 +6616,10 @@ class _VineCapsuleObstacleCache:
                 ("/World/InteractiveVines/", "/World/NeighbourSafety/")
             ):
                 continue
-            if not prim.IsA(UsdGeom.Capsule):
+            if (
+                not prim.IsA(UsdGeom.Capsule)
+                or not prim.HasAPI(UsdPhysics.CollisionAPI)
+            ):
                 continue
             capsule = UsdGeom.Capsule(prim)
             radius = float(capsule.GetRadiusAttr().Get() or 0.0)
@@ -5648,6 +6680,117 @@ class _VineCapsuleObstacleCache:
     def summary(self) -> dict:
         return {
             "capsule_prims": len(self._entries),
+            "snapshot_builds": self.snapshot_builds,
+            "cache_hits": self.cache_hits,
+        }
+
+
+def _transformed_cube_bounds(world_matrix, half_size_m: float):
+    """Return an axis-aligned world bound for a transformed USD cube."""
+    import itertools
+
+    import numpy as np
+
+    matrix = np.asarray(world_matrix, dtype=np.float64)
+    half_size = float(half_size_m)
+    if matrix.shape != (4, 4):
+        raise ValueError("cube world matrix must be 4x4")
+    if not np.isfinite(matrix).all() or not np.isfinite(half_size):
+        raise ValueError("cube transform and half size must be finite")
+    if half_size < 0.0:
+        raise ValueError("cube half size cannot be negative")
+    corners = np.asarray(
+        [
+            (x, y, z, 1.0)
+            for x, y, z in itertools.product(
+                (-half_size, half_size), repeat=3
+            )
+        ],
+        dtype=np.float64,
+    )
+    world = (matrix @ corners.T).T
+    world = world[:, :3] / world[:, 3:4]
+    return world.min(axis=0), world.max(axis=0)
+
+
+class _VineFoliageBoxObstacleCache:
+    """Cache live foliage contact cubes as exact world-space OBBs."""
+
+    def __init__(self, stage, robot_kinematics):
+        from pxr import UsdGeom
+        from pxr import UsdPhysics
+
+        self._robot_kinematics = robot_kinematics
+        self._entries = []
+        for prim in stage.Traverse():
+            path = str(prim.GetPath())
+            if not path.startswith(
+                ("/World/InteractiveVines/", "/World/NeighbourSafety/")
+            ):
+                continue
+            if (
+                "/FoliageContact_" not in path
+                or not prim.IsA(UsdGeom.Cube)
+                or not prim.HasAPI(UsdPhysics.CollisionAPI)
+            ):
+                continue
+            size = float(UsdGeom.Cube(prim).GetSizeAttr().Get() or 0.0)
+            if size <= 0.0:
+                continue
+            self._entries.append((prim, path, 0.5 * size))
+        self._snapshot = None
+        self.snapshot_builds = 0
+        self.cache_hits = 0
+
+    def invalidate(self) -> None:
+        self._snapshot = None
+
+    def snapshot(self):
+        import numpy as np
+        from pxr import Usd
+        from pxr import UsdGeom
+
+        if self._snapshot is not None:
+            self.cache_hits += 1
+            return self._snapshot
+        obstacles = []
+        for prim, path, half_size in self._entries:
+            # Gf matrices transform row vectors. Transpose into the column
+            # convention used by the pure geometry helpers.
+            world_matrix = np.asarray(
+                UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(
+                    Usd.TimeCode.Default()
+                ),
+                dtype=np.float64,
+            ).T
+            linear = world_matrix[:3, :3]
+            scales = np.linalg.norm(linear, axis=0)
+            if np.any(scales <= 1e-12):
+                continue
+            rotation = linear / scales
+            centre = world_matrix[:3, 3]
+            half_extents = half_size * scales
+            obstacles.append(
+                self._robot_kinematics.OrientedBoxObstacle(
+                    path=path,
+                    centre_m=tuple(float(value) for value in centre),
+                    rotation=tuple(
+                        tuple(float(value) for value in row)
+                        for row in rotation
+                    ),
+                    half_extents_m=tuple(
+                        float(value) for value in half_extents
+                    ),
+                )
+            )
+        self._snapshot = tuple(obstacles)
+        self.snapshot_builds += 1
+        return self._snapshot
+
+    @property
+    def summary(self) -> dict:
+        return {
+            "foliage_box_prims": len(self._entries),
             "snapshot_builds": self.snapshot_builds,
             "cache_hits": self.cache_hits,
         }
@@ -5864,6 +7007,14 @@ def _required_probe_payload_clearance(
 ) -> float:
     """Return the target-semantic payload clearance for one measured pair."""
     nearest_obstacle = str(payload_minimum.get("nearest_obstacle", ""))
+    if "/FoliageContact_" in nearest_obstacle:
+        # Leaf blades are compliant but still physical. Preserve a small
+        # positive numerical gap so planned motion never relies on contact,
+        # without imposing the rigid 5-8 mm reserve on broad leaf AABBs.
+        return min(
+            float(protected_clearance_m),
+            _MINIMUM_FOLIAGE_CLEARANCE_M,
+        )
     if "/Main_Cultivation_Zone/" in nearest_obstacle:
         return max(
             float(protected_clearance_m),
@@ -5977,6 +7128,18 @@ def _bimanual_probe(
     robot_lateral /= np.linalg.norm(robot_lateral)
     aisle_direction = -robot_forward
     world_up = np.asarray([0.0, 0.0, 1.0], dtype=np.float64)
+    left_grasp_transverse_sign = float(
+        report.get("robot_preposition", {}).get(
+            "selected_grasp_transverse_sign",
+            1.0,
+        )
+    )
+    left_grasp_approach_yaw_offset_degrees = float(
+        report.get("robot_preposition", {}).get(
+            "selected_grasp_approach_yaw_offset_degrees",
+            0.0,
+        )
+    )
 
     def task_offset(lateral_m: float, aisle_m: float, vertical_m: float):
         return (
@@ -5986,10 +7149,17 @@ def _bimanual_probe(
         )
 
     vine_obstacle_cache = _VineCapsuleObstacleCache(stage, robot_kinematics)
+    foliage_obstacle_cache = _VineFoliageBoxObstacleCache(
+        stage,
+        robot_kinematics,
+    )
     greenhouse_structure_obstacles = tuple(greenhouse_structure_obstacles)
 
     def vine_obstacles():
         return vine_obstacle_cache.snapshot()
+
+    def foliage_obstacles():
+        return foliage_obstacle_cache.snapshot()
 
     left_camera_local_centre_m, left_camera_radius_m = (
         robot_hardware.wrist_d405_body_sphere(side="left")
@@ -6063,6 +7233,359 @@ def _bimanual_probe(
         )
     )
 
+    def right_tool_pose_minimum(
+        ee_matrix,
+        obstacles,
+        foliage_boxes=(),
+        excluded_blade_colliders=(),
+    ):
+        """Return exact minimum right payload clearance at an EE pose."""
+        excluded = set(excluded_blade_colliders)
+        records = []
+        for component, local_centre, local_rotation, half_extents in right_tool_boxes:
+            component_obstacles = (
+                tuple(
+                    obstacle
+                    for obstacle in obstacles
+                    if obstacle.path not in excluded
+                )
+                if component == "knife_blade"
+                else obstacles
+            )
+            component_foliage = (
+                tuple(
+                    obstacle
+                    for obstacle in foliage_boxes
+                    if obstacle.path not in excluded
+                )
+                if component == "knife_blade"
+                else foliage_boxes
+            )
+            world_centre = (
+                ee_matrix
+                @ np.append(np.asarray(local_centre, dtype=np.float64), 1.0)
+            )[:3]
+            world_rotation = (
+                ee_matrix[:3, :3]
+                @ np.asarray(local_rotation, dtype=np.float64)
+            )
+            clearances = (
+                robot_kinematics.oriented_box_capsule_clearance(
+                    world_centre,
+                    world_rotation,
+                    half_extents,
+                    component_obstacles,
+                ),
+                robot_kinematics.oriented_box_oriented_box_clearance(
+                    world_centre,
+                    world_rotation,
+                    half_extents,
+                    component_foliage,
+                ),
+                robot_kinematics.oriented_box_box_clearance(
+                    world_centre,
+                    world_rotation,
+                    half_extents,
+                    greenhouse_structure_obstacles,
+                ),
+            )
+            clearance = min(
+                clearances, key=lambda result: result.clearance_m
+            )
+            records.append(
+                {
+                    "component": component,
+                    "clearance_m": clearance.clearance_m,
+                    "nearest_obstacle": clearance.nearest_obstacle,
+                }
+            )
+        return min(records, key=lambda item: item["clearance_m"])
+
+    if args.bimanual_probe == "target_screen":
+        # Reject tool-envelope-impossible petioles before invoking expensive
+        # arm IK. This screen deliberately includes the blade plate, every
+        # U-support box, wrist bracket, and D405 against live vine capsules
+        # and greenhouse structure. Arm and trajectory feasibility remain
+        # separate mandatory gates in right_approach/full probes.
+        approach_sides_m = (
+            -0.100,
+            -0.060,
+            -0.050,
+            -0.042,
+            -0.035,
+            -0.030,
+            -0.025,
+            -0.020,
+            -0.015,
+        )
+        cut_sides_m = tuple(np.linspace(0.0, 0.035, 8))
+        roll_candidates_degrees = (
+            0.0,
+            5.0,
+            -5.0,
+            10.0,
+            -10.0,
+            14.0,
+            14.5,
+            15.0,
+            15.5,
+            16.0,
+            -15.0,
+            30.0,
+            -30.0,
+            45.0,
+            -45.0,
+            60.0,
+            -60.0,
+            75.0,
+            -75.0,
+            90.0,
+            -90.0,
+            105.0,
+            -105.0,
+            120.0,
+            -120.0,
+        )
+        screen_wings = (
+            np.asarray(_RIGHT_EDGE_WING_M, dtype=np.float64),
+            np.asarray(
+                [
+                    -_RIGHT_EDGE_WING_M[0],
+                    _RIGHT_EDGE_WING_M[1],
+                    _RIGHT_EDGE_WING_M[2],
+                ],
+                dtype=np.float64,
+            ),
+        )
+        screen_preferred_cut_direction = (
+            np.cos(np.radians(15.0)) * robot_forward
+            + np.sin(np.radians(15.0)) * world_up
+        )
+        screen_vine_obstacles = tuple(vine_obstacles())
+        screen_foliage_obstacles = tuple(foliage_obstacles())
+        maximum_payload_reach_m = max(
+            float(np.linalg.norm(local_centre) + np.linalg.norm(half_extents))
+            for _, local_centre, _, half_extents in right_tool_boxes
+        )
+        maximum_corridor_reach_m = (
+            max(abs(side_m) for side_m in approach_sides_m + cut_sides_m)
+            + max(float(np.linalg.norm(wing)) for wing in screen_wings)
+            + maximum_payload_reach_m
+            + max(
+                _RIGHT_PLANNING_PAYLOAD_CLEARANCE_M,
+                _MINIMUM_GREENHOUSE_CLEARANCE_M,
+            )
+        )
+        original_key = str(blade_geometry["key"])
+        target_records = []
+
+        def local_vine_obstacles(point_m):
+            """Conservatively broad-phase capsules near the tool corridor."""
+            point = np.asarray(point_m, dtype=np.float64)
+            local = []
+            for obstacle in screen_vine_obstacles:
+                start = np.asarray(obstacle.start_m, dtype=np.float64)
+                end = np.asarray(obstacle.end_m, dtype=np.float64)
+                centre = 0.5 * (start + end)
+                bounding_radius_m = (
+                    0.5 * float(np.linalg.norm(end - start))
+                    + float(obstacle.radius_m)
+                )
+                if (
+                    float(np.linalg.norm(centre - point)) - bounding_radius_m
+                    <= maximum_corridor_reach_m
+                ):
+                    local.append(obstacle)
+            return tuple(local)
+
+        def local_foliage_obstacles(point_m):
+            """Conservatively broad-phase foliage OBBs near the tool corridor."""
+            point = np.asarray(point_m, dtype=np.float64)
+            local = []
+            for obstacle in screen_foliage_obstacles:
+                centre = np.asarray(obstacle.centre_m, dtype=np.float64)
+                bounding_radius_m = float(
+                    np.linalg.norm(obstacle.half_extents_m)
+                )
+                if (
+                    float(np.linalg.norm(centre - point)) - bounding_radius_m
+                    <= maximum_corridor_reach_m
+                ):
+                    local.append(obstacle)
+            return tuple(local)
+
+        for key in blade_monitor.target_keys:
+            vine_name, _, organ_label = key.partition("/")
+            if vine_name != runtime.name:
+                continue
+            blade_monitor.set_active_target(vine_name, organ_label)
+            grasp_manager.set_active_target(vine_name, organ_label)
+            cut_geometry = blade_monitor.target_path_geometry(_RIGHT_CUT_STUB_M)
+            target_geometry = blade_monitor.target_geometry
+            target_grasp = grasp_manager.target_geometry
+            if (
+                cut_geometry is None
+                or target_geometry is None
+                or target_grasp is None
+            ):
+                target_records.append(
+                    {
+                        "target": key,
+                        "eligible": False,
+                        "error": "missing live cut or grasp geometry",
+                    }
+                )
+                continue
+            target_colliders = set(target_geometry["colliders"])
+            target_obstacles = local_vine_obstacles(
+                cut_geometry["point_m"],
+            )
+            target_foliage = local_foliage_obstacles(cut_geometry["point_m"])
+            candidates = []
+            for roll_degrees in roll_candidates_degrees:
+                base_rotation = robot_hardware.cut_aligned_knife_rotation(
+                    cut_geometry["axis"],
+                    screen_preferred_cut_direction,
+                )
+                support = base_rotation[:, 2]
+                cut_direction = (
+                    base_rotation @ robot_hardware.KNIFE_CUT_DIRECTION_LOCAL
+                )
+                angle = np.radians(roll_degrees)
+                cut_direction = (
+                    cut_direction * np.cos(angle)
+                    + np.cross(support, cut_direction) * np.sin(angle)
+                )
+                if float(np.dot(cut_direction, robot_forward)) < 0.20:
+                    continue
+                knife_x = -cut_direction
+                edge_axis = np.cross(support, knife_x)
+                edge_axis /= np.linalg.norm(edge_axis)
+                knife_rotation = np.column_stack(
+                    (knife_x, edge_axis, support)
+                )
+                for wing in screen_wings:
+                    minimum_margins = {
+                        "approach": float("inf"),
+                        "cut": float("inf"),
+                    }
+                    minimum_records = {"approach": None, "cut": None}
+                    blocked = False
+                    for group, sides, required_clearance_m in (
+                        (
+                            "approach",
+                            approach_sides_m,
+                            _RIGHT_PLANNING_PAYLOAD_CLEARANCE_M,
+                        ),
+                        (
+                            "cut",
+                            cut_sides_m,
+                            _RIGHT_COMMITTED_CUT_PLANNING_CLEARANCE_M,
+                        ),
+                    ):
+                        for side_m in sides:
+                            edge = (
+                                cut_geometry["point_m"]
+                                + cut_direction * side_m
+                            )
+                            root = edge - knife_rotation @ wing
+                            desired = np.eye(4, dtype=np.float64)
+                            desired[:3, :3] = (
+                                knife_rotation
+                                @ robot_hardware.KNIFE_ROTATION.T
+                            )
+                            desired[:3, 3] = root
+                            minimum = right_tool_pose_minimum(
+                                desired,
+                                target_obstacles,
+                                target_foliage,
+                                target_colliders,
+                            )
+                            required = _required_probe_payload_clearance(
+                                "right",
+                                minimum,
+                                target_grasp,
+                                required_clearance_m,
+                            )
+                            margin = float(minimum["clearance_m"] - required)
+                            if margin < minimum_margins[group]:
+                                minimum_margins[group] = margin
+                                minimum_records[group] = {
+                                    **minimum,
+                                    "side_m": float(side_m),
+                                    "required_clearance_m": required,
+                                    "margin_m": margin,
+                                }
+                            if margin < 0.0:
+                                blocked = True
+                                break
+                        if blocked:
+                            break
+                    candidates.append(
+                        {
+                            "roll_degrees": float(roll_degrees),
+                            "edge_wing_local_m": wing.tolist(),
+                            "cut_direction": cut_direction.tolist(),
+                            "approach": minimum_records["approach"],
+                            "cut": minimum_records["cut"],
+                            "minimum_margin_m": min(minimum_margins.values()),
+                            "eligible": bool(
+                                minimum_records["approach"] is not None
+                                and minimum_records["cut"] is not None
+                                and minimum_margins["approach"] >= 0.0
+                                and minimum_margins["cut"] >= 0.0
+                            ),
+                        }
+                    )
+            ranked = sorted(
+                candidates,
+                key=lambda candidate: candidate["minimum_margin_m"],
+                reverse=True,
+            )
+            target_records.append(
+                {
+                    "target": key,
+                    "eligible": bool(
+                        ranked and ranked[0]["eligible"]
+                    ),
+                    "best": ranked[0] if ranked else None,
+                    "candidate_count": len(candidates),
+                    "local_vine_obstacle_count": len(target_obstacles),
+                    "local_foliage_obstacle_count": len(target_foliage),
+                }
+            )
+
+        original_vine, _, original_organ = original_key.partition("/")
+        blade_monitor.set_active_target(original_vine, original_organ)
+        grasp_manager.set_active_target(original_vine, original_organ)
+        eligible_targets = [
+            record for record in target_records if record["eligible"]
+        ]
+        target_records.sort(
+            key=lambda record: (
+                not record["eligible"],
+                -float(
+                    (record.get("best") or {}).get(
+                        "minimum_margin_m", float("-inf")
+                    )
+                ),
+                record["target"],
+            )
+        )
+        return {
+            "mode": args.bimanual_probe,
+            "approach_clearance_m": _RIGHT_PLANNING_PAYLOAD_CLEARANCE_M,
+            "committed_cut_clearance_m": (
+                _RIGHT_COMMITTED_CUT_PLANNING_CLEARANCE_M
+            ),
+            "live_vine_obstacle_count": len(screen_vine_obstacles),
+            "live_foliage_obstacle_count": len(screen_foliage_obstacles),
+            "corridor_broad_phase_radius_m": maximum_corridor_reach_m,
+            "targets": target_records,
+            "eligible_target_count": len(eligible_targets),
+            "succeeded": bool(eligible_targets),
+        }
+
     def left_camera_clearance(solution):
         ee_matrix = model.forward(
             "left",
@@ -6082,6 +7605,11 @@ def _bimanual_probe(
                 left_camera_radius_m,
                 vine_obstacles(),
             ),
+            robot_kinematics.sphere_oriented_box_clearance(
+                centre,
+                left_camera_radius_m,
+                foliage_obstacles(),
+            ),
             robot_kinematics.sphere_box_clearance(
                 centre,
                 left_camera_radius_m,
@@ -6093,6 +7621,7 @@ def _bimanual_probe(
     def left_payload_clearance(solution, excluded_colliders=()):
         excluded = set(excluded_colliders)
         obstacles = vine_obstacles()
+        foliage = foliage_obstacles()
         records = []
         joint_degrees = getattr(solution, "joint_degrees", solution)
         ee_matrix = model.forward(
@@ -6110,6 +7639,15 @@ def _bimanual_probe(
                 if component.startswith("ee_finger_")
                 else obstacles
             )
+            component_foliage = (
+                tuple(
+                    obstacle
+                    for obstacle in foliage
+                    if obstacle.path not in excluded
+                )
+                if component.startswith("ee_finger_")
+                else foliage
+            )
             world_centre = (
                 ee_matrix @ np.append(np.asarray(local_centre, dtype=np.float64), 1.0)
             )[:3]
@@ -6123,6 +7661,12 @@ def _bimanual_probe(
                     world_rotation,
                     half_extents,
                     component_obstacles,
+                ),
+                robot_kinematics.oriented_box_oriented_box_clearance(
+                    world_centre,
+                    world_rotation,
+                    half_extents,
+                    component_foliage,
                 ),
                 robot_kinematics.oriented_box_box_clearance(
                     world_centre,
@@ -6150,6 +7694,19 @@ def _bimanual_probe(
                 "component": "left_arm_capsules",
                 "clearance_m": arm_vine_clearance.clearance_m,
                 "nearest_obstacle": arm_vine_clearance.nearest_obstacle,
+            }
+        )
+        arm_foliage_clearance = model.arm_oriented_box_clearance(
+            "left",
+            joint_degrees,
+            base_matrix,
+            foliage,
+        )
+        records.append(
+            {
+                "component": "left_arm_foliage",
+                "clearance_m": arm_foliage_clearance.clearance_m,
+                "nearest_obstacle": arm_foliage_clearance.nearest_obstacle,
             }
         )
         arm_structure_clearance = model.arm_structure_clearance(
@@ -6196,11 +7753,30 @@ def _bimanual_probe(
 
     def right_payload_clearance(solution, excluded_colliders=()):
         excluded = set(excluded_colliders)
-        obstacles = tuple(obstacle for obstacle in vine_obstacles() if obstacle.path not in excluded)
+        obstacles = vine_obstacles()
+        foliage = foliage_obstacles()
         records = []
         joint_degrees = getattr(solution, "joint_degrees", solution)
         ee_matrix = model.forward("right", joint_degrees, base_matrix)
         for component, local_centre, local_rotation, half_extents in right_tool_boxes:
+            component_obstacles = (
+                tuple(
+                    obstacle
+                    for obstacle in obstacles
+                    if obstacle.path not in excluded
+                )
+                if component == "knife_blade"
+                else obstacles
+            )
+            component_foliage = (
+                tuple(
+                    obstacle
+                    for obstacle in foliage
+                    if obstacle.path not in excluded
+                )
+                if component == "knife_blade"
+                else foliage
+            )
             world_centre = (
                 ee_matrix @ np.append(np.asarray(local_centre, dtype=np.float64), 1.0)
             )[:3]
@@ -6210,7 +7786,13 @@ def _bimanual_probe(
                     world_centre,
                     world_rotation,
                     half_extents,
-                    obstacles,
+                    component_obstacles,
+                ),
+                robot_kinematics.oriented_box_oriented_box_clearance(
+                    world_centre,
+                    world_rotation,
+                    half_extents,
+                    component_foliage,
                 ),
                 robot_kinematics.oriented_box_box_clearance(
                     world_centre,
@@ -6231,13 +7813,26 @@ def _bimanual_probe(
             "right",
             joint_degrees,
             base_matrix,
-            tuple(vine_obstacles()),
+            obstacles,
         )
         records.append(
             {
                 "component": "right_arm_capsules",
                 "clearance_m": arm_vine_clearance.clearance_m,
                 "nearest_obstacle": arm_vine_clearance.nearest_obstacle,
+            }
+        )
+        arm_foliage_clearance = model.arm_oriented_box_clearance(
+            "right",
+            joint_degrees,
+            base_matrix,
+            foliage,
+        )
+        records.append(
+            {
+                "component": "right_arm_foliage",
+                "clearance_m": arm_foliage_clearance.clearance_m,
+                "nearest_obstacle": arm_foliage_clearance.nearest_obstacle,
             }
         )
         arm_structure_clearance = model.arm_structure_clearance(
@@ -6327,6 +7922,11 @@ def _bimanual_probe(
         for obstacle in vine_obstacles()
         if obstacle.path not in target_cut_colliders
     )
+    blade_foliage_obstacles = tuple(
+        obstacle
+        for obstacle in foliage_obstacles()
+        if obstacle.path not in target_cut_colliders
+    )
     wing_candidates = (
         np.asarray(_RIGHT_EDGE_WING_M, dtype=np.float64),
         np.asarray(
@@ -6344,6 +7944,12 @@ def _bimanual_probe(
                 initial_knife_rotation,
                 blade_half_extents_m,
                 blade_obstacles,
+            ),
+            robot_kinematics.oriented_box_oriented_box_clearance(
+                blade_centre,
+                initial_knife_rotation,
+                blade_half_extents_m,
+                blade_foliage_obstacles,
             ),
             robot_kinematics.oriented_box_box_clearance(
                 blade_centre,
@@ -6395,7 +8001,7 @@ def _bimanual_probe(
     left_hold_local_point = None
     minimum_left_hold_capacity_n = None
     current = {
-        "left": np.asarray(_LEFT_READY_DEGREES, dtype=np.float64),
+        "left": np.asarray(_LEFT_GREENHOUSE_WAITING_DEGREES, dtype=np.float64),
         "right": np.asarray(_RIGHT_SAFE_DEGREES, dtype=np.float64),
     }
     minimum_inter_arm_clearance = {
@@ -6461,7 +8067,7 @@ def _bimanual_probe(
         )
         target_conditioned = (
             report.get("robot_preposition", {}).get("mode")
-            == "target-conditioned"
+            in {"target-conditioned", "planned-fixed"}
         )
         preplanned_candidate = next(
             (
@@ -6515,6 +8121,10 @@ def _bimanual_probe(
                 ),
                 "solutions": [],
                 "source": selection_source,
+                "grasp_approach_yaw_offset_degrees": (
+                    left_grasp_approach_yaw_offset_degrees
+                ),
+                "grasp_transverse_sign": left_grasp_transverse_sign,
             })
         selection_seeds = (
             _LEFT_AISLE_CLEARANCE_WAYPOINTS_DEGREES[-1],
@@ -6533,29 +8143,60 @@ def _bimanual_probe(
                 continue
             solutions = []
             solution_records = []
-            for seed in selection_seeds:
-                solution = model.solve_position_axes(
-                    "left",
-                    local_point_m=_LEFT_JAW_CENTRE_M,
-                    target_point_m=candidate["centre_m"],
-                    seed_degrees=seed,
-                    base_matrix=base_matrix,
-                    pointing_axis=2,
-                    pointing_direction=-robot_forward,
-                    transverse_axis=0,
-                    transverse_to=candidate["axis"],
-                    position_scale_m=0.002,
+            candidate_bearing = np.asarray(
+                candidate["centre_m"], dtype=np.float64
+            ) - base_matrix[:3, 3]
+            candidate_bearing[2] = 0.0
+            candidate_bearing /= max(
+                float(np.linalg.norm(candidate_bearing)), 1e-12
+            )
+            for approach_yaw_offset in (
+                _LEFT_GRASP_APPROACH_YAW_OFFSETS_DEGREES
+                if args.left_grasp_approach_yaw is None
+                else tuple(args.left_grasp_approach_yaw)
+            ):
+                pointing_direction = (
+                    robot_kinematics.rotate_horizontal_direction(
+                        -candidate_bearing,
+                        approach_yaw_offset,
+                    )
                 )
-                clearance = left_camera_clearance(solution)
-                solutions.append(solution)
-                solution_records.append(
-                    {
-                        "seed_degrees": [float(value) for value in seed],
-                        "solution": dataclasses.asdict(solution),
-                        "camera_clearance_m": clearance.clearance_m,
-                        "nearest_obstacle": clearance.nearest_obstacle,
-                    }
-                )
+                for transverse_sign in (1.0, -1.0):
+                    transverse_direction = (
+                        robot_kinematics.signed_transverse_direction(
+                            pointing_direction,
+                            candidate["axis"],
+                            transverse_sign,
+                        )
+                    )
+                    for seed in selection_seeds:
+                        solution = model.solve_position_axes(
+                            "left",
+                            local_point_m=_LEFT_JAW_CENTRE_M,
+                            target_point_m=candidate["centre_m"],
+                            seed_degrees=seed,
+                            base_matrix=base_matrix,
+                            pointing_axis=2,
+                            pointing_direction=pointing_direction,
+                            transverse_axis=0,
+                            transverse_to=candidate["axis"],
+                            transverse_direction=transverse_direction,
+                            position_scale_m=0.002,
+                        )
+                        clearance = left_camera_clearance(solution)
+                        solutions.append(solution)
+                        solution_records.append(
+                            {
+                                "seed_degrees": [float(value) for value in seed],
+                                "grasp_approach_yaw_offset_degrees": (
+                                    approach_yaw_offset
+                                ),
+                                "grasp_transverse_sign": transverse_sign,
+                                "solution": dataclasses.asdict(solution),
+                                "camera_clearance_m": clearance.clearance_m,
+                                "nearest_obstacle": clearance.nearest_obstacle,
+                            }
+                        )
             selection_diagnostics.append(
                 {
                     "collider": candidate["collider"],
@@ -6568,13 +8209,28 @@ def _bimanual_probe(
                     "solutions": solution_records,
                 }
             )
-            if any(
-                solution.succeeded
-                and record["camera_clearance_m"]
-                >= _MINIMUM_WRIST_CAMERA_CLEARANCE_M
-                for solution, record in zip(solutions, solution_records, strict=True)
-            ):
+            selected_solution_record = next(
+                (
+                    record
+                    for solution, record in zip(
+                        solutions, solution_records, strict=True
+                    )
+                    if solution.succeeded
+                    and record["camera_clearance_m"]
+                    >= _MINIMUM_WRIST_CAMERA_CLEARANCE_M
+                ),
+                None,
+            )
+            if selected_solution_record is not None:
                 selected_collider = candidate["collider"]
+                left_grasp_transverse_sign = float(
+                    selected_solution_record["grasp_transverse_sign"]
+                )
+                left_grasp_approach_yaw_offset_degrees = float(
+                    selected_solution_record[
+                        "grasp_approach_yaw_offset_degrees"
+                    ]
+                )
                 break
         stages.append(
             {
@@ -6582,6 +8238,10 @@ def _bimanual_probe(
                 "selected_collider": selected_collider,
                 "minimum_segment": minimum_grasp_segment,
                 "selection_source": selection_source,
+                "selected_grasp_approach_yaw_offset_degrees": (
+                    left_grasp_approach_yaw_offset_degrees
+                ),
+                "selected_grasp_transverse_sign": left_grasp_transverse_sign,
                 "candidates": selection_diagnostics,
             }
         )
@@ -6591,6 +8251,10 @@ def _bimanual_probe(
             "steps_completed": 0,
             "selection_source": selection_source,
             "selected_collider": selected_collider,
+            "selected_grasp_approach_yaw_offset_degrees": (
+                left_grasp_approach_yaw_offset_degrees
+            ),
+            "selected_grasp_transverse_sign": left_grasp_transverse_sign,
         }
         _emit(report, args.report)
         if selected_collider is None:
@@ -6645,6 +8309,7 @@ def _bimanual_probe(
         # UI without simulation at the requested render cadence.
         context.step(render=False)
         vine_obstacle_cache.invalidate()
+        foliage_obstacle_cache.invalidate()
         grasp_manager.process()
         applied_cuts.extend(
             _apply_blade_cut_decisions(
@@ -6703,11 +8368,22 @@ def _bimanual_probe(
             base_matrix,
         )
         record = dataclasses.asdict(measured)
-        if not measured.succeeded:
+        reconstruction_acceptable = _measured_state_reconstruction_acceptable(
+            measured.position_error_m,
+            measured.orientation_error_rad,
+        )
+        record.update(
+            commanded_pose_ik_succeeded=bool(measured.succeeded),
+            reconstruction_acceptable=reconstruction_acceptable,
+            reconstruction_position_limit_m=0.001,
+            reconstruction_orientation_limit_rad=float(np.radians(1.0)),
+        )
+        if not reconstruction_acceptable:
             raise RuntimeError(
                 f"could not reconstruct measured {side} arm state: "
                 f"{measured.position_error_m * 1000.0:.2f} mm / "
-                f"{np.degrees(measured.orientation_error_rad):.2f} deg"
+                f"{np.degrees(measured.orientation_error_rad):.2f} deg "
+                "(limits 1.00 mm / 1.00 deg)"
             )
         measured_values = np.asarray(measured.joint_degrees, dtype=np.float64)
         joint_lag = commanded_values - measured_values
@@ -7120,7 +8796,32 @@ def _bimanual_probe(
         }
         _emit(report, args.report)
 
-    def solve_left(point, seed, alternate_seed=None, diagnostics=None) -> object:
+    def solve_left(
+        point,
+        seed,
+        alternate_seed=None,
+        diagnostics=None,
+        *,
+        incremental=False,
+    ) -> object:
+        target_bearing = (
+            np.asarray(point, dtype=np.float64) - base_matrix[:3, 3]
+        )
+        target_bearing[2] = 0.0
+        target_bearing_norm = float(np.linalg.norm(target_bearing))
+        if target_bearing_norm <= 1e-9:
+            target_bearing = robot_forward.copy()
+        else:
+            target_bearing /= target_bearing_norm
+        pointing_direction = robot_kinematics.rotate_horizontal_direction(
+            -target_bearing,
+            left_grasp_approach_yaw_offset_degrees,
+        )
+        transverse_direction = robot_kinematics.signed_transverse_direction(
+            pointing_direction,
+            grasp_geometry["axis"],
+            left_grasp_transverse_sign,
+        )
         primary = model.solve_position_axes(
             "left",
             local_point_m=(
@@ -7132,11 +8833,32 @@ def _bimanual_probe(
             seed_degrees=seed,
             base_matrix=base_matrix,
             pointing_axis=2,
-            pointing_direction=-robot_forward,
+            # Match the target-conditioned planner: local -Z/jaw enters the
+            # crop along the current target bearing, including lateral bases.
+            pointing_direction=pointing_direction,
             transverse_axis=0,
             transverse_to=grasp_geometry["axis"],
+            transverse_direction=transverse_direction,
             position_scale_m=0.005,
         )
+        if incremental:
+            # The receding-horizon caller collision-checks each short chord
+            # against freshly sampled geometry before move().  Return the
+            # measured-state warm start directly here instead of redundantly
+            # screening a full, moving endpoint and six multistart chords.
+            # A no-progress result is retried with the complete multistart
+            # path on the following servo iteration.
+            if diagnostics is not None:
+                diagnostics.append(
+                    {
+                        "seed_degrees": [float(value) for value in seed],
+                        "position_scale_m": 0.005,
+                        "solution": dataclasses.asdict(primary),
+                        "warm_start": True,
+                        "incremental": True,
+                    }
+                )
+            return primary
         primary_camera = left_camera_clearance(primary)
         primary_payload_minimum, primary_payload_components = (
             left_payload_clearance(
@@ -7206,9 +8928,10 @@ def _bimanual_probe(
                 seed_degrees=candidate_seed,
                 base_matrix=base_matrix,
                 pointing_axis=2,
-                pointing_direction=-robot_forward,
+                pointing_direction=pointing_direction,
                 transverse_axis=0,
                 transverse_to=grasp_geometry["axis"],
+                transverse_direction=transverse_direction,
                 position_scale_m=position_scale_m,
             )
             for candidate_seed, position_scale_m in candidate_specs
@@ -7273,8 +8996,20 @@ def _bimanual_probe(
             )
             if result.succeeded
             and camera.clearance_m >= _MINIMUM_WRIST_CAMERA_CLEARANCE_M
-            and payload_minimum["clearance_m"] >= _MINIMUM_WRIST_CAMERA_CLEARANCE_M
-            and trajectory["clearance_m"] >= _MINIMUM_WRIST_CAMERA_CLEARANCE_M
+            and payload_minimum["clearance_m"]
+            >= _required_probe_payload_clearance(
+                "left",
+                payload_minimum,
+                grasp_geometry,
+                _MINIMUM_WRIST_CAMERA_CLEARANCE_M,
+            )
+            and trajectory["clearance_m"]
+            >= _required_probe_payload_clearance(
+                "left",
+                trajectory,
+                grasp_geometry,
+                _MINIMUM_WRIST_CAMERA_CLEARANCE_M,
+            )
             and inter_arm["clearance_m"] >= _MINIMUM_INTER_ARM_CLEARANCE_M
         ]
         if clear:
@@ -7392,7 +9127,11 @@ def _bimanual_probe(
             -5.0,
             10.0,
             -10.0,
+            14.0,
+            14.5,
             15.0,
+            15.5,
+            16.0,
             -15.0,
             30.0,
             -30.0,
@@ -7447,6 +9186,9 @@ def _bimanual_probe(
                 )
             )
         records = []
+        endpoint_rejections = []
+        endpoint_obstacles = tuple(vine_obstacles())
+        endpoint_foliage = tuple(foliage_obstacles())
         waypoint_wing_candidates = (
             tuple(wing_candidates_override)
             if wing_candidates_override is not None
@@ -7478,6 +9220,28 @@ def _bimanual_probe(
             desired = np.eye(4, dtype=np.float64)
             desired[:3, :3] = knife_rotation @ robot_hardware.KNIFE_ROTATION.T
             desired[:3, 3] = root
+            endpoint_payload = right_tool_pose_minimum(
+                desired,
+                endpoint_obstacles,
+                endpoint_foliage,
+                target_cut_colliders,
+            )
+            endpoint_required_m = required_payload_clearance(
+                endpoint_payload
+            )
+            if endpoint_payload["clearance_m"] < endpoint_required_m:
+                endpoint_rejections.append(
+                    {
+                        "roll_degrees": float(roll_degrees),
+                        "edge_wing_local_m": edge_wing_m.tolist(),
+                        "cut_direction": cut_direction.tolist(),
+                        "endpoint_payload_clearance": endpoint_payload,
+                        "required_payload_clearance_m": endpoint_required_m,
+                        "eligible": False,
+                        "rejection": "endpoint_payload_clearance",
+                    }
+                )
+                continue
             def assess_solution(candidate):
                 candidate_payload = {
                     "clearance_m": float("-inf"),
@@ -7664,6 +9428,23 @@ def _bimanual_probe(
                 }
             )
         if not records:
+            right_direction_candidates = endpoint_rejections
+            if endpoint_rejections:
+                best_rejection = max(
+                    endpoint_rejections,
+                    key=lambda record: (
+                        record["endpoint_payload_clearance"]["clearance_m"]
+                        - record["required_payload_clearance_m"]
+                    ),
+                )
+                minimum = best_rejection["endpoint_payload_clearance"]
+                raise RuntimeError(
+                    "no right tool endpoint clears the live crop geometry; "
+                    f"best is {minimum['clearance_m'] * 1000.0:.1f} mm "
+                    f"below a {best_rejection['required_payload_clearance_m'] * 1000.0:.1f} mm "
+                    f"reserve: {minimum['component']} vs "
+                    f"{minimum['nearest_obstacle']}"
+                )
             raise RuntimeError("no knife direction faces into the crop row")
 
         eligible_records = [record for record in records if record["eligible"]]
@@ -7773,7 +9554,7 @@ def _bimanual_probe(
             else selected_hold_capacity["force_capacity_n"]
         )
         if records:
-            right_direction_candidates = [
+            right_direction_candidates = endpoint_rejections + [
                 {
                     "roll_degrees": record["roll_degrees"],
                     "edge_wing_local_m": record["edge_wing_m"].tolist(),
@@ -7839,9 +9620,18 @@ def _bimanual_probe(
                 planned_start = np.asarray(
                     preplanned_start_degrees, dtype=np.float64
                 )
-                if planned_start.shape != (7,) or any(
-                    np.asarray(waypoint).shape != (7,)
-                    for waypoint in preplanned_waypoints
+                planned_goal = np.asarray(
+                    preplanned_goal_degrees, dtype=np.float64
+                )
+                if (
+                    planned_start.shape != (7,)
+                    or planned_goal.shape != (7,)
+                    or not np.all(np.isfinite(planned_start))
+                    or not np.all(np.isfinite(planned_goal))
+                    or any(
+                        np.asarray(waypoint).shape != (7,)
+                        for waypoint in preplanned_waypoints
+                    )
                 ):
                     raise RuntimeError(
                         "target-conditioned left approach route is malformed"
@@ -7876,6 +9666,15 @@ def _bimanual_probe(
                             ),
                             "inter_arm": preposition.get(
                                 "trajectory_inter_arm_clearance_m"
+                            ),
+                            "arm_foliage": preposition.get(
+                                "trajectory_arm_foliage_clearance_m"
+                            ),
+                            "d405_foliage": preposition.get(
+                                "trajectory_camera_foliage_clearance_m"
+                            ),
+                            "full_payload_foliage": preposition.get(
+                                "trajectory_payload_foliage_clearance_m"
                             ),
                         },
                     }
@@ -7956,60 +9755,285 @@ def _bimanual_probe(
                     )
             left_solutions = []
             reached_offsets = []
-            # Enter along the petiole axis in short Cartesian increments. A
-            # direct chord from the aisle-clearance posture to 100 mm is
-            # endpoint-clear but sweeps the wrist payload through upper foliage
-            # in the lower-gutter greenhouse.
-            offsets = (
-                (0.0,)
-                if use_preplanned_route
-                else (0.55, 0.40, 0.30, 0.20, 0.10, 0.06, 0.04, 0.02)
-            )
-            if args.bimanual_probe == "full" and not use_preplanned_route:
-                offsets += (0.01, 0.0)
-            seed = current["left"]
-            for offset in offsets:
-                # The compliant vine continues to sway during the multi-second
-                # approach. Reacquire the live grasp body before every solve so
-                # the final fingers close around its current pose instead of
-                # pulling it back to a stale pre-motion target.
+            if use_preplanned_route:
+                # This exact endpoint and its joint-space route were already
+                # solved and collision-checked together. Re-solving after the
+                # route can reject the same valid goal as the plant moves within
+                # its measured sway envelope. move() retains all live per-step
+                # collision checks while executing the planner-approved goal.
                 grasp_geometry = grasp_manager.target_geometry
                 if grasp_geometry is None:
-                    raise RuntimeError("live grasp geometry disappeared during approach")
-                goal = grasp_geometry["centre_m"] + task_offset(0.0, offset, 0.0)
-                candidate_diagnostics = []
-                solution = solve_left(
-                    goal,
-                    seed,
-                    (
-                        preplanned_goal_degrees
-                        if use_preplanned_route
-                        else _LEFT_APPROACH_SEEDS_DEGREES.get(offset)
-                    ),
-                    candidate_diagnostics,
-                )
-                left_solutions.append(dataclasses.asdict(solution))
+                    raise RuntimeError(
+                        "live grasp geometry disappeared before final approach"
+                    )
+                final_approach_records = []
+                maximum_final_iterations = 64
+                maximum_joint_increment_degrees = 3.0
+                maximum_waiting_retries = 8
+                waiting_retries = 0
+                final_reached = False
+                for final_index in range(maximum_final_iterations):
+                    grasp_geometry = grasp_manager.target_geometry
+                    if grasp_geometry is None:
+                        raise RuntimeError(
+                            "live grasp geometry disappeared during final approach"
+                        )
+                    jaw_local = (
+                        _LEFT_JAW_CENTRE_M
+                        if grasp_geometry.get("tool_local_point_m") is None
+                        else grasp_geometry["tool_local_point_m"]
+                    )
+                    jaw_world = (
+                        model.forward("left", current["left"], base_matrix)
+                        @ np.append(np.asarray(jaw_local), 1.0)
+                    )[:3]
+                    target_point = np.asarray(
+                        grasp_geometry["centre_m"], dtype=np.float64
+                    )
+                    jaw_error_m = float(np.linalg.norm(target_point - jaw_world))
+                    record = {
+                        "index": final_index,
+                        "target_point_m": target_point.tolist(),
+                        "jaw_point_m": jaw_world.tolist(),
+                        "jaw_error_m": jaw_error_m,
+                    }
+                    final_approach_records.append(record)
+                    guarded_contact = (
+                        grasp_manager.current_finger_contact
+                    )
+                    if _target_contact_supports_guarded_close(
+                        guarded_contact,
+                        str(grasp_geometry["key"]),
+                        structural_only=True,
+                    ):
+                        # Stop on the first live structural target touch.  The
+                        # former 2 mm centre chase let a lagging open finger
+                        # push the proximal petiole while pursuing a distal
+                        # collider.  Cancel the outstanding drive lag at the
+                        # measured pose and hand off to guarded jaw capture;
+                        # opposed-finger load is still required for a grasp.
+                        _set_arm_drive_targets(
+                            stage, "left", current["left"]
+                        )
+                        record.update(
+                            converged=True,
+                            terminal_condition=(
+                                "live_structural_target_contact"
+                            ),
+                            guarded_contact=guarded_contact,
+                        )
+                        final_reached = True
+                        break
+                    if jaw_error_m <= 0.002:
+                        record["converged"] = True
+                        record["terminal_condition"] = (
+                            "jaw_centre_tolerance"
+                        )
+                        final_reached = True
+                        break
+
+                    candidate_diagnostics = []
+                    solution = solve_left(
+                        target_point,
+                        current["left"],
+                        planned_goal,
+                        candidate_diagnostics,
+                        incremental=waiting_retries == 0,
+                    )
+                    record.update(
+                        solution=dataclasses.asdict(solution),
+                        candidate_solutions=candidate_diagnostics,
+                    )
+                    # A receding-horizon controller must be allowed to take a
+                    # safe descent step even when the current IK horizon ends
+                    # short of a moving target.  Requiring the complete solve
+                    # to finish within 1 mm before moving caused an otherwise
+                    # useful solution (43.9 -> 10.7 mm error) to be rejected at
+                    # the first iteration.  Only accept solutions that make a
+                    # measurable positional improvement and retain the bounded
+                    # jaw orientation; every proposed joint increment is still
+                    # collision-screened below before it is executed.
+                    predicted_position_error_m = float(
+                        solution.position_error_m
+                    )
+                    makes_progress = bool(
+                        np.isfinite(predicted_position_error_m)
+                        and predicted_position_error_m
+                        <= jaw_error_m - 0.0005
+                        and solution.orientation_error_rad
+                        <= np.radians(50.0)
+                    )
+                    record["predicted_position_error_m"] = (
+                        predicted_position_error_m
+                    )
+                    record["makes_progress"] = makes_progress
+                    if not makes_progress:
+                        waiting_retries += 1
+                        record["waiting_retry"] = waiting_retries
+                        if waiting_retries > maximum_waiting_retries:
+                            record["blocked"] = (
+                                "live final target IK stopped making progress"
+                            )
+                            break
+                        for _ in range(30):
+                            _set_arm_drive_targets(
+                                stage, "left", current["left"]
+                            )
+                            tick()
+                        continue
+
+                    delta = (
+                        np.asarray(solution.joint_degrees, dtype=np.float64)
+                        - current["left"]
+                    )
+                    maximum_delta = float(np.max(np.abs(delta)))
+                    fractions = tuple(
+                        dict.fromkeys(
+                            min(
+                                1.0,
+                                maximum_increment / max(maximum_delta, 1e-12),
+                            )
+                            for maximum_increment in (3.0, 2.0, 1.0, 0.5)
+                        )
+                    )
+                    safe_increment = None
+                    increment_checks = []
+                    for fraction in fractions:
+                        increment_target = current["left"] + fraction * delta
+                        payload = left_payload_trajectory_clearance(
+                            increment_target,
+                            excluded_colliders=grasp_geometry.get(
+                                "orphan_colliders", grasp_geometry["colliders"]
+                            ),
+                            samples=9,
+                        )
+                        payload_required = _required_probe_payload_clearance(
+                            "left",
+                            payload,
+                            grasp_geometry,
+                            _MINIMUM_WRIST_CAMERA_CLEARANCE_M,
+                        )
+                        inter_arm = inter_arm_trajectory_clearance(
+                            "left", increment_target, samples=9
+                        )
+                        clear = bool(
+                            payload["clearance_m"] >= payload_required
+                            and inter_arm["clearance_m"]
+                            >= _MINIMUM_INTER_ARM_CLEARANCE_M
+                        )
+                        increment_checks.append(
+                            {
+                                "fraction": fraction,
+                                "maximum_joint_increment_degrees": (
+                                    fraction * maximum_delta
+                                ),
+                                "payload": payload,
+                                "payload_required_m": payload_required,
+                                "inter_arm": inter_arm,
+                                "clear": clear,
+                            }
+                        )
+                        if clear:
+                            safe_increment = increment_target
+                            break
+                    record["increment_checks"] = increment_checks
+                    if safe_increment is None:
+                        waiting_retries += 1
+                        record["waiting_retry"] = waiting_retries
+                        if waiting_retries > maximum_waiting_retries:
+                            record["blocked"] = (
+                                "live foliage did not clear a bounded increment"
+                            )
+                            break
+                        for _ in range(30):
+                            _set_arm_drive_targets(
+                                stage, "left", current["left"]
+                            )
+                            tick()
+                        continue
+                    waiting_retries = 0
+                    move(
+                        "left",
+                        safe_increment,
+                        f"left_final_servo_{final_index}",
+                        steps=24,
+                    )
+
                 stages.append(
                     {
-                        "stage": f"left_ik_{offset:.3f}",
-                        "target_point_m": goal.tolist(),
-                        "target_axis": grasp_geometry["axis"].tolist(),
-                        "candidate_solutions": candidate_diagnostics,
-                        "solution": dataclasses.asdict(solution),
+                        "stage": "left_preplanned_final_approach",
+                        "mode": "live_receding_horizon",
+                        "planned_target_degrees": planned_goal.tolist(),
+                        "maximum_iterations": maximum_final_iterations,
+                        "maximum_joint_increment_degrees": (
+                            maximum_joint_increment_degrees
+                        ),
+                        "maximum_waiting_retries": maximum_waiting_retries,
+                        "iterations": final_approach_records,
+                        "succeeded": final_reached,
                     }
                 )
-                if not solution.succeeded:
-                    stages[-1]["skipped"] = "unreachable_or_obstructed_outer_waypoint"
-                    continue
-                move(
-                    "left",
-                    solution.joint_degrees,
-                    f"left_approach_{offset:.3f}",
-                    hold_steps=args.motion_steps,
-                    settle_to_pose=use_preplanned_route,
+                if not final_reached:
+                    raise RuntimeError(
+                        "live receding-horizon final grasp approach is obstructed"
+                    )
+                left_solutions.extend(
+                    record["solution"]
+                    for record in final_approach_records
+                    if record.get("solution") is not None
                 )
-                seed = current["left"].copy()
-                reached_offsets.append(offset)
+                reached_offsets.append(0.0)
+                offsets = (0.0,)
+            else:
+                # Enter along the petiole axis in short Cartesian increments. A
+                # direct chord from the aisle-clearance posture to 100 mm is
+                # endpoint-clear but sweeps the wrist payload through upper foliage
+                # in the lower-gutter greenhouse.
+                offsets = (0.55, 0.40, 0.30, 0.20, 0.10, 0.06, 0.04, 0.02)
+                if args.bimanual_probe == "full":
+                    offsets += (0.01, 0.0)
+                seed = current["left"]
+                for offset in offsets:
+                    # The compliant vine continues to sway during the
+                    # multi-second approach. Reacquire the live grasp body
+                    # before every solve so the fingers close around its current
+                    # pose instead of pulling it back to a stale target.
+                    grasp_geometry = grasp_manager.target_geometry
+                    if grasp_geometry is None:
+                        raise RuntimeError(
+                            "live grasp geometry disappeared during approach"
+                        )
+                    goal = grasp_geometry["centre_m"] + task_offset(0.0, offset, 0.0)
+                    candidate_diagnostics = []
+                    solution = solve_left(
+                        goal,
+                        seed,
+                        _LEFT_APPROACH_SEEDS_DEGREES.get(offset),
+                        candidate_diagnostics,
+                    )
+                    left_solutions.append(dataclasses.asdict(solution))
+                    stages.append(
+                        {
+                            "stage": f"left_ik_{offset:.3f}",
+                            "target_point_m": goal.tolist(),
+                            "target_axis": grasp_geometry["axis"].tolist(),
+                            "candidate_solutions": candidate_diagnostics,
+                            "solution": dataclasses.asdict(solution),
+                        }
+                    )
+                    if not solution.succeeded:
+                        stages[-1]["skipped"] = (
+                            "unreachable_or_obstructed_outer_waypoint"
+                        )
+                        continue
+                    move(
+                        "left",
+                        solution.joint_degrees,
+                        f"left_approach_{offset:.3f}",
+                        hold_steps=args.motion_steps,
+                    )
+                    seed = current["left"].copy()
+                    reached_offsets.append(offset)
             if not reached_offsets or not np.isclose(reached_offsets[-1], offsets[-1]):
                 raise RuntimeError(
                     "left IK failed to reach required final aisle offset "
@@ -8028,6 +10052,443 @@ def _bimanual_probe(
                     "minimum_inter_arm_clearance": dict(minimum_inter_arm_clearance),
                     "succeeded": bool(not unsafe and blade_monitor.safety_clear),
                 }
+
+            # The compliant petiole can move by centimetres while the arm
+            # settles at the final waypoint. Reacquire its live collider with
+            # short, bounded corrections immediately before closing; otherwise
+            # the fingers close at the stale pre-motion point.
+            reacquisition_records = []
+            jaw_target_tolerance_m = 0.002
+            maximum_reacquisition_steps = 4
+            for reacquisition_index in range(maximum_reacquisition_steps + 1):
+                grasp_geometry = grasp_manager.target_geometry
+                if grasp_geometry is None:
+                    raise RuntimeError(
+                        "live grasp geometry disappeared before jaw closure"
+                    )
+                jaw_local = (
+                    _LEFT_JAW_CENTRE_M
+                    if grasp_geometry.get("tool_local_point_m") is None
+                    else grasp_geometry["tool_local_point_m"]
+                )
+                jaw_world = (
+                    physical_ee_pose("left")
+                    @ np.append(
+                        np.asarray(jaw_local, dtype=np.float64),
+                        1.0,
+                    )
+                )[:3]
+                target_point = np.asarray(
+                    grasp_geometry["centre_m"], dtype=np.float64
+                )
+                error_m = float(np.linalg.norm(target_point - jaw_world))
+                record = {
+                    "index": reacquisition_index,
+                    "target_point_m": target_point.tolist(),
+                    "jaw_point_m": jaw_world.tolist(),
+                    "error_m": error_m,
+                    "required_error_m": jaw_target_tolerance_m,
+                }
+                reacquisition_records.append(record)
+                live_guarded_contact = (
+                    grasp_manager.current_finger_contact
+                )
+                if _target_contact_supports_guarded_close(
+                    live_guarded_contact,
+                    str(grasp_geometry["key"]),
+                    structural_only=True,
+                ):
+                    _set_arm_drive_targets(
+                        stage, "left", current["left"]
+                    )
+                    record.update(
+                        guarded_contact=live_guarded_contact,
+                        terminal_condition=(
+                            "live_structural_target_contact"
+                        ),
+                    )
+                    break
+                if error_m <= jaw_target_tolerance_m:
+                    record["terminal_condition"] = (
+                        "jaw_centre_tolerance"
+                    )
+                    break
+                if reacquisition_index >= maximum_reacquisition_steps:
+                    break
+                candidate_diagnostics = []
+                solution = solve_left(
+                    target_point,
+                    current["left"],
+                    preplanned_goal_degrees,
+                    candidate_diagnostics,
+                )
+                record.update(
+                    solution=dataclasses.asdict(solution),
+                    candidate_solutions=candidate_diagnostics,
+                )
+                if not solution.succeeded:
+                    break
+                move(
+                    "left",
+                    solution.joint_degrees,
+                    f"left_live_reacquire_{reacquisition_index}",
+                    steps=max(30, args.motion_steps // 3),
+                )
+            stages.append(
+                {
+                    "stage": "left_live_grasp_reacquisition",
+                    "attempts": reacquisition_records,
+                    "position_succeeded": bool(
+                        reacquisition_records
+                        and reacquisition_records[-1]["error_m"]
+                        <= jaw_target_tolerance_m
+                    ),
+                }
+            )
+            position_succeeded = bool(
+                reacquisition_records
+                and reacquisition_records[-1]["error_m"]
+                <= jaw_target_tolerance_m
+            )
+            guarded_contact = grasp_manager.current_finger_contact
+            guarded_close = _target_contact_supports_guarded_close(
+                guarded_contact,
+                str(grasp_geometry["key"]),
+                structural_only=True,
+            )
+            stages[-1].update(
+                guarded_close=guarded_close,
+                guarded_contact=guarded_contact,
+                succeeded=bool(position_succeeded or guarded_close),
+            )
+            if not position_succeeded and not guarded_close:
+                raise RuntimeError(
+                    "live petiole moved outside the left jaw corridor before closure"
+                )
+
+            # If a compliant part of the selected branch is already pressing
+            # one finger, stop chasing the original petiole centre. First
+            # centre that preserved contact along the finger length/depth while
+            # retaining its lateral offset at the touched finger. Translating
+            # the jaw centre through the full contact point previously crossed
+            # 50 mm of open-jaw space and pushed the petiole out of the channel.
+            # Only then narrow the jaws; opposed-finger evidence is still
+            # required below before the grasp joint can be enabled.
+            if guarded_close and not _opposed_finger_contact(guarded_contact):
+                contact_diagnostics.set_phase("left_guarded_capture")
+                capture_settle_steps = max(30, args.motion_steps // 3)
+                capture_records = []
+                contact_point = _target_contact_point(
+                    guarded_contact,
+                    str(grasp_geometry["key"]),
+                    structural_only=True,
+                )
+                jaw_local = (
+                    _LEFT_JAW_CENTRE_M
+                    if grasp_geometry.get("tool_local_point_m") is None
+                    else grasp_geometry["tool_local_point_m"]
+                )
+                if contact_point is None:
+                    raise RuntimeError(
+                        "selected structural contact has no finite capture point"
+                    )
+                capture_body = str(guarded_contact["body"])
+
+                # 1. Move the touched finger outward in local X.  This creates
+                # a real gap so the next longitudinal correction slides the
+                # open jaw around the petiole instead of dragging the petiole.
+                physical_pose = physical_ee_pose("left")
+                disengage = _lateral_jaw_disengage_target(
+                    physical_pose,
+                    jaw_local,
+                    contact_point,
+                )
+                disengage_solution = model.solve_pose(
+                    "left",
+                    disengage["target_pose"],
+                    current["left"],
+                    base_matrix,
+                )
+                disengage_record = {
+                    "stage": "lateral_disengage",
+                    "contact": guarded_contact,
+                    "geometry": {
+                        key: (
+                            value.tolist()
+                            if isinstance(value, np.ndarray)
+                            else value
+                        )
+                        for key, value in disengage.items()
+                    },
+                    "solution": dataclasses.asdict(disengage_solution),
+                }
+                capture_records.append(disengage_record)
+                if not disengage_solution.succeeded:
+                    disengage_record["blocked"] = (
+                        "lateral disengage pose is unreachable"
+                    )
+                    raise RuntimeError(
+                        "left finger cannot disengage from the structural petiole"
+                    )
+                move(
+                    "left",
+                    disengage_solution.joint_degrees,
+                    "left_guarded_disengage",
+                    steps=capture_settle_steps,
+                )
+
+                # 2. Re-read structural geometry after unloading the finger,
+                # then centre only its Y/Z anchor while preserving lateral X.
+                open_capture = grasp_manager.capture_geometry(capture_body)
+                if open_capture is None:
+                    raise RuntimeError(
+                        "contacted structural petiole left the open jaw after "
+                        "disengage"
+                    )
+                physical_pose = physical_ee_pose("left")
+                jaw_world = (
+                    physical_pose
+                    @ np.append(
+                        np.asarray(jaw_local, dtype=np.float64), 1.0
+                    )
+                )[:3]
+                tangential = _tangential_jaw_capture_target(
+                    physical_pose,
+                    jaw_local,
+                    open_capture["anchor_world_m"],
+                )
+                desired_pose = physical_pose.copy()
+                desired_pose[:3, 3] += (
+                    tangential["target_point_m"] - jaw_world
+                )
+                tangential_diagnostics = []
+                tangential_solution = solve_left(
+                    tangential["target_point_m"],
+                    current["left"],
+                    preplanned_goal_degrees,
+                    tangential_diagnostics,
+                )
+                tangential_record = {
+                    "stage": "unloaded_tangential_centre",
+                    "capture_before": open_capture,
+                    "geometry": {
+                        key: (
+                            value.tolist()
+                            if isinstance(value, np.ndarray)
+                            else value
+                        )
+                        for key, value in tangential.items()
+                    },
+                    "solution": dataclasses.asdict(tangential_solution),
+                    "candidate_solutions": tangential_diagnostics,
+                    "target_pose": desired_pose.tolist(),
+                }
+                capture_records.append(tangential_record)
+                if not tangential_solution.succeeded:
+                    tangential_record["blocked"] = (
+                        "unloaded tangential pose is unreachable"
+                    )
+                    raise RuntimeError(
+                        "left jaw cannot centre the unloaded structural petiole"
+                    )
+                move(
+                    "left",
+                    tangential_solution.joint_degrees,
+                    "left_guarded_tangential_centre",
+                    steps=capture_settle_steps,
+                )
+
+                # 3. Make the non-contacting finger a stationary backstop,
+                # then advance only the original contact-side finger. Closing
+                # both fingers together translated the compliant petiole with
+                # the loaded jaw and never developed opposed contact.
+                closure_records = []
+                closure_settle_steps = max(24, args.motion_steps // 6)
+                for closure in _opposed_backstop_closure_schedule(
+                    guarded_contact
+                ):
+                    grasp_manager.request_finger_openness(
+                        closure["left_finger_1"],
+                        closure["left_finger_2"],
+                    )
+                    settled_steps = 0
+                    for _ in range(closure_settle_steps):
+                        tick()
+                        settled_steps += 1
+                        if grasp_manager.task_phase == "grasped":
+                            break
+                    closure_contact = grasp_manager.current_finger_contact
+                    closure_geometry = grasp_manager.capture_geometry(
+                        capture_body
+                    )
+                    closure_record = {
+                        **closure,
+                        "settle_steps": settled_steps,
+                        "contact": closure_contact,
+                        "capture_geometry": closure_geometry,
+                        "task_phase": grasp_manager.task_phase,
+                    }
+                    closure_records.append(closure_record)
+                    if grasp_manager.task_phase == "grasped":
+                        break
+                    if closure["stage"] in {
+                        "opposite_finger_backstop",
+                        "loaded_finger_40_percent",
+                    }:
+                        if closure_geometry is None:
+                            raise RuntimeError(
+                                "contacted structural petiole left the jaw "
+                                "before backstop seating"
+                            )
+                        physical_pose = physical_ee_pose("left")
+                        seating = _lateral_backstop_seat_target(
+                            physical_pose,
+                            closure_geometry["minimum_ee_m"],
+                            closure_geometry["maximum_ee_m"],
+                            closure["loaded_finger"],
+                            maximum_correction_m=(
+                                0.012
+                                if closure["stage"]
+                                == "opposite_finger_backstop"
+                                else 0.006
+                            ),
+                        )
+                        target_jaw_world = (
+                            seating["target_pose"]
+                            @ np.append(
+                                np.asarray(jaw_local, dtype=np.float64),
+                                1.0,
+                            )
+                        )[:3]
+                        seating_diagnostics = []
+                        seating_solution = solve_left(
+                            target_jaw_world,
+                            current["left"],
+                            preplanned_goal_degrees,
+                            seating_diagnostics,
+                        )
+                        before_gap_m = (
+                            max(
+                                0.0,
+                                float(
+                                    closure_geometry["minimum_ee_m"][0]
+                                ),
+                            )
+                            if closure["loaded_finger"] == "left_finger_1"
+                            else max(
+                                0.0,
+                                -float(
+                                    closure_geometry["maximum_ee_m"][0]
+                                ),
+                            )
+                        )
+                        seating_record = {
+                            "stage": (
+                                "lateral_backstop_seat"
+                                if closure["stage"]
+                                == "opposite_finger_backstop"
+                                else "lateral_backstop_reseat"
+                            ),
+                            "before_gap_m": before_gap_m,
+                            "geometry": {
+                                key: (
+                                    value.tolist()
+                                    if isinstance(value, np.ndarray)
+                                    else value
+                                )
+                                for key, value in seating.items()
+                            },
+                            "solution": dataclasses.asdict(
+                                seating_solution
+                            ),
+                            "candidate_solutions": seating_diagnostics,
+                        }
+                        closure_record["backstop_seating"] = seating_record
+                        if not seating_solution.succeeded:
+                            seating_record["blocked"] = (
+                                "backstop seating pose is unreachable"
+                            )
+                            raise RuntimeError(
+                                "left jaw cannot seat the petiole against "
+                                "the opposite finger"
+                            )
+                        move(
+                            "left",
+                            seating_solution.joint_degrees,
+                            (
+                                "left_guarded_backstop_seat"
+                                if closure["stage"]
+                                == "opposite_finger_backstop"
+                                else "left_guarded_backstop_reseat"
+                            ),
+                            steps=capture_settle_steps,
+                        )
+                        seated_geometry = grasp_manager.capture_geometry(
+                            capture_body
+                        )
+                        if seated_geometry is None:
+                            raise RuntimeError(
+                                "structural petiole left the jaw during "
+                                "backstop seating"
+                            )
+                        after_gap_m = (
+                            max(
+                                0.0,
+                                float(seated_geometry["minimum_ee_m"][0]),
+                            )
+                            if closure["loaded_finger"] == "left_finger_1"
+                            else max(
+                                0.0,
+                                -float(seated_geometry["maximum_ee_m"][0]),
+                            )
+                        )
+                        seating_record.update(
+                            after_geometry=seated_geometry,
+                            after_gap_m=after_gap_m,
+                            improvement_m=before_gap_m - after_gap_m,
+                        )
+                        if (
+                            after_gap_m > 0.0015
+                            and before_gap_m - after_gap_m < 0.001
+                        ):
+                            seating_record["blocked"] = (
+                                "live backstop gap did not improve"
+                            )
+                            raise RuntimeError(
+                                "petiole followed the jaw during bounded "
+                                "backstop seating"
+                            )
+                guarded_contact = grasp_manager.current_finger_contact
+                guarded_close = _target_contact_supports_guarded_close(
+                    guarded_contact,
+                    str(grasp_geometry["key"]),
+                    structural_only=True,
+                ) and guarded_contact.get("body") == capture_body
+                capture_geometry = grasp_manager.capture_geometry(
+                    capture_body
+                )
+                capture_succeeded = bool(
+                    grasp_manager.task_phase == "grasped"
+                    or guarded_close
+                    or capture_geometry is not None
+                )
+                stages.append(
+                    {
+                        "stage": "left_guarded_capture",
+                        "capture_body": capture_body,
+                        "closure_mode": "opposite_finger_backstop",
+                        "closure_steps": closure_records,
+                        "corrections": capture_records,
+                        "final_contact": guarded_contact,
+                        "target_capture_geometry": capture_geometry,
+                        "succeeded": capture_succeeded,
+                    }
+                )
+                if not capture_succeeded:
+                    raise RuntimeError(
+                        "selected structural petiole left the jaw channel "
+                        "during guarded capture"
+                    )
 
             contact_diagnostics.set_phase("left_grasp_close")
             grasp_manager.request_close()
@@ -8055,40 +10516,45 @@ def _bimanual_probe(
             grasp_geometry = grasp_manager.target_geometry
             if grasp_geometry is None:
                 raise RuntimeError("live grasp geometry disappeared before counterhold")
-            pull_pose = model.forward("left", current["left"], base_matrix).copy()
-            pull_direction = np.asarray(
-                grasp_geometry["axis"], dtype=np.float64
-            )
-            pull_direction /= np.linalg.norm(pull_direction)
-            if float(np.dot(pull_direction, aisle_direction)) < 0.0:
-                pull_direction *= -1.0
-            pull_pose[:3, 3] += _LEFT_PRETENSION_PULL_M * pull_direction
-            pull_candidates = [
-                model.solve_pose("left", pull_pose, candidate_seed, base_matrix)
+            current_left_pose = model.forward(
+                "left", current["left"], base_matrix
+            ).copy()
+            pull_assessments = []
+            for pull_spec in _left_pretension_pull_specs(
+                grasp_geometry["axis"], aisle_direction
+            ):
+                pull_pose = current_left_pose.copy()
+                pull_pose[:3, 3] += (
+                    pull_spec["distance_m"] * pull_spec["direction"]
+                )
                 for candidate_seed in (
                     current["left"],
                     _LEFT_APPROACH_SEEDS_DEGREES[0.0],
                     *_LEFT_MULTISTART_SEEDS_DEGREES,
-                )
-            ]
-            pull_assessments = []
-            for candidate in pull_candidates:
-                payload_clearance = left_payload_trajectory_clearance(
-                    candidate.joint_degrees,
-                    excluded_colliders=grasp_geometry.get(
-                        "orphan_colliders", grasp_geometry["colliders"]
-                    ),
-                )
-                arm_clearance = inter_arm_trajectory_clearance(
-                    "left", candidate.joint_degrees
-                )
-                pull_assessments.append(
-                    {
-                        "solution": candidate,
-                        "payload_clearance": payload_clearance,
-                        "inter_arm_clearance": arm_clearance,
-                    }
-                )
+                ):
+                    candidate = model.solve_pose(
+                        "left", pull_pose, candidate_seed, base_matrix
+                    )
+                    payload_clearance = left_payload_trajectory_clearance(
+                        candidate.joint_degrees,
+                        excluded_colliders=grasp_geometry.get(
+                            "orphan_colliders", grasp_geometry["colliders"]
+                        ),
+                    )
+                    arm_clearance = inter_arm_trajectory_clearance(
+                        "left", candidate.joint_degrees
+                    )
+                    pull_assessments.append(
+                        {
+                            "mode": pull_spec["mode"],
+                            "distance_m": pull_spec["distance_m"],
+                            "direction": pull_spec["direction"],
+                            "target_pose": pull_pose,
+                            "solution": candidate,
+                            "payload_clearance": payload_clearance,
+                            "inter_arm_clearance": arm_clearance,
+                        }
+                    )
             clear_pull_assessments = [
                 assessment
                 for assessment in pull_assessments
@@ -8110,15 +10576,17 @@ def _bimanual_probe(
             stages.append(
                 {
                     "stage": "left_pretension_ik",
-                    "pull_distance_m": _LEFT_PRETENSION_PULL_M,
-                    "pull_direction": pull_direction.tolist(),
+                    "maximum_pull_distance_m": _LEFT_PRETENSION_PULL_M,
                     "maximum_position_error_m": 0.001,
                     "maximum_orientation_error_degrees": (
                         _LEFT_PRETENSION_MAX_ORIENTATION_ERROR_DEGREES
                     ),
-                    "target_pose": pull_pose.tolist(),
                     "candidates": [
                         {
+                            "mode": assessment["mode"],
+                            "distance_m": assessment["distance_m"],
+                            "direction": assessment["direction"].tolist(),
+                            "target_pose": assessment["target_pose"].tolist(),
                             "solution": dataclasses.asdict(assessment["solution"]),
                             "payload_clearance": assessment["payload_clearance"],
                             "inter_arm_clearance": assessment["inter_arm_clearance"],
@@ -8127,20 +10595,47 @@ def _bimanual_probe(
                     ],
                 }
             )
-            if not clear_pull_assessments:
-                raise RuntimeError("left pre-tension pull IK is obstructed")
-            selected_pull = max(
-                clear_pull_assessments,
-                key=lambda assessment: min(
-                    assessment["payload_clearance"]["clearance_m"],
-                    assessment["inter_arm_clearance"]["clearance_m"],
-                ),
-            )
-            move(
-                "left",
-                selected_pull["solution"].joint_degrees,
-                "left_pretension_pull",
-            )
+            if clear_pull_assessments:
+                selected_pull = max(
+                    clear_pull_assessments,
+                    key=lambda assessment: (
+                        assessment["distance_m"],
+                        min(
+                            assessment["payload_clearance"]["clearance_m"],
+                            assessment["inter_arm_clearance"]["clearance_m"],
+                        ),
+                    ),
+                )
+                stages[-1]["selected"] = {
+                    "mode": selected_pull["mode"],
+                    "distance_m": selected_pull["distance_m"],
+                    "direction": selected_pull["direction"].tolist(),
+                    "solution": dataclasses.asdict(selected_pull["solution"]),
+                    "payload_clearance": selected_pull["payload_clearance"],
+                    "inter_arm_clearance": selected_pull["inter_arm_clearance"],
+                }
+                move(
+                    "left",
+                    selected_pull["solution"].joint_degrees,
+                    "left_pretension_pull",
+                )
+            else:
+                # A physically established fixed-joint grasp still supplies a
+                # counterhold without deliberate displacement. When every pull
+                # route violates the unchanged payload/inter-arm reserve, keep
+                # the left arm stationary and let the force-capacity gate below
+                # decide whether the right blade may enter the cut zone.
+                stages[-1]["selected"] = {
+                    "mode": "stationary_counterhold",
+                    "distance_m": 0.0,
+                    "reason": "all_nonzero_pull_routes_obstructed",
+                    "minimum_payload_clearance_m": (
+                        _MINIMUM_WRIST_CAMERA_CLEARANCE_M
+                    ),
+                    "minimum_inter_arm_clearance_m": (
+                        _MINIMUM_INTER_ARM_CLEARANCE_M
+                    ),
+                }
             if grasp_manager.task_phase != "grasped":
                 raise RuntimeError("left grasp was lost during pre-tension pull")
             grasp_geometry = grasp_manager.target_geometry

@@ -128,11 +128,27 @@ def test_seek_grasp_enables_gripper_near_target_and_batch_masking():
     far = _state().vector()
     near = _state(left_grasp_delta_m=np.asarray([0.02, 0.0, 0.0])).vector()
     grasped = _state("grasped").vector()
-    mask = rl_env.phase_action_mask(np.stack((far, near, grasped)))
-    assert mask.shape == (3, rl_env.ACTION_SIZE)
+    retained = _state("orphan_retained").vector()
+    mask = rl_env.phase_action_mask(np.stack((far, near, grasped, retained)))
+    assert mask.shape == (4, rl_env.ACTION_SIZE)
     assert mask[0, 14] == 0.0
     assert mask[1, 14] == 1.0
-    np.testing.assert_array_equal(mask[2], np.ones(rl_env.ACTION_SIZE))
+    np.testing.assert_array_equal(mask[2, :7], np.zeros(7))
+    np.testing.assert_array_equal(mask[2, 7:14], np.ones(7))
+    assert mask[2, 14] == 0.0
+    np.testing.assert_array_equal(mask[3, :14], np.ones(14))
+    assert mask[3, 14] == 0.0
+
+
+def test_grasped_phase_enforces_right_arm_only_cut_control():
+    runtime = _Runtime([_state("grasped"), _state("grasped")])
+    env = rl_env.OnlineDeleafEnv(runtime)
+    env.reset()
+    _, _, _, _, info = env.step(np.ones(15))
+    np.testing.assert_array_equal(runtime.actions[0][0][:7], np.zeros(7))
+    np.testing.assert_array_equal(runtime.actions[0][0][7:14], np.ones(7))
+    assert runtime.actions[0][0][14] == 0.0
+    assert info["action_phase_masked"]
 
 
 def test_grasp_curriculum_terminates_without_claiming_full_task_success():

@@ -66,6 +66,68 @@ def test_position_ik_places_tool_point_without_orientation_constraint() -> None:
     np.testing.assert_allclose(actual[:3], target, atol=1e-3)
 
 
+def test_signed_transverse_direction_returns_opposed_jaw_closing_axes() -> None:
+    positive = robot_kinematics.signed_transverse_direction(
+        (0.0, -1.0, 0.0),
+        (0.0, 0.0, 1.0),
+        1.0,
+    )
+    negative = robot_kinematics.signed_transverse_direction(
+        (0.0, -1.0, 0.0),
+        (0.0, 0.0, 1.0),
+        -1.0,
+    )
+
+    np.testing.assert_allclose(positive, (1.0, 0.0, 0.0), atol=1e-12)
+    np.testing.assert_allclose(negative, -positive, atol=1e-12)
+    with pytest.raises(ValueError, match="parallel"):
+        robot_kinematics.signed_transverse_direction(
+            (0.0, 0.0, 1.0),
+            (0.0, 0.0, 1.0),
+        )
+
+
+def test_rotate_horizontal_direction_applies_signed_world_yaw() -> None:
+    np.testing.assert_allclose(
+        robot_kinematics.rotate_horizontal_direction((0.0, -2.0, 0.0), 90.0),
+        (1.0, 0.0, 0.0),
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        robot_kinematics.rotate_horizontal_direction((0.0, -2.0, 0.0), -90.0),
+        (-1.0, 0.0, 0.0),
+        atol=1e-12,
+    )
+
+
+def test_point_axes_ik_honours_explicit_jaw_closing_direction() -> None:
+    model = robot_kinematics.Rby1Kinematics()
+    expected = np.asarray(
+        (-120.779, 0.740, -20.440, -74.103, -5.287, 109.523, -3.747)
+    )
+    expected_pose = model.forward("left", expected, BASE)
+    local_point = np.asarray((0.0, 0.0, -0.1025, 1.0))
+    target = (expected_pose @ local_point)[:3]
+
+    result = model.solve_position_axes(
+        "left",
+        local_point_m=local_point[:3],
+        target_point_m=target,
+        seed_degrees=expected,
+        base_matrix=BASE,
+        pointing_axis=2,
+        pointing_direction=expected_pose[:3, 2],
+        transverse_axis=0,
+        transverse_to=expected_pose[:3, 1],
+        transverse_direction=expected_pose[:3, 0],
+    )
+
+    assert result.succeeded
+    actual = model.forward("left", result.joint_degrees, BASE)
+    assert np.dot(actual[:3, 0], expected_pose[:3, 0]) > 0.999
+    np.testing.assert_allclose((actual @ local_point)[:3], target, atol=1e-3)
+
+
 def test_point_axes_ik_rejects_invalid_position_scale() -> None:
     model = robot_kinematics.Rby1Kinematics()
     with pytest.raises(ValueError, match="position_scale_m"):
@@ -80,6 +142,19 @@ def test_point_axes_ik_rejects_invalid_position_scale() -> None:
             transverse_axis=0,
             transverse_to=(1.0, 0.0, 0.0),
             position_scale_m=0.0,
+        )
+    with pytest.raises(ValueError, match="maximum_evaluations"):
+        model.solve_position_axes(
+            "left",
+            local_point_m=(0.0, 0.0, -0.1),
+            target_point_m=(0.0, 0.0, 0.0),
+            seed_degrees=(0.0,) * 7,
+            base_matrix=BASE,
+            pointing_axis=2,
+            pointing_direction=(0.0, 1.0, 0.0),
+            transverse_axis=0,
+            transverse_to=(1.0, 0.0, 0.0),
+            maximum_evaluations=0,
         )
 
 
@@ -184,6 +259,71 @@ def test_oriented_box_clearance_rejects_greenhouse_wall_overlap() -> None:
     assert clear.nearest_obstacle == "greenhouse_wall"
     assert clear.clearance_m == pytest.approx(0.75)
     assert overlap.clearance_m < 0.0
+
+
+def test_oriented_foliage_box_avoids_inflated_aabb_corner_rejection() -> None:
+    angle = np.radians(45.0)
+    rotation = (
+        (float(np.cos(angle)), float(-np.sin(angle)), 0.0),
+        (float(np.sin(angle)), float(np.cos(angle)), 0.0),
+        (0.0, 0.0, 1.0),
+    )
+    foliage = robot_kinematics.OrientedBoxObstacle(
+        "leaf",
+        (0.0, 0.0, 0.0),
+        rotation,
+        (1.0, 0.01, 0.10),
+    )
+    inflated = np.sqrt(0.5) * 1.01
+    foliage_aabb = robot_kinematics.BoxObstacle(
+        "leaf_aabb",
+        (-inflated, -inflated, -0.10),
+        (inflated, inflated, 0.10),
+    )
+
+    exact = robot_kinematics.oriented_box_oriented_box_clearance(
+        (0.0, 0.50, 0.0),
+        np.eye(3),
+        (0.05, 0.05, 0.05),
+        (foliage,),
+    )
+    conservative_aabb = robot_kinematics.oriented_box_box_clearance(
+        (0.0, 0.50, 0.0),
+        np.eye(3),
+        (0.05, 0.05, 0.05),
+        (foliage_aabb,),
+    )
+
+    assert exact.clearance_m > 0.20
+    assert conservative_aabb.clearance_m < 0.0
+
+
+def test_capsule_and_sphere_clear_exact_oriented_foliage_box() -> None:
+    angle = np.radians(45.0)
+    rotation = (
+        (float(np.cos(angle)), float(-np.sin(angle)), 0.0),
+        (float(np.sin(angle)), float(np.cos(angle)), 0.0),
+        (0.0, 0.0, 1.0),
+    )
+    foliage = robot_kinematics.OrientedBoxObstacle(
+        "leaf",
+        (0.0, 0.0, 0.0),
+        rotation,
+        (1.0, 0.01, 0.10),
+    )
+    capsule = robot_kinematics.CapsuleObstacle(
+        "arm",
+        (-0.1, 0.50, 0.0),
+        (0.1, 0.50, 0.0),
+        0.05,
+    )
+
+    assert robot_kinematics.capsule_oriented_box_clearance(
+        capsule, foliage
+    ) > 0.15
+    assert robot_kinematics.sphere_oriented_box_clearance(
+        (0.0, 0.50, 0.0), 0.05, (foliage,)
+    ).clearance_m > 0.20
 
 
 def test_capsule_clearance_rejects_greenhouse_box_overlap() -> None:
@@ -324,6 +464,27 @@ def test_arm_obstacle_clearance_detects_a_vine_capsule_overlap() -> None:
     assert result.clearance_m < 0.0
     assert result.nearest_obstacle is not None
     assert "link_left_arm_" in result.nearest_obstacle
+
+
+def test_fixed_body_oriented_box_clearance_detects_foliage_overlap() -> None:
+    model = robot_kinematics.Rby1Kinematics()
+    capsule = model.fixed_body_capsules(BASE)[0]
+    centre = 0.5 * (
+        np.asarray(capsule.start_m) + np.asarray(capsule.end_m)
+    )
+    foliage = robot_kinematics.OrientedBoxObstacle(
+        path="foliage",
+        centre_m=tuple(centre),
+        rotation=((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+        half_extents_m=(0.001, 0.001, 0.001),
+    )
+
+    result = model.fixed_body_oriented_box_clearance(BASE, (foliage,))
+
+    assert result.clearance_m < 0.0
+    assert result.nearest_obstacle is not None
+    assert "link_torso_" in result.nearest_obstacle
+    assert "foliage" in result.nearest_obstacle
 
 
 def test_inter_arm_clearance_accepts_ready_pose_and_rejects_overlap() -> None:

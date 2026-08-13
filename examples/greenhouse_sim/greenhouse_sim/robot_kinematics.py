@@ -28,6 +28,7 @@ class IKResult:
     orientation_error_rad: float
     cost: float
     succeeded: bool
+    evaluations: int | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -57,6 +58,20 @@ class BoxObstacle:
     path: str
     minimum_m: tuple[float, float, float]
     maximum_m: tuple[float, float, float]
+
+
+@dataclasses.dataclass(frozen=True)
+class OrientedBoxObstacle:
+    """World-space oriented box used for live foliage clearance."""
+
+    path: str
+    centre_m: tuple[float, float, float]
+    rotation: tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ]
+    half_extents_m: tuple[float, float, float]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -182,6 +197,49 @@ def base_transform(position_m, yaw_degrees: float) -> np.ndarray:
     matrix[:3, :3] = _axis_rotation(np.asarray([0.0, 0.0, 1.0]), math.radians(yaw_degrees))
     matrix[:3, 3] = np.asarray(position_m, dtype=np.float64)
     return matrix
+
+
+def signed_transverse_direction(
+    pointing_direction,
+    transverse_to,
+    sign: float = 1.0,
+) -> np.ndarray:
+    """Return one signed axis perpendicular to the pointing and target axes.
+
+    For the RB-Y1 gripper, the returned vector is the desired local-X jaw
+    closing direction. The two signs represent the physically distinct wrist
+    rolls that place the same petiole between the open fingers.
+    """
+    if float(sign) not in (-1.0, 1.0):
+        raise ValueError("sign must be -1 or 1")
+    pointing = np.asarray(pointing_direction, dtype=np.float64)
+    transverse = np.asarray(transverse_to, dtype=np.float64)
+    if pointing.shape != (3,) or transverse.shape != (3,):
+        raise ValueError("pointing_direction and transverse_to must contain three values")
+    pointing_norm = float(np.linalg.norm(pointing))
+    transverse_norm = float(np.linalg.norm(transverse))
+    if pointing_norm <= 1e-12 or transverse_norm <= 1e-12:
+        raise ValueError("pointing_direction and transverse_to must be non-zero")
+    pointing /= pointing_norm
+    transverse /= transverse_norm
+    direction = np.cross(transverse, pointing)
+    direction_norm = float(np.linalg.norm(direction))
+    if direction_norm <= 1e-6:
+        raise ValueError("pointing and target axes are parallel")
+    return float(sign) * direction / direction_norm
+
+
+def rotate_horizontal_direction(direction, yaw_degrees: float) -> np.ndarray:
+    """Rotate a non-zero direction around world Z and preserve unit length."""
+    vector = np.asarray(direction, dtype=np.float64)
+    if vector.shape != (3,):
+        raise ValueError("direction must contain three values")
+    norm = float(np.linalg.norm(vector))
+    if norm <= 1e-12 or not np.isfinite(float(yaw_degrees)):
+        raise ValueError("direction must be non-zero and yaw_degrees finite")
+    return _axis_rotation(
+        np.asarray([0.0, 0.0, 1.0]), math.radians(float(yaw_degrees))
+    ) @ (vector / norm)
 
 
 def sphere_capsule_clearance(
@@ -414,9 +472,30 @@ def oriented_box_capsule_clearance(
         raise ValueError("box half extents cannot be negative")
     best = float("inf")
     nearest = None
+    # An enclosing-sphere separation is a conservative lower bound on the
+    # exact OBB/capsule separation. Evaluate likely-nearest capsules first and
+    # skip the expensive segment/AABB solve once that bound cannot beat the
+    # exact minimum already found.
+    box_radius = float(np.linalg.norm(half_extents))
+    bounded_obstacles = []
     for obstacle in obstacles:
         start = np.asarray(obstacle.start_m, dtype=np.float64)
         end = np.asarray(obstacle.end_m, dtype=np.float64)
+        obstacle_centre = 0.5 * (start + end)
+        obstacle_radius = (
+            0.5 * float(np.linalg.norm(end - start))
+            + float(obstacle.radius_m)
+        )
+        lower_bound = (
+            float(np.linalg.norm(obstacle_centre - centre))
+            - box_radius
+            - obstacle_radius
+        )
+        bounded_obstacles.append((lower_bound, obstacle, start, end))
+    bounded_obstacles.sort(key=lambda item: item[0])
+    for lower_bound, obstacle, start, end in bounded_obstacles:
+        if lower_bound >= best:
+            break
         local_start = basis.T @ (start - centre)
         local_end = basis.T @ (end - centre)
         clearance = (
@@ -444,15 +523,47 @@ def _oriented_box_aabb_separation(
     obstacle: BoxObstacle,
 ) -> float:
     """Return conservative signed SAT separation from an OBB to an AABB."""
+    obstacle_centre, obstacle_half_extents = _box_centre_half_extents(obstacle)
+    return _oriented_box_obb_separation(
+        centre_m,
+        rotation,
+        half_extents_m,
+        obstacle_centre,
+        np.eye(3, dtype=np.float64),
+        obstacle_half_extents,
+    )
+
+
+def _oriented_box_obb_separation(
+    centre_m,
+    rotation: np.ndarray,
+    half_extents_m,
+    obstacle_centre_m,
+    obstacle_rotation: np.ndarray,
+    obstacle_half_extents_m,
+) -> float:
+    """Return conservative signed SAT separation between two oriented boxes."""
     centre = np.asarray(centre_m, dtype=np.float64)
     basis = np.asarray(rotation, dtype=np.float64)
     half_extents = np.asarray(half_extents_m, dtype=np.float64)
-    if centre.shape != (3,) or basis.shape != (3, 3) or half_extents.shape != (3,):
+    obstacle_centre = np.asarray(obstacle_centre_m, dtype=np.float64)
+    obstacle_basis = np.asarray(obstacle_rotation, dtype=np.float64)
+    obstacle_half_extents = np.asarray(
+        obstacle_half_extents_m,
+        dtype=np.float64,
+    )
+    if (
+        centre.shape != (3,)
+        or basis.shape != (3, 3)
+        or half_extents.shape != (3,)
+        or obstacle_centre.shape != (3,)
+        or obstacle_basis.shape != (3, 3)
+        or obstacle_half_extents.shape != (3,)
+    ):
         raise ValueError("box centre, rotation, and half extents have invalid shapes")
-    if np.any(half_extents < 0.0):
+    if np.any(half_extents < 0.0) or np.any(obstacle_half_extents < 0.0):
         raise ValueError("box half extents cannot be negative")
-    obstacle_centre, obstacle_half_extents = _box_centre_half_extents(obstacle)
-    relative_rotation = basis.T
+    relative_rotation = basis.T @ obstacle_basis
     absolute_rotation = np.abs(relative_rotation) + 1e-12
     translation = basis.T @ (obstacle_centre - centre)
     gaps: list[float] = []
@@ -503,6 +614,19 @@ def _oriented_box_aabb_separation(
     return max(gaps)
 
 
+def _oriented_obstacle_arrays(
+    obstacle: OrientedBoxObstacle,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    centre = np.asarray(obstacle.centre_m, dtype=np.float64)
+    rotation = np.asarray(obstacle.rotation, dtype=np.float64)
+    half_extents = np.asarray(obstacle.half_extents_m, dtype=np.float64)
+    if centre.shape != (3,) or rotation.shape != (3, 3) or half_extents.shape != (3,):
+        raise ValueError(f"invalid oriented box obstacle: {obstacle.path}")
+    if np.any(half_extents < 0.0):
+        raise ValueError(f"invalid oriented box half extents: {obstacle.path}")
+    return centre, rotation, half_extents
+
+
 def oriented_box_box_clearance(
     centre_m,
     rotation: np.ndarray,
@@ -510,18 +634,172 @@ def oriented_box_box_clearance(
     obstacles: tuple[BoxObstacle, ...],
 ) -> ClearanceResult:
     """Return signed separation from an oriented box to rigid structure boxes."""
+    centre = np.asarray(centre_m, dtype=np.float64)
+    half_extents = np.asarray(half_extents_m, dtype=np.float64)
+    if centre.shape != (3,) or half_extents.shape != (3,):
+        raise ValueError("box centre and half extents have invalid shapes")
+    box_radius = float(np.linalg.norm(half_extents))
+    bounded_obstacles = []
+    for obstacle in obstacles:
+        obstacle_centre, obstacle_half_extents = _box_centre_half_extents(obstacle)
+        lower_bound = (
+            float(np.linalg.norm(obstacle_centre - centre))
+            - box_radius
+            - float(np.linalg.norm(obstacle_half_extents))
+        )
+        bounded_obstacles.append((lower_bound, obstacle))
+    bounded_obstacles.sort(key=lambda item: item[0])
+
     best = float("inf")
     nearest = None
-    for obstacle in obstacles:
+    for lower_bound, obstacle in bounded_obstacles:
+        if lower_bound >= best:
+            break
         clearance = _oriented_box_aabb_separation(
-            centre_m,
+            centre,
             rotation,
-            half_extents_m,
+            half_extents,
             obstacle,
         )
         if clearance < best:
             best = clearance
             nearest = obstacle.path
+    return ClearanceResult(clearance_m=best, nearest_obstacle=nearest)
+
+
+def oriented_box_oriented_box_clearance(
+    centre_m,
+    rotation: np.ndarray,
+    half_extents_m,
+    obstacles: tuple[OrientedBoxObstacle, ...],
+) -> ClearanceResult:
+    """Return signed separation from a tool OBB to live foliage OBBs."""
+    centre = np.asarray(centre_m, dtype=np.float64)
+    half_extents = np.asarray(half_extents_m, dtype=np.float64)
+    if centre.shape != (3,) or half_extents.shape != (3,):
+        raise ValueError("box centre and half extents have invalid shapes")
+    box_radius = float(np.linalg.norm(half_extents))
+    bounded_obstacles = []
+    for obstacle in obstacles:
+        obstacle_centre, obstacle_rotation, obstacle_half_extents = (
+            _oriented_obstacle_arrays(obstacle)
+        )
+        lower_bound = (
+            float(np.linalg.norm(obstacle_centre - centre))
+            - box_radius
+            - float(np.linalg.norm(obstacle_half_extents))
+        )
+        bounded_obstacles.append(
+            (
+                lower_bound,
+                obstacle,
+                obstacle_centre,
+                obstacle_rotation,
+                obstacle_half_extents,
+            )
+        )
+    bounded_obstacles.sort(key=lambda item: item[0])
+
+    best = float("inf")
+    nearest = None
+    for (
+        lower_bound,
+        obstacle,
+        obstacle_centre,
+        obstacle_rotation,
+        obstacle_half_extents,
+    ) in bounded_obstacles:
+        if lower_bound >= best:
+            break
+        clearance = _oriented_box_obb_separation(
+            centre,
+            rotation,
+            half_extents,
+            obstacle_centre,
+            obstacle_rotation,
+            obstacle_half_extents,
+        )
+        if clearance < best:
+            best = clearance
+            nearest = obstacle.path
+    return ClearanceResult(clearance_m=best, nearest_obstacle=nearest)
+
+
+def sphere_oriented_box_clearance(
+    centre_m,
+    radius_m: float,
+    obstacles: tuple[OrientedBoxObstacle, ...],
+) -> ClearanceResult:
+    """Return exact sphere separation from live foliage OBBs."""
+    centre = np.asarray(centre_m, dtype=np.float64)
+    if centre.shape != (3,):
+        raise ValueError("centre_m must contain three values")
+    if radius_m < 0.0:
+        raise ValueError("radius_m cannot be negative")
+    best = float("inf")
+    nearest = None
+    for obstacle in obstacles:
+        obstacle_centre, obstacle_rotation, half_extents = (
+            _oriented_obstacle_arrays(obstacle)
+        )
+        local = obstacle_rotation.T @ (centre - obstacle_centre)
+        closest = np.clip(local, -half_extents, half_extents)
+        clearance = float(np.linalg.norm(local - closest) - radius_m)
+        if clearance < best:
+            best = clearance
+            nearest = obstacle.path
+    return ClearanceResult(clearance_m=best, nearest_obstacle=nearest)
+
+
+def capsule_oriented_box_clearance(
+    capsule: CapsuleObstacle,
+    obstacle: OrientedBoxObstacle,
+) -> float:
+    """Return exact capsule-centreline separation from a foliage OBB."""
+    obstacle_centre, obstacle_rotation, half_extents = _oriented_obstacle_arrays(
+        obstacle
+    )
+    start = obstacle_rotation.T @ (
+        np.asarray(capsule.start_m, dtype=np.float64) - obstacle_centre
+    )
+    end = obstacle_rotation.T @ (
+        np.asarray(capsule.end_m, dtype=np.float64) - obstacle_centre
+    )
+    return _segment_aabb_distance(start, end, half_extents) - float(
+        capsule.radius_m
+    )
+
+
+def capsules_oriented_box_clearance(
+    capsules: tuple[CapsuleObstacle, ...],
+    obstacles: tuple[OrientedBoxObstacle, ...],
+) -> ClearanceResult:
+    """Return exact minimum capsule-set separation from foliage OBBs."""
+    best = float("inf")
+    nearest = None
+    for capsule in capsules:
+        start = np.asarray(capsule.start_m, dtype=np.float64)
+        end = np.asarray(capsule.end_m, dtype=np.float64)
+        centre = 0.5 * (start + end)
+        bounding_radius = (
+            0.5 * float(np.linalg.norm(end - start))
+            + float(capsule.radius_m)
+        )
+        for obstacle in obstacles:
+            obstacle_centre, _, half_extents = _oriented_obstacle_arrays(
+                obstacle
+            )
+            lower_bound = (
+                float(np.linalg.norm(obstacle_centre - centre))
+                - bounding_radius
+                - float(np.linalg.norm(half_extents))
+            )
+            if lower_bound >= best:
+                continue
+            clearance = capsule_oriented_box_clearance(capsule, obstacle)
+            if clearance < best:
+                best = clearance
+                nearest = f"{capsule.path} <-> {obstacle.path}"
     return ClearanceResult(clearance_m=best, nearest_obstacle=nearest)
 
 
@@ -855,6 +1133,18 @@ class Rby1Kinematics:
             obstacles,
         )
 
+    def fixed_body_oriented_box_clearance(
+        self,
+        base_matrix: np.ndarray,
+        obstacles: tuple[OrientedBoxObstacle, ...],
+        torso_degrees=DEFAULT_TORSO_DEGREES,
+    ) -> ClearanceResult:
+        """Return exact torso/head separation from live foliage OBBs."""
+        return capsules_oriented_box_clearance(
+            self.fixed_body_capsules(base_matrix, torso_degrees),
+            obstacles,
+        )
+
     def arm_obstacle_clearance(
         self,
         side: str,
@@ -909,6 +1199,25 @@ class Rby1Kinematics:
                     best = clearance
                     nearest = f"{capsule.path} <-> {obstacle.path}"
         return ClearanceResult(clearance_m=best, nearest_obstacle=nearest)
+
+    def arm_oriented_box_clearance(
+        self,
+        side: str,
+        arm_degrees,
+        base_matrix: np.ndarray,
+        obstacles: tuple[OrientedBoxObstacle, ...],
+        torso_degrees=DEFAULT_TORSO_DEGREES,
+    ) -> ClearanceResult:
+        """Return minimum arm-capsule separation from live foliage OBBs."""
+        return capsules_oriented_box_clearance(
+            self.arm_capsules(
+                side,
+                arm_degrees,
+                base_matrix,
+                torso_degrees,
+            ),
+            obstacles,
+        )
 
     def point_jacobian(
         self,
@@ -1122,8 +1431,10 @@ class Rby1Kinematics:
         pointing_direction,
         transverse_axis: int,
         transverse_to,
+        transverse_direction=None,
         torso_degrees=DEFAULT_TORSO_DEGREES,
         position_scale_m: float = 0.005,
+        maximum_evaluations: int = 5000,
     ) -> IKResult:
         """Solve point placement with a pointing axis and transverse closing axis."""
         from scipy.optimize import least_squares
@@ -1135,8 +1446,22 @@ class Rby1Kinematics:
         pointing /= max(float(np.linalg.norm(pointing)), 1e-12)
         transverse = np.asarray(transverse_to, dtype=np.float64)
         transverse /= max(float(np.linalg.norm(transverse)), 1e-12)
+        desired_transverse = (
+            None
+            if transverse_direction is None
+            else np.asarray(transverse_direction, dtype=np.float64)
+        )
+        if desired_transverse is not None:
+            if desired_transverse.shape != (3,):
+                raise ValueError("transverse_direction must contain three values")
+            desired_transverse_norm = float(np.linalg.norm(desired_transverse))
+            if desired_transverse_norm <= 1e-12:
+                raise ValueError("transverse_direction must be non-zero")
+            desired_transverse /= desired_transverse_norm
         if position_scale_m <= 0.0:
             raise ValueError("position_scale_m must be positive")
+        if maximum_evaluations < 1:
+            raise ValueError("maximum_evaluations must be positive")
         seed = np.radians(np.asarray(seed_degrees, dtype=np.float64))
         lower, upper = self.arm_limits_degrees(side)
         lower = np.radians(lower) + 1e-5
@@ -1149,7 +1474,16 @@ class Rby1Kinematics:
                 (
                     (point - target) / position_scale_m,
                     (actual[:3, pointing_axis] - pointing) / 0.4,
-                    np.asarray([np.dot(actual[:3, transverse_axis], transverse) / 0.3]),
+                    (
+                        np.asarray(
+                            [np.dot(actual[:3, transverse_axis], transverse) / 0.3]
+                        )
+                        if desired_transverse is None
+                        else (
+                            actual[:3, transverse_axis] - desired_transverse
+                        )
+                        / 0.4
+                    ),
                     (radians - seed) * 0.003,
                 )
             )
@@ -1158,7 +1492,7 @@ class Rby1Kinematics:
             residual,
             np.clip(seed, lower, upper),
             bounds=(lower, upper),
-            max_nfev=5000,
+            max_nfev=int(maximum_evaluations),
             xtol=1e-12,
             ftol=1e-12,
             gtol=1e-12,
@@ -1169,15 +1503,35 @@ class Rby1Kinematics:
         axis_error = float(
             math.acos(np.clip(np.dot(actual[:3, pointing_axis], pointing), -1.0, 1.0))
         )
+        transverse_error = (
+            0.0
+            if desired_transverse is None
+            else float(
+                math.acos(
+                    np.clip(
+                        np.dot(
+                            actual[:3, transverse_axis], desired_transverse
+                        ),
+                        -1.0,
+                        1.0,
+                    )
+                )
+            )
+        )
         return IKResult(
             joint_degrees=tuple(float(value) for value in np.degrees(result.x)),
             position_error_m=position_error,
-            orientation_error_rad=axis_error,
+            orientation_error_rad=max(axis_error, transverse_error),
             cost=float(result.cost),
             succeeded=bool(
                 result.success
                 and position_error < 1e-3
                 and axis_error < math.radians(50.0)
-                and abs(float(np.dot(actual[:3, transverse_axis], transverse))) < 0.1
+                and (
+                    abs(float(np.dot(actual[:3, transverse_axis], transverse))) < 0.1
+                    if desired_transverse is None
+                    else transverse_error < math.radians(50.0)
+                )
             ),
+            evaluations=int(result.nfev),
         )
