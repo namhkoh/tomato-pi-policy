@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from greenhouse_sim import organs
 from greenhouse_sim import vine_physics
@@ -10,6 +11,24 @@ from pxr import Sdf
 from pxr import Usd
 from pxr import UsdGeom
 from pxr import UsdPhysics
+
+
+def test_scene_physics_enables_supported_deterministic_solver_mode() -> None:
+    try:
+        from pxr import PhysxSchema
+    except ImportError:
+        pytest.skip('PhysxSchema requires a running SimulationApp')
+
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.Xform.Define(stage, '/World')
+    vine_physics.apply_scene_physics(stage)
+
+    api = PhysxSchema.PhysxSceneAPI.Get(
+        stage, Sdf.Path('/World/PhysicsScene')
+    )
+    assert api.GetEnableEnhancedDeterminismAttr().Get() is True
+    assert api.GetEnableCCDAttr().Get() is True
+    assert api.GetSolverTypeAttr().Get() == 'TGS'
 
 
 def test_cut_zone_collider_radius_does_not_change_structural_mass() -> None:
@@ -31,6 +50,12 @@ def test_cut_zone_collider_radius_does_not_change_structural_mass() -> None:
         0.004, link.length, properties.density_kg_m3
     )
     assert structural_mass > collision_radius_mass
+
+
+def test_structural_contact_envelope_is_submillimetre() -> None:
+    assert vine_physics.STRUCTURAL_REST_OFFSET_M == 0.0
+    assert 0.0 < vine_physics.STRUCTURAL_CONTACT_OFFSET_M <= 0.0005
+    assert vine_physics.STRUCTURAL_CONTACT_OFFSET_M < 0.0015
 
 
 def test_physical_cut_zone_covers_every_segment_through_25_mm_stub() -> None:

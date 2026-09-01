@@ -11,6 +11,8 @@ physical segment with clearance for the wrist D405 body.
 from __future__ import annotations
 
 import dataclasses
+import functools
+import math
 
 import numpy as np
 
@@ -25,6 +27,7 @@ class GraspCandidate:
     role: str
     centre_m: tuple[float, float, float]
     axis: tuple[float, float, float]
+    axial_offset_m: float = 0.0
     excluded_finger_colliders: tuple[str, ...] = ()
 
 
@@ -35,6 +38,7 @@ class BaseAttempt:
     position_m: tuple[float, float, float]
     collider: str
     segment: int
+    grasp_axial_offset_m: float
     grasp_approach_yaw_offset_degrees: float
     grasp_transverse_sign: float
     solution: robot_kinematics.IKResult
@@ -73,6 +77,8 @@ class BaseAttempt:
     nearest_trajectory_inter_arm_pair: str | None
     approach_route_index: int
     approach_waypoints_degrees: tuple[tuple[float, ...], ...]
+    additional_feasibility: dict | None = None
+    approach_route_screens: tuple[dict, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -87,6 +93,7 @@ class BasePlan:
     selected_grasp_collider: str
     selected_grasp_body: str
     selected_grasp_segment: int
+    selected_grasp_axial_offset_m: float
     selected_grasp_approach_yaw_offset_degrees: float
     selected_grasp_transverse_sign: float
     camera_clearance_m: float
@@ -133,12 +140,15 @@ def _tool_payload_clearance(
     obstacles,
     payload_boxes,
     excluded_finger_colliders=(),
+    *,
+    ee_matrix=None,
 ):
     """Return the minimum vine clearance of every wrist payload box."""
     if not payload_boxes:
         return robot_kinematics.ClearanceResult(float("inf"), None)
     excluded = set(excluded_finger_colliders)
-    ee_matrix = model.forward("left", joint_degrees, base_matrix)
+    if ee_matrix is None:
+        ee_matrix = model.forward("left", joint_degrees, base_matrix)
     best = robot_kinematics.ClearanceResult(float("inf"), None)
     for component, local_centre, local_rotation, half_extents in payload_boxes:
         component_obstacles = (
@@ -223,6 +233,8 @@ def _tool_payload_foliage_clearance(
     foliage_obstacles,
     payload_boxes,
     excluded_finger_colliders=(),
+    *,
+    ee_matrix=None,
 ):
     """Require every open-gripper payload box to clear all live foliage.
 
@@ -233,7 +245,8 @@ def _tool_payload_foliage_clearance(
     """
     if not foliage_obstacles or not payload_boxes:
         return robot_kinematics.ClearanceResult(float("inf"), None)
-    ee_matrix = model.forward("left", joint_degrees, base_matrix)
+    if ee_matrix is None:
+        ee_matrix = model.forward("left", joint_degrees, base_matrix)
     best = robot_kinematics.ClearanceResult(float("inf"), None)
     for component, local_centre, local_rotation, half_extents in payload_boxes:
         world_centre = (
@@ -256,6 +269,41 @@ def _tool_payload_foliage_clearance(
                 f"{component} <-> {clearance.nearest_obstacle}",
             )
     return best
+
+
+def _tool_payload_clears_foliage(
+    model,
+    joint_degrees,
+    base_matrix,
+    foliage_obstacles,
+    payload_boxes,
+    minimum_clearance_m: float,
+    *,
+    ee_matrix=None,
+) -> bool:
+    """Threshold-only counterpart to payload foliage diagnostics."""
+    if not foliage_obstacles or not payload_boxes:
+        return True
+    if ee_matrix is None:
+        ee_matrix = model.forward("left", joint_degrees, base_matrix)
+    for _component, local_centre, local_rotation, half_extents in payload_boxes:
+        world_centre = (
+            ee_matrix
+            @ np.append(np.asarray(local_centre, dtype=np.float64), 1.0)
+        )[:3]
+        world_rotation = ee_matrix[:3, :3] @ np.asarray(
+            local_rotation,
+            dtype=np.float64,
+        )
+        if not robot_kinematics.oriented_box_clears_oriented_boxes(
+            world_centre,
+            world_rotation,
+            half_extents,
+            foliage_obstacles,
+            minimum_clearance_m,
+        ):
+            return False
+    return True
 
 
 def _arm_joint_limit_margin_degrees(model, side: str, joint_degrees) -> float:
@@ -281,6 +329,7 @@ def _sample_grasp_trajectory(
     excluded_finger_colliders,
     right_waiting_degrees,
     samples: int,
+    clearance_thresholds=None,
 ):
     """Return minimum clearance along every chord of a waypoint route."""
     target = np.asarray(target_degrees, dtype=np.float64)
@@ -291,6 +340,13 @@ def _sample_grasp_trajectory(
     ):
         raise ValueError("approach start, waypoints, and target must contain seven joints")
     arm_best = robot_kinematics.ClearanceResult(float("inf"), None)
+    thresholds = (
+        None
+        if clearance_thresholds is None
+        else np.asarray(clearance_thresholds, dtype=np.float64)
+    )
+    if thresholds is not None and thresholds.shape != (5,):
+        raise ValueError("clearance_thresholds must contain five values")
     camera_best = robot_kinematics.ClearanceResult(float("inf"), None)
     payload_best = robot_kinematics.ClearanceResult(float("inf"), None)
     foliage_arm_best = robot_kinematics.ClearanceResult(float("inf"), None)
@@ -301,6 +357,17 @@ def _sample_grasp_trajectory(
         if right_waiting_degrees is None
         else robot_kinematics.ClearanceResult(float("inf"), None)
     )
+    def route_result():
+        return (
+            arm_best,
+            camera_best,
+            payload_best,
+            inter_arm_best,
+            foliage_arm_best,
+            foliage_camera_best,
+            foliage_payload_best,
+        )
+
     chord_start = start
     for chord_target in (*waypoints, target):
         for fraction in np.linspace(0.0, 1.0, samples):
@@ -309,6 +376,8 @@ def _sample_grasp_trajectory(
             arm = model.arm_obstacle_clearance("left", joints, base_matrix, obstacles)
             if arm.clearance_m < arm_best.clearance_m:
                 arm_best = arm
+            if thresholds is not None and arm_best.clearance_m < thresholds[0]:
+                return route_result()
             camera = robot_kinematics.tool_sphere_clearance(
                 model,
                 "left",
@@ -320,6 +389,8 @@ def _sample_grasp_trajectory(
             )
             if camera.clearance_m < camera_best.clearance_m:
                 camera_best = camera
+            if thresholds is not None and camera_best.clearance_m < thresholds[1]:
+                return route_result()
             payload = _tool_payload_clearance(
                 model,
                 joints,
@@ -330,6 +401,79 @@ def _sample_grasp_trajectory(
             )
             if payload.clearance_m < payload_best.clearance_m:
                 payload_best = payload
+            if thresholds is not None and payload_best.clearance_m < thresholds[2]:
+                return route_result()
+            if (
+                thresholds is not None
+                and callable(getattr(model, "arm_capsules", None))
+                and callable(getattr(model, "forward", None))
+            ):
+                left_capsules = model.arm_capsules("left", joints, base_matrix)
+                if not robot_kinematics.capsules_clear_oriented_boxes(
+                    left_capsules,
+                    foliage_obstacles,
+                    thresholds[3],
+                ):
+                    foliage_arm_best = _arm_foliage_clearance(
+                        model,
+                        "left",
+                        joints,
+                        base_matrix,
+                        foliage_obstacles,
+                    )
+                    return route_result()
+                ee_matrix = model.forward("left", joints, base_matrix)
+                camera_centre = (
+                    ee_matrix
+                    @ np.append(
+                        np.asarray(camera_local_centre_m, dtype=np.float64),
+                        1.0,
+                    )
+                )[:3]
+                if not robot_kinematics.sphere_clears_oriented_boxes(
+                    camera_centre,
+                    camera_radius_m,
+                    foliage_obstacles,
+                    thresholds[3],
+                ):
+                    foliage_camera_best = (
+                        robot_kinematics.sphere_oriented_box_clearance(
+                            camera_centre,
+                            camera_radius_m,
+                            foliage_obstacles,
+                        )
+                    )
+                    return route_result()
+                if not _tool_payload_clears_foliage(
+                    model,
+                    joints,
+                    base_matrix,
+                    foliage_obstacles,
+                    payload_boxes,
+                    thresholds[3],
+                    ee_matrix=ee_matrix,
+                ):
+                    foliage_payload_best = _tool_payload_foliage_clearance(
+                        model,
+                        joints,
+                        base_matrix,
+                        foliage_obstacles,
+                        payload_boxes,
+                        excluded_finger_colliders,
+                        ee_matrix=ee_matrix,
+                    )
+                    return route_result()
+                if inter_arm_best is not None:
+                    inter_arm = model.inter_arm_clearance(
+                        joints,
+                        right_waiting_degrees,
+                        base_matrix,
+                    )
+                    if inter_arm.clearance_m < inter_arm_best.clearance_m:
+                        inter_arm_best = inter_arm
+                    if inter_arm_best.clearance_m < thresholds[4]:
+                        return route_result()
+                continue
             foliage_arm = _arm_foliage_clearance(
                 model,
                 "left",
@@ -339,6 +483,8 @@ def _sample_grasp_trajectory(
             )
             if foliage_arm.clearance_m < foliage_arm_best.clearance_m:
                 foliage_arm_best = foliage_arm
+            if thresholds is not None and foliage_arm_best.clearance_m < thresholds[3]:
+                return route_result()
             foliage_camera = _tool_camera_foliage_clearance(
                 model,
                 joints,
@@ -349,6 +495,8 @@ def _sample_grasp_trajectory(
             )
             if foliage_camera.clearance_m < foliage_camera_best.clearance_m:
                 foliage_camera_best = foliage_camera
+            if thresholds is not None and foliage_camera_best.clearance_m < thresholds[3]:
+                return route_result()
             foliage_payload = _tool_payload_foliage_clearance(
                 model,
                 joints,
@@ -359,6 +507,8 @@ def _sample_grasp_trajectory(
             )
             if foliage_payload.clearance_m < foliage_payload_best.clearance_m:
                 foliage_payload_best = foliage_payload
+            if thresholds is not None and foliage_payload_best.clearance_m < thresholds[3]:
+                return route_result()
             if inter_arm_best is not None:
                 inter_arm = model.inter_arm_clearance(
                     joints,
@@ -367,6 +517,32 @@ def _sample_grasp_trajectory(
                 )
                 if inter_arm.clearance_m < inter_arm_best.clearance_m:
                     inter_arm_best = inter_arm
+                if (
+                    thresholds is not None
+                    and inter_arm_best.clearance_m < thresholds[4]
+                ):
+                    return route_result()
+            if thresholds is not None and (
+                arm_best.clearance_m < thresholds[0]
+                or camera_best.clearance_m < thresholds[1]
+                or payload_best.clearance_m < thresholds[2]
+                or foliage_arm_best.clearance_m < thresholds[3]
+                or foliage_camera_best.clearance_m < thresholds[3]
+                or foliage_payload_best.clearance_m < thresholds[3]
+                or (
+                    inter_arm_best is not None
+                    and inter_arm_best.clearance_m < thresholds[4]
+                )
+            ):
+                return (
+                    arm_best,
+                    camera_best,
+                    payload_best,
+                    inter_arm_best,
+                    foliage_arm_best,
+                    foliage_camera_best,
+                    foliage_payload_best,
+                )
         chord_start = chord_target
     return (
         arm_best,
@@ -389,8 +565,9 @@ def _plan_joint_space_route(
     max_iterations: int,
     step_fraction: float = 0.10,
     edge_resolution: float = 0.025,
+    validation_edge_resolution: float | None = None,
 ):
-    """Deterministic bidirectional RRT-Connect with exact edge validation."""
+    """Deterministic bidirectional RRT-Connect with fine route validation."""
     start = np.asarray(start_degrees, dtype=np.float64)
     goal = np.asarray(goal_degrees, dtype=np.float64)
     lower = np.asarray(lower_degrees, dtype=np.float64)
@@ -405,6 +582,12 @@ def _plan_joint_space_route(
         raise ValueError("joint route bounds and endpoints must have matching positive spans")
     if max_iterations < 1 or step_fraction <= 0.0 or edge_resolution <= 0.0:
         raise ValueError("joint route search parameters must be positive")
+    if (
+        validation_edge_resolution is not None
+        and validation_edge_resolution <= 0.0
+    ):
+        raise ValueError("route validation resolution must be positive")
+
 
     def normalize(values):
         return (np.asarray(values, dtype=np.float64) - lower) / span
@@ -412,9 +595,10 @@ def _plan_joint_space_route(
     def denormalize(values):
         return lower + np.asarray(values, dtype=np.float64) * span
 
-    def edge_valid(first_normalized, second_normalized):
+    def edge_valid(first_normalized, second_normalized, resolution=None):
         delta = np.asarray(second_normalized) - np.asarray(first_normalized)
-        samples = max(2, int(np.ceil(np.linalg.norm(delta) / edge_resolution)) + 1)
+        spacing = edge_resolution if resolution is None else float(resolution)
+        samples = max(2, int(np.ceil(np.linalg.norm(delta) / spacing)) + 1)
         for fraction in np.linspace(0.0, 1.0, samples):
             if not is_valid(denormalize(first_normalized + fraction * delta)):
                 return False
@@ -461,7 +645,14 @@ def _plan_joint_space_route(
     goal_normalized = normalize(goal)
     if not is_valid(start) or not is_valid(goal):
         return None
-    if edge_valid(start_normalized, goal_normalized):
+    if edge_valid(start_normalized, goal_normalized) and (
+        validation_edge_resolution is None
+        or edge_valid(
+            start_normalized,
+            goal_normalized,
+            validation_edge_resolution,
+        )
+    ):
         return ()
 
     rng = np.random.default_rng(seed)
@@ -512,6 +703,16 @@ def _plan_joint_space_route(
             next_index -= 1
         shortened.append(path[next_index])
         cursor = next_index
+    if validation_edge_resolution is not None and any(
+        not edge_valid(
+            first,
+            second,
+            validation_edge_resolution,
+        )
+        for first, second in zip(shortened, shortened[1:])
+    ):
+        return None
+
     return tuple(
         tuple(float(value) for value in denormalize(node))
         for node in shortened[1:-1]
@@ -531,9 +732,12 @@ def plan_target_conditioned_base(
     seeds,
     advances_m=(0.0, 0.03, 0.06, 0.09),
     lateral_offsets_m=(0.0,),
+    advance_direction_xy=None,
     left_waiting_degrees=None,
     left_approach_start_degrees=None,
     left_approach_waypoint_routes=((),),
+    target_relative_ingress_offsets_m=(),
+    target_relative_ingress_gateways_m=(),
     right_waiting_degrees=None,
     reach_reserve_m: float = 0.02,
     minimum_camera_clearance_m: float = 0.005,
@@ -551,7 +755,11 @@ def plan_target_conditioned_base(
     maximum_ik_evaluations: int = 5000,
     grasp_approach_yaw_offsets_degrees=(0.0,),
     grasp_transverse_signs=(1.0,),
+    candidates_are_preferred: bool = False,
     stop_on_first_feasible: bool = False,
+    position_feasibility_check=None,
+    endpoint_feasibility_check=None,
+    additional_feasibility_check=None,
     diagnostics: dict | None = None,
 ) -> BasePlan | None:
     """Return the safest target-facing base pose with a clear grasp chord."""
@@ -588,6 +796,46 @@ def plan_target_conditioned_base(
         raise ValueError("joint_space_search_iterations cannot be negative")
     if maximum_ik_evaluations < 1:
         raise ValueError("maximum_ik_evaluations must be positive")
+    target_relative_ingress_offsets = tuple(
+        float(value) for value in target_relative_ingress_offsets_m
+    )
+    target_relative_ingress_gateways = tuple(
+        tuple(float(component) for component in gateway)
+        for gateway in target_relative_ingress_gateways_m
+    )
+    if (
+        any(
+            not math.isfinite(value) or value <= 0.0
+            for value in target_relative_ingress_offsets
+        )
+        or any(
+            current <= previous
+            for previous, current in zip(
+                target_relative_ingress_offsets,
+                target_relative_ingress_offsets[1:],
+            )
+        )
+    ):
+        raise ValueError(
+            "target_relative_ingress_offsets_m must be strictly increasing "
+            "positive finite distances"
+        )
+    if any(
+        len(gateway) not in (3, 4)
+        or not np.isfinite(gateway).all()
+        or gateway[0] <= 0.0
+        or (len(gateway) == 4 and gateway[3] <= 0.0)
+        for gateway in target_relative_ingress_gateways
+    ):
+        raise ValueError(
+            "target_relative_ingress_gateways_m must contain finite "
+            "(standoff, lateral, vertical[, taper_power]) tuples with "
+            "positive standoff and taper power"
+        )
+    if target_relative_ingress_gateways and not target_relative_ingress_offsets:
+        raise ValueError(
+            "target-relative ingress gateways require ingress offsets"
+        )
     transverse_signs = tuple(float(value) for value in grasp_transverse_signs)
     if not transverse_signs or any(value not in (-1.0, 1.0) for value in transverse_signs):
         raise ValueError("grasp_transverse_signs must contain only -1 or 1")
@@ -614,14 +862,34 @@ def plan_target_conditioned_base(
     if not lateral_offsets:
         raise ValueError("lateral_offsets_m cannot be empty")
 
-    ordered = tuple(sorted(candidates, key=lambda item: item.segment, reverse=True))
-    minimum_segment = max(0, max(item.segment for item in ordered) - 1)
-    distal = tuple(item for item in ordered if item.segment >= minimum_segment)
-    target_xy = np.mean(np.asarray([item.centre_m[:2] for item in distal]), axis=0)
-    direction_xy = target_xy - nominal[:2]
+    # For one organ, retain only its distal two physical links. Automatic
+    # target selection supplies one already-preferred distal link per organ;
+    # comparing those unrelated local segment indices globally would silently
+    # discard valid short petioles whenever another organ has more links.
+    if candidates_are_preferred:
+        ordered = tuple(candidates)
+        distal = ordered
+        minimum_segment = min(item.segment for item in ordered)
+    else:
+        ordered = tuple(
+            sorted(candidates, key=lambda item: item.segment, reverse=True)
+        )
+        minimum_segment = max(0, max(item.segment for item in ordered) - 1)
+        distal = tuple(
+            item for item in ordered if item.segment >= minimum_segment
+        )
+    if advance_direction_xy is None:
+        target_xy = np.mean(
+            np.asarray([item.centre_m[:2] for item in distal]), axis=0
+        )
+        direction_xy = target_xy - nominal[:2]
+    else:
+        direction_xy = np.asarray(advance_direction_xy, dtype=np.float64)
+        if direction_xy.shape != (2,) or not np.all(np.isfinite(direction_xy)):
+            raise ValueError("advance_direction_xy must contain two finite values")
     norm = float(np.linalg.norm(direction_xy))
     if norm <= 1e-9:
-        raise ValueError("target and nominal base must have distinct plan positions")
+        raise ValueError("base advance direction must be non-zero")
     direction_xy /= norm
     yaw_rad = np.radians(float(yaw_degrees))
     lateral_xy = np.asarray([-np.sin(yaw_rad), np.cos(yaw_rad)])
@@ -743,7 +1011,60 @@ def plan_target_conditioned_base(
             )
             continue
 
-        for candidate in distal:
+        position_candidates = distal
+        if position_feasibility_check is not None:
+            position_additional = dict(
+                position_feasibility_check(
+                    base_matrix=base_matrix.copy(),
+                    position_m=position.copy(),
+                    candidates=distal,
+                )
+            )
+            if 'feasible' not in position_additional:
+                raise ValueError(
+                    'position_feasibility_check must return '
+                    'a mapping containing feasible'
+                )
+            if not bool(position_additional['feasible']):
+                position_rejections.append(
+                    {
+                        'reason': 'additional_position_feasibility',
+                        'position_m': position.tolist(),
+                        'additional_feasibility': position_additional,
+                    }
+                )
+                continue
+
+            eligible_colliders = position_additional.get(
+                'eligible_candidate_colliders'
+            )
+            if eligible_colliders is not None:
+                eligible_colliders = frozenset(
+                    str(collider) for collider in eligible_colliders
+                )
+                position_candidates = tuple(
+                    candidate
+                    for candidate in distal
+                    if candidate.collider in eligible_colliders
+                )
+                if not position_candidates:
+                    position_rejections.append(
+                        {
+                            'reason': 'additional_position_feasibility',
+                            'position_m': position.tolist(),
+                            'additional_feasibility': {
+                                **position_additional,
+                                'feasible': False,
+                                'reason': (
+                                    'position feasibility admitted no supplied '
+                                    'grasp candidate'
+                                ),
+                            },
+                        }
+                    )
+                    continue
+
+        for candidate in position_candidates:
             candidate_bearing = np.asarray(candidate.centre_m, dtype=np.float64) - position
             candidate_bearing[2] = 0.0
             candidate_bearing_norm = float(np.linalg.norm(candidate_bearing))
@@ -874,9 +1195,214 @@ def plan_target_conditioned_base(
                         or inter_arm.clearance_m >= minimum_inter_arm_clearance_m
                     )
                 )
+                endpoint_additional = None
+                if endpoint_clear and endpoint_feasibility_check is not None:
+                    endpoint_additional = dict(
+                        endpoint_feasibility_check(
+                            base_matrix=base_matrix.copy(),
+                            position_m=position.copy(),
+                            candidate=candidate,
+                            left_solution=solution,
+                        )
+                    )
+                    if 'feasible' not in endpoint_additional:
+                        raise ValueError(
+                            'endpoint_feasibility_check must return '
+                            'a mapping containing feasible'
+                        )
+                    endpoint_clear = bool(
+                        endpoint_additional['feasible']
+                    )
                 route_evaluations = []
+                candidate_approach_routes = approach_routes
                 if endpoint_clear:
-                    for route_index, route_waypoints in enumerate(approach_routes):
+                    # Joint interpolation directly into a safe grasp endpoint
+                    # can bow the distal links into a neighbouring vine. Build
+                    # a target-relative Cartesian pre-grasp ladder so the last
+                    # 60 mm follows the audited jaw approach instead.
+                    target_relative_solutions = []
+                    target_relative_seed = solution.joint_degrees
+                    target_point = (
+                        np.asarray(candidate.centre_m, dtype=np.float64)
+                        + candidate_reach_reserve
+                    )
+                    for offset_m in target_relative_ingress_offsets:
+                        waypoint_solution = model.solve_position_axes(
+                            "left",
+                            local_point_m=jaw_local_point_m,
+                            target_point_m=(
+                                target_point - offset_m * candidate_bearing
+                            ),
+                            seed_degrees=target_relative_seed,
+                            base_matrix=base_matrix,
+                            pointing_axis=2,
+                            pointing_direction=pointing_direction,
+                            transverse_axis=0,
+                            transverse_to=candidate.axis,
+                            transverse_direction=transverse_direction,
+                            position_scale_m=0.002,
+                            maximum_evaluations=maximum_ik_evaluations,
+                        )
+                        if not waypoint_solution.succeeded:
+                            target_relative_solutions = []
+                            break
+                        target_relative_solutions.append(
+                            waypoint_solution.joint_degrees
+                        )
+                        target_relative_seed = waypoint_solution.joint_degrees
+                    if (
+                        target_relative_ingress_offsets
+                        and len(target_relative_solutions)
+                        == len(target_relative_ingress_offsets)
+                    ):
+                        target_relative_ladder = tuple(
+                            reversed(target_relative_solutions)
+                        )
+                        gateway_routes = []
+                        lateral_direction = np.asarray(
+                            (-candidate_bearing[1], candidate_bearing[0], 0.0),
+                            dtype=np.float64,
+                        )
+                        vertical_direction = np.asarray(
+                            (0.0, 0.0, 1.0),
+                            dtype=np.float64,
+                        )
+                        for gateway in target_relative_ingress_gateways:
+                            standoff_m, lateral_m, vertical_m = gateway[:3]
+                            taper_power = (
+                                1.0 if len(gateway) == 3 else gateway[3]
+                            )
+                            lane_solutions = []
+                            lane_seed = solution.joint_degrees
+                            far_offset_m = target_relative_ingress_offsets[-1]
+                            for offset_m in target_relative_ingress_offsets:
+                                lane_solution = model.solve_position_axes(
+                                    "left",
+                                    local_point_m=jaw_local_point_m,
+                                    target_point_m=(
+                                        target_point
+                                        - offset_m * candidate_bearing
+                                        + lateral_m
+                                        * (offset_m / far_offset_m) ** taper_power
+                                        * lateral_direction
+                                        + vertical_m
+                                        * (offset_m / far_offset_m) ** taper_power
+                                        * vertical_direction
+                                    ),
+                                    seed_degrees=lane_seed,
+                                    base_matrix=base_matrix,
+                                    pointing_axis=2,
+                                    pointing_direction=pointing_direction,
+                                    transverse_axis=0,
+                                    transverse_to=candidate.axis,
+                                    transverse_direction=transverse_direction,
+                                    position_scale_m=0.002,
+                                    maximum_evaluations=maximum_ik_evaluations,
+                                )
+                                if not lane_solution.succeeded:
+                                    lane_solutions = []
+                                    break
+                                lane_solutions.append(
+                                    lane_solution.joint_degrees
+                                )
+                                lane_seed = lane_solution.joint_degrees
+                            if len(lane_solutions) != len(
+                                target_relative_ingress_offsets
+                            ):
+                                continue
+                            gateway_solution = model.solve_position_axes(
+                                "left",
+                                local_point_m=jaw_local_point_m,
+                                target_point_m=(
+                                    target_point
+                                    - standoff_m * candidate_bearing
+                                    + lateral_m * lateral_direction
+                                    + vertical_m * vertical_direction
+                                ),
+                                seed_degrees=lane_solutions[-1],
+                                base_matrix=base_matrix,
+                                pointing_axis=2,
+                                pointing_direction=pointing_direction,
+                                transverse_axis=0,
+                                transverse_to=candidate.axis,
+                                transverse_direction=transverse_direction,
+                                position_scale_m=0.002,
+                                maximum_evaluations=maximum_ik_evaluations,
+                            )
+                            if gateway_solution.succeeded:
+                                gateway_routes.append(
+                                    (
+                                        gateway_solution.joint_degrees,
+                                        *reversed(lane_solutions),
+                                    )
+                                )
+                        candidate_approach_routes = (
+                            *approach_routes,
+                            target_relative_ladder,
+                            *gateway_routes,
+                        )
+
+                    def sample_route(route_waypoints, sample_count):
+                        return _sample_grasp_trajectory(
+                            model,
+                            start_degrees=approach_start,
+                            waypoint_degrees=route_waypoints,
+                            target_degrees=solution.joint_degrees,
+                            base_matrix=base_matrix,
+                            obstacles=obstacles,
+                            foliage_obstacles=foliage_obstacles,
+                            camera_local_centre_m=camera_local_centre_m,
+                            camera_radius_m=camera_radius_m,
+                            payload_boxes=left_payload_boxes,
+                            excluded_finger_colliders=(
+                                candidate.excluded_finger_colliders
+                            ),
+                            right_waiting_degrees=right_waiting_degrees,
+                            samples=sample_count,
+                            clearance_thresholds=(
+                                trajectory_threshold,
+                                minimum_camera_clearance_m,
+                                payload_threshold,
+                                minimum_foliage_clearance_m,
+                                minimum_inter_arm_clearance_m,
+                            ),
+                        )
+
+                    for route_index, route_waypoints in enumerate(
+                        candidate_approach_routes
+                    ):
+                        print(
+                            f"[base-planner] screening preset ingress "
+                            f"{route_index + 1}/{len(candidate_approach_routes)}",
+                            flush=True,
+                        )
+                        coarse_samples = min(7, trajectory_samples)
+                        route_metrics = sample_route(
+                            route_waypoints,
+                            coarse_samples,
+                        )
+                        coarse_route_clear = bool(
+                            route_metrics[0].clearance_m >= trajectory_threshold
+                            and route_metrics[1].clearance_m
+                            >= minimum_camera_clearance_m
+                            and route_metrics[2].clearance_m >= payload_threshold
+                            and route_metrics[4].clearance_m
+                            >= minimum_foliage_clearance_m
+                            and route_metrics[5].clearance_m
+                            >= minimum_foliage_clearance_m
+                            and route_metrics[6].clearance_m
+                            >= minimum_foliage_clearance_m
+                            and (
+                                route_metrics[3] is None
+                                or route_metrics[3].clearance_m
+                                >= minimum_inter_arm_clearance_m
+                            )
+                        )
+                        if coarse_route_clear and coarse_samples < trajectory_samples:
+                            route_metrics = sample_route(
+                                route_waypoints,
+                                trajectory_samples,
+                            )
                         (
                             route_arm,
                             route_camera,
@@ -885,23 +1411,41 @@ def plan_target_conditioned_base(
                             route_arm_foliage,
                             route_camera_foliage,
                             route_payload_foliage,
-                        ) = _sample_grasp_trajectory(
-                                model,
-                                start_degrees=approach_start,
-                                waypoint_degrees=route_waypoints,
-                                target_degrees=solution.joint_degrees,
-                                base_matrix=base_matrix,
-                                obstacles=obstacles,
-                                foliage_obstacles=foliage_obstacles,
-                                camera_local_centre_m=camera_local_centre_m,
-                                camera_radius_m=camera_radius_m,
-                                payload_boxes=left_payload_boxes,
-                                excluded_finger_colliders=(
-                                    candidate.excluded_finger_colliders
-                                ),
-                                right_waiting_degrees=right_waiting_degrees,
-                                samples=trajectory_samples,
+                        ) = route_metrics
+                        route_is_clear = bool(
+                            route_arm.clearance_m >= trajectory_threshold
+                            and route_camera.clearance_m
+                            >= minimum_camera_clearance_m
+                            and route_payload.clearance_m >= payload_threshold
+                            and route_arm_foliage.clearance_m
+                            >= minimum_foliage_clearance_m
+                            and route_camera_foliage.clearance_m
+                            >= minimum_foliage_clearance_m
+                            and route_payload_foliage.clearance_m
+                            >= minimum_foliage_clearance_m
+                            and (
+                                route_inter_arm is None
+                                or route_inter_arm.clearance_m
+                                >= minimum_inter_arm_clearance_m
+                            )
                         )
+                        route_bottlenecks = [
+                            ("arm", route_arm),
+                            ("camera", route_camera),
+                            ("payload", route_payload),
+                            ("arm_foliage", route_arm_foliage),
+                            ("camera_foliage", route_camera_foliage),
+                            ("payload_foliage", route_payload_foliage),
+                        ]
+                        if route_inter_arm is not None:
+                            route_bottlenecks.append(
+                                ("inter_arm", route_inter_arm)
+                            )
+                        route_bottleneck_name, route_bottleneck = min(
+                            route_bottlenecks,
+                            key=lambda item: item[1].clearance_m,
+                        )
+
                         route_evaluations.append(
                             {
                                 "index": route_index,
@@ -913,6 +1457,10 @@ def plan_target_conditioned_base(
                                 "arm_foliage": route_arm_foliage,
                                 "camera_foliage": route_camera_foliage,
                                 "payload_foliage": route_payload_foliage,
+                                "bottleneck": route_bottleneck_name,
+                                "bottleneck_nearest": (
+                                    route_bottleneck.nearest_obstacle
+                                ),
                                 "clearance_m": min(
                                     route_arm.clearance_m,
                                     route_camera.clearance_m,
@@ -926,6 +1474,22 @@ def plan_target_conditioned_base(
                                 ),
                             }
                         )
+                        print(
+                            f"[base-planner] preset ingress {route_index + 1} "
+                            f"{'accepted' if route_is_clear else 'rejected'} "
+                            f"bottleneck={route_bottleneck_name} "
+                            f"clearance={route_bottleneck.clearance_m * 1000.0:.3f}mm "
+                            f"nearest={route_bottleneck.nearest_obstacle}",
+                            flush=True,
+                        )
+                        if (
+                            route_is_clear
+                            and (
+                                stop_on_first_feasible
+                                or maximum_joint_space_route_searches == 0
+                            )
+                        ):
+                            break
                 else:
                     skipped = robot_kinematics.ClearanceResult(
                         float("-inf"),
@@ -983,22 +1547,67 @@ def plan_target_conditioned_base(
                     route_search_foliage_threshold = (
                         minimum_foliage_clearance_m + 0.001
                     )
-
-                    def joint_configuration_clear(values):
-                        arm_result = model.arm_obstacle_clearance(
-                            "left", values, base_matrix, obstacles
+                    reuse_transforms = all(
+                        callable(getattr(model, method, None))
+                        for method in ("arm_capsules", "forward")
+                    )
+                    right_waiting_capsules = (
+                        model.arm_capsules(
+                            "right",
+                            right_waiting_degrees,
+                            base_matrix,
                         )
+                        if reuse_transforms and right_waiting_degrees is not None
+                        else None
+                    )
+
+                    @functools.lru_cache(maxsize=None)
+                    def joint_configuration_clear_cached(values):
+                        left_capsules = None
+                        ee_matrix = None
+                        if reuse_transforms:
+                            left_capsules = model.arm_capsules(
+                                "left",
+                                values,
+                                base_matrix,
+                            )
+                            arm_result = robot_kinematics.capsule_sets_clearance(
+                                left_capsules,
+                                obstacles,
+                            )
+                        else:
+                            arm_result = model.arm_obstacle_clearance(
+                                "left", values, base_matrix, obstacles
+                            )
                         if arm_result.clearance_m < trajectory_threshold:
                             return False
-                        camera_result = robot_kinematics.tool_sphere_clearance(
-                            model,
-                            "left",
-                            values,
-                            base_matrix,
-                            camera_local_centre_m,
-                            camera_radius_m,
-                            obstacles,
-                        )
+                        if reuse_transforms:
+                            ee_matrix = model.forward("left", values, base_matrix)
+                            camera_centre = (
+                                ee_matrix
+                                @ np.append(
+                                    np.asarray(
+                                        camera_local_centre_m,
+                                        dtype=np.float64,
+                                    ),
+                                    1.0,
+                                )
+                            )[:3]
+                            camera_result = robot_kinematics.sphere_capsule_clearance(
+                                camera_centre,
+                                camera_radius_m,
+                                obstacles,
+                            )
+                        else:
+                            camera_result = robot_kinematics.tool_sphere_clearance(
+                                model,
+                                "left",
+                                values,
+                                base_matrix,
+                                camera_local_centre_m,
+                                camera_radius_m,
+                                obstacles,
+                            )
                         if camera_result.clearance_m < minimum_camera_clearance_m:
                             return False
                         payload_result = _tool_payload_clearance(
@@ -1008,10 +1617,37 @@ def plan_target_conditioned_base(
                             obstacles,
                             left_payload_boxes,
                             candidate.excluded_finger_colliders,
+                            ee_matrix=ee_matrix,
                         )
                         if payload_result.clearance_m < payload_threshold:
                             return False
+                        if reuse_transforms:
+                            if not robot_kinematics.capsules_clear_oriented_boxes(
+                                left_capsules,
+                                foliage_obstacles,
+                                route_search_foliage_threshold,
+                            ):
+                                return False
+                            if not robot_kinematics.sphere_clears_oriented_boxes(
+                                camera_centre,
+                                camera_radius_m,
+                                foliage_obstacles,
+                                route_search_foliage_threshold,
+                            ):
+                                return False
+                            if not _tool_payload_clears_foliage(
+                                model,
+                                values,
+                                base_matrix,
+                                foliage_obstacles,
+                                left_payload_boxes,
+                                route_search_foliage_threshold,
+                                ee_matrix=ee_matrix,
+                            ):
+                                return False
                         if (
+                            not reuse_transforms
+                            and
                             _arm_foliage_clearance(
                                 model,
                                 "left",
@@ -1023,6 +1659,8 @@ def plan_target_conditioned_base(
                         ):
                             return False
                         if (
+                            not reuse_transforms
+                            and
                             _tool_camera_foliage_clearance(
                                 model,
                                 values,
@@ -1035,6 +1673,8 @@ def plan_target_conditioned_base(
                         ):
                             return False
                         if (
+                            not reuse_transforms
+                            and
                             _tool_payload_foliage_clearance(
                                 model,
                                 values,
@@ -1048,6 +1688,14 @@ def plan_target_conditioned_base(
                             return False
                         if right_waiting_degrees is None:
                             return True
+                        if reuse_transforms:
+                            return (
+                                robot_kinematics.capsule_sets_clearance(
+                                    left_capsules,
+                                    right_waiting_capsules,
+                                ).clearance_m
+                                >= minimum_inter_arm_clearance_m
+                            )
                         return (
                             model.inter_arm_clearance(
                                 values,
@@ -1055,6 +1703,14 @@ def plan_target_conditioned_base(
                                 base_matrix,
                             ).clearance_m
                             >= minimum_inter_arm_clearance_m
+                        )
+
+                    def joint_configuration_clear(values):
+                        # RRT-Connect revisits tree nodes while connecting and
+                        # shortening.  The settled scene is immutable here, so
+                        # exact joint-state clearance results are reusable.
+                        return joint_configuration_clear_cached(
+                            tuple(float(value) for value in values)
                         )
 
                     generated_waypoints = _plan_joint_space_route(
@@ -1070,7 +1726,8 @@ def plan_target_conditioned_base(
                             + candidate.segment
                         ),
                         max_iterations=joint_space_search_iterations,
-                        edge_resolution=0.01,
+                        edge_resolution=0.075,
+                        validation_edge_resolution=0.025,
                     )
                     if generated_waypoints is not None:
                         (
@@ -1100,7 +1757,7 @@ def plan_target_conditioned_base(
                         )
                         route_evaluations.append(
                             {
-                                "index": len(approach_routes),
+                                "index": len(candidate_approach_routes),
                                 "waypoints": generated_waypoints,
                                 "arm": route_arm,
                                 "camera": route_camera,
@@ -1139,6 +1796,7 @@ def plan_target_conditioned_base(
                     position_m=tuple(float(value) for value in position),
                     collider=candidate.collider,
                     segment=candidate.segment,
+                    grasp_axial_offset_m=candidate.axial_offset_m,
                     grasp_approach_yaw_offset_degrees=approach_yaw_offset,
                     grasp_transverse_sign=transverse_sign,
                     solution=solution,
@@ -1220,8 +1878,48 @@ def plan_target_conditioned_base(
                     ),
                     approach_route_index=selected_route["index"],
                     approach_waypoints_degrees=selected_route["waypoints"],
+                    additional_feasibility=endpoint_additional,
+                    approach_route_screens=tuple(
+                        {
+                            "index": route["index"],
+                            "bottleneck": route.get("bottleneck"),
+                            "bottleneck_nearest": route.get(
+                                "bottleneck_nearest"
+                            ),
+                            "clearance_m": route["clearance_m"],
+                            "arm_clearance_m": route["arm"].clearance_m,
+                            "camera_clearance_m": route[
+                                "camera"
+                            ].clearance_m,
+                            "payload_clearance_m": route[
+                                "payload"
+                            ].clearance_m,
+                            "inter_arm_clearance_m": (
+                                None
+                                if route["inter_arm"] is None
+                                else route["inter_arm"].clearance_m
+                            ),
+                            "arm_foliage_clearance_m": route[
+                                "arm_foliage"
+                            ].clearance_m,
+                            "camera_foliage_clearance_m": route[
+                                "camera_foliage"
+                            ].clearance_m,
+                            "payload_foliage_clearance_m": route[
+                                "payload_foliage"
+                            ].clearance_m,
+                        }
+                        for route in route_evaluations
+                    ),
                 )
                 attempts.append(attempt)
+                if (
+                    endpoint_additional is not None
+                    and not endpoint_clear
+                    and bool(endpoint_additional.get("prune_candidate"))
+                ):
+                    break
+
                 if (
                     solution.succeeded
                     and camera.clearance_m >= minimum_camera_clearance_m
@@ -1252,6 +1950,30 @@ def plan_target_conditioned_base(
                         >= minimum_inter_arm_clearance_m
                     )
                 ):
+                    if additional_feasibility_check is not None:
+                        additional = dict(
+                            additional_feasibility_check(
+                                base_matrix=base_matrix.copy(),
+                                position_m=position.copy(),
+                                candidate=candidate,
+                                left_solution=solution,
+                                left_route_waypoints=selected_route[
+                                    "waypoints"
+                                ],
+                            )
+                        )
+                        if "feasible" not in additional:
+                            raise ValueError(
+                                "additional_feasibility_check must return "
+                                "a mapping containing 'feasible'"
+                            )
+                        attempt = dataclasses.replace(
+                            attempt,
+                            additional_feasibility=additional,
+                        )
+                        attempts[-1] = attempt
+                        if not bool(additional["feasible"]):
+                            continue
                     clearances = [
                         body_clearance.clearance_m,
                         camera.clearance_m,
@@ -1318,6 +2040,7 @@ def plan_target_conditioned_base(
             maximum_ik_evaluations=maximum_ik_evaluations,
             grasp_approach_yaw_offsets_degrees=approach_yaw_offsets,
             grasp_transverse_signs=transverse_signs,
+            candidates_are_preferred=bool(candidates_are_preferred),
             stop_on_first_feasible=bool(stop_on_first_feasible),
             position_rejections=position_rejections,
             attempts=[dataclasses.asdict(attempt) for attempt in attempts],
@@ -1341,6 +2064,7 @@ def plan_target_conditioned_base(
         selected_grasp_collider=candidate.collider,
         selected_grasp_body=candidate.body,
         selected_grasp_segment=candidate.segment,
+        selected_grasp_axial_offset_m=candidate.axial_offset_m,
         selected_grasp_approach_yaw_offset_degrees=(
             attempt.grasp_approach_yaw_offset_degrees
         ),

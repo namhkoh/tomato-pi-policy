@@ -57,6 +57,13 @@ coverage.xml
 .pytest_cache/
 cover/
 
+# Local greenhouse physical-acceptance probes and generated reports.
+/.codex_*.py
+/auto_target_*_fix*.json
+/full_*_fix*.json
+/substem*_fix*.json
+/vine0002_*_fix*.json
+
 # Translations
 *.mo
 *.pot

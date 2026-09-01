@@ -59,6 +59,16 @@ from pxr import UsdGeom  # noqa: E402
 from pxr import UsdPhysics  # noqa: E402
 
 
+# PhysX otherwise derives contact offset from each shape's extent. That is
+# useful for large rigid props, but on a millimetre-scale petiole it creates a
+# several-millimetre invisible cushion: the compliant stem is pushed away
+# before the physical knife edge reaches it. The cut sweep advances by less
+# than 0.25 mm per physics step, so 0.5 mm still gives the solver predictive
+# contact without moving the apparent tissue surface.
+STRUCTURAL_CONTACT_OFFSET_M = 0.0005
+STRUCTURAL_REST_OFFSET_M = 0.0
+
+
 @dataclasses.dataclass(frozen=True)
 class TissueProperties:
     """Mechanical properties of living vine tissue.
@@ -354,6 +364,13 @@ def _define_capsule(
     capsule.CreateHeightAttr(max(link.length - 2.0 * radius, 1e-4))
     if collidable:
         UsdPhysics.CollisionAPI.Apply(capsule.GetPrim())
+        physx_collision = PhysxSchema.PhysxCollisionAPI.Apply(
+            capsule.GetPrim()
+        )
+        physx_collision.CreateContactOffsetAttr(
+            STRUCTURAL_CONTACT_OFFSET_M
+        )
+        physx_collision.CreateRestOffsetAttr(STRUCTURAL_REST_OFFSET_M)
     if visible:
         capsule.CreateDisplayColorAttr([Gf.Vec3f(0.22, 0.42, 0.14)])
     else:
@@ -1286,3 +1303,8 @@ def apply_scene_physics(stage: Usd.Stage, path: str = "/World/PhysicsScene", *, 
     # step to stay stable; too few and a petiole visibly buzzes at rest.
     physx_scene.CreateSolverTypeAttr("TGS")
     physx_scene.CreateEnableCCDAttr(defaultValue=True)
+    # Full-task planning and online-RL resets must not depend on the order in
+    # which PhysX happens to process otherwise identical articulation rows.
+    # Author the supported scene flag before physics initialization so fresh
+    # simulator processes settle the same vine topology from the same USD.
+    physx_scene.CreateEnableEnhancedDeterminismAttr(defaultValue=True)

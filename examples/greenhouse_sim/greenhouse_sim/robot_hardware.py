@@ -83,6 +83,11 @@ WRIST_CAMERA_TRANSLATION_M = RIGHT_CAMERA_TRANSLATION_M.copy()
 # retained ee_right kinematic frame rather than at the old jaw tip.
 KNIFE_TRANSLATION_M = np.zeros(3, dtype=np.float64)
 CUTTING_EDGE_DEPTH_M = 0.002
+# Match the structural vine's small predictive contact envelope. Leaving the
+# blade at PhysX's extent-derived default makes its 71 mm plate repel a petiole
+# several millimetres ahead of the real flat edge.
+KNIFE_BLADE_CONTACT_OFFSET_M = 0.0005
+KNIFE_BLADE_REST_OFFSET_M = 0.0
 # The U-support projects beyond the distal local -Y end of the plate. The
 # exposed straight cutting edge is the long local -X side of the flat blade.
 KNIFE_CUT_DIRECTION_LOCAL = np.array([-1.0, 0.0, 0.0], dtype=np.float64)
@@ -261,10 +266,13 @@ def wrist_camera_mount(side: str) -> tuple[np.ndarray, np.ndarray]:
         return RIGHT_CAMERA_ROTATION.copy(), RIGHT_CAMERA_TRANSLATION_M.copy()
     raise ValueError(f"unknown wrist side: {side!r}")
 
-# Preserve CAD -Y along tool -Z, but roll the plate around that blade axis so
-# the U-shaped support on CAD +Z faces tool +X. In the greenhouse ready pose,
-# tool +X is the most upward transverse direction.
-KNIFE_ROTATION = rotation_z(90.0) @ rotation_x(90.0)
+# Preserve the U-shaped support on CAD +Z toward tool +X, the upward
+# transverse side in the greenhouse ready pose.  Mount the exposed local -X
+# edge toward tool +Y so the screw-mounted right D405 remains behind the blade
+# throughout an inward cut.  The former +90/-Y mounting put 42--90 mm of the
+# camera envelope ahead of the cutting edge, making camera/target contact
+# physically unavoidable before the blade could reach the petiole.
+KNIFE_ROTATION = rotation_z(-90.0) @ rotation_x(-90.0)
 HEAD_BRACKET_ROTATION = rotation_z(90.0)
 HEAD_CAMERA_TRANSLATION_M = np.array([0.0, 0.00123, 0.025], dtype=np.float64)
 HEAD_CAMERA_ROTATION = rotation_z(180.0)
@@ -399,6 +407,8 @@ def _author_box_collider(
     maximum: np.ndarray,
     *,
     collidable: bool = True,
+    contact_offset_m: float | None = None,
+    rest_offset_m: float = 0.0,
 ) -> str:
     minimum = np.asarray(minimum, dtype=np.float64)
     maximum = np.asarray(maximum, dtype=np.float64)
@@ -410,6 +420,38 @@ def _author_box_collider(
     cube.CreatePurposeAttr(UsdGeom.Tokens.guide)
     if collidable:
         UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+        if contact_offset_m is not None:
+            contact_offset = float(contact_offset_m)
+            rest_offset = float(rest_offset_m)
+            if (
+                not math.isfinite(contact_offset)
+                or not math.isfinite(rest_offset)
+                or rest_offset < 0.0
+                or contact_offset < rest_offset
+            ):
+                raise ValueError(
+                    "collision offsets must be finite and ordered"
+                )
+            try:
+                from pxr import PhysxSchema  # noqa: PLC0415
+            except ImportError:
+                # Asset-only tests load USD without starting Kit. Preserve the
+                # exact authored values there; a live SimulationApp applies
+                # the registered API schema through the branch above.
+                cube.GetPrim().CreateAttribute(
+                    "physxCollision:contactOffset",
+                    Sdf.ValueTypeNames.Float,
+                ).Set(contact_offset)
+                cube.GetPrim().CreateAttribute(
+                    "physxCollision:restOffset",
+                    Sdf.ValueTypeNames.Float,
+                ).Set(rest_offset)
+            else:
+                physx_collision = PhysxSchema.PhysxCollisionAPI.Apply(
+                    cube.GetPrim()
+                )
+                physx_collision.CreateContactOffsetAttr(contact_offset)
+                physx_collision.CreateRestOffsetAttr(rest_offset)
     return path
 
 
@@ -561,7 +603,14 @@ def _author_knife(
     _hardware_attr(blade_mesh.GetPrim(), "cuttingSurface", False)
     blade_min = np.asarray(blade["min_mm"], dtype=np.float64) * 0.001
     blade_max = np.asarray(blade["max_mm"], dtype=np.float64) * 0.001
-    blade_collision = _author_box_collider(stage, f"{root_path}/BladeCollision", blade_min, blade_max)
+    blade_collision = _author_box_collider(
+        stage,
+        f"{root_path}/BladeCollision",
+        blade_min,
+        blade_max,
+        contact_offset_m=KNIFE_BLADE_CONTACT_OFFSET_M,
+        rest_offset_m=KNIFE_BLADE_REST_OFFSET_M,
+    )
     blade_collision_prim = stage.GetPrimAtPath(blade_collision)
     _hardware_attr(blade_collision_prim, "hardwareRole", "blade_plate")
     _hardware_attr(blade_collision_prim, "cuttingSurface", False)
@@ -624,6 +673,97 @@ def _remove_original_right_gripper(stage: Usd.Stage, robot_root: str) -> tuple[s
         "tomato:toolConfiguration", Sdf.ValueTypeNames.String, custom=True
     ).Set("knife_only")
     return tuple(removed)
+
+
+def synchronize_fitted_hardware_mounts(
+    stage: Usd.Stage,
+    robot_root: str,
+) -> dict:
+    """Override generated attachment roots from the source-of-truth mounts.
+
+    The fitted USD is a generated, ignored artifact. Runtime session-layer
+    overrides prevent a stale local asset from silently disagreeing with the
+    collision planner after a calibrated mount constant changes.
+    """
+    specifications = (
+        (
+            "left_wrist_camera",
+            f"{robot_root}/{END_EFFECTOR_LINKS['left']}/attachments/LeftWristCamera",
+            LEFT_CAMERA_ROTATION,
+            LEFT_CAMERA_TRANSLATION_M,
+        ),
+        (
+            "right_wrist_camera",
+            f"{robot_root}/{END_EFFECTOR_LINKS['right']}/attachments/RightWristCamera",
+            RIGHT_CAMERA_ROTATION,
+            RIGHT_CAMERA_TRANSLATION_M,
+        ),
+        (
+            "head_camera",
+            f"{robot_root}/{HEAD_LINK}/attachments/HeadCamera",
+            HEAD_BRACKET_ROTATION,
+            HEAD_BRACKET_TRANSLATION_M,
+        ),
+        (
+            "deleafing_knife",
+            f"{robot_root}/{END_EFFECTOR_LINKS['right']}/attachments/DeleafKnife",
+            KNIFE_ROTATION,
+            KNIFE_TRANSLATION_M,
+        ),
+    )
+    records = []
+    for name, path, rotation, translation in specifications:
+        prim = stage.GetPrimAtPath(path)
+        if not prim.IsValid():
+            raise ValueError(f"fitted hardware mount is missing: {path}")
+        transformable = UsdGeom.Xformable(prim)
+        before = np.asarray(
+            transformable.GetLocalTransformation(), dtype=np.float64
+        ).T
+        expected = np.eye(4, dtype=np.float64)
+        expected[:3, :3] = rotation
+        expected[:3, 3] = translation
+        relative_rotation = before[:3, :3] @ rotation.T
+        orientation_error_rad = float(
+            np.arccos(
+                np.clip(
+                    0.5 * (np.trace(relative_rotation) - 1.0),
+                    -1.0,
+                    1.0,
+                )
+            )
+        )
+        position_error_m = float(
+            np.linalg.norm(before[:3, 3] - translation)
+        )
+        corrected = not np.allclose(
+            before, expected, atol=1e-12, rtol=0.0
+        )
+
+        attribute = prim.GetAttribute("xformOp:transform:runtimeMount")
+        operation = (
+            UsdGeom.XformOp(attribute)
+            if attribute.IsValid()
+            else transformable.AddTransformOp(opSuffix="runtimeMount")
+        )
+        transformable.SetXformOpOrder([operation])
+        operation.Set(_gf_matrix(rotation, translation))
+        records.append(
+            {
+                "name": name,
+                "path": path,
+                "corrected": corrected,
+                "prior_position_error_m": position_error_m,
+                "prior_orientation_error_rad": orientation_error_rad,
+            }
+        )
+    return {
+        "policy": "session_layer_source_of_truth_mount_override",
+        "corrected_count": sum(
+            record["corrected"] for record in records
+        ),
+        "mounts": records,
+    }
 
 
 def attach_robot_hardware(stage: Usd.Stage, robot_root: str = ROBOT_ROOT) -> HardwareReport:

@@ -1563,6 +1563,99 @@ execute pretension, right-arm force/direction/work-qualified cutting, orphan
 retention, transport, and floor deposit. Cut-stage demonstrations and PPO stay
 locked until that complete strict physical replay passes.
 
+### Natural startup to IK task-stow transition, 2026-08-26
+
+The visible simulator now starts both RB-Y1 arms in the symmetric Model A SDK
+ready pose instead of exposing the asymmetric, task-specific knife stow. The
+full-IK callback reads the measured PhysX joint state and transitions to the
+existing task stows only after the user requests motion.
+
+The initial direct transition was not safe: about 29% through the right-arm
+chord, `right_arm_5` intersected
+`Vine_0002/Organ_0097/FoliageContact_0175`; the former route reached only 0.2 mm
+clearance against a 5.6 mm sway-conditioned requirement. A deterministic
+bidirectional joint-space search discovered one intermediate waypoint per arm.
+Both routes were then physically replayed, promoted to the instant interactive
+shortlist, and remain screened at every command against the unchanged payload,
+foliage, greenhouse, and 50 mm inter-arm planning gates. Headless RRT remains a
+diagnostic fallback only and never blocks Kit's interactive UI thread.
+
+The same run exposed a separate `right_approach` control-flow error:
+`selected_pull` was referenced even when that mode intentionally skipped the
+left-grasp branch. It is now initialized as shared probe state, so a completed
+right-arm approach returns its physical result instead of a false Python
+failure.
+
+The complete replay then exposed a separate fixed-base left-ingress blocker
+before jaw closure: the original aisle chord stopped at 0.5 mm from foliage.
+A deterministic one-waypoint detour was discovered, physically accepted, and
+promoted ahead of the existing aisle-clearance route. The live command guard
+continues to enforce the unchanged 5.6 mm foliage planning floor and 50 mm
+inter-arm clearance.
+
+The simulator now exposes a dedicated `Run Grasp IK Sequence` action. It
+executes the measured startup transition, left approach, live petiole
+reacquisition, opposed-finger closure, and static counterhold validation, then
+returns before right-arm cut planning. Its first isolated replay exposed a
+missed `target_conditioned` mode initialization; after adding `grasp` to that
+existing planning branch, the exact physical rerun passed in 500 seconds.
+
+Full mode has separately established the same active physical grasp and reached
+knife precontact, but all 229 committed cut-plane candidates remain ineligible.
+That cut-plane search, not gripper IK, is the current end-to-end blocker.
+
+**Verification:**
+
+| Check | Result | Evidence |
+|---|---|---|
+| Natural visible startup | symmetric SDK-ready left/right arms; task stow deferred until IK request | `data/greenhouse_sim/startup_sdk_ready_fix303.json` |
+| Deterministic startup transitions | one validated waypoint per arm; both start and target states valid; no interactive RRT stall | `data/greenhouse_sim/startup_to_stow_right_approach_fix308.json` |
+| Physical right IK approach | `stage=done`; probe and top-level success true; final side `-0.015 m`; zero unsafe contacts | `data/greenhouse_sim/startup_to_stow_right_approach_fix308.json` |
+| Deterministic left ingress | physically accepted one-waypoint detour; old 0.5 mm foliage blocker cleared without lowering safety gates | `data/greenhouse_sim/full_ik_left_ingress_fix310.json` |
+| Physical grasp-only IK | top-level/probe success true; task phase `grasped`; active joint on `Vine_0002/SubStem_07`; final stage `left_static_counterhold`; zero unsafe contacts; blade safety clear | `data/greenhouse_sim/grasp_ik_fix312.json` |
+| Focused interactive policy regressions | 182 passed | `interactive_policy_test.py` |
+| Complete greenhouse regressions | 351 passed, 2 expected skips; one unrelated existing skeleton arc-length assertion differs by 0.167 mm and the skeleton module is untouched by this change | `python -m pytest examples\greenhouse_sim\greenhouse_sim -q` |
+
+This validates natural startup, both startup-to-task transitions, the full
+right-arm IK approach, and the opposed left grasp through static counterhold.
+The complete force/direction/work-qualified cut, post-cut orphan retention,
+transport, and floor deposit are still required before a full
+deleafing-policy success claim. The dedicated grasp action exists specifically
+so gripper IK can be tested without conflating it with the unresolved cut grid.
+
+
+### Dense-vine cut recovery and report integrity checkpoint, 2026-09-01
+
+The strict `Vine_0002/SubStem_07` full probe now reaches committed cut segment
+30 while retaining the exact modeled 24 N left counterhold. The measured-state
+right-arm recovery preserves the unchanged 5.0 mm hard blade-clearance floor,
+5.5 mm recovery guard, 1.5 mm target-intersection floor, 66.3 N cut-force
+requirement, and RB-Y1 hardware effort limits. Residual contact-loaded motion is
+braked before Cartesian feedback recovery; no protected contact is accepted.
+
+Two long probes exposed a report-only circular reference after an accepted
+stationary recovery. The parent rigid-recovery record had been inserted back
+into its child stationary-stage dictionary. Recovery completion is now emitted
+as a distinct sibling stage, and a JSON-serialization regression prevents that
+ownership cycle from returning.
+
+The resulting `fix371` run serialized a complete failure report rather than
+crashing. It retained the grasp, recorded zero cuts and zero unsafe contacts,
+and kept blade safety clear. The brake remained physically within bounds
+(minimum blade clearance 5.233 mm and minimum target intersection 3.058 mm),
+but contact-loaded joint speed rebounded to 2.143 degrees/s and did not satisfy
+the 1.5 degrees/s non-safety completion gate. The full dense-vine cut, orphan
+retention, transport, and drop therefore remain open; this checkpoint does not
+claim RL readiness.
+
+**Verification:**
+
+| Check | Result | Evidence |
+|---|---|---|
+| Report ownership/serialization regression | passed; no child-to-parent backlink | `interactive_policy_test.py` |
+| Focused planner/IK/hardware/vine regressions | 281 passed, 1 expected skip | focused five-file test run |
+| Complete greenhouse regressions | 375 passed, 2 expected skips | `python -m pytest examples\\greenhouse_sim\\greenhouse_sim -q` |
+| Strict dense-vine full probe | safe failure at residual-motion brake; grasp retained; zero unsafe contacts | `data/greenhouse_sim/full_substem07_report_cycle_fix371.json` |
 ## Research findings, 2026-08-06 (pre-implementation)
 
 ### Stiffness — the current E is 5–15× too low

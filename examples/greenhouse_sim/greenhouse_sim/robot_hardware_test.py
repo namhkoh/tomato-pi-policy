@@ -69,9 +69,37 @@ def test_knife_cutting_side_projects_along_the_right_tool_axis() -> None:
         robot_hardware.KNIFE_ROTATION, (0.0, 0.0, 1.0)
     )
 
-    np.testing.assert_allclose(cut_direction, [0.0, -1.0, 0.0], atol=1e-12)
+    np.testing.assert_allclose(cut_direction, [0.0, 1.0, 0.0], atol=1e-12)
     np.testing.assert_allclose(support_side, [1.0, 0.0, 0.0], atol=1e-12)
     np.testing.assert_allclose(robot_hardware.KNIFE_TRANSLATION_M, [0.0, 0.0, 0.0], atol=0.0)
+
+
+def test_right_wrist_camera_trails_the_flat_cutting_edge() -> None:
+    blade_centre, blade_half = robot_hardware.knife_blade_box()
+    leading_edge = blade_centre.copy()
+    leading_edge[0] -= blade_half[0]
+    leading_edge_ee = (
+        robot_hardware.KNIFE_TRANSLATION_M
+        + robot_hardware.KNIFE_ROTATION @ leading_edge
+    )
+    cut_direction = (
+        robot_hardware.KNIFE_ROTATION
+        @ robot_hardware.KNIFE_CUT_DIRECTION_LOCAL
+    )
+
+    for centre, rotation, half_extents in (
+        robot_hardware.wrist_d405_body_box(side="right"),
+        robot_hardware.wrist_camera_bracket_box(side="right"),
+    ):
+        forward_centre = float(
+            np.dot(centre - leading_edge_ee, cut_direction)
+        )
+        forward_radius = sum(
+            abs(float(np.dot(rotation[:, axis], cut_direction)))
+            * half_extents[axis]
+            for axis in range(3)
+        )
+        assert forward_centre + forward_radius < 0.0
 
 
 def test_flat_blade_long_cutting_side_is_outside_support() -> None:
@@ -82,6 +110,74 @@ def test_flat_blade_long_cutting_side_is_outside_support() -> None:
     support_min_x = float(support_centre[0] - support_half[0])
 
     assert edge_max_x < support_min_x
+
+
+def test_runtime_mount_synchronization_repairs_a_stale_generated_asset() -> None:
+    from pxr import Usd
+    from pxr import UsdGeom
+
+    stage = Usd.Stage.CreateInMemory()
+    root = UsdGeom.Xform.Define(stage, robot_hardware.ROBOT_ROOT)
+    stage.SetDefaultPrim(root.GetPrim())
+    for link in (
+        "ee_left",
+        "ee_right",
+        "ee_finger_r1",
+        "ee_finger_r2",
+        "link_head_2",
+    ):
+        UsdGeom.Xform.Define(
+            stage, f"{robot_hardware.ROBOT_ROOT}/{link}"
+        )
+    for link in robot_hardware.RIGHT_GRIPPER_LINKS:
+        UsdGeom.Xform.Define(
+            stage, f"{robot_hardware.ROBOT_ROOT}/{link}/visuals"
+        )
+        UsdGeom.Xform.Define(
+            stage, f"{robot_hardware.ROBOT_ROOT}/{link}/collisions"
+        )
+    robot_hardware.attach_robot_hardware(stage)
+    knife_path = (
+        f"{robot_hardware.ROBOT_ROOT}/ee_right/attachments/DeleafKnife"
+    )
+    knife = UsdGeom.Xformable(stage.GetPrimAtPath(knife_path))
+    stale_rotation = (
+        robot_hardware.rotation_z(90.0)
+        @ robot_hardware.rotation_x(90.0)
+    )
+    knife.GetOrderedXformOps()[0].Set(
+        robot_hardware._gf_matrix(
+            stale_rotation, robot_hardware.KNIFE_TRANSLATION_M
+        )
+    )
+
+    result = robot_hardware.synchronize_fitted_hardware_mounts(
+        stage, robot_hardware.ROBOT_ROOT
+    )
+
+    assert result["corrected_count"] == 1
+    knife_record = next(
+        record
+        for record in result["mounts"]
+        if record["name"] == "deleafing_knife"
+    )
+    assert knife_record["corrected"]
+    assert np.isclose(
+        knife_record["prior_orientation_error_rad"], np.pi
+    )
+    matrix = UsdGeom.Xformable(
+        stage.GetPrimAtPath(knife_path)
+    ).GetLocalTransformation()
+    corrected_rotation = np.asarray(
+        matrix, dtype=np.float64
+    ).T[:3, :3]
+    np.testing.assert_allclose(
+        corrected_rotation, robot_hardware.KNIFE_ROTATION, atol=1e-12
+    )
+    second = robot_hardware.synchronize_fitted_hardware_mounts(
+        stage, robot_hardware.ROBOT_ROOT
+    )
+    assert second["corrected_count"] == 0
 
 
 def test_cut_aligned_knife_is_transverse_and_keeps_support_up() -> None:
@@ -252,6 +348,17 @@ def test_authored_stage_has_three_cameras_and_one_cutting_part() -> None:
         UsdPhysics.MeshCollisionAPI(arc_collision).GetApproximationAttr().Get()
         == UsdPhysics.Tokens.convexDecomposition
     )
+    blade_collision = stage.GetPrimAtPath(
+        f"{robot_hardware.ROBOT_ROOT}/ee_right/attachments/DeleafKnife/BladeCollision"
+    )
+    assert blade_collision.GetAttribute(
+        "physxCollision:contactOffset"
+    ).Get() == pytest.approx(robot_hardware.KNIFE_BLADE_CONTACT_OFFSET_M)
+    assert blade_collision.GetAttribute(
+        "physxCollision:restOffset"
+    ).Get() == pytest.approx(
+        robot_hardware.KNIFE_BLADE_REST_OFFSET_M
+    )
     assert Sdf.Path(report.attachments[-1]).IsAbsolutePath()
     assert len(report.removed_right_gripper_prims) == 6
     assert all(not stage.GetPrimAtPath(path).IsActive() for path in report.removed_right_gripper_prims)
@@ -291,4 +398,4 @@ def test_authored_stage_has_three_cameras_and_one_cutting_part() -> None:
             Gf.Vec3d(*robot_hardware.KNIFE_CUT_DIRECTION_LOCAL.tolist())
         ).GetNormalized()
     )
-    np.testing.assert_allclose(blade_projection, [0.0, -1.0, 0.0], atol=1e-9)
+    np.testing.assert_allclose(blade_projection, [0.0, 1.0, 0.0], atol=1e-9)

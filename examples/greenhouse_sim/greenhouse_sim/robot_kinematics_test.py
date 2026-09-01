@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -18,6 +20,22 @@ def test_forward_kinematics_matches_accepted_greenhouse_knife_root() -> None:
     np.testing.assert_allclose(ee[:3, 3], [6.80511796, 3.49999921, 1.08376004], atol=1e-7)
 
 
+def test_urdf_reach_bound_contains_forward_kinematics() -> None:
+    model = robot_kinematics.Rby1Kinematics()
+
+    for side in ('left', 'right'):
+        lower, upper = model.arm_limits_degrees(side)
+        shoulder = model.arm_shoulder_position_m(side, BASE)
+        maximum = model.maximum_endpoint_reach_m(side)
+        for degrees in (
+            0.5 * (lower + upper),
+            lower + 0.01,
+            upper - 0.01,
+        ):
+            endpoint = model.forward(side, degrees, BASE)[:3, 3]
+            assert np.linalg.norm(endpoint - shoulder) <= maximum + 1e-12
+
+
 def test_pose_ik_recovers_a_nearby_exact_arm_pose() -> None:
     model = robot_kinematics.Rby1Kinematics()
     expected = np.asarray((-89.85, -79.057, 44.849, -136.448, -22.506, 85.097, -81.711))
@@ -32,6 +50,64 @@ def test_pose_ik_recovers_a_nearby_exact_arm_pose() -> None:
         desired,
         atol=1e-5,
     )
+
+
+def test_pose_ik_uses_the_explicit_live_torso_state() -> None:
+    model = robot_kinematics.Rby1Kinematics()
+    expected = np.asarray(
+        (-89.85, -79.057, 44.849, -136.448, -22.506, 85.097, -81.711)
+    )
+    live_torso = np.asarray(robot_kinematics.DEFAULT_TORSO_DEGREES) + np.asarray(
+        (0.08, -0.05, 0.04, -0.03, 0.06, -0.02)
+    )
+    desired = model.forward("right", expected, BASE, live_torso)
+
+    result = model.solve_pose(
+        "right",
+        desired,
+        RIGHT_SAFE,
+        BASE,
+        torso_degrees=live_torso,
+    )
+
+    assert result.succeeded
+    np.testing.assert_allclose(
+        model.forward(
+            "right",
+            result.joint_degrees,
+            BASE,
+            live_torso,
+        ),
+        desired,
+        atol=1e-5,
+    )
+    assert np.linalg.norm(
+        model.forward("right", result.joint_degrees, BASE)[:3, 3]
+        - desired[:3, 3]
+    ) > 1e-4
+
+
+def test_instance_default_torso_frame_is_latched_and_validated() -> None:
+    model = robot_kinematics.Rby1Kinematics()
+    live_torso = np.asarray(robot_kinematics.DEFAULT_TORSO_DEGREES) + np.asarray(
+        (0.08, -0.05, 0.04, -0.03, 0.06, -0.02)
+    )
+    model.set_default_torso_degrees(live_torso)
+
+    np.testing.assert_allclose(
+        model.forward("right", RIGHT_SAFE, BASE),
+        model.forward("right", RIGHT_SAFE, BASE, live_torso),
+        atol=1e-12,
+    )
+    returned = model.default_torso_degrees()
+    returned[0] += 1.0
+    np.testing.assert_allclose(model.default_torso_degrees(), live_torso)
+    with pytest.raises(ValueError, match="six finite"):
+        model.set_default_torso_degrees(live_torso[:5])
+    with pytest.raises(ValueError, match="six finite"):
+        model.set_default_torso_degrees(
+            np.asarray((0.0, 45.0, -90.0, 45.0, 0.0, np.nan))
+        )
 
 
 def test_arm_joint_limit_margin_reports_nearest_authored_limit() -> None:
@@ -126,6 +202,41 @@ def test_point_axes_ik_honours_explicit_jaw_closing_direction() -> None:
     actual = model.forward("left", result.joint_degrees, BASE)
     assert np.dot(actual[:3, 0], expected_pose[:3, 0]) > 0.999
     np.testing.assert_allclose((actual @ local_point)[:3], target, atol=1e-3)
+
+
+def test_point_axes_ik_accepts_capped_optimizer_with_converged_pose(
+    monkeypatch,
+) -> None:
+    model = robot_kinematics.Rby1Kinematics()
+    expected = np.asarray(
+        (-120.779, 0.740, -20.440, -74.103, -5.287, 109.523, -3.747)
+    )
+    expected_pose = model.forward("left", expected, BASE)
+    local_point = np.asarray((0.0, 0.0, -0.1025, 1.0))
+    target = (expected_pose @ local_point)[:3]
+
+    monkeypatch.setattr(
+        "scipy.optimize.least_squares",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            x=np.radians(expected), success=False, cost=0.0, nfev=250
+        ),
+    )
+    result = model.solve_position_axes(
+        "left",
+        local_point_m=local_point[:3],
+        target_point_m=target,
+        seed_degrees=expected,
+        base_matrix=BASE,
+        pointing_axis=2,
+        pointing_direction=expected_pose[:3, 2],
+        transverse_axis=0,
+        transverse_to=expected_pose[:3, 1],
+        transverse_direction=expected_pose[:3, 0],
+        maximum_evaluations=250,
+    )
+
+    assert result.succeeded
+    assert result.evaluations == 250
 
 
 def test_point_axes_ik_rejects_invalid_position_scale() -> None:
@@ -324,6 +435,72 @@ def test_capsule_and_sphere_clear_exact_oriented_foliage_box() -> None:
     assert robot_kinematics.sphere_oriented_box_clearance(
         (0.0, 0.50, 0.0), 0.05, (foliage,)
     ).clearance_m > 0.20
+
+
+def test_threshold_foliage_predicates_match_exact_clearances() -> None:
+    angle = np.radians(31.0)
+    rotation = (
+        (float(np.cos(angle)), float(-np.sin(angle)), 0.0),
+        (float(np.sin(angle)), float(np.cos(angle)), 0.0),
+        (0.0, 0.0, 1.0),
+    )
+    foliage = robot_kinematics.OrientedBoxObstacle(
+        "leaf",
+        (0.0, 0.0, 0.0),
+        rotation,
+        (0.18, 0.025, 0.08),
+    )
+    capsule = robot_kinematics.CapsuleObstacle(
+        "arm",
+        (-0.08, 0.31, 0.0),
+        (0.08, 0.31, 0.0),
+        0.035,
+    )
+    sphere_centre = (0.0, 0.33, 0.0)
+    sphere_radius = 0.04
+    box_centre = (0.0, 0.36, 0.0)
+    box_rotation = np.eye(3)
+    box_extents = (0.04, 0.03, 0.05)
+    capsule_clearance = (
+        robot_kinematics.capsules_oriented_box_clearance(
+            (capsule,),
+            (foliage,),
+        ).clearance_m
+    )
+    sphere_clearance = robot_kinematics.sphere_oriented_box_clearance(
+        sphere_centre,
+        sphere_radius,
+        (foliage,),
+    ).clearance_m
+    box_clearance = robot_kinematics.oriented_box_oriented_box_clearance(
+        box_centre,
+        box_rotation,
+        box_extents,
+        (foliage,),
+    ).clearance_m
+
+    for clearance, predicate in (
+        (
+            capsule_clearance,
+            lambda threshold: robot_kinematics.capsules_clear_oriented_boxes(
+                (capsule,), (foliage,), threshold
+            ),
+        ),
+        (
+            sphere_clearance,
+            lambda threshold: robot_kinematics.sphere_clears_oriented_boxes(
+                sphere_centre, sphere_radius, (foliage,), threshold
+            ),
+        ),
+        (
+            box_clearance,
+            lambda threshold: robot_kinematics.oriented_box_clears_oriented_boxes(
+                box_centre, box_rotation, box_extents, (foliage,), threshold
+            ),
+        ),
+    ):
+        assert predicate(clearance - 1e-6)
+        assert not predicate(clearance + 1e-6)
 
 
 def test_capsule_clearance_rejects_greenhouse_box_overlap() -> None:

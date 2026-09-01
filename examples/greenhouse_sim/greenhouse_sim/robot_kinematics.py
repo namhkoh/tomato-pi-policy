@@ -9,6 +9,7 @@ the greenhouse example are degrees, matching USD angular-drive targets.
 from __future__ import annotations
 
 import dataclasses
+import functools
 import itertools
 import math
 import pathlib
@@ -456,6 +457,14 @@ def _capsule_sets_clearance(
             nearest = f"{capsule.path} <-> {second[index].path}"
     return ClearanceResult(clearance_m=best, nearest_obstacle=nearest)
 
+
+def capsule_sets_clearance(
+    first: tuple[CapsuleObstacle, ...],
+    second: tuple[CapsuleObstacle, ...],
+) -> ClearanceResult:
+    """Return exact minimum clearance between two capsule sets."""
+    return _capsule_sets_clearance(first, second)
+
 def oriented_box_capsule_clearance(
     centre_m,
     rotation: np.ndarray,
@@ -614,6 +623,7 @@ def _oriented_box_obb_separation(
     return max(gaps)
 
 
+@functools.lru_cache(maxsize=None)
 def _oriented_obstacle_arrays(
     obstacle: OrientedBoxObstacle,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -625,6 +635,88 @@ def _oriented_obstacle_arrays(
     if np.any(half_extents < 0.0):
         raise ValueError(f"invalid oriented box half extents: {obstacle.path}")
     return centre, rotation, half_extents
+
+
+def sphere_clears_oriented_boxes(
+    centre_m,
+    radius_m: float,
+    obstacles: tuple[OrientedBoxObstacle, ...],
+    minimum_clearance_m: float,
+) -> bool:
+    """Return whether a sphere clears every foliage OBB by a threshold.
+
+    This exact predicate avoids computing a nearest-obstacle diagnostic. Route
+    validity checks can skip OBB solves through a conservative sphere bound and
+    stop at the first proven violation.
+    """
+    centre = np.asarray(centre_m, dtype=np.float64)
+    if centre.shape != (3,):
+        raise ValueError("centre_m must contain three values")
+    if radius_m < 0.0 or not np.isfinite(minimum_clearance_m):
+        raise ValueError("radius and minimum clearance must be valid")
+    for obstacle in obstacles:
+        obstacle_centre, obstacle_rotation, half_extents = (
+            _oriented_obstacle_arrays(obstacle)
+        )
+        lower_bound = (
+            float(np.linalg.norm(obstacle_centre - centre))
+            - radius_m
+            - float(np.linalg.norm(half_extents))
+        )
+        if lower_bound >= minimum_clearance_m:
+            continue
+        local = obstacle_rotation.T @ (centre - obstacle_centre)
+        closest = np.clip(local, -half_extents, half_extents)
+        clearance = float(np.linalg.norm(local - closest) - radius_m)
+        if clearance < minimum_clearance_m:
+            return False
+    return True
+
+
+def oriented_box_clears_oriented_boxes(
+    centre_m,
+    rotation: np.ndarray,
+    half_extents_m,
+    obstacles: tuple[OrientedBoxObstacle, ...],
+    minimum_clearance_m: float,
+) -> bool:
+    """Return whether one OBB exactly clears every foliage OBB."""
+    centre = np.asarray(centre_m, dtype=np.float64)
+    basis = np.asarray(rotation, dtype=np.float64)
+    half_extents = np.asarray(half_extents_m, dtype=np.float64)
+    if (
+        centre.shape != (3,)
+        or basis.shape != (3, 3)
+        or half_extents.shape != (3,)
+    ):
+        raise ValueError("box centre, rotation, and half extents have invalid shapes")
+    if np.any(half_extents < 0.0) or not np.isfinite(minimum_clearance_m):
+        raise ValueError("box extents and minimum clearance must be valid")
+    box_radius = float(np.linalg.norm(half_extents))
+    for obstacle in obstacles:
+        obstacle_centre, obstacle_rotation, obstacle_half_extents = (
+            _oriented_obstacle_arrays(obstacle)
+        )
+        lower_bound = (
+            float(np.linalg.norm(obstacle_centre - centre))
+            - box_radius
+            - float(np.linalg.norm(obstacle_half_extents))
+        )
+        if lower_bound >= minimum_clearance_m:
+            continue
+        if (
+            _oriented_box_obb_separation(
+                centre,
+                basis,
+                half_extents,
+                obstacle_centre,
+                obstacle_rotation,
+                obstacle_half_extents,
+            )
+            < minimum_clearance_m
+        ):
+            return False
+    return True
 
 
 def oriented_box_box_clearance(
@@ -768,6 +860,39 @@ def capsule_oriented_box_clearance(
     return _segment_aabb_distance(start, end, half_extents) - float(
         capsule.radius_m
     )
+
+
+def capsules_clear_oriented_boxes(
+    capsules: tuple[CapsuleObstacle, ...],
+    obstacles: tuple[OrientedBoxObstacle, ...],
+    minimum_clearance_m: float,
+) -> bool:
+    """Return whether every capsule exactly clears every foliage OBB."""
+    if not np.isfinite(minimum_clearance_m):
+        raise ValueError("minimum_clearance_m must be finite")
+    for capsule in capsules:
+        start = np.asarray(capsule.start_m, dtype=np.float64)
+        end = np.asarray(capsule.end_m, dtype=np.float64)
+        centre = 0.5 * (start + end)
+        bounding_radius = (
+            0.5 * float(np.linalg.norm(end - start))
+            + float(capsule.radius_m)
+        )
+        for obstacle in obstacles:
+            obstacle_centre, _, half_extents = _oriented_obstacle_arrays(obstacle)
+            lower_bound = (
+                float(np.linalg.norm(obstacle_centre - centre))
+                - bounding_radius
+                - float(np.linalg.norm(half_extents))
+            )
+            if lower_bound >= minimum_clearance_m:
+                continue
+            if (
+                capsule_oriented_box_clearance(capsule, obstacle)
+                < minimum_clearance_m
+            ):
+                return False
+    return True
 
 
 def capsules_oriented_box_clearance(
@@ -925,6 +1050,9 @@ class Rby1Kinematics:
     """Forward and bounded inverse kinematics for either seven-axis arm."""
 
     def __init__(self, urdf_path: pathlib.Path = DEFAULT_URDF) -> None:
+        self._default_torso_degrees = np.asarray(
+            DEFAULT_TORSO_DEGREES, dtype=np.float64
+        ).copy()
         root = ET.parse(pathlib.Path(urdf_path)).getroot()
         self._by_child: dict[str, _Joint] = {}
         self._by_name: dict[str, _Joint] = {}
@@ -987,7 +1115,24 @@ class Rby1Kinematics:
             if capsules:
                 self._link_capsules[link_name] = tuple(capsules)
 
+    def set_default_torso_degrees(self, torso_degrees) -> None:
+        """Latch the six-joint torso frame used when callers omit it."""
+        values = np.asarray(torso_degrees, dtype=np.float64)
+        if values.shape != (6,) or not np.all(np.isfinite(values)):
+            raise ValueError("torso_degrees must contain six finite values")
+        self._default_torso_degrees = values.copy()
 
+    def default_torso_degrees(self) -> np.ndarray:
+        """Return a copy of the current instance-level torso frame."""
+        return self._default_torso_degrees.copy()
+
+    def _resolved_torso_degrees(self, torso_degrees) -> np.ndarray:
+        if torso_degrees is None:
+            return self._default_torso_degrees
+        values = np.asarray(torso_degrees, dtype=np.float64)
+        if values.shape != (6,) or not np.all(np.isfinite(values)):
+            raise ValueError("torso_degrees must contain six finite values")
+        return values
 
     def _chain(self, child: str) -> tuple[_Joint, ...]:
         chain: list[_Joint] = []
@@ -1003,10 +1148,12 @@ class Rby1Kinematics:
         side: str,
         arm_degrees,
         base_matrix: np.ndarray,
-        torso_degrees=DEFAULT_TORSO_DEGREES,
+        torso_degrees=None,
     ) -> np.ndarray:
         arm_radians = np.radians(np.asarray(arm_degrees, dtype=np.float64))
-        torso_radians = np.radians(np.asarray(torso_degrees, dtype=np.float64))
+        torso_radians = np.radians(
+            self._resolved_torso_degrees(torso_degrees)
+        )
         values = {
             **{f"torso_{index}": value for index, value in enumerate(torso_radians)},
             **{f"{side}_arm_{index}": value for index, value in enumerate(arm_radians)},
@@ -1038,12 +1185,44 @@ class Rby1Kinematics:
         lower, upper = self.arm_limits_degrees(side)
         return float(np.min(np.minimum(values - lower, upper - values)))
 
+    def arm_shoulder_position_m(
+        self,
+        side: str,
+        base_matrix: np.ndarray,
+        torso_degrees=None,
+    ) -> np.ndarray:
+        '''Return the world position of the first arm joint.'''
+        self.arm_limits_degrees(side)
+        return self._link_transform(
+            f'link_{side}_arm_0',
+            side,
+            (0.0,) * 7,
+            base_matrix,
+            torso_degrees,
+        )[:3, 3].copy()
+
+    def maximum_endpoint_reach_m(self, side: str) -> float:
+        '''Return a conservative shoulder-to-EE reach bound from the URDF.'''
+        self.arm_limits_degrees(side)
+        chain = self._chain(f'ee_{side}')
+        shoulder_index = next(
+            index
+            for index, joint in enumerate(chain)
+            if joint.name == f'{side}_arm_0'
+        )
+        return float(
+            sum(
+                np.linalg.norm(joint.origin[:3, 3])
+                for joint in chain[shoulder_index + 1 :]
+            )
+        )
+
     def forward(
         self,
         side: str,
         arm_degrees,
         base_matrix: np.ndarray,
-        torso_degrees=DEFAULT_TORSO_DEGREES,
+        torso_degrees=None,
     ) -> np.ndarray:
         return self._link_transform(
             f"ee_{side}", side, arm_degrees, base_matrix, torso_degrees
@@ -1055,7 +1234,7 @@ class Rby1Kinematics:
         side: str,
         arm_degrees,
         base_matrix: np.ndarray,
-        torso_degrees=DEFAULT_TORSO_DEGREES,
+        torso_degrees=None,
     ) -> tuple[CapsuleObstacle, ...]:
         """Transform one arm's authored URDF contact capsules to world space."""
         if side not in {"left", "right"}:
@@ -1086,7 +1265,7 @@ class Rby1Kinematics:
     def fixed_body_capsules(
         self,
         base_matrix: np.ndarray,
-        torso_degrees=DEFAULT_TORSO_DEGREES,
+        torso_degrees=None,
     ) -> tuple[CapsuleObstacle, ...]:
         """Transform torso and head URDF contact capsules to world space."""
         result: list[CapsuleObstacle] = []
@@ -1125,7 +1304,7 @@ class Rby1Kinematics:
         self,
         base_matrix: np.ndarray,
         obstacles: tuple[CapsuleObstacle, ...],
-        torso_degrees=DEFAULT_TORSO_DEGREES,
+        torso_degrees=None,
     ) -> ClearanceResult:
         """Return minimum torso/head separation from physical vine capsules."""
         return _capsule_sets_clearance(
@@ -1137,7 +1316,7 @@ class Rby1Kinematics:
         self,
         base_matrix: np.ndarray,
         obstacles: tuple[OrientedBoxObstacle, ...],
-        torso_degrees=DEFAULT_TORSO_DEGREES,
+        torso_degrees=None,
     ) -> ClearanceResult:
         """Return exact torso/head separation from live foliage OBBs."""
         return capsules_oriented_box_clearance(
@@ -1151,7 +1330,7 @@ class Rby1Kinematics:
         arm_degrees,
         base_matrix: np.ndarray,
         obstacles: tuple[CapsuleObstacle, ...],
-        torso_degrees=DEFAULT_TORSO_DEGREES,
+        torso_degrees=None,
     ) -> ClearanceResult:
         """Return minimum signed separation between one arm and vine capsules."""
         return _capsule_sets_clearance(
@@ -1164,7 +1343,7 @@ class Rby1Kinematics:
         left_degrees,
         right_degrees,
         base_matrix: np.ndarray,
-        torso_degrees=DEFAULT_TORSO_DEGREES,
+        torso_degrees=None,
     ) -> ClearanceResult:
         """Return the minimum signed separation between left/right arm capsules."""
         left_capsules = self.arm_capsules(
@@ -1181,7 +1360,7 @@ class Rby1Kinematics:
         arm_degrees,
         base_matrix: np.ndarray,
         obstacles: tuple[BoxObstacle, ...],
-        torso_degrees=DEFAULT_TORSO_DEGREES,
+        torso_degrees=None,
     ) -> ClearanceResult:
         """Return minimum arm-capsule separation from rigid greenhouse boxes."""
         capsules = self.arm_capsules(
@@ -1206,7 +1385,7 @@ class Rby1Kinematics:
         arm_degrees,
         base_matrix: np.ndarray,
         obstacles: tuple[OrientedBoxObstacle, ...],
-        torso_degrees=DEFAULT_TORSO_DEGREES,
+        torso_degrees=None,
     ) -> ClearanceResult:
         """Return minimum arm-capsule separation from live foliage OBBs."""
         return capsules_oriented_box_clearance(
@@ -1225,7 +1404,7 @@ class Rby1Kinematics:
         arm_degrees,
         base_matrix: np.ndarray,
         local_point_m,
-        torso_degrees=DEFAULT_TORSO_DEGREES,
+        torso_degrees=None,
         *,
         delta_rad: float = 1e-5,
     ) -> np.ndarray:
@@ -1271,7 +1450,7 @@ class Rby1Kinematics:
         force_direction,
         force_n: float,
         effort_limits_nm,
-        torso_degrees=DEFAULT_TORSO_DEGREES,
+        torso_degrees=None,
     ) -> ForceCapacity:
         """Estimate tool-force capacity without exceeding any joint effort."""
         direction = np.asarray(force_direction, dtype=np.float64)
@@ -1311,7 +1490,7 @@ class Rby1Kinematics:
         desired: np.ndarray,
         seed_degrees,
         base_matrix: np.ndarray,
-        torso_degrees=DEFAULT_TORSO_DEGREES,
+        torso_degrees=None,
     ) -> IKResult:
         """Solve a full end-effector pose while staying on the seed branch."""
         from scipy.optimize import least_squares
@@ -1366,7 +1545,7 @@ class Rby1Kinematics:
         target_point_m,
         seed_degrees,
         base_matrix: np.ndarray,
-        torso_degrees=DEFAULT_TORSO_DEGREES,
+        torso_degrees=None,
     ) -> IKResult:
         """Place one tool point while retaining the seed's redundant branch."""
         from scipy.optimize import least_squares
@@ -1432,7 +1611,7 @@ class Rby1Kinematics:
         transverse_axis: int,
         transverse_to,
         transverse_direction=None,
-        torso_degrees=DEFAULT_TORSO_DEGREES,
+        torso_degrees=None,
         position_scale_m: float = 0.005,
         maximum_evaluations: int = 5000,
     ) -> IKResult:
@@ -1524,8 +1703,11 @@ class Rby1Kinematics:
             orientation_error_rad=max(axis_error, transverse_error),
             cost=float(result.cost),
             succeeded=bool(
-                result.success
-                and position_error < 1e-3
+                # max_nfev is an optimizer termination condition, not a
+                # physical IK failure. Accept a capped solve when the measured
+                # point and both requested axes already satisfy the exact same
+                # residual limits.
+                position_error < 1e-3
                 and axis_error < math.radians(50.0)
                 and (
                     abs(float(np.dot(actual[:3, transverse_axis], transverse))) < 0.1
