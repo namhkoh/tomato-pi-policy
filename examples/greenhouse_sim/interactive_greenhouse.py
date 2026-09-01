@@ -178,6 +178,15 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--scene", type=pathlib.Path, default=_DEFAULT_SCENE)
     parser.add_argument("--vine-dir", type=pathlib.Path, default=_DEFAULT_VINE_DIR)
+    parser.add_argument(
+        "--target-vine-source",
+        type=pathlib.Path,
+        default=None,
+        help=(
+            "optional GLB source override for the selected target-vine placement; "
+            "neighbour vines continue to use the vine-dir mapping"
+        ),
+    )
     parser.add_argument("--robot", type=pathlib.Path, default=_DEFAULT_ROBOT)
     parser.add_argument("--no-robot", action="store_true", help="run the accepted vine-only environment")
     parser.add_argument(
@@ -517,6 +526,17 @@ def main() -> int:
     if not vine_sources:
         print(f"no tomato GLBs found under {vine_dir}")
         return 1
+    target_vine_source = (
+        None
+        if args.target_vine_source is None
+        else args.target_vine_source.resolve()
+    )
+    if target_vine_source is not None and (
+        not target_vine_source.is_file()
+        or target_vine_source.suffix.lower() != ".glb"
+    ):
+        print(f"target vine GLB not found: {target_vine_source}")
+        return 1
     if args.physics_vines < 1:
         print("--physics-vines must be at least 1")
         return 1
@@ -628,6 +648,9 @@ def main() -> int:
         "scene": str(scene_path),
         "physics_vines_requested": args.physics_vines,
         "collision_mode": args.collision_mode,
+        "target_vine_source_override": (
+            None if target_vine_source is None else str(target_vine_source)
+        ),
         "robot_requested": not args.no_robot,
         "left_grasp_axial_offset_override_m": (
             None
@@ -724,11 +747,15 @@ def main() -> int:
     runtimes: list[VineRuntime] = []
     safety_colliders = []
     placement_centres = []
-    for static_prim in selected:
+    for selection_index, static_prim in enumerate(selected):
         placement = UsdGeom.Xformable(static_prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
         placement_centre = np.array(placement.ExtractTranslation(), dtype=np.float64)
         placement_centres.append(placement_centre)
-        source = _source_for_placement(static_prim.GetName(), vine_sources)
+        source = (
+            target_vine_source
+            if selection_index == 0 and target_vine_source is not None
+            else _source_for_placement(static_prim.GetName(), vine_sources)
+        )
         static_prim.SetActive(False)
 
         plant = organs.load_plant(source)

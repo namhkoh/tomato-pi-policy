@@ -15,12 +15,13 @@ pushd "%WORLDBANK_ROOT%"
 "%WORLDBANK_ISAAC_PYTHON%" examples\greenhouse_sim\interactive_greenhouse.py ^
     --scene data\greenhouse_sim\scenes\deleafing_bench.usd ^
     --vine-dir greenhouse\tomato_glb_20 ^
+    --target-vine-source greenhouse\tomato_glb_20\tomato_005.glb ^
     --robot data\greenhouse_sim\robots\rby1a_v1.0.usd ^
     --physics-vines 1 ^
     --target-vine Vine_0002 ^
     --target-organ SubStem_00 ^
     --robot-position-mode fixed ^
-    --robot-position 10.639221515539253 4.25 -0.15254085567917297 ^
+    --robot-position 10.639221515539253 4.27 -0.15254085567917297 ^
     --teleop-command-file data\greenhouse_sim\teleop_command.json ^
     --teleop-contact-policy monitor ^
     --contact-diagnostics ^

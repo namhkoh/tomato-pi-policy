@@ -5160,6 +5160,22 @@ def test_teleop_contact_policy_defaults_to_non_pausing_monitor(monkeypatch) -> N
     assert parse_args().teleop_contact_policy == "rollback"
 
 
+def test_parser_accepts_target_vine_source_override(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "interactive_greenhouse.py",
+            "--target-vine-source",
+            "greenhouse/tomato_glb_20/tomato_005.glb",
+        ],
+    )
+
+    assert parse_args().target_vine_source == pathlib.Path(
+        "greenhouse/tomato_glb_20/tomato_005.glb"
+    )
+
+
 def test_parser_accepts_planned_fixed_robot_base(monkeypatch) -> None:
     monkeypatch.setattr(
         sys,
