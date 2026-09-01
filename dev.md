@@ -1679,9 +1679,15 @@ The first live launch exposed a 0.004709-degree hardware/model boundary mismatch
 the physical head reported -29.970697 degrees while the imported Model A lower
 limit is -29.965988 degrees. Because the simulator gate is intentionally
 all-or-nothing, this rejected otherwise fresh arm/torso commands. The read-only
-physical-state publisher now clamps only measured head samples within 0.1 degree
+physical-state publisher now clamps only measured head samples within 0.25 degree
 of the exact imported limit and fails closed for larger discrepancies. The
 strict simulator-side joint-limit gate is unchanged.
+
+The live presentation robot subsequently reported a 0.180490-degree boundary
+offset. The reconciliation window was therefore raised from 0.1 to 0.25 degree,
+which remains below one third of a degree, clamps the published simulation
+sample to the exact imported limit, and preserves fail-closed rejection beyond
+that narrow hardware/model tolerance.
 
 After restarting the bridge, the live simulator reached `stage=running`,
 accepted 162 fresh whole-body commands, reported a roughly 15 ms mailbox age,

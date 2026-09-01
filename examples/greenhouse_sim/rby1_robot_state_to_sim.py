@@ -37,7 +37,7 @@ _HEAD_LIMITS_DEGREES = (
     np.asarray((-29.965988, -20.053523), dtype=np.float64),
     np.asarray((29.965988, 89.954374), dtype=np.float64),
 )
-_MEASURED_LIMIT_CLAMP_TOLERANCE_DEGREES = 0.1
+_MEASURED_LIMIT_CLAMP_TOLERANCE_DEGREES = 0.25
 
 
 def parse_args() -> argparse.Namespace:

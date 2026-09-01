@@ -51,6 +51,15 @@ def test_measured_head_boundary_drift_is_clamped_to_model_limit() -> None:
     np.testing.assert_allclose(bounded, (-29.965988, 0.17578121342974934))
 
 
+def test_live_measured_head_boundary_drift_is_clamped_to_model_limit() -> None:
+    bounded, clamped = bridge._clamp_measured_head_degrees(
+        (-30.146478, 0.17578121342974934)
+    )
+
+    assert clamped
+    np.testing.assert_allclose(bounded, (-29.965988, 0.17578121342974934))
+
+
 def test_measured_head_state_far_outside_model_limit_is_rejected() -> None:
     with pytest.raises(RuntimeError, match="exceeds the Model A limits"):
         bridge._clamp_measured_head_degrees((-30.5, 0.0))
