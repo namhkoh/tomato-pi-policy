@@ -40,6 +40,20 @@ def test_extract_degrees_rejects_malformed_state(position: np.ndarray) -> None:
         bridge._extract_degrees(SimpleNamespace(position=position), _MODEL)
 
 
+
+
+def test_measured_head_boundary_drift_is_clamped_to_model_limit() -> None:
+    bounded, clamped = bridge._clamp_measured_head_degrees(
+        (-29.970696889772263, 0.17578121342974934)
+    )
+
+    assert clamped
+    np.testing.assert_allclose(bounded, (-29.965988, 0.17578121342974934))
+
+
+def test_measured_head_state_far_outside_model_limit_is_rejected() -> None:
+    with pytest.raises(RuntimeError, match="exceeds the Model A limits"):
+        bridge._clamp_measured_head_degrees((-30.5, 0.0))
 def test_normalize_left_gripper_uses_session_homing_stops() -> None:
     payload = {
         "motor_states": [

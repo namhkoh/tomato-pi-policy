@@ -1656,6 +1656,38 @@ claim RL readiness.
 | Focused planner/IK/hardware/vine regressions | 281 passed, 1 expected skip | focused five-file test run |
 | Complete greenhouse regressions | 375 passed, 2 expected skips | `python -m pytest examples\\greenhouse_sim\\greenhouse_sim -q` |
 | Strict dense-vine full probe | safe failure at residual-motion brake; grasp retained; zero unsafe contacts | `data/greenhouse_sim/full_substem07_report_cycle_fix371.json` |
+
+### World Bank presentation teleop station, 2026-09-01
+
+A presentation-only branch, `koh-dev/worldbank`, now exposes the previously
+validated live teleop station without entering the unfinished autonomous
+segment-30 cut planner. The station uses the original greenhouse benchmark USD,
+the fitted RB-Y1 Model A, one articulated `tomato_glb_20` vine at
+`Vine_0002/SubStem_00`, the fixed aisle pose
+`(10.639221515539253, 4.25, -0.15254085567917297)`, non-pausing contact
+monitoring, all four camera views, and direct flat-blade traversal cutting.
+
+The first live launch exposed a 0.004709-degree hardware/model boundary mismatch:
+the physical head reported -29.970697 degrees while the imported Model A lower
+limit is -29.965988 degrees. Because the simulator gate is intentionally
+all-or-nothing, this rejected otherwise fresh arm/torso commands. The read-only
+physical-state publisher now clamps only measured head samples within 0.1 degree
+of the exact imported limit and fails closed for larger discrepancies. The
+strict simulator-side joint-limit gate is unchanged.
+
+After restarting the bridge, the live simulator reached `stage=running`,
+accepted 162 fresh whole-body commands, reported a roughly 15 ms mailbox age,
+disabled hold mode, and had no unsafe latch or current teleop error. The left
+gripper HTTP endpoint timed out during this check, so its channel correctly
+remained disabled/open; right-arm knife traversal remained available.
+
+**Verification:**
+
+| Check | Result | Evidence |
+|---|---|---|
+| Bridge and teleop safety regressions | 22 passed | `rby1_robot_state_to_sim_test.py`, `teleop_test.py` |
+| Live whole-body mirror | fresh commands accepted; watchdog fresh; hold inactive | `data/greenhouse_sim/worldbank_demo_live.json` |
+| Presentation launchers | separate read-only robot bridge and visible simulator; optional recording | `run_worldbank_robot_mirror.cmd`, `run_worldbank_demo.cmd` |
 ## Research findings, 2026-08-06 (pre-implementation)
 
 ### Stiffness — the current E is 5–15× too low

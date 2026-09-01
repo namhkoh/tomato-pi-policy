@@ -321,6 +321,47 @@ camera buttons or keys `1`-`4`; the selected D405 becomes the active viewport.
 For an image without the GUI, use `--capture-camera head`, `left_wrist`, or
 `right_wrist` together with `--screenshot` as shown above.
 
+
+### World Bank live teleop demo
+
+The `koh-dev/worldbank` branch provides a presentation-focused station with the
+original greenhouse, fitted RB-Y1 Model A, one articulated nearby tomato vine,
+live whole-body state mirroring, camera views, pulling/grasping, and direct
+flat-blade traversal cutting. It does not run the unfinished autonomous full-IK
+sequence.
+
+Start the read-only physical-robot mirror in the first terminal:
+
+```bat
+examples\greenhouse_sim\run_worldbank_robot_mirror.cmd
+```
+
+Then start the visible simulator in a second terminal:
+
+```bat
+examples\greenhouse_sim\run_worldbank_demo.cmd
+```
+
+Pass `record` to the simulator launcher to save synchronized head and wrist
+camera frames plus JSONL state/action/task/safety samples:
+
+```bat
+examples\greenhouse_sim\run_worldbank_demo.cmd record
+```
+
+The station uses the validated `Vine_0002/SubStem_00` fixed-base pose. Camera
+buttons or keys `1`-`4` switch inspection/head/wrist views, and the UI's
+10 mm forward/back controls provide bounded final positioning. For the visual
+cut demo, move the exposed flat blade through a severable leaf or petiole proxy
+at at least 0.01 m/s for two consecutive physics steps. The curved support and
+main stem remain protected. This convenience traversal is deliberately logged
+as non-benchmark; it is intended for the live presentation, not RL scoring.
+
+The robot bridge is read-only and never commands physical hardware. It mirrors
+both arms, torso, head, and?when
+`http://192.168.50.243:8765/status` is available?the calibrated left gripper.
+If that endpoint is unavailable, the simulator safely holds the left gripper
+open while all other measured joints continue to mirror.
 ### Deterministic targets, repeatability, and simulator teleoperation
 
 Select an exact physical petiole or use seeded selection:

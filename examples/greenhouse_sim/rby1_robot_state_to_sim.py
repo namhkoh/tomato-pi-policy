@@ -33,6 +33,11 @@ _TORSO_READY_DEGREES = np.asarray((0.0, 45.0, -90.0, 45.0, 0.0, 0.0))
 _HEAD_READY_DEGREES = np.zeros(2, dtype=np.float64)
 _LEFT_GRIPPER_MOTOR_ID = 1
 _DEFAULT_GRIPPER_STATUS_URL = "http://192.168.50.243:8765/status"
+_HEAD_LIMITS_DEGREES = (
+    np.asarray((-29.965988, -20.053523), dtype=np.float64),
+    np.asarray((29.965988, 89.954374), dtype=np.float64),
+)
+_MEASURED_LIMIT_CLAMP_TOLERANCE_DEGREES = 0.1
 
 
 def parse_args() -> argparse.Namespace:
@@ -103,6 +108,29 @@ def _extract_degrees(
     )
 
 
+
+
+def _clamp_measured_head_degrees(
+    head_degrees,
+    *,
+    tolerance_degrees: float = _MEASURED_LIMIT_CLAMP_TOLERANCE_DEGREES,
+) -> tuple[np.ndarray, bool]:
+    """Reconcile sub-degree encoder/model boundary drift before publication."""
+    values = np.asarray(head_degrees, dtype=np.float64)
+    tolerance = float(tolerance_degrees)
+    if values.shape != (2,) or not np.isfinite(values).all():
+        raise RuntimeError("measured RB-Y1 head state is malformed or non-finite")
+    if not np.isfinite(tolerance) or tolerance < 0.0:
+        raise ValueError("measured head clamp tolerance must be finite and non-negative")
+    lower, upper = _HEAD_LIMITS_DEGREES
+    bounded = np.clip(values, lower, upper)
+    excess = float(np.max(np.abs(values - bounded)))
+    if excess > tolerance + 1e-12:
+        raise RuntimeError(
+            "measured RB-Y1 head state exceeds the Model A limits by "
+            f"{excess:.6f} degrees"
+        )
+    return bounded, bool(excess > 0.0)
 def _normalize_left_gripper_openness(payload: Mapping) -> float:
     """Return semantic openness from this session's numeric encoder stops.
 
@@ -267,11 +295,19 @@ def main() -> int:
         )
         poller.start()
     last_gripper_warning = None
+    head_limit_clamped = False
 
     def callback(state, *_unused) -> None:
-        nonlocal sequence, last_gripper_warning
+        nonlocal sequence, last_gripper_warning, head_limit_clamped
         try:
             left, right, torso, head = _extract_degrees(state, model)
+            head, head_was_clamped = _clamp_measured_head_degrees(head)
+            if head_was_clamped and not head_limit_clamped:
+                print(
+                    "measured head state clamped to the exact Model A limit",
+                    file=sys.stderr,
+                )
+            head_limit_clamped = head_was_clamped
             now = time.monotonic()
             openness = None
             gripper_fresh = False
