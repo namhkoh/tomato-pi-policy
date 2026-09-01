@@ -2888,6 +2888,12 @@ def main() -> int:
                 robot_placement.root_path,
             )
         )
+        report["robot_presentation_knife"] = (
+            robot_hardware.author_runtime_knife_presentation(
+                stage,
+                robot_placement.root_path,
+            )
+        )
         if args.teleop_command_file is None:
             startup_arm_targets = _greenhouse_startup_arm_targets(
                 args.rl_initial_left_arm

@@ -71,7 +71,7 @@ def test_knife_cutting_side_projects_along_the_right_tool_axis() -> None:
 
     np.testing.assert_allclose(cut_direction, [0.0, 1.0, 0.0], atol=1e-12)
     np.testing.assert_allclose(support_side, [1.0, 0.0, 0.0], atol=1e-12)
-    np.testing.assert_allclose(robot_hardware.KNIFE_TRANSLATION_M, [0.0, 0.0, 0.0], atol=0.0)
+    np.testing.assert_allclose(robot_hardware.KNIFE_TRANSLATION_M, [0.0, 0.0, -0.073], atol=0.0)
 
 
 def test_right_wrist_camera_trails_the_flat_cutting_edge() -> None:

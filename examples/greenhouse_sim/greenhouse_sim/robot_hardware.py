@@ -80,8 +80,9 @@ WRIST_CAMERA_TRANSLATION_M = RIGHT_CAMERA_TRANSLATION_M.copy()
 
 # The right gripper body is removed for the deleafing configuration.  The
 # knife's CAD origin is its mounting face, so it mounts directly at the
-# retained ee_right kinematic frame rather than at the old jaw tip.
-KNIFE_TRANSLATION_M = np.zeros(3, dtype=np.float64)
+# retained ee_right kinematic frame. The vendor's removed finger joints locate
+# the distal tool interface at local z=-73 mm, not at the link-frame origin.
+KNIFE_TRANSLATION_M = np.array([0.0, 0.0, -0.073], dtype=np.float64)
 CUTTING_EDGE_DEPTH_M = 0.002
 # Match the structural vine's small predictive contact envelope. Leaving the
 # blade at PhysX's extent-derived default makes its 71 mm plate repel a petiole
@@ -397,7 +398,47 @@ def _author_mesh(
     mesh.CreateFaceVertexIndicesAttr(data.triangles.reshape(-1).tolist())
     mesh.CreateSubdivisionSchemeAttr(UsdGeom.Tokens.none)
     mesh.CreateDisplayColorAttr([Gf.Vec3f(*color)])
+    mesh.CreateDoubleSidedAttr(True)
     return mesh
+
+
+def _author_box_visual(
+    stage: Usd.Stage,
+    path: str,
+    minimum: np.ndarray,
+    maximum: np.ndarray,
+    color: tuple[float, float, float],
+) -> UsdGeom.Cube:
+    """Author a render-only box that remains visible in RTX presentation mode."""
+    minimum = np.asarray(minimum, dtype=np.float64)
+    maximum = np.asarray(maximum, dtype=np.float64)
+    cube = UsdGeom.Cube.Define(stage, path)
+    cube.CreateSizeAttr(1.0)
+    cube.CreateDisplayColorAttr([Gf.Vec3f(*color)])
+    cube.CreateDoubleSidedAttr(True)
+    cube.CreatePurposeAttr(UsdGeom.Tokens.render)
+    xform = UsdGeom.Xformable(cube.GetPrim())
+    xform.AddTranslateOp().Set(Gf.Vec3d(*(0.5 * (minimum + maximum))))
+    xform.AddScaleOp().Set(Gf.Vec3f(*(maximum - minimum)))
+    return cube
+
+
+def author_runtime_knife_presentation(stage: Usd.Stage, robot_root: str) -> str:
+    """Place a render-only blade directly below the visible right wrist."""
+    root_path = f"{robot_root}/{END_EFFECTOR_LINKS['right']}/DeleafKnifePresentation"
+    root = UsdGeom.Xform.Define(stage, root_path)
+    _set_transform(root.GetPrim(), KNIFE_ROTATION, KNIFE_TRANSLATION_M)
+    centre, half_extents = knife_blade_box()
+    blade = _author_box_visual(
+        stage,
+        f"{root_path}/Blade",
+        centre - half_extents,
+        centre + half_extents,
+        (0.92, 0.24, 0.05),
+    )
+    _hardware_attr(blade.GetPrim(), "hardwareRole", "presentation_blade_visual")
+    _hardware_attr(blade.GetPrim(), "cuttingSurface", False)
+    return str(blade.GetPath())
 
 
 def _author_box_collider(
@@ -603,6 +644,15 @@ def _author_knife(
     _hardware_attr(blade_mesh.GetPrim(), "cuttingSurface", False)
     blade_min = np.asarray(blade["min_mm"], dtype=np.float64) * 0.001
     blade_max = np.asarray(blade["max_mm"], dtype=np.float64) * 0.001
+    blade_presentation = _author_box_visual(
+        stage,
+        f"{root_path}/BladePresentation",
+        blade_min,
+        blade_max,
+        (0.92, 0.24, 0.05),
+    )
+    _hardware_attr(blade_presentation.GetPrim(), "hardwareRole", "blade_visual")
+    _hardware_attr(blade_presentation.GetPrim(), "cuttingSurface", False)
     blade_collision = _author_box_collider(
         stage,
         f"{root_path}/BladeCollision",

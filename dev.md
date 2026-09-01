@@ -1695,6 +1695,14 @@ disabled hold mode, and had no unsafe latch or current teleop error. The left
 gripper HTTP endpoint timed out during this check, so its channel correctly
 remained disabled/open; right-arm knife traversal remained available.
 
+The presentation launch then exposed a real knife-mount defect rather than a
+viewport refresh problem. A close-up RTX capture showed the knife authored at
+the `ee_right` link origin inside the end-effector body. The vendor URDF places
+the removed right-finger/tool interface at local `z=-0.073 m`; the complete
+knife assembly now uses that distal datum. A second RTX capture visibly shows
+the blade projecting from the wrist, and all 14 focused hardware/camera/cutting
+regressions pass without changing the validated knife orientation.
+
 **Verification:**
 
 | Check | Result | Evidence |
@@ -1703,6 +1711,7 @@ remained disabled/open; right-arm knife traversal remained available.
 | Live whole-body mirror | fresh commands accepted; watchdog fresh; hold inactive | `data/greenhouse_sim/worldbank_demo_live.json` |
 | Presentation launchers | separate read-only robot bridge and visible simulator; optional recording | `run_worldbank_robot_mirror.cmd`, `run_worldbank_demo.cmd` |
 | Fuller/closer target smoke | zero runaway organs; robot stable; initial tool safety clear | `data/greenhouse_sim/worldbank_fuller_vine_smoke.json` |
+| Right knife mount/render | blade visibly projects from distal wrist; 14 hardware regressions passed | `data/greenhouse_sim/worldbank_right_wrist_fixed.png` |
 ## Research findings, 2026-08-06 (pre-implementation)
 
 ### Stiffness — the current E is 5–15× too low
