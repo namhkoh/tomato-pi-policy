@@ -1656,6 +1656,40 @@ claim RL readiness.
 | Focused planner/IK/hardware/vine regressions | 281 passed, 1 expected skip | focused five-file test run |
 | Complete greenhouse regressions | 375 passed, 2 expected skips | `python -m pytest examples\\greenhouse_sim\\greenhouse_sim -q` |
 | Strict dense-vine full probe | safe failure at residual-motion brake; grasp retained; zero unsafe contacts | `data/greenhouse_sim/full_substem07_report_cycle_fix371.json` |
+
+### Measured-entry torso brake checkpoint, 2026-09-03
+
+The strict dense-vine full probe no longer fails at the residual-motion brake.
+Stationary rigid recovery now holds the right arm and torso at their separately
+measured entry states while braking, instead of moving the torso toward an
+older latched kinematic target. The one-shot torso frame used by cut planning
+is preserved after braking, and every brake sample now records measured torso
+position and velocity. No force, clearance, overlap, or collision threshold
+was relaxed.
+
+The deterministic Vine_0002/SubStem_07 replay passed both stationary
+recoveries that followed the segment-30 near-guard stops. The first accepted
+after 12 brake steps at 0.787 deg/s, with 5.281 mm minimum blade clearance and
+2.316 mm minimum target intersection. The second accepted after 9 brake steps
+at 0.937 deg/s, with 5.399 mm minimum blade clearance and 2.441 mm minimum
+target intersection. Both remain inside the unchanged 1.5 deg/s brake gate,
+5.0 mm hard blade floor, and 1.5 mm target-intersection floor. The 24 N left
+grasp remained active, blade safety stayed clear, and the run recorded zero
+unsafe contacts.
+
+| Check | Result | Evidence |
+|---|---|---|
+| Focused residual-brake regressions | 4 passed | interactive_policy_test.py |
+| Complete interactive policy regressions | 206 passed | python -m pytest examples/greenhouse_sim/greenhouse_sim/interactive_policy_test.py -q |
+| Strict dense-vine full probe | former brake blocker cleared; safe failure at the next segment-30 live-IK continuation gate | data/greenhouse_sim/full_substem07_measured_torso_brake_fix372.json |
+
+The next blocker is numerical rather than a collision: after five accepted
+segment-30 replans, solve_pose returned a bounded pose with 0.000062 mm
+position error and 0.000281 degrees orientation error, but marked it failed
+because SciPy exhausted its optimizer termination budget. That residual-valid
+result must be admitted to the existing payload, inter-arm, joint-reserve, and
+live-motion screens; it must not bypass those screens.
+
 ## Research findings, 2026-08-06 (pre-implementation)
 
 ### Stiffness — the current E is 5–15× too low

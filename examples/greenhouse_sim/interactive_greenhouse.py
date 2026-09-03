@@ -11655,6 +11655,18 @@ def _right_committed_cut_recovery_torso_target(
     return (active if frame_latched else measured).copy()
 
 
+def _right_committed_cut_stationary_brake_torso_target(
+    measured_torso_degrees,
+):
+    """Hold the measured torso frame while braking residual cutter motion."""
+    import numpy as np
+
+    measured = np.asarray(measured_torso_degrees, dtype=np.float64)
+    if measured.shape != (6,) or not np.all(np.isfinite(measured)):
+        raise ValueError("measured torso state must be a finite six-vector")
+    return measured.copy()
+
+
 def _right_committed_cut_rigid_recovery_path_acceptable(
     start_clearance_m: float,
     sampled_clearances_m,
@@ -19307,9 +19319,15 @@ def _bimanual_probe(
     ) -> dict:
         """Servo to the audited world endpoint under the hard physical floor."""
         brake_start_state = physical_arm_joint_state("right")
+        brake_start_torso_state = physical_torso_joint_state()
         measured_stop_right = np.asarray(
             brake_start_state["joint_degrees"], dtype=np.float64
         ).copy()
+        measured_stop_torso = (
+            _right_committed_cut_stationary_brake_torso_target(
+                brake_start_torso_state["joint_degrees"]
+            )
+        )
         hold_right = np.asarray(recovery_target_degrees, dtype=np.float64)
         if hold_right.shape != (7,) or not np.all(np.isfinite(hold_right)):
             raise RuntimeError("stationary rigid recovery target is invalid")
@@ -19368,7 +19386,8 @@ def _bimanual_probe(
             _RIGHT_RIGID_RECOVERY_TORSO_DAMPING_NM_S_RAD,
         )
         torso_configuration["control"] = (
-            "stationary recovery latched-torso hardware-effort-bounded hold"
+            "stationary recovery measured-entry brake then latched-torso "
+            "hardware-effort-bounded tracking"
         )
         brake_samples = []
         brake_complete = False
@@ -19380,7 +19399,7 @@ def _bimanual_probe(
             _set_joint_group_drive_targets(
                 stage,
                 "torso",
-                model.default_torso_degrees(),
+                measured_stop_torso,
             )
             record_commanded_blade_motion(None)
             tick()
@@ -19401,6 +19420,7 @@ def _bimanual_probe(
                 )
             )
             arm_state = physical_arm_joint_state("right")
+            torso_state = physical_torso_joint_state()
             maximum_speed_degrees_s = float(
                 np.max(np.abs(arm_state["velocity_degrees_s"]))
             )
@@ -19411,6 +19431,13 @@ def _bimanual_probe(
                 "velocity_degrees_s": arm_state[
                     "velocity_degrees_s"
                 ].tolist(),
+                "torso_target_degrees": measured_stop_torso.tolist(),
+                "torso_joint_degrees": np.asarray(
+                    torso_state["joint_degrees"], dtype=np.float64
+                ).tolist(),
+                "torso_velocity_degrees_s": np.asarray(
+                    torso_state["velocity_degrees_s"], dtype=np.float64
+                ).tolist(),
                 "conservative_physical_target_intersection_m": (
                     physical_target_intersection_m
                 ),
@@ -19752,6 +19779,7 @@ def _bimanual_probe(
             ),
             "steps": len(clearances) - 1,
             "measured_stop_joint_degrees": measured_stop_right.tolist(),
+            "measured_stop_torso_degrees": measured_stop_torso.tolist(),
             "initial_recovery_joint_degrees": (
                 initial_recovery_target.tolist()
             ),

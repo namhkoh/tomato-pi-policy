@@ -76,6 +76,7 @@ from interactive_greenhouse import (
     _startup_task_stow_reached,
     _post_recovery_tracking_required,
     _right_committed_cut_recovery_torso_target,
+    _right_committed_cut_stationary_brake_torso_target,
     _right_prestage_inward_fallback_sides,
     _right_base_endpoint_route_feasible,
     _right_local_cut_continuation_screen,
@@ -2791,6 +2792,23 @@ def test_committed_cut_recovery_torso_target_is_a_one_shot_latch() -> None:
         _right_committed_cut_recovery_torso_target(
             nominal, np.full(6, np.nan), True
         )
+
+
+def test_committed_cut_stationary_brake_holds_measured_torso_entry() -> None:
+    measured = np.asarray((0.15, 45.02, -90.11, 45.14, 0.20, -0.11))
+
+    target = _right_committed_cut_stationary_brake_torso_target(measured)
+
+    np.testing.assert_allclose(target, measured)
+    target[0] += 1.0
+    np.testing.assert_allclose(
+        measured,
+        np.asarray((0.15, 45.02, -90.11, 45.14, 0.20, -0.11)),
+    )
+    with pytest.raises(ValueError, match="finite six-vector"):
+        _right_committed_cut_stationary_brake_torso_target(measured[:5])
+    with pytest.raises(ValueError, match="finite six-vector"):
+        _right_committed_cut_stationary_brake_torso_target(np.full(6, np.nan))
 
 
 def test_committed_cut_rigid_recovery_path_reaches_guard_monotonically() -> None:
