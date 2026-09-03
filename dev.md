@@ -52,6 +52,33 @@ the latest deleaf commit. Teleoperation is stopped for the online-RL phase.
 - [ ] Lab leader-arm hardware validation + multi-target physical repeatability acceptance
 - [ ] Converged deleafing policy, D405 RL observations, and benchmark-wide target curriculum
 - [ ] Benchmark task definition + metrics
+- [x] VLM cut-point evaluation architecture assessed on `koh-dev/vlm-eval`
+- [ ] Leakage-safe RGB/depth/calibration/mask capture and public/private VLM manifests
+- [ ] Provider-neutral GPT/Claude/Gemini/open-weight runner and cut-point scorer
+
+## VLM cut-point evaluation assessment, 2026-09-03
+
+The next perception increment has been designed on `koh-dev/vlm-eval`; the full
+architecture and acceptance criteria are in
+`docs/vlm_cutpoint_evaluation.md`. The recommended boundary is an offline,
+provider-neutral evaluation pipeline: Isaac captures immutable synchronized
+head/left-wrist/right-wrist RGB plus private depth, calibration, semantic masks,
+and exact cut geometry; hosted or local VLMs receive only RGB and the natural-
+language instruction; a separate scorer maps a strict image-space response back
+to the simulator's existing target, stub-length, direction, protected-contact,
+and physical cut semantics. Provider calls must not run in the 240 Hz physics
+loop, and VLM proposals remain advisory until held-out sim and real-D405
+validation passes the existing planner and safety gates.
+
+The first implementation gate is intentionally the dataset contract rather than
+provider SDK integration: create a 50-sample, plant-disjoint pilot with positive
+and no-safe-cut examples, all three cameras, synchronized private labels, and
+human-review overlays. Inputs must exclude depth, masks, world geometry,
+`SubStem` labels, robot state, UI selections, and target highlights. The current
+`tomato_glb_30` asset stays an OOD/topology-shift set until its changed organ
+mapping is validated. Only after every pilot projection and leakage check passes
+should the common runner add OpenAI, Claude, Gemini, and separately hosted
+open-weight adapters.
 
 ## Findings
 
