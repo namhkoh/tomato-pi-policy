@@ -53,6 +53,8 @@ the latest deleaf commit. Teleoperation is stopped for the online-RL phase.
 - [ ] Converged deleafing policy, D405 RL observations, and benchmark-wide target curriculum
 - [ ] Benchmark task definition + metrics
 - [x] VLM cut-point evaluation architecture assessed on `koh-dev/vlm-eval`
+- [x] Qwen3-VL OpenAI-compatible RGB/prompt/validated-JSON/overlay smoke path
+- [ ] Private simulator target/cut/protected-region projection and quantitative VLM labels
 - [ ] Leakage-safe RGB/depth/calibration/mask capture and public/private VLM manifests
 - [ ] Provider-neutral GPT/Claude/Gemini/open-weight runner and cut-point scorer
 
@@ -79,6 +81,41 @@ human-review overlays. Inputs must exclude depth, masks, world geometry,
 mapping is validated. Only after every pilot projection and leakage check passes
 should the common runner add OpenAI, Claude, Gemini, and separately hosted
 open-weight adapters.
+
+### Qwen3-VL-32B endpoint smoke, 2026-09-04
+
+A dependency-light OpenAI-compatible runner now sends an unannotated RGB frame
+plus a coordinate-explicit agronomic prompt and requires the canonical
+`greenhouse.vlm_cutpoint.v1` response. It records source/submitted image hashes,
+raw provider output, validated prediction, latency/usage, and a human-review
+overlay; credentials and base64 pixels are excluded from artifacts. The point
+is the primary output for future depth back-projection, while a tight petiole
+box diagnoses whether the model selected the intended structure.
+
+The supplied Qwen3-VL-32B-Instruct Cloudflare endpoint authenticated and exposed
+the expected model. Text inference passed. Live testing found two deployment-
+specific limitations: vLLM returned HTTP 500 for the Isaac PNG and a larger
+quality-95 JPEG, and strict `json_schema` response formatting also returned 500.
+An in-memory quality-92 RGB JPEG with unchanged dimensions plus `json_object`
+formatting succeeded; the immutable PNG remains the scored source and both
+hashes are retained. Six focused schema/prompt/encoding/overlay tests pass.
+
+On synchronized frame 000092, Qwen correctly returned `target_not_visible` with
+0.0 confidence for the head view containing no plant. It returned schema-valid
+`uncertain` decisions at 0.3 confidence for both wrist views, citing occluded
+attachment and depth ambiguity instead of hallucinating a cut point. A separate
+vine-visible head capture produced the same conservative abstention because the
+petiole junctions were too distant for a 2-5 mm cut decision. Latency was
+2.23-2.99 seconds on successful trials.
+
+These are valid transport, schema, semantic-reasoning, and abstention results,
+but not cut-localization accuracy evidence: the archived frames do not contain
+private projected target labels and none resolves an attachment well enough for
+a safe positive. The next gate is therefore to project the selected 3D petiole,
+2-5 mm flush-cut region, broader mechanical cut zone, and protected geometry
+into each camera with exact intrinsics/extrinsics, then capture deliberately
+visible positive and occluded/no-safe-cut examples. Only those private labels
+can score box IoU, point error, stub error, direction, hazards, and abstention.
 
 ## Findings
 
