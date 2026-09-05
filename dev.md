@@ -1960,6 +1960,20 @@ One logical change per commit; no AI attribution trailers.
   opposite outer face, normalized its optical view separately, rebuilt the robot
   USD, passed 23 focused and 122 full regressions, and completed a clean
   240-step robot/vine/contact soak.
+- 2026-09-05 - Created `koh-dev/sim-data` from the current VLM branch, preserving
+  its four uncommitted VLM files. Imported the supplied `tomato_greenhouse_pack`
+  into an isolated, ignored data directory and added `run_sim_data.cmd` /
+  `launch_sim_data.py` for an Isaac Sim 6.0.1 session-layer asset preview.
+  The preview assembles two detailed plants plus 142 instanced plants on three
+  existing gutters, provides three inspection cameras and the supplied lighting
+  panel, converts plant-frame manifest translations to parent-local offsets,
+  and excludes unbundled external prop payloads without editing source assets.
+  This import does not yet integrate the RB-Y1, grasp/cut physics, or data export;
+  setup and scope are documented in `examples/greenhouse_sim/SIM_DATA.md`.
+  Verified the 833-part detailed-plant assembly (z=0.70-3.97 m), unchanged
+  source USD layer, and a responsive visible GUI with a rendered aisle capture
+  at `data/sim_data/preview_20260905/preview.png`. The successful launch uses
+  asynchronous material loading and records `PACKAGE_READY` in `stdout_v3.log`.
 - 2026-08-13 ? Added exact dense-vine collision screening, sway-conditioned
   route retries, measured receding-horizon contact capture, independent-finger
   backstop closure, and bounded live-geometry seating on `koh-dev/online-rl`.
