@@ -206,102 +206,66 @@ def test_rotation_y_preserves_a_right_handed_tool_frame() -> None:
 
 
 def test_wrist_camera_brackets_align_the_reference_m3_pair() -> None:
-    right = (
-        robot_hardware.RIGHT_CAMERA_ROTATION
-        @ robot_hardware.WRIST_BRACKET_BOLT_CENTRES_M.T
-    ).T + robot_hardware.RIGHT_CAMERA_TRANSLATION_M
-    left = (
-        robot_hardware.LEFT_CAMERA_ROTATION
-        @ robot_hardware.WRIST_BRACKET_BOLT_CENTRES_M.T
-    ).T + robot_hardware.LEFT_CAMERA_TRANSLATION_M
-
-    np.testing.assert_allclose(
-        right, robot_hardware.WRIST_REFERENCE_BOLT_CENTRES_M, atol=1e-12
-    )
-    np.testing.assert_allclose(
-        left, robot_hardware.LEFT_WRIST_REFERENCE_BOLT_CENTRES_M, atol=1e-12
-    )
-    np.testing.assert_allclose(
-        robot_hardware.LEFT_CAMERA_ROTATION,
-        robot_hardware.rotation_z(180.0),
-        atol=1e-12,
-    )
-    np.testing.assert_allclose(
-        robot_hardware.RIGHT_CAMERA_ROTATION, np.eye(3), atol=0.0
-    )
+    # v1.2 has a 34 mm housing pair. The unchanged bracket has an 18 mm
+    # pair, so validate both ends of the explicit adapter, never conflate them.
+    manifest = robot_hardware.load_manifest()
+    adapter = robot_hardware._part(manifest, "wrist_adapter_v12")
+    bracket = robot_hardware._part(manifest, "camera_bracket_d405")
+    np.testing.assert_allclose(adapter["bracket_holes_mm"], bracket["robot_holes_mm"])
+    for side, sign in (("right", -1), ("left", 1)):
+        rotation, translation = robot_hardware.wrist_camera_mount(side)
+        points = (rotation @ (np.asarray(adapter["robot_holes_mm"]) * .001).T).T + translation
+        points = points[np.argsort(points[:, 0])]
+        np.testing.assert_allclose(points, [[-.017, sign * .037, .02752],
+                                            [.017, sign * .037, .02752]], atol=1e-12)
+    assert adapter["physical_fabrication_approved"] is False
 
 def test_wrist_camera_mount_preserves_the_freecad_ee_component_frame() -> None:
-    assert robot_hardware.WRIST_REFERENCE_BOLT_CENTRES_M[0, 2] == pytest.approx(
-        0.0385,
-        abs=1e-12,
-    )
-    assert robot_hardware.WRIST_REFERENCE_BOLT_CENTRES_M[0, 1] == pytest.approx(
-        robot_hardware.WRIST_MOUNT_FACE_Y_M
-        - robot_hardware.WRIST_BOLT_HEAD_STANDOFF_M,
-        abs=1e-12,
-    )
+    # Official LINK_13/20: screw z=-98.58 mm; tool_* origin z=-126.1 mm.
+    from greenhouse_sim import robot_model
+    root = robot_model.validate_urdf()
+    tool = root.find("joint[@name='tool_right']/origin")
+    tool_z = float(tool.attrib["xyz"].split()[2])
+    assert robot_hardware.WRIST_REFERENCE_BOLT_CENTRES_M[0, 2] == pytest.approx(-.09858 - tool_z)
+    assert robot_hardware.WRIST_REFERENCE_BOLT_CENTRES_M[0, 1] == pytest.approx(-.037)
 
 
 def test_wrist_camera_bracket_box_matches_authored_mount() -> None:
-    right_centre, right_rotation, half_extents = (
-        robot_hardware.wrist_camera_bracket_box(side="right")
-    )
-    left_centre, left_rotation, left_half_extents = (
-        robot_hardware.wrist_camera_bracket_box(side="left")
-    )
-
-    np.testing.assert_allclose(right_rotation, np.eye(3), atol=0.0)
-    np.testing.assert_allclose(
-        left_rotation, robot_hardware.rotation_z(180.0), atol=1e-12
-    )
-    np.testing.assert_allclose(left_half_extents, half_extents, atol=0.0)
-    np.testing.assert_allclose(
-        2.0 * half_extents, [0.027, 0.05991954, 0.03461918], atol=1e-9
-    )
-    np.testing.assert_allclose(
-        left_centre, robot_hardware.rotation_z(180.0) @ right_centre, atol=1e-12
-    )
-    assert right_centre[1] + half_extents[1] == pytest.approx(
-        robot_hardware.WRIST_MOUNT_FACE_Y_M,
-        abs=5e-9,
-    )
-    assert left_centre[1] - left_half_extents[1] == pytest.approx(
-        -robot_hardware.WRIST_MOUNT_FACE_Y_M,
-        abs=5e-9,
-    )
-
-    assert right_centre[2] + half_extents[2] == pytest.approx(
-        robot_hardware.WRIST_SENSOR_PLATE_BASE_Z_M,
-        abs=5e-9,
-    )
+    from itertools import product
+    manifest = robot_hardware.load_manifest()
+    for side in ("left", "right"):
+        centre, rotation, half_extents = robot_hardware.wrist_camera_bracket_box(side=side)
+        mount_rotation, mount_translation = robot_hardware.wrist_camera_mount(side)
+        for name in ("camera_bracket_d405", "wrist_adapter_v12"):
+            minimum, maximum = robot_hardware._bounds_m(robot_hardware._part(manifest, name))
+            for vertex in product(*zip(minimum, maximum)):
+                world = mount_rotation @ np.asarray(vertex) + mount_translation
+                assert np.all(np.abs(rotation.T @ (world - centre)) <= half_extents + 1e-12)
+    np.testing.assert_allclose(half_extents * 2, [.048, .049, .048], atol=1e-12)
 
 
 def test_wrist_camera_cad_axes_match_the_reference_mount() -> None:
     manifest = robot_hardware.load_manifest()
-    camera_rotation = np.asarray(
-        manifest["mounts"]["camera_bracket_to_d405"]["rotation_matrix"]
-    )
-    camera_forward = np.array([0.0, 1.0, 0.0])
-    left = robot_hardware.LEFT_CAMERA_ROTATION @ camera_rotation @ camera_forward
-    right = robot_hardware.RIGHT_CAMERA_ROTATION @ camera_rotation @ camera_forward
-
-    assert left[1] < -0.3 and left[2] < -0.9
-    assert right[1] > 0.3 and right[2] < -0.9
-    np.testing.assert_allclose(left[2], right[2], atol=1e-12)
+    camera_rotation = np.asarray(manifest["mounts"]["camera_bracket_to_d405"]["rotation_matrix"])
+    for side in ("left", "right"):
+        mount_rotation, _ = robot_hardware.wrist_camera_mount(side)
+        np.testing.assert_allclose(mount_rotation @ camera_rotation @ [0, 1, 0], [0, 0, -1], atol=1e-12)
+        assert np.linalg.det(mount_rotation) == pytest.approx(1.0)
 
 
 def test_head_camera_faces_forward_through_bracket_window() -> None:
-    head_forward = robot_hardware.HEAD_BRACKET_ROTATION @ robot_hardware.HEAD_CAMERA_ROTATION @ np.array(
-        [0.0, 1.0, 0.0]
-    )
-    np.testing.assert_allclose(head_forward, [1.0, 0.0, 0.0], atol=1e-12)
-
-    # The supplied body puts its optical origin 19.23 mm forward of its frame.
-    # Rz(180) moves that point from y=+1.23 mm to the bracket's y=-18 mm face.
-    optical_in_bracket = robot_hardware.HEAD_CAMERA_TRANSLATION_M + robot_hardware.HEAD_CAMERA_ROTATION @ np.array(
-        [0.0, 0.01923, 0.0]
-    )
-    assert optical_in_bracket[1] == pytest.approx(-0.018, abs=1e-9)
+    head_forward = robot_hardware.HEAD_BRACKET_ROTATION @ robot_hardware.HEAD_CAMERA_ROTATION @ np.array([0, 1, 0])
+    np.testing.assert_allclose(head_forward, [1, 0, 0], atol=1e-12)
+    # Align the camera REAR screw pair with the bracket's front face, not
+    # the optical origin with the unrelated cable/clearance window.
+    camera_holes = np.array([[-.010, 0, 0], [.010, 0, 0]])
+    holes = (robot_hardware.HEAD_CAMERA_ROTATION @ camera_holes.T).T + robot_hardware.HEAD_CAMERA_TRANSLATION_M
+    holes = holes[np.argsort(holes[:, 0])]
+    np.testing.assert_allclose(holes, [[-.010, -.018, .040], [.010, -.018, .040]], atol=1e-12)
+    bracket_base = np.array([[x, y, 0] for x in (-.018, .018) for y in (-.013, .013)])
+    mounted = (robot_hardware.HEAD_BRACKET_ROTATION @ bracket_base.T).T + robot_hardware.HEAD_BRACKET_TRANSLATION_M
+    expected = np.array([[x, y, .045] for x in (-.013, .013) for y in (-.01834, .01766)])
+    np.testing.assert_allclose(sorted(map(tuple, np.round(mounted, 8))), sorted(map(tuple, expected)), atol=1e-8)
 
 
 def test_authored_stage_has_three_cameras_and_one_cutting_part() -> None:
@@ -378,17 +342,24 @@ def test_authored_stage_has_three_cameras_and_one_cutting_part() -> None:
     right_forward, right_up = camera_axes[report.cameras[1]]
     np.testing.assert_allclose(head_forward, [1.0, 0.0, 0.0], atol=1e-9)
     np.testing.assert_allclose(head_up, [0.0, 0.0, 1.0], atol=1e-9)
-    assert left_forward[1] < -0.3 and left_forward[2] < -0.9
-    assert right_forward[1] > 0.3 and right_forward[2] < -0.9
+    np.testing.assert_allclose(left_forward, [0, 0, -1], atol=1e-9)
+    np.testing.assert_allclose(right_forward, [0, 0, -1], atol=1e-9)
     np.testing.assert_allclose(left_forward[2], right_forward[2], atol=1e-9)
-    assert left_up[0] < -0.9 and right_up[0] < -0.9
+    np.testing.assert_allclose(left_up, [0, 1, 0], atol=1e-9)
+    np.testing.assert_allclose(right_up, [0, 1, 0], atol=1e-9)
     np.testing.assert_allclose(left_up, right_up, atol=1e-9)
     assert stage.GetPrimAtPath(report.cameras[0]).GetAttribute("tomato:sensorRollDegrees").Get() == 0.0
-    assert stage.GetPrimAtPath(report.cameras[1]).GetAttribute("tomato:sensorRollDegrees").Get() == 180.0
+    assert stage.GetPrimAtPath(report.cameras[1]).GetAttribute("tomato:sensorRollDegrees").Get() == 0.0
+    for path in report.cameras:
+        prim = stage.GetPrimAtPath(path)
+        assert tuple(prim.GetAttribute("tomato:resolution").Get()) == (848, 408)
+        intrinsic = prim.GetAttribute("tomato:intrinsics").Get()
+        assert intrinsic[0] == intrinsic[4] and intrinsic[2] == 424 and intrinsic[5] == 204
     for attachment in report.attachments[:2]:
         prim = stage.GetPrimAtPath(attachment)
-        assert prim.GetAttribute("tomato:mountInterface").Get() == "rby1_wrist_m3_pair"
-        assert prim.GetAttribute("tomato:mountBoltSpacingMillimeters").Get() == 18.0
+        assert prim.GetAttribute("tomato:mountInterface").Get() == "rby1_v12_34mm_to_18mm_simulator_adapter"
+        assert prim.GetAttribute("tomato:mountBoltSpacingMillimeters").Get() == 34.0
+        assert prim.GetAttribute("tomato:physicalAdapterValidated").Get() is False
 
     edge_matrix = UsdGeom.Xformable(stage.GetPrimAtPath(report.cutting_surfaces[0])).ComputeLocalToWorldTransform(
         Usd.TimeCode.Default()

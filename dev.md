@@ -1980,3 +1980,56 @@ One logical change per commit; no AI attribution trailers.
   Passed 93 focused regressions and four strict physical probes with zero unsafe
   contacts; recorded the remaining 1.346 mm opposed-jaw residual without
   falsely advancing to cutting.
+- 2026-09-06 - Started Phase 1 of `vlm_train_data.md` on `koh-dev/sim-data`:
+  added the read-only manifest/optional USD auditor, per-substem review records,
+  session-only anatomy overlays, reversible isolation, and fingerprinted human
+  review records. The 24-plant audit found 870 review candidates, 971 excluded
+  stubs, 492 degenerate capsule chains on old stubs, and 91 attachment-to-parent
+  AABB warnings over a 2 mm diagnostic threshold. A headless single-plant review
+  smoke passed with a viewport capture and unchanged source fingerprints;
+  commands and evidence are in `examples/greenhouse_sim/sim_data/PHASE1.md`.
+  Human anatomy review and horticultural cut/grasp rules remain pending; no
+  cutting coordinates, physics approval, or training labels were fabricated.
+- 2026-09-07 - Replaced the active single-target Phase 1 panel with a six-image
+  batch gallery and deterministic, plant-balanced mixed/exception queues over all
+  24 assets. Reads prior v1 decisions unchanged, skips completed current reviews,
+  flags stale/conflicting records and ambiguous old workspace notes, and adds
+  scoped preset reasons with save-and-advance. Batch approvals require explicit
+  selected/captured cards, reviewer identity, current asset and image fingerprints,
+  and atomic all-or-nothing publication. Explicit rereviews retain superseded
+  records. At most one extra detailed plant and the existing viewport are used;
+  source assets and original visibility opinions are restored. Default review
+  runs are uniquely named; custom history directories are supported. All review
+  overlays/captures remain excluded from model inputs; no cut/grasp or physical
+  approval is inferred. Passed 42 focused regression tests under Isaac Python;
+  the initial multi-plant six-card headless smoke passed at
+  `data/sim_data/review_smokes/20260907T022304Z_98e3757d/`. Final UI-enabled smoke
+  passed at `data/sim_data/review_smokes/20260907T023900Z_46a955da/`, with six
+  rendered cards, visible gallery controls and all 24 source fingerprints
+  unchanged. Existing user reviews were read without modification (26 records,
+  25 unique targets; seven legacy scope clarifications). Usage and evidence are
+  documented in `examples/greenhouse_sim/sim_data/PHASE1.md`.
+- 2026-09-07 - Migrated fitted robot/FK/default camera workflows to the official
+  RB-Y1 Model A v1.2 URDF (32 links, 31 joints). Preserved vendor CAD/meshes and
+  v1.0 output; isolated v1.2 importer layers and added byte-identical safe aliases
+  for four mesh names whose dots otherwise cause invalid SdfPath/null-prim errors.
+  Build uses installed Isaac 5.1; rendered/runtime fit checks use Isaac 6.0.1.
+  Head limits now come from v1.2, and the 28.7 mm tool-offset reduction is shared
+  by FK/USD. Re-solved the counterhold seed while retaining all original gates.
+  Exported the supplied HeadCam_Bracket_D405.FCStd saved solid without source
+  recomputation; aligned its four-hole pattern to NECK_2 and the D405 rear pair
+  to its actual bracket mating face. Both wrists use the exact supplied
+  D405_Wrist_Bracket_v2-Body.stl. The 18 mm bracket pattern does not match the
+  stock v1.2 wrist's 34 mm pair: added an explicitly simulator-designed adapter,
+  included in rendering/collision envelopes, NOT approved lab hardware or a
+  direct bolt-on claim. Right tool remains knife-only. All three RGB cameras
+  default to exactly 848x408 with nominal square-pixel pinhole intrinsics;
+  physical camera calibration/RGB-D realism remain unvalidated. Added the robot
+  and three camera buttons to the new greenhouse package's session-only preview,
+  starting with the head view and a static SDK-ready pose (no preview dynamics).
+  Preserved anatomy-review data and diagnostic gallery; these are not training
+  inputs. Passed 311 focused tests plus 10 subtests (one standalone-USD skip),
+  seven-view Isaac 6 camera/fit render and the existing isolated physics fit
+  inspector. Actual greenhouse head-view capture is 848x408. Full new-model
+  bimanual/plant/RL acceptance and physical adapter review remain pending.
+  Commands, scope and evidence: `examples/greenhouse_sim/ROBOT_V12.md`.

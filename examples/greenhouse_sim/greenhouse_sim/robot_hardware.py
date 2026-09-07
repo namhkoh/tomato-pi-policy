@@ -1,4 +1,4 @@
-"""Author the supplied deleafing knife and D405 hardware on RBY1-A v1.0.
+"""Author the supplied deleafing knife and D405 hardware on RBY1-A v1.2.
 
 All mount transforms in this module are explicit and testable.  CAD is kept in
 millimetres in ``greenhouse/robot_assets`` and converted to metres only while
@@ -17,6 +17,7 @@ import struct
 import numpy as np
 
 from greenhouse_sim import usd_env
+from greenhouse_sim import robot_model
 
 usd_env.ensure_pxr()
 
@@ -29,31 +30,25 @@ from pxr import UsdPhysics  # noqa: E402
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[3]
 ASSET_DIR = REPOSITORY_ROOT / "greenhouse" / "robot_assets"
 DERIVED_DIR = ASSET_DIR / "derived"
-MANIFEST_PATH = DERIVED_DIR / "hardware.json"
+MANIFEST_PATH = DERIVED_DIR / "hardware_v1.2.json"
 
-ROBOT_ROOT = "/RBY1_A_v1_0"
+ROBOT_ROOT = robot_model.ROBOT_ROOT
 END_EFFECTOR_LINKS = {"left": "ee_left", "right": "ee_right"}
 HEAD_LINK = "link_head_2"
 RIGHT_GRIPPER_LINKS = ("ee_right", "ee_finger_r1", "ee_finger_r2")
 
-# Local mounts in the corresponding RBY1 link frame.  RBY1 tools extend along
-# -Z.  The wrist-camera transform is measured from the supplied
-# RBY1_Example_setup.FCStd and the supplied standalone bracket STEP, not fitted
-# by eye.  In the end-effector frame the two M3 bolt origins are at x=+/-9,
-# y=-42, z=38.5 mm; their heads sit 3 mm outside the y=-39 mm mounting face.
-# The bracket top is z=43 mm, exactly where the FCStd force-sensor plate begins.
-# The generated handed EE frames require an explicit x/y mirror for the left
-# outer screw face, confirmed in the rendered operator view.  The extracted STL
-# was normalized by moving its original minimum corner to zero, so subtracting
-# the normalized bolt datum recovers the supplied assembly height without the
-# former erroneous 50 mm flange correction.
-WRIST_MOUNT_FACE_Y_M = -0.039
-WRIST_BOLT_HEAD_STANDOFF_M = 0.003
-WRIST_SENSOR_PLATE_BASE_Z_M = 0.043
+# Link-frame datums measured from official v1.2 LINK_13/20_v1.1 meshes.
+# Screw centres: x=+/-17, y=-/+37, z=-98.58 mm in arm_6. tool_* translates
+# by -126.1 mm, hence z=27.52 mm in EE. These are NOT the older custom
+# high-speed-gripper's 18 mm pair. A labelled simulator adapter bridges to
+# the user's unchanged v2 bracket (18 mm), standing clear of the housing.
+WRIST_MOUNT_FACE_Y_M = -0.037
+WRIST_BOLT_HEAD_STANDOFF_M = 0.0
+WRIST_SENSOR_PLATE_BASE_Z_M = 0.045
 WRIST_REFERENCE_BOLT_CENTRES_M = np.array(
     [
-        [-0.009, WRIST_MOUNT_FACE_Y_M - WRIST_BOLT_HEAD_STANDOFF_M, 0.0385],
-        [0.009, WRIST_MOUNT_FACE_Y_M - WRIST_BOLT_HEAD_STANDOFF_M, 0.0385],
+        [-0.017, WRIST_MOUNT_FACE_Y_M, 0.02752],
+        [0.017, WRIST_MOUNT_FACE_Y_M, 0.02752],
     ],
     dtype=np.float64,
 )
@@ -62,15 +57,13 @@ LEFT_WRIST_REFERENCE_BOLT_CENTRES_M = WRIST_REFERENCE_BOLT_CENTRES_M * np.array(
 )
 WRIST_BRACKET_BOLT_CENTRES_M = np.array(
     [
-        [-0.009, 0.0569195383671445, 0.0301191835115545],
-        [0.009, 0.0569195383671445, 0.0301191835115545],
+        [-0.009, -0.010, 0.0],
+        [0.009, -0.010, 0.0],
     ],
     dtype=np.float64,
 )
-RIGHT_CAMERA_TRANSLATION_M = (
-    WRIST_REFERENCE_BOLT_CENTRES_M.mean(axis=0)
-    - WRIST_BRACKET_BOLT_CENTRES_M.mean(axis=0)
-)
+WRIST_ADAPTER_ROBOT_BOLT_CENTRES_M = np.array([[-0.017, -0.010, -0.015], [0.017, -0.010, -0.015]])
+RIGHT_CAMERA_TRANSLATION_M = np.array([0.0, -0.052, 0.01752])
 LEFT_CAMERA_TRANSLATION_M = RIGHT_CAMERA_TRANSLATION_M * np.array(
     [1.0, -1.0, 1.0], dtype=np.float64
 )
@@ -92,7 +85,7 @@ KNIFE_BLADE_REST_OFFSET_M = 0.0
 # exposed straight cutting edge is the long local -X side of the flat blade.
 KNIFE_CUT_DIRECTION_LOCAL = np.array([-1.0, 0.0, 0.0], dtype=np.float64)
 KNIFE_EDGE_AXIS_LOCAL = np.array([0.0, 1.0, 0.0], dtype=np.float64)
-HEAD_BRACKET_TRANSLATION_M = np.array([0.022, 0.0, 0.040], dtype=np.float64)
+HEAD_BRACKET_TRANSLATION_M = np.array([0.0, -0.00034, 0.045], dtype=np.float64)
 
 
 def wrist_d405_body_sphere(
@@ -117,6 +110,8 @@ def wrist_d405_body_box(
     half_extents = 0.5 * (body_maximum - body_minimum)
     mount = manifest["mounts"]["camera_bracket_to_d405"]
     mount_rotation = np.asarray(mount["rotation_matrix"], dtype=np.float64)
+    if side == "right":
+        mount_rotation = mount_rotation @ rotation_y(180.0)
     mount_translation = (
         np.asarray(mount["translation_mm"], dtype=np.float64) * 0.001
     )
@@ -135,6 +130,9 @@ def wrist_camera_bracket_box(
     """Return the conservative screw-mounted bracket box in one wrist EE."""
     manifest = load_manifest() if manifest is None else manifest
     minimum, maximum = _bounds_m(_part(manifest, "camera_bracket_d405"))
+    # Include the adapter in the planner's conservative hardware envelope.
+    adapter_min, adapter_max = _bounds_m(_part(manifest, "wrist_adapter_v12"))
+    minimum, maximum = np.minimum(minimum, adapter_min), np.maximum(maximum, adapter_max)
     centre = 0.5 * (minimum + maximum)
     half_extents = 0.5 * (maximum - minimum)
     rotation, translation = wrist_camera_mount(side)
@@ -251,11 +249,10 @@ def rotation_z(degrees: float) -> np.ndarray:
     return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
 
 
-# The generated URDF/USD handed EE frames require an explicit local mirror to
-# place the left camera on the operator-confirmed outer screw face.  Preserve
-# the corrected force-sensor-plate height while rotating the left assembly.
-LEFT_CAMERA_ROTATION = rotation_z(180.0)
-RIGHT_CAMERA_ROTATION = np.eye(3, dtype=np.float64)
+# Rigid handed rotations put the brackets on opposite housing screw faces.
+# Bracket +Y / camera forward maps to EE -Z (toward the working tool).
+RIGHT_CAMERA_ROTATION = rotation_z(180.0) @ rotation_x(-90.0)
+LEFT_CAMERA_ROTATION = rotation_z(180.0) @ RIGHT_CAMERA_ROTATION
 
 
 def wrist_camera_mount(side: str) -> tuple[np.ndarray, np.ndarray]:
@@ -274,7 +271,7 @@ def wrist_camera_mount(side: str) -> tuple[np.ndarray, np.ndarray]:
 # physically unavoidable before the blade could reach the petiole.
 KNIFE_ROTATION = rotation_z(-90.0) @ rotation_x(-90.0)
 HEAD_BRACKET_ROTATION = rotation_z(90.0)
-HEAD_CAMERA_TRANSLATION_M = np.array([0.0, 0.00123, 0.025], dtype=np.float64)
+HEAD_CAMERA_TRANSLATION_M = np.array([0.0, -0.018, 0.040], dtype=np.float64)
 HEAD_CAMERA_ROTATION = rotation_z(180.0)
 
 
@@ -510,12 +507,16 @@ def _author_d405(
     camera = UsdGeom.Camera.Define(stage, camera_path)
     # USD cameras look down local -Z with +Y up.  Rx(+90) maps those axes to
     # D405 +Y (forward) and +Z (up), respectively.
-    # The right camera body is mirrored across the robot. Keep the physical
-    # body and bracket mirrored, but roll its optical frame so policy images
-    # have the same upright convention as the head and left-wrist cameras.
+    # The right BODY is rotated on its symmetric rear screw pair. Optical
+    # transforms remain physically attached to that body, not artificially
+    # rolled independently to make a preview look upright.
     sensor_rotation = rotation_x(90.0) @ rotation_z(sensor_roll_degrees)
     _set_transform(camera.GetPrim(), sensor_rotation, optical_mm * 0.001)
-    horizontal, vertical = body_part["depth_fov_degrees"]
+    horizontal, _ = body_part["depth_fov_degrees"]
+    width, height = robot_model.D405_RESOLUTION
+    # Nominal, square-pixel pinhole at the requested aspect ratio. Do not
+    # stretch a 4:3/16:9 calibration into 848x408 or claim lab calibration.
+    vertical = math.degrees(2 * math.atan(math.tan(math.radians(horizontal / 2)) * height / width))
     focal_length_mm = 10.0
     camera.CreateFocalLengthAttr(focal_length_mm)
     camera.CreateHorizontalApertureAttr(2.0 * focal_length_mm * math.tan(math.radians(horizontal / 2.0)))
@@ -526,6 +527,11 @@ def _author_d405(
     _hardware_attr(camera.GetPrim(), "horizontalFovDegrees", float(horizontal))
     _hardware_attr(camera.GetPrim(), "verticalFovDegrees", float(vertical))
     _hardware_attr(camera.GetPrim(), "sensorRollDegrees", float(sensor_roll_degrees))
+    camera.GetPrim().CreateAttribute("tomato:resolution", Sdf.ValueTypeNames.Int2, custom=True).Set(Gf.Vec2i(width, height))
+    _hardware_attr(camera.GetPrim(), "calibrationStatus", "nominal_synthetic_pinhole_not_lab_calibrated")
+    focal_pixels = width / (2 * math.tan(math.radians(horizontal / 2)))
+    camera.GetPrim().CreateAttribute("tomato:intrinsics", Sdf.ValueTypeNames.DoubleArray, custom=True).Set(
+        [focal_pixels, 0, width / 2, 0, focal_pixels, height / 2, 0, 0, 1])
     return camera_path
 
 
@@ -541,23 +547,31 @@ def _author_wrist_camera(
     assembly = UsdGeom.Xform.Define(stage, assembly_path)
     _set_transform(assembly.GetPrim(), rotation, translation)
     _hardware_attr(assembly.GetPrim(), "hardwareRole", "wrist_camera_assembly")
-    _hardware_attr(assembly.GetPrim(), "mountInterface", "rby1_wrist_m3_pair")
-    _hardware_attr(assembly.GetPrim(), "mountBoltSpacingMillimeters", 18.0)
+    _hardware_attr(assembly.GetPrim(), "mountInterface", "rby1_v12_34mm_to_18mm_simulator_adapter")
+    _hardware_attr(assembly.GetPrim(), "mountBoltSpacingMillimeters", 34.0)
+    _hardware_attr(assembly.GetPrim(), "physicalAdapterValidated", False)
 
     bracket_part = _part(manifest, "camera_bracket_d405")
-    _author_mesh(stage, f"{assembly_path}/BracketVisual", DERIVED_DIR / "camera_bracket_d405.stl", (0.12, 0.12, 0.14))
+    bracket_source = ASSET_DIR / bracket_part["source"]
+    _author_mesh(stage, f"{assembly_path}/BracketVisual", bracket_source, (0.12, 0.12, 0.14))
     minimum, maximum = _bounds_m(bracket_part)
-    _author_box_collider(stage, f"{assembly_path}/BracketCollision", minimum, maximum)
+    _author_decomposed_collider(stage, f"{assembly_path}/BracketCollision", bracket_source)
+    adapter_source = DERIVED_DIR / "wrist_adapter_v12.stl"
+    _author_mesh(stage, f"{assembly_path}/AdapterVisual", adapter_source, (0.32, 0.34, 0.38))
+    _author_decomposed_collider(stage, f"{assembly_path}/AdapterCollision", adapter_source)
 
     mount = manifest["mounts"]["camera_bracket_to_d405"]
+    body_rotation = np.asarray(mount["rotation_matrix"], dtype=np.float64)
+    if side == "right":
+        body_rotation = body_rotation @ rotation_y(180.0)
     camera_path = _author_d405(
         stage,
         f"{assembly_path}/D405",
         manifest,
-        np.asarray(mount["rotation_matrix"], dtype=np.float64),
+        body_rotation,
         np.asarray(mount["translation_mm"], dtype=np.float64) * 0.001,
         f"{side}_wrist",
-        180.0 if side == "right" else 0.0,
+        0.0,
     )
     return assembly_path, camera_path
 
@@ -569,9 +583,10 @@ def _author_head_camera(stage: Usd.Stage, link_path: str, manifest: dict) -> tup
     _hardware_attr(assembly.GetPrim(), "hardwareRole", "head_camera_assembly")
 
     part = _part(manifest, "head_camera_bracket_d405")
-    _author_mesh(stage, f"{assembly_path}/BracketVisual", ASSET_DIR / "HeadCam_Bracket_D405-Body.stl", (0.12, 0.12, 0.14))
+    bracket_source = DERIVED_DIR / part["derived_stl"]
+    _author_mesh(stage, f"{assembly_path}/BracketVisual", bracket_source, (0.12, 0.12, 0.14))
     minimum, maximum = _bounds_m(part)
-    _author_box_collider(stage, f"{assembly_path}/BracketCollision", minimum, maximum)
+    _author_decomposed_collider(stage, f"{assembly_path}/BracketCollision", bracket_source)
     camera_path = _author_d405(
         stage,
         f"{assembly_path}/D405",
@@ -662,7 +677,7 @@ def _remove_original_right_gripper(stage: Usd.Stage, robot_root: str) -> tuple[s
     for link_name in RIGHT_GRIPPER_LINKS:
         link = stage.GetPrimAtPath(f"{robot_root}/{link_name}")
         if not link.IsValid():
-            raise ValueError(f"RBY1-A v1.0 right gripper link is missing: {link_name}")
+            raise ValueError(f"RBY1-A v1.2 right gripper link is missing: {link_name}")
         link.CreateAttribute("tomato:originalGripperRemoved", Sdf.ValueTypeNames.Bool, custom=True).Set(True)
         for child_name in ("visuals", "collisions", "restored_collisions"):
             child = stage.GetPrimAtPath(f"{link.GetPath()}/{child_name}")
@@ -767,11 +782,11 @@ def synchronize_fitted_hardware_mounts(
 
 
 def attach_robot_hardware(stage: Usd.Stage, robot_root: str = ROBOT_ROOT) -> HardwareReport:
-    """Attach all requested hardware to an imported RBY1-A v1.0 stage."""
+    """Attach all requested hardware to an imported RBY1-A v1.2 stage."""
     required = [END_EFFECTOR_LINKS["left"], END_EFFECTOR_LINKS["right"], HEAD_LINK]
     missing = [name for name in required if not stage.GetPrimAtPath(f"{robot_root}/{name}").IsValid()]
     if missing:
-        raise ValueError(f"RBY1-A v1.0 attachment links are missing: {', '.join(missing)}")
+        raise ValueError(f"RBY1-A v1.2 attachment links are missing: {', '.join(missing)}")
 
     removed_right_gripper = _remove_original_right_gripper(stage, robot_root)
     manifest = load_manifest()

@@ -1,4 +1,4 @@
-"""Exact, lightweight RB-Y1 v1.0 kinematics for benchmark probes.
+"""Exact, lightweight RB-Y1 v1.2 kinematics for benchmark probes.
 
 The simulator asset is generated from the same URDF, so this module provides a
 single source of truth for collision-test waypoints without depending on Lula
@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[3]
-DEFAULT_URDF = REPOSITORY_ROOT / "third_party" / "rby1-sdk" / "models" / "rby1a" / "urdf" / "model_v1.0.urdf"
+from greenhouse_sim.robot_model import DEFAULT_URDF
 DEFAULT_TORSO_DEGREES = (0.0, 45.0, -90.0, 45.0, 0.0, 0.0)
 
 
@@ -1176,6 +1176,41 @@ class Rby1Kinematics:
             np.degrees([joint.lower_rad for joint in joints]),
             np.degrees([joint.upper_rad for joint in joints]),
         )
+
+    def all_link_transforms(self, joint_degrees: dict[str, float], *, prismatic_m=None) -> dict[str, np.ndarray]:
+        """Exact base-relative link frames for a paused geometry/camera preview.
+
+        This is not a dynamics/teleop controller. Revolute values are degrees;
+        prismatic values are metres, following each URDF axis and signed limit.
+        """
+        prismatic_m = {} if prismatic_m is None else prismatic_m
+        unknown = (set(joint_degrees) | set(prismatic_m)) - set(self._by_name)
+        if unknown:
+            raise ValueError(f"Unknown URDF joints: {sorted(unknown)}")
+        transforms = {"base": np.eye(4)}
+        pending = dict(self._by_child)
+        while pending:
+            progressed = False
+            for child, joint in list(pending.items()):
+                if joint.parent not in transforms:
+                    continue
+                motion = np.eye(4)
+                if joint.kind in ("revolute", "continuous"):
+                    value = math.radians(float(joint_degrees.get(joint.name, 0.0)))
+                    if not math.isfinite(value) or not joint.lower_rad - 1e-9 <= value <= joint.upper_rad + 1e-9:
+                        raise ValueError(f"Joint {joint.name} outside URDF limits")
+                    motion[:3, :3] = _axis_rotation(joint.axis, value)
+                elif joint.kind == "prismatic":
+                    value = float(prismatic_m.get(joint.name, 0.0))
+                    if not math.isfinite(value) or not joint.lower_rad <= value <= joint.upper_rad:
+                        raise ValueError(f"Joint {joint.name} outside URDF limits")
+                    motion[:3, 3] = joint.axis * value
+                transforms[child] = transforms[joint.parent] @ joint.origin @ motion
+                del pending[child]
+                progressed = True
+            if not progressed:
+                raise ValueError("URDF links do not form a connected tree rooted at base")
+        return transforms
 
     def arm_joint_limit_margin_degrees(self, side: str, arm_degrees) -> float:
         """Return the smallest distance from an arm pose to an authored limit."""

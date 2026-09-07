@@ -19,7 +19,7 @@ from pxr import UsdPhysics  # noqa: E402
 
 
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[3]
-DEFAULT_ROBOT_ASSET = REPOSITORY_ROOT / "data" / "greenhouse_sim" / "robots" / "rby1a_v1.0.usd"
+from greenhouse_sim.robot_model import DEFAULT_ASSET as DEFAULT_ROBOT_ASSET
 DEFAULT_ROBOT_PATH = "/World/RBY1"
 # Stand on the opposite (+Y) side of Vine_0000, facing back toward the row. The
 # 150 mm rearward offset keeps a released branch clear of the wheels. Its plan
@@ -158,6 +158,9 @@ def add_fitted_robot(
     root = UsdGeom.Xform.Define(stage, Sdf.Path(root_path))
     if not root.GetPrim().GetReferences().AddReference(str(asset)):
         raise RuntimeError(f"could not reference fitted robot asset: {asset}")
+    from greenhouse_sim import robot_model
+    if root.GetPrim().GetAttribute("tomato:robotModel").Get() != robot_model.ROBOT_NAME:
+        raise ValueError("Robot USD must be rebuilt from Model A v1.2 before using v1.2 kinematics")
     position = np.asarray(position_m, dtype=np.float64)
     if position.shape != (3,):
         raise ValueError("robot position must contain exactly three values")

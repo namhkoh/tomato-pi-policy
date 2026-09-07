@@ -1,7 +1,7 @@
-"""Build the exact RB-Y1 Model A v1.0 USD with deleafing hardware.
+"""Build the exact RB-Y1 Model A v1.2 USD with deleafing hardware.
 
 The Isaac URDF importer does not understand RB-Y1's non-standard ``capsule``
-elements consistently. This builder imports the licensed v1.0 model, disables
+elements consistently. This builder imports the licensed v1.2 model, disables
 the importer's collision instances, restores all 17 active declared link
 capsules once, adds conservative mobile-base contacts, changes the two wheel
 joints to velocity drives, and attaches the supplied knife/brackets/D405s.
@@ -21,6 +21,7 @@ import hashlib
 import json
 import math
 import pathlib
+import shutil
 import sys
 import xml.etree.ElementTree as ET
 
@@ -28,10 +29,12 @@ import numpy as np
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
-_DEFAULT_URDF = pathlib.Path("third_party/rby1-sdk/models/rby1a/urdf/model_v1.0.urdf")
-_DEFAULT_OUTPUT = pathlib.Path("data/greenhouse_sim/robots/rby1a_v1.0.usd")
-_DEFAULT_REPORT = pathlib.Path("data/greenhouse_sim/robots/rby1a_v1.0.json")
-_EXPECTED_ROOT = "/RBY1_A_v1_0"
+from greenhouse_sim import robot_model
+
+_DEFAULT_URDF = robot_model.DEFAULT_URDF
+_DEFAULT_OUTPUT = robot_model.DEFAULT_ASSET
+_DEFAULT_REPORT = robot_model.DEFAULT_REPORT
+_EXPECTED_ROOT = robot_model.ROBOT_ROOT
 
 # The active arm-5 capsule in the vendor URDF is a conservative whole-tool
 # planning envelope (250 mm cylinder plus two 75 mm hemispheres). It extends
@@ -60,6 +63,29 @@ def _numbers(value: str | None, default: tuple[float, float, float]) -> tuple[fl
     if len(parsed) != 3:
         raise ValueError(f"expected three values, found {value!r}")
     return parsed
+
+
+def _prepare_import_urdf(source: pathlib.Path, directory: pathlib.Path) -> pathlib.Path:
+    """Work around legacy importer identifiers without modifying vendor files.
+
+    Four v1.2 meshes have '.v1.1'-style stems; the legacy importer inserts those
+    directly into SdfPaths and fails with a null prim. Byte-identical aliases
+    with USD-safe filenames solve that, while every joint/inertia stays intact.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    tree = ET.parse(source)
+    tree.getroot().set("name", _EXPECTED_ROOT.lstrip("/"))
+    for mesh in tree.getroot().findall(".//mesh"):
+        original = (source.parent / mesh.attrib["filename"]).resolve()
+        if "." in original.stem:
+            alias = directory / (original.stem.replace(".", "_") + original.suffix)
+            shutil.copyfile(original, alias)
+            mesh.set("filename", alias.as_posix())
+        else:
+            mesh.set("filename", original.as_posix())
+    path = directory / "rby1a_v1_2_import.urdf"
+    tree.write(path, encoding="utf-8", xml_declaration=True)
+    return path
 
 
 def _deactivate_imported_collision_scopes(stage, urdf_path: pathlib.Path, Sdf) -> list[str]:
@@ -236,6 +262,7 @@ def main() -> int:
     if not urdf_path.exists():
         print(f"URDF not found: {urdf_path}")
         return 1
+    robot_model.validate_urdf(urdf_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -252,6 +279,11 @@ def main() -> int:
 
     from greenhouse_sim import robot_hardware
 
+    if "URDFCreateImportConfig" not in omni.kit.commands.get_commands():
+        print("Build with D:/isaac-sim/python.bat (Isaac 5.1 legacy URDF importer); load the resulting USD in Isaac 6.", flush=True)
+        app.close(exit_code=1)
+        return 1
+    import_urdf = _prepare_import_urdf(urdf_path, output_path.parent / "import_source")
     status, config = omni.kit.commands.execute("URDFCreateImportConfig")
     if not status:
         app.close()
@@ -267,7 +299,7 @@ def main() -> int:
 
     status, imported_root = omni.kit.commands.execute(
         "URDFParseAndImportFile",
-        urdf_path=str(urdf_path),
+        urdf_path=str(import_urdf),
         import_config=config,
         dest_path=str(output_path),
         get_articulation_root=False,
@@ -287,6 +319,8 @@ def main() -> int:
         app.close()
         raise RuntimeError(f"unexpected imported root: {default_prim.GetPath() if default_prim else imported_root}")
     stage.SetEditTarget(stage.GetRootLayer())
+    default_prim.CreateAttribute("tomato:robotModel", Sdf.ValueTypeNames.String, custom=True).Set(robot_model.ROBOT_NAME)
+    default_prim.CreateAttribute("tomato:sourceUrdfSha256", Sdf.ValueTypeNames.String, custom=True).Set(hashlib.sha256(urdf_path.read_bytes()).hexdigest())
 
     disabled_imported_colliders = _deactivate_imported_collision_scopes(stage, urdf_path, Sdf)
     capsules = _restore_urdf_capsules(stage, urdf_path, robot_hardware, Gf, Sdf, UsdGeom, UsdPhysics)
@@ -314,6 +348,9 @@ def main() -> int:
         "asset": str(output_path),
         "source_urdf": str(urdf_path),
         "source_sha256": hashlib.sha256(urdf_path.read_bytes()).hexdigest(),
+        "import_source": str(import_urdf),
+        "camera_resolution": list(robot_model.D405_RESOLUTION),
+        "wrist_adapter_physical_fit_validated": False,
         "imported_root": str(default_prim.GetPath()),
         "import_settings": {
             "fix_base": False,

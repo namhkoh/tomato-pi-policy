@@ -1,0 +1,367 @@
+{
+  "schema_version": 2,
+  "parts": [
+    {
+      "part": "camera_bracket_d405",
+      "source": "D405_Wrist_Bracket_v2-Body.stl",
+      "source_sha256": "dce71f47ab9d288fd8223b6e6b5fa16f2973990c505b2103bb6c403f6c5e24b5",
+      "min_mm": [
+        -20.0,
+        -15.0,
+        -8.0
+      ],
+      "max_mm": [
+        20.0,
+        29.0,
+        33.0
+      ],
+      "size_mm": [
+        40.0,
+        44.0,
+        41.0
+      ],
+      "facets": 2308,
+      "frame": "unmodified supplied v2 STL frame, mm",
+      "robot_holes_mm": [
+        [
+          -9,
+          -10,
+          0
+        ],
+        [
+          9,
+          -10,
+          0
+        ]
+      ],
+      "camera_holes_mm": [
+        [
+          -10,
+          29,
+          13
+        ],
+        [
+          10,
+          29,
+          13
+        ]
+      ]
+    },
+    {
+      "part": "d405_body",
+      "source": "C_CameraBracket_Bent(HighSpeedGripper(R1.1&1.2)).stp",
+      "min_mm": [
+        -21.0,
+        -0.0,
+        -21.0
+      ],
+      "max_mm": [
+        21.09,
+        23.0,
+        21.0
+      ],
+      "size_mm": [
+        42.09,
+        23.0,
+        42.0
+      ],
+      "volume_mm3": 38161.1,
+      "facets": 8520,
+      "faces": 146,
+      "frame": "D405 assembly part frame; camera forward is +Y",
+      "depth_baseline_mm": 18.0,
+      "optical_origin_mm": [
+        0.0,
+        19.23,
+        0.0
+      ],
+      "depth_fov_degrees": [
+        84.0,
+        58.0
+      ],
+      "color_fov_degrees": [
+        84.0,
+        58.0
+      ],
+      "specification": "RealSense D400 Series Datasheet, July 2023"
+    },
+    {
+      "part": "head_camera_bracket_d405",
+      "source": "HeadCam_Bracket_D405.FCStd",
+      "source_sha256": "dda85b14b2d8de6928a012232f62e6bb972e81f3c737afd8e4539e41de424ebe",
+      "min_mm": [
+        -23.0,
+        -18.0,
+        0.0
+      ],
+      "max_mm": [
+        23.0,
+        18.0,
+        50.0
+      ],
+      "size_mm": [
+        46.0,
+        36.0,
+        50.0
+      ],
+      "facets": 4358,
+      "derived_stl": "head_camera_bracket_d405_v12.stl",
+      "saved_tip": "Fillet001",
+      "mount_holes": [
+        {
+          "radius_mm": 1.7,
+          "centre_mm": [
+            -10.0,
+            -16.399999999999988,
+            40.0
+          ],
+          "axis": [
+            0.0,
+            -1.0,
+            2.2e-16
+          ]
+        },
+        {
+          "radius_mm": 1.7,
+          "centre_mm": [
+            10.0,
+            -16.399999999999988,
+            40.0
+          ],
+          "axis": [
+            0.0,
+            -1.0,
+            2.2e-16
+          ]
+        },
+        {
+          "radius_mm": 1.7,
+          "centre_mm": [
+            -18.000000000000004,
+            -12.999999999999996,
+            2.9
+          ],
+          "axis": [
+            -0.0,
+            -0.0,
+            -1.0
+          ]
+        },
+        {
+          "radius_mm": 1.7,
+          "centre_mm": [
+            17.999999999999996,
+            -12.999999999999996,
+            2.9
+          ],
+          "axis": [
+            -0.0,
+            -0.0,
+            -1.0
+          ]
+        },
+        {
+          "radius_mm": 1.7,
+          "centre_mm": [
+            -18.000000000000004,
+            13.0,
+            2.9
+          ],
+          "axis": [
+            -0.0,
+            -0.0,
+            -1.0
+          ]
+        },
+        {
+          "radius_mm": 1.7,
+          "centre_mm": [
+            17.999999999999996,
+            13.0,
+            2.9
+          ],
+          "axis": [
+            -0.0,
+            -0.0,
+            -1.0
+          ]
+        }
+      ],
+      "frame": "unmodified FCStd Body frame, mm"
+    },
+    {
+      "part": "deleaf_knife",
+      "source": "deleaf_knife.stl",
+      "source_sha256": "0237eb46c8980cec4cd9b09623f72d55e6f2491928e673a67172294c3a5f8dbd",
+      "source_bounds": {
+        "blade": {
+          "min_mm": [
+            106.41612,
+            122.99123,
+            0.0
+          ],
+          "max_mm": [
+            136.77817,
+            194.47121,
+            13.0
+          ],
+          "size_mm": [
+            30.36205,
+            71.47998,
+            13.0
+          ]
+        },
+        "arc": {
+          "min_mm": [
+            118.59715,
+            70.69926,
+            0.0
+          ],
+          "max_mm": [
+            124.59715,
+            133.0,
+            50.91788
+          ],
+          "size_mm": [
+            6.0,
+            62.30074,
+            50.91788
+          ]
+        }
+      },
+      "mount_origin_in_source_mm": [
+        121.59715,
+        194.47121,
+        6.5
+      ],
+      "frame": "origin at centre of blade distal mounting face; blade projects along -Y",
+      "components": [
+        {
+          "name": "deleaf_knife_blade",
+          "min_mm": [
+            -15.18102,
+            -71.47998,
+            -6.5
+          ],
+          "max_mm": [
+            15.18102,
+            0.0,
+            6.5
+          ],
+          "size_mm": [
+            30.36205,
+            71.47998,
+            13.0
+          ],
+          "facets": 1029,
+          "cutting_surface": true
+        },
+        {
+          "name": "deleaf_knife_arc",
+          "min_mm": [
+            -3.0,
+            -123.77194,
+            -6.5
+          ],
+          "max_mm": [
+            3.0,
+            -61.47121,
+            44.41788
+          ],
+          "size_mm": [
+            6.0,
+            62.30074,
+            50.91788
+          ],
+          "facets": 3811,
+          "cutting_surface": false
+        }
+      ],
+      "cut_semantics": "flat straight blade only; U-shaped arc is non-cutting support"
+    },
+    {
+      "part": "wrist_adapter_v12",
+      "min_mm": [
+        -24.0,
+        -20.0,
+        -15.0
+      ],
+      "max_mm": [
+        24.0,
+        0.0,
+        0.0
+      ],
+      "size_mm": [
+        48.0,
+        20.0,
+        15.0
+      ],
+      "facets": 1252,
+      "derived_stl": "wrist_adapter_v12.stl",
+      "source": "procedural simulator adapter, not a supplied lab part",
+      "physical_fabrication_approved": false,
+      "robot_holes_mm": [
+        [
+          -17,
+          -10,
+          -15
+        ],
+        [
+          17,
+          -10,
+          -15
+        ]
+      ],
+      "bracket_holes_mm": [
+        [
+          -9,
+          -10,
+          0
+        ],
+        [
+          9,
+          -10,
+          0
+        ]
+      ]
+    }
+  ],
+  "mounts": {
+    "camera_bracket_to_d405": {
+      "translation_mm": [
+        0,
+        29,
+        13
+      ],
+      "rotation_matrix": [
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          1
+        ]
+      ],
+      "source": "v2 STL y=29 rear-camera mating face; 20 mm pair aligned to D405 rear holes"
+    }
+  },
+  "robot_model": "RBY1_A_v1.2",
+  "camera_resolution": [
+    848,
+    408
+  ],
+  "mount_validation": {
+    "head": "26 x 36 mm NECK_2 mesh pair pattern; z=45 mm, y centre=-0.34 mm",
+    "wrist": "34-to-18 mm simulator adapter; physical fit and fasteners require lab review",
+    "head_source_recomputed": false,
+    "camera_intrinsics": "nominal synthetic pinhole, not physical calibration"
+  }
+}

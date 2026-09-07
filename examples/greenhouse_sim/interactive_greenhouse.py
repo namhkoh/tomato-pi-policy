@@ -32,7 +32,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 _DEFAULT_SCENE = pathlib.Path("data/greenhouse_sim/scenes/deleafing_bench.usd")
 _DEFAULT_VINE_DIR = pathlib.Path("greenhouse/tomato_glb_20")
-_DEFAULT_ROBOT = pathlib.Path("data/greenhouse_sim/robots/rby1a_v1.0.usd")
+from greenhouse_sim import robot_model
+
+_DEFAULT_ROBOT = robot_model.DEFAULT_ASSET
 _DEFAULT_REPORT = pathlib.Path("data/greenhouse_sim/interactive_greenhouse.json")
 
 
@@ -335,8 +337,8 @@ def parse_args() -> argparse.Namespace:
         choices=("inspection", "head", "left_wrist", "right_wrist"),
         default=("inspection", "head", "left_wrist", "right_wrist"),
     )
-    parser.add_argument("--probe-video-width", type=int, default=480)
-    parser.add_argument("--probe-video-height", type=int, default=270)
+    parser.add_argument("--probe-video-width", type=int, default=robot_model.D405_RESOLUTION[0])
+    parser.add_argument("--probe-video-height", type=int, default=robot_model.D405_RESOLUTION[1])
     parser.add_argument(
         "--probe-video-hz",
         type=float,
@@ -385,8 +387,8 @@ def parse_args() -> argparse.Namespace:
         choices=("head", "left_wrist", "right_wrist"),
         default=("head", "left_wrist", "right_wrist"),
     )
-    parser.add_argument("--teleop-width", type=int, default=640)
-    parser.add_argument("--teleop-height", type=int, default=360)
+    parser.add_argument("--teleop-width", type=int, default=robot_model.D405_RESOLUTION[0])
+    parser.add_argument("--teleop-height", type=int, default=robot_model.D405_RESOLUTION[1])
     parser.add_argument(
         "--rl-server",
         action="store_true",
@@ -470,12 +472,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--rl-video-width",
         type=int,
-        default=640,
+        default=robot_model.D405_RESOLUTION[0],
     )
     parser.add_argument(
         "--rl-video-height",
         type=int,
-        default=360,
+        default=robot_model.D405_RESOLUTION[1],
     )
     parser.add_argument(
         "--rl-render",
@@ -3962,6 +3964,8 @@ def _focus_viewport(camera_path: str) -> None:
         viewport = get_active_viewport()
         if viewport is not None:
             viewport.set_active_camera(camera_path)
+            if "/D405/DepthCamera" in camera_path:
+                viewport.set_texture_resolution(robot_model.D405_RESOLUTION)
     except Exception as exc:
         print(f"could not focus inspection camera: {exc}")
 
@@ -8905,7 +8909,10 @@ _LEFT_APPROACH_SEEDS_DEGREES = {
 # physically reachable.
 _LEFT_MULTISTART_SEEDS_DEGREES = (
     (-139.249, -0.999, -89.957, -20.278, 60.752, 49.790, -48.653),
-    (-141.617, 52.615, -64.546, -88.231, 68.169, 68.076, -24.902),
+    # Re-solved for the v1.2 126.1 mm tool offset. Retains the original
+    # counterhold target, >=38 deg joint reserve and >=76 N force-capacity gate.
+    (-140.302280045, 49.089767301, -65.885784744, -82.685696044,
+     66.618449617, 64.909582557, -27.307933494),
 )
 _LEFT_TRANSPORT_SEED_DEGREES = (
     -108.062,
@@ -8944,17 +8951,14 @@ _BIMANUAL_STARTUP_MAXIMUM_JOINT_SPEED_DEGREES_S = 0.5
 _BIMANUAL_STARTUP_MAXIMUM_JOINT_ERROR_DEGREES = 0.5
 _BIMANUAL_STARTUP_SETTLE_STEPS = 240
 _BIMANUAL_STARTUP_SETTLED_SAMPLES = 8
-# Exact Model A v1.0 URDF ranges, expressed in the degree units used by
+# Model A torso limits (unchanged in v1.2), expressed in the degree units used by
 # Isaac's angular drive targets. Torso speed is capped at its slowest 120 deg/s
 # hardware limit; both head joints are capped below their 180 deg/s limit.
 _RBY1_TORSO_LIMITS_DEGREES = (
     (-15.0, -30.0, -150.0, -45.0, -30.0, -135.0),
     (15.0, 90.0, 90.0, 90.0, 30.0, 135.0),
 )
-_RBY1_HEAD_LIMITS_DEGREES = (
-    (-29.965988, -20.053523),
-    (29.965988, 89.954374),
-)
+_RBY1_HEAD_LIMITS_DEGREES = robot_model.joint_limits_degrees(("head_0", "head_1"))
 _RBY1_TORSO_EFFORT_LIMITS_NM = (270.0, 270.0, 270.0, 120.0, 120.0, 120.0)
 _RBY1_TORSO_STIFFNESS_NM_RAD = (1200.0, 1200.0, 1200.0, 800.0, 600.0, 500.0)
 _RBY1_TORSO_DAMPING_NM_S_RAD = (120.0, 120.0, 120.0, 80.0, 60.0, 50.0)

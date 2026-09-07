@@ -1,4 +1,4 @@
-"""Regressions for exact RB-Y1 v1.0 benchmark kinematics."""
+"""Regressions for exact RB-Y1 v1.2 benchmark kinematics."""
 
 from __future__ import annotations
 
@@ -17,7 +17,9 @@ def test_forward_kinematics_matches_accepted_greenhouse_knife_root() -> None:
     model = robot_kinematics.Rby1Kinematics()
     ee = model.forward("right", RIGHT_SAFE, BASE)
 
-    np.testing.assert_allclose(ee[:3, 3], [6.80511796, 3.49999921, 1.08376004], atol=1e-7)
+    # v1.0 had 108.7+46.1 mm wrist/sensor offset; v1.2 is 126.1 mm.
+    # For this pose the 28.7 mm reduction is along world +Y.
+    np.testing.assert_allclose(ee[:3, 3], [6.80511796, 3.52869921, 1.08376004], atol=1e-7)
 
 
 def test_urdf_reach_bound_contains_forward_kinematics() -> None:

@@ -5233,8 +5233,8 @@ def test_probe_video_defaults_capture_all_views_at_exact_cadence(
         "left_wrist",
         "right_wrist",
     )
-    assert args.probe_video_width == 480
-    assert args.probe_video_height == 270
+    assert args.probe_video_width == 848
+    assert args.probe_video_height == 408
     assert _probe_capture_interval_steps(args.probe_video_hz) == 20
 
 

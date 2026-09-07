@@ -23,13 +23,13 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
-        "--robot", type=pathlib.Path, default=pathlib.Path("data/greenhouse_sim/robots/rby1a_v1.0.usd")
+        "--robot", type=pathlib.Path, default=pathlib.Path("data/greenhouse_sim/robots/rby1a_v1.2/rby1a_v1.2.usd")
     )
     parser.add_argument("--screenshot", type=pathlib.Path, default=pathlib.Path("data/greenhouse_sim/robot_fit_isolated.png"))
     parser.add_argument("--report", type=pathlib.Path, default=pathlib.Path("data/greenhouse_sim/robot_fit_isolated.json"))
     parser.add_argument("--view", choices=("overall", "right_tool", "left_wrist", "head_camera"), default="overall")
-    parser.add_argument("--width", type=int, default=1280)
-    parser.add_argument("--height", type=int, default=720)
+    parser.add_argument("--width", type=int, default=848)
+    parser.add_argument("--height", type=int, default=408)
     return parser.parse_args()
 
 
