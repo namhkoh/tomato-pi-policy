@@ -2752,3 +2752,42 @@ One logical change per commit; no AI attribution trailers.
   At the subsequent audit snapshot, 16 completed coverage jobs contained 725
   independently audited raw frames. V2 eligible counts are computed separately;
   raw counts do not imply training eligibility or complete visual sign-off.
+
+#### Post-checkpoint v2 visual QA and portable engineering verification
+
+- Code/tests/docs checkpoint committed as `e7d9861` on `koh-dev/sim-data`;
+  subsequent `git status --porcelain=v1` was empty. No push or data deletion.
+- Recomputed the 16-audit snapshot under v2: 562 eligible examples from 725
+  raw frames (335 train, 102 validation, 125 test). Difficulty totals were
+  426 easy, 8 medium and 128 hard. Excluded 64 disconnected-query examples,
+  72 ambiguous junctions, 13 absent usable queries, 13 unknown visibility and
+  one insufficient visual sampling/exposure example. These are a dated
+  partial snapshot, not the full release or current live-worker totals.
+- Completed all 41 selected inspections in
+  `dataset_reviews/grounding_release_wave1_20260909_v2`: 27 newly inspected
+  cards plus 14 exact-RGB/query/answer/sample/audit matches to prior actual
+  inspections. Each has individual notes and assistant attribution. The
+  source-bound review verifier passed the first nine families' nonempty
+  difficulty strata and both capture profiles (10 established / 31 faster).
+  This is representative QA, not human confirmation or statistical accuracy;
+  new families and newly populated strata still require inspection.
+- Built and validated `training_releases/grounding_v2_engineering_20260909_v1`
+  from those nine source audits: 317 unique examples (215 train / 102 validation,
+  no test rows). It contains clean RGB/chat records, native Z/masks/calibration
+  sidecars and bound QA evidence. Its state remains explicitly
+  `incomplete_engineering_export_do_not_claim_release`; visual QA passing
+  cannot override missing release coverage. Historical v1 exports remain intact.
+- Image-free baseline check on its 102 validation rows: query-copy median error
+  72.07 px; fixed training-median pixel error 179.09 px; training-median query
+  offset error 73.27 px. None localized a visible cut within 5 px. Always-abstain
+  status accuracy was 27.45%; always-localize falsely localized all 28 occluded
+  rows. These are small engineering shortcut checks, NOT VLM evaluation/training.
+- Recomputed both completed matched-render comparisons under v2 in new
+  `matched_pose_comparison_v2.json` receipts. At 21 matched poses eligibility
+  agrees, with 17 jointly eligible identical answers (14 easy / 1 medium /
+  2 hard) and four jointly excluded. The query pixel differs in 15 pairs;
+  this is not an identical-query controlled model comparison or photometric
+  equivalence claim. Earlier v1 receipts and failed render experiments remain.
+- Collection continues in the existing four isolated workers; no live robot
+  command or GUI reset was used for review/export. The complete 10k/500/500
+  dataset and final all-family QA remain unfinished.

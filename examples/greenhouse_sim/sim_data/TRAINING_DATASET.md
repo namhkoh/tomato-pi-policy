@@ -3,6 +3,14 @@
 This is the first perception-only training dataset, not the full bimanual
 deleafing-policy dataset. The original reviewed pilot remains immutable.
 
+Status (2026-09-09 checkpoint): **collection in progress, no complete release**.
+The current v2 engineering export is
+`data/sim_data/training_releases/grounding_v2_engineering_20260909_v1` (317 rows,
+215 train / 102 validation / no test). Its portable loader and the selected
+41-example, nine-family visual QA passed; size, split and difficulty coverage
+remain incomplete. Larger workers are collecting separately. The task contract
+is v2; the portable release container schema remains v1. See `dev.md` for evidence.
+
 ## Task
 
 The observation is the unmodified 848x408 RGB image from the RB-Y1 A v1.2
