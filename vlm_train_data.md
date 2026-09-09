@@ -781,3 +781,15 @@ are not additional independent inspections. See
 `data/sim_data/status/visual_qa_followup_20260909_v3.json`. Query readability
 alone cannot certify nominal-cut readability; explicit RGB inspection remains
 necessary. Complete release gates still apply. Latest tests: 495 + 47 subtests.
+
+The current task-v3 human review GUI is now available at
+<http://127.0.0.1:8880>, with `examples/greenhouse_sim/run_training_review.cmd`
+as its repeatable launcher. It starts with the remaining 79 pending cards,
+displays untouched head-camera RGB and saved native evidence, and saves explicit
+Accept/Hold/Reject decisions with progress. Existing assistant records remain
+read-only; negative human decisions also block the source frame before the task
+record is saved. No observation, native depth or frozen snapshot is overwritten.
+See `examples/greenhouse_sim/sim_data/TRAINING_REVIEW_GUI.md`. Full tests:
+516 passed plus 47 subtests; actual browser rendering verified without saving
+any automatic human reviews. This UI does not grant whole-release or cut-safety
+approval and does not replace the remaining dataset collection/QA/export work.

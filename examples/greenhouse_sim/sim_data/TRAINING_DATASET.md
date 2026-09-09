@@ -13,6 +13,12 @@ No VLM fine-tuning has started. Current receipts:
 `data/sim_data/status/v3_after_nominal_rgb_hold_20260909.json` and
 `data/sim_data/status/visual_qa_followup_20260909_v3.json`.
 
+Current visual-review UI: <http://127.0.0.1:8880>, launched from
+`examples/greenhouse_sim/run_training_review.cmd`. See
+[TRAINING_REVIEW_GUI.md](TRAINING_REVIEW_GUI.md) for the pending-card workflow,
+saved decisions and source-level Hold/Reject enforcement. This is the task-v3
+reviewer, not the historical prototype UI on ports 8877-8879.
+
 Earlier status (2026-09-09 post-anatomy-audit checkpoint): **collection in progress, no
 complete release; current task v3 needs fresh visual QA**. The one-by-one audit
 of all 63 wave-2 cards found 33 correct visible nominal labels and 30 hidden-cut

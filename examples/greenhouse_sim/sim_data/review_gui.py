@@ -124,7 +124,8 @@ class ReviewApp:
             return {"saved": read_json(path), "state": self._state()}
 
 
-def make_server(app, port=8877):
+def make_server(app, port=8877, *, ui=None):
+    assets = Path(ui) if ui is not None else UI
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
             pass  # No request bodies, names or CSRF tokens in logs.
@@ -154,11 +155,11 @@ def make_server(app, port=8877):
             path = urlsplit(self.path).path
             try:
                 if path == "/":
-                    content = (UI / "index.html").read_text(encoding="utf-8").replace("__CSRF__", app.token)
+                    content = (assets / "index.html").read_text(encoding="utf-8").replace("__CSRF__", app.token)
                     return self.send(200, content.encode(), "text/html; charset=utf-8")
                 if path in ("/ui/app.js", "/ui/style.css"):
                     mime = "text/javascript" if path.endswith(".js") else "text/css"
-                    return self.send(200, (UI / path.rsplit("/", 1)[1]).read_bytes(), mime + "; charset=utf-8")
+                    return self.send(200, (assets / path.rsplit("/", 1)[1]).read_bytes(), mime + "; charset=utf-8")
                 if path == "/api/state":
                     return self.json(200, app.state())
                 pieces = path.split("/")

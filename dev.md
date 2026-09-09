@@ -3105,3 +3105,37 @@ One logical change per commit; no AI attribution trailers.
   nominal-region inspection; any later automatic screen needs its own evidence
   and contract/re-screen validation, not thresholds tuned merely to fill quotas.
   Full test rerun remained **495 passed, 47 subtests passed** (47.10 s).
+
+#### 2026-09-09: task-v3 human review GUI launched
+
+- Added `sim_data.training_review_gui`, local HTML/CSS/JS and the repeatable
+  `run_training_review.cmd` launcher. Reused the existing loopback-only HTTP
+  server with an optional UI asset directory; legacy prototype UI remains intact.
+- Opened <http://127.0.0.1:8880> for the user. It starts with 79 pending of 108
+  current all-family cards, and preserves 28 prior accepts / one hold as
+  assistant decisions. No real-data human decisions were created by testing.
+- Original RGB and saved annotated evidence are separate tabs. Both must load;
+  an entered name, substantive note and explicit inspection checkbox are required
+  before Accept/Hold/Reject. Saving advances, restart resumes, existing decisions
+  are read-only. The answer panel explicitly distinguishes localization from
+  occluded abstention; masks alone do not prove nominal-cut RGB readability.
+- Hash-checks the selected bundle, audit, sample, original RGB, saved card,
+  native depth/validity and target mask. Serves images lazily to limit memory.
+  No Kit app, camera/scene changes, model call or regenerated depth is involved.
+- Human Hold/Reject appends an existing-schema source block BEFORE the task
+  record, so exporter exclusion works even without the task bundle. Interrupted
+  task writes remain fail-closed; exact retries reuse the original negative
+  source record. Acceptance cannot clear an existing source hold. No source,
+  old review or frozen candidate snapshot is overwritten.
+- Focused reviewer regressions: **62 passed**. Full sim-data: **516 passed,
+  47 subtests passed** (48.17 s). Includes fixture-only persistence/restart,
+  immutable decisions, hidden-cut acceptance, changed evidence, negative-source
+  blocking, interrupted saves, duplicate posts, loopback/CSRF and legacy UI tests.
+- Read-only real-browser smoke loaded the actual first pending card, original
+  848×408 RGB and 1152×1230 evidence, with controls disabled before explicit
+  inspection, no JavaScript exceptions, and zero review writes. Screenshots,
+  result and server logs: `data/sim_data/review_gui/task_v3_20260909_v1/`.
+  Inspected both browser screenshots. Three capture workers remain active.
+- Instructions: `examples/greenhouse_sim/sim_data/TRAINING_REVIEW_GUI.md`.
+  GUI decisions are per-label review only; the full dataset and physical cut
+  safety are not approved. Future source holds require a fresh candidate recount.
