@@ -25,6 +25,16 @@ corrected one-by-one browser:
 Only four retained v3 examples have fresh explicit assistant review records at
 this checkpoint; the remainder are pending, not implicitly accepted.
 
+The completed 29-audit recount yields **3,246 v3 candidates / 4,623 audited raw**:
+2,102 train, 368 validation, 776 test. All 4,623 native optical-Z arrays match
+their capture-time byte hashes. Fresh v3 stratified QA is pending; train volume
+and class counts, validation volume and held-out medium coverage still fail
+release gates. Receipt: `data/sim_data/status/post_anatomy_audit_v3_20260909.json`.
+The previous campaign supervisors have exited. Two renderers are still running;
+seed37/seed29 jobs finished writing but lack a final worker-exit ledger. These
+unfinalized outputs are excluded. Durable supervision must be restored using
+verifiable recovery or new-directory reruns; never invent clean exit records.
+
 ### Historical v2 evidence (not current v3 approval)
 
 The historical v2 engineering export is

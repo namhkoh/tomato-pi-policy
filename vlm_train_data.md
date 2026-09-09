@@ -712,3 +712,15 @@ Next: complete fresh stratified QA of v3 candidates across completed batches,
 fill volume/medium-class deficits with native robot-head captures, and build
 and validate a portable release before VLM fine-tuning. Do not use historical
 v2 eligible counts as current v3 totals or migrate changed-query approvals.
+
+The subsequent frozen 29-audit v3 recount is complete: 3,246 candidates from
+4,623 audited raw frames (2,102 train / 368 validation / 776 test). All native
+Isaac camera-Z arrays match their original capture byte hashes. Train medium
+count is 22; validation/test have only 6/9, so held-out balance still fails.
+Fresh v3 visual QA, train volume/class counts and validation volume remain
+incomplete. See `data/sim_data/status/post_anatomy_audit_v3_20260909.json`.
+Process inspection also found interrupted campaign supervision: two renderers
+remain active, while seed37/seed29 outputs have no final worker-exit ledger.
+Those unfinalized jobs are not counted. Restore bounded durable supervision
+and recover provable exits or rerun into new directories before resuming the
+queue; a completed frame manifest/shutdown log is not proof of clean execution.

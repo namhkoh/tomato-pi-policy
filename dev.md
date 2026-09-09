@@ -2972,8 +2972,29 @@ One logical change per commit; no AI attribution trailers.
   native observations, hidden overlays, mask gaps, stale approvals, exclusive
   re-screen outputs and rejected-source handling. Raw package/assets, RGB,
   native camera-Z, original annotations and old decisions were preserved.
-- Active collection and the user's opened GUI were left running. A separate
-  frozen 29-audit v3 recount is checking completed coverage/scale batches and
-  native depth byte provenance; live unfinished workers are not release data.
-  Fresh all-family v3 QA, sufficient volume/difficulty balance and portable
-  complete-release validation remain before fine-tuning.
+- The frozen 29-audit v3 recount completed at 15:30 KST: **3,246 candidates from
+  4,623 audited raw frames**, 1,377 exclusions. Splits are 2,102 train / 368
+  validation / 776 test. Easy/medium/hard counts are 1,523/22/557 train,
+  260/6/102 validation and 692/9/75 test. All 24 target-family splits remain
+  intact, with 130/31/35 distinct targets. This is a numerical v3 candidate
+  snapshot, not a visually approved release. Fresh all-family v3 QA remains.
+  Receipt: `data/sim_data/status/post_anatomy_audit_v3_20260909.json`, with
+  hash-bound row index and exclusions. All 4,623 float32 native camera-Z arrays
+  match the capture-time native depth byte hashes; no depth was recomputed.
+- Remaining coverage failures: train volume/localization/abstention counts,
+  validation volume, and medium counts in validation/test. Training medium
+  count now passes 20; do not claim held-out balance passes or lower its gate.
+- Follow-up process audit found that the earlier campaign supervisors have
+  exited; two native renderers (seed17 and seed103) remain running without
+  their original parents. Seed37 job_010 and seed29 job_008 wrote 338 and 462
+  frames respectively but have no final worker-exit/result ledger. Neither
+  those 800 frames nor the two running jobs enter the 29-audit snapshot. Do
+  not synthesize successful exit codes from a shutdown log. Recover verifiable
+  execution evidence or rerun affected jobs in new directories, preserving
+  original outputs, frozen splits/view windows and deduplication. The old
+  campaign queue cannot be assumed to advance automatically. The user's GUI
+  was left running and no capture process was killed by this audit.
+- Implementation/docs committed as `d3d5fce` on `koh-dev/sim-data`; no push was
+  performed. Next: restore durable bounded capture supervision, complete fresh
+  stratified v3 QA, fill remaining coverage and validate a portable complete
+  release before VLM fine-tuning.
