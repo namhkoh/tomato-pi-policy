@@ -127,6 +127,14 @@ def gather(audit_paths, *, output=None):
         require(result.get('returncode')==0 and not result.get('timed_out')
                 and result.get('audit_sha256')==audit_hash and result.get('state')=='audited_prototype_pending_visual_review',
                 'Capture/audit worker did not complete cleanly')
+        if 'exit_receipt_path' in result:
+            from .collection_run import checked_exit
+            receipt_path=Path(result['exit_receipt_path'])
+            require(sha256(receipt_path)==result['exit_receipt_sha256'],'Changed worker exit receipt')
+            receipt,_=checked_exit(capture.parent,receipt_path)
+            require(receipt['returncode']==result['returncode'] and receipt['timed_out']==result['timed_out'], 'Worker exit/result mismatch')
+            bindings[str(receipt_path)]=sha256(receipt_path)
+            bindings[str(capture.parent/'launch.json')]=sha256(capture.parent/'launch.json')
         family=job['plant_family']; split=job['split']
         require(plan['family_assignments'][family]==split and families.setdefault(family,split)==split,'Changed family split')
         for p,h in {**audit['bindings_sha256'],str(path):audit_hash,str(capture.parent/'result.json'):sha256(capture.parent/'result.json')}.items():

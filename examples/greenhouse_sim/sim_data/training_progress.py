@@ -13,7 +13,7 @@ from .training_contract import derive_label
 
 
 def summarize(plan_path, batch):
-    plan_path, batch = Path(plan_path), Path(batch)
+    plan_path, batch = Path(plan_path).resolve(), Path(batch).resolve()
     plan = read_json(plan_path)
     require(plan.get('schema_version') == 'greenhouse.grounding_collection_plan.v1', 'Expected grounding plan')
     reports, jobs = {}, []
@@ -23,7 +23,8 @@ def summarize(plan_path, batch):
             continue
         capture = folder / 'capture'
         result = read_json(folder / 'result.json') if (folder / 'result.json').is_file() else None
-        audit_path = folder / 'audit/audit.json'
+        audit_path = Path(result.get('audit_path', str(folder/'audit/audit.json'))) if result else folder/'audit/audit.json'
+        require(audit_path.resolve().is_relative_to(folder), 'Audit receipt escapes the job directory')
         audited = bool(result and result.get('returncode') == 0 and not result.get('timed_out')
                        and result.get('state') == 'audited_prototype_pending_visual_review'
                        and audit_path.is_file() and sha256(audit_path) == result.get('audit_sha256'))

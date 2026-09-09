@@ -2998,3 +2998,110 @@ One logical change per commit; no AI attribution trailers.
   performed. Next: restore durable bounded capture supervision, complete fresh
   stratified v3 QA, fill remaining coverage and validate a portable complete
   release before VLM fine-tuning.
+
+#### 2026-09-09: detached capture recovery and fresh v3 review
+
+- Added exact Windows process-handle observation (`collection_process`) and a
+  new bounded three-lane restart (`collection_resume`). The normal runner now
+  saves a hash-bound worker exit receipt BEFORE independent auditing. Export
+  validation checks new/recovered receipts against the original launch and
+  final result. Raw RGB, native depth, optics, scene geometry, family splits
+  and task v3 labels were not changed by this supervision work.
+- Detached hidden supervisors are running from
+  `data/sim_data/collection_campaigns/grounding_resume_20260909_v1/resume.json`.
+  Five completed scale jobs were skipped; one live job is recovered and 18
+  unproven/unstarted jobs get new-directory captures. Initial new jobs are
+  seed37 and seed31. The cap is three capture workers, with the GUI preserved,
+  RAM/disk start gates, exclusive lane outputs and no automatic retries.
+- Seed17 worker PID 83752 was bound by creation time, executable and full
+  launch command. Its retained handle produced real exit code 0 / no timeout
+  at 16:12:47 KST. The 1,164 saved frames entered `audit_recovered`; these are
+  not part of the 29-audit training-candidate count yet. Receipt:
+  `data/sim_data/collection_recovery/scale_20260909_v1/seed17_observer/exit.json`.
+  Seed103 exited before observer attachment and was correctly rejected for
+  adoption, joining seed37/seed29 for clean recapture rather than inferred exit
+  success. Failed observer logs and all old outputs remain preserved.
+- Fresh v3 one-by-one inspection increased to 20 unique cards: 19 accepts and
+  one hold. `seed61_full_dc14e648a1bbf0d3eb4c` has correct native target identity
+  but an inadequately readable dark triangular query fragment merging into
+  foliage. Inspected the lossless crop too. Added task-level hold and append-only
+  source hold `job_016/audit/records/4eb890a305a54806bec5670203fc2d2c.json` under
+  the fast-B coverage batch. Verified the exporter excludes sample_0023 even
+  when the task-review bundle is not supplied. No source pixels were changed.
+- The hold-adjusted baseline is **3,245 candidates / 4,623 audited raw**, still
+  pending full v3 QA. Incremental, hash-bound receipt:
+  `data/sim_data/status/v3_after_fresh_hold_20260909.json`. Training/validation
+  remain 2,102/368; test becomes 775. The prior 3,246 count remains an immutable
+  pre-hold numerical snapshot, not a claim that this held frame is approved.
+- Prepared **108 fresh v3 cards across all 24 source families** under
+  `data/sim_data/dataset_reviews/grounding_all_sources_20260909_v3`. The held card
+  is absent and the selected IDs still match the hold-adjusted candidate strata.
+  Fourteen already-inspected v3 entries match task identity AND exact card SHA;
+  explicitly referenced those inspections in the new bundle. No v2 approvals
+  migrated and no repeat inspection was counted as a new unique sample. 94
+  cards remain pending; the fresh bundle does not pass full visual QA yet.
+- Full sim-data regression: **494 passed, 47 subtests passed** (42.45 s).
+  Includes real Windows handle/exit tests, PID identity mismatch rejection,
+  pre-audit receipt persistence, partial-audit preservation, exclusive restart
+  allocation and unrelated-worker rejection. GUI and capture processes were
+  not broadly stopped or reset. Restart behavior and limitations are documented
+  in `examples/greenhouse_sim/sim_data/COLLECTION_RECOVERY.md`.
+- This is a detached local process arrangement, not a reboot-persistent service.
+  Future restarts must reconcile completion ledgers from the new resume tree,
+  not blindly rerun the old campaign. Dataset completion still requires clean
+  exits/audits, v3 labeling, fresh QA, volume/difficulty coverage and portable
+  release validation. No VLM fine-tuning has started.
+- Recovery follow-up: seed17's independent audit and label checks completed.
+  Its 1,164 raw frames contribute **890 v3 candidates** (877 easy / 7 medium /
+  6 hard), with 274 excluded. All 1,164 saved native float32 camera-Z buffers
+  match capture-time byte hashes; the merge finds no duplicate RGB or camera/
+  scene views. Combined current snapshot: **4,135 candidates / 5,787 audited
+  raw**, 30 audits, **2,992 train / 368 validation / 775 test**. Receipt:
+  `data/sim_data/status/recovered_seed17_v3_20260909.json` and bound row index.
+  Historical pre-recovery counts above remain dated checkpoints, not current totals.
+- Actually inspected all six representative recovered cards (two per difficulty).
+  Four nominal cut labels are on the visible target petiole, not fruit/main stem;
+  two foreground-leaf cases correctly abstain with null coordinates. Saved six
+  hash-bound assistant accepts and verified the bundle at
+  `data/sim_data/dataset_reviews/grounding_recovered_seed17_20260909_v3`.
+  Fresh v3 inspection total is **26 unique cards: 25 accepts / one enforced hold**.
+  The larger all-family bundle still has 94 pending; no blanket release approval.
+- The recovered lane automatically advanced to new seed103 capture. Seed37 and
+  seed31 workers now save new native frames under their detached supervisors;
+  the existing GUI remains running. Inspected the first resumed head-camera RGB
+  and verified all source hashes/native depth bytes, with evidence in
+  `data/sim_data/status/resume_first_native_frame_20260909.json`. Unfinished new
+  jobs are not added to candidate totals. No custom/replacement depth was used.
+- Fixed progress reporting to use the explicit hash-bound recovered audit path.
+  Final regression: **495 passed, 47 subtests passed** (46.13 s). Coverage still
+  fails train volume/localization/abstention, validation volume and validation/
+  test medium counts. Continue native collection and fresh QA before packaging
+  a complete release or starting VLM fine-tuning.
+- Broader follow-up: actually inspected 15 more cards from seed61, seed79 and
+  seed101 (14 accepts, one hold). The new hold is
+  `seed61_full_cd2eabc75725cdcefcdc`, scale seed61 sample_0469: native identity
+  identifies a petiole, but the nominal shaft blends into a tomato in RGB.
+  Inspected both lossless overlay crop and untouched unmarked RGB. This is a
+  nominal-cut readability hold, not an inferred anatomy error or depth occlusion.
+  Saved task hold plus source record `d5980d5e6c88438aa246e985b38753d4.json` in
+  `grounding_scale_20260909_v1/lane_04/capture_job_016/job_016/audit/records`.
+  Verified exporter exclusion without supplying task-review bundles.
+- Current post-hold snapshot: **4,134 candidates / 5,787 audited raw**, with
+  **2,992 train / 368 validation / 774 test**. The prior 4,135 snapshot is an
+  immutable pre-hold checkpoint. New bound snapshot and row index:
+  `data/sim_data/status/v3_after_nominal_rgb_hold_20260909.json`.
+  A temporary accounting assertion initially used the wrong exclusion key;
+  corrected it to `source_sample`, reused the exact existing hold records,
+  and reran successfully without duplicate decisions or source changes.
+- Fresh v3 QA now has **41 unique inspected cards: 39 accepts / two holds**.
+  The broader 108-card set contains 28 accepts (14 explicitly reused identical
+  v3 inspections), one hold, and **79 pending**. Exact source/task/card bindings
+  verify; the held card is absent from candidates and the original bundle is
+  correctly rejected for release. Preserve it, replace the held selection in
+  a new bundle and complete remaining inspection rather than deleting a hold.
+  Receipt: `data/sim_data/status/visual_qa_followup_20260909_v3.json`.
+- Important limitation: v3 query readability and native geometric visibility
+  do not independently guarantee nominal-cut RGB readability. Continue explicit
+  nominal-region inspection; any later automatic screen needs its own evidence
+  and contract/re-screen validation, not thresholds tuned merely to fill quotas.
+  Full test rerun remained **495 passed, 47 subtests passed** (47.10 s).

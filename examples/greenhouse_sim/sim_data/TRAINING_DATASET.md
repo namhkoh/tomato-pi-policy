@@ -3,7 +3,17 @@
 This is the first perception-only training dataset, not the full bimanual
 deleafing-policy dataset. The original reviewed pilot remains immutable.
 
-Status (2026-09-09 post-anatomy-audit checkpoint): **collection in progress, no
+Latest checkpoint (2026-09-09): **4,134 v3 candidates / 5,787 audited raw**,
+with 2,992 train / 368 validation / 774 test. Fresh v3 visual inspection covers
+41 unique cards: 39 accepts and two source-enforced holds. There are still 79
+pending cards in the broader 108-card set; its newly held card also needs a
+replacement in a fresh release-QA selection. Collection is running, but volume,
+balance, visual QA and portable complete-release validation remain unfinished.
+No VLM fine-tuning has started. Current receipts:
+`data/sim_data/status/v3_after_nominal_rgb_hold_20260909.json` and
+`data/sim_data/status/visual_qa_followup_20260909_v3.json`.
+
+Earlier status (2026-09-09 post-anatomy-audit checkpoint): **collection in progress, no
 complete release; current task v3 needs fresh visual QA**. The one-by-one audit
 of all 63 wave-2 cards found 33 correct visible nominal labels and 30 hidden-cut
 abstentions (16 foreground leaves, 9 fruit, 5 main stems). Two query fragments
@@ -34,6 +44,40 @@ The previous campaign supervisors have exited. Two renderers are still running;
 seed37/seed29 jobs finished writing but lack a final worker-exit ledger. These
 unfinalized outputs are excluded. Durable supervision must be restored using
 verifiable recovery or new-directory reruns; never invent clean exit records.
+
+Follow-up (same day): detached three-lane supervision is now running; see
+[COLLECTION_RECOVERY.md](COLLECTION_RECOVERY.md). One seed17 exit was observed
+as actual code 0 and its 1,164 frames entered independent auditing. Other
+unproven/unstarted jobs use fresh directories. A new explicit visual hold reduces
+the verified baseline to **3,245 candidates** (2,102/368/775 by split), still
+4,623 audited raw. Twenty wave-2 v3 cards have been inspected, with 19 accepts
+and one hold enforced by the exporter. The broader 108-card / 24-family v3
+bundle has 14 exact-evidence reused v3 reviews and 94 pending; full QA is not
+complete. No v2 approvals, live frames or uncompleted recovered audits inflate
+the current candidate count.
+
+Recovery completed subsequently: the independently audited seed17 source adds
+890 eligible candidates from 1,164 raw frames, bringing the current snapshot to
+**4,135 v3 candidates / 5,787 audited raw** (2,992 train / 368 validation / 775
+test). All recovered native depth byte hashes match and cross-snapshot RGB/view
+deduplication found no duplicates. Receipt:
+`data/sim_data/status/recovered_seed17_v3_20260909.json`. Six recovered easy/
+medium/hard cards were actually inspected and their accepted bindings verified;
+fresh v3 QA totals 26 unique decisions (25 accepts, one enforced hold), with the
+broader 94 cards still pending. Capture supervision advanced to new seed103;
+seed37/seed31 are saving new frames but are not yet audited additions. No complete
+release or VLM fine-tuning is claimed; volume/balance and full QA gates still apply.
+
+Further RGB audit held `seed61_full_cd2eabc75725cdcefcdc`: the native mask
+identifies the petiole, but its nominal cut region blends into a tomato in the
+untouched RGB. The lossless overlay crop and original unmarked RGB were both
+inspected. This is a readability hold, not a claim that the mask identifies a
+fruit or that native depth proves occlusion. Source-level exclusion is verified
+even without the task review bundle. This subtracts one test/easy candidate
+from the 4,135 checkpoint above; all source data and old decisions are preserved.
+The v3 query usability screen does not independently guarantee nominal-cut RGB
+readability. Broader nominal-region inspection remains necessary; geometric
+clear visibility alone must not be presented as perceptual or physical approval.
 
 ### Historical v2 evidence (not current v3 approval)
 

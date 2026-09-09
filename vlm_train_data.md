@@ -724,3 +724,60 @@ remain active, while seed37/seed29 outputs have no final worker-exit ledger.
 Those unfinalized jobs are not counted. Restore bounded durable supervision
 and recover provable exits or rerun into new directories before resuming the
 queue; a completed frame manifest/shutdown log is not proof of clean execution.
+
+### 2026-09-09: recovery running and fresh review progressing
+
+Implemented durable pre-audit exit receipts, exact-handle Windows observation
+and detached three-lane resume supervision. Five completed scale jobs are
+preserved, one live seed17 job produced a verified zero exit and entered
+independent recovery audit, and 18 unproven/unstarted jobs are assigned new
+capture directories. Seed103 exited before observation and is being recaptured,
+not retroactively declared successful. Native depth and RGB are unchanged.
+
+Fresh v3 inspection now covers 20 unique wave-2 cards (19 accepts, one hold).
+The new seed61 query hold is enforced at source audit level as well as in task
+review. The current hold-adjusted baseline is 3,245 candidates / 4,623 audited
+raw (2,102 train / 368 validation / 775 test). The 1,164 recovered seed17 frames
+are not added until their independent audit and v3 label checks finish.
+
+The all-family v3 bundle now has 108 cards. Fourteen exactly matching previously
+inspected v3 task/card hashes have explicit reused evidence; the remaining 94
+need actual inspection. These are not old v2 approvals or 14 new independent
+samples. Complete release gates remain unmet and training has not started.
+See `examples/greenhouse_sim/sim_data/COLLECTION_RECOVERY.md` for running paths,
+scope and restart limitations. Regression: 494 tests plus 47 subtests passed.
+
+Recovery follow-up: the seed17 independent audit and v3 label checks finished,
+adding 890 eligible rows from 1,164 raw frames. Every native depth buffer matches
+its original capture hash and no cross-snapshot RGB/view duplicates were found.
+The current combined snapshot is **4,135 candidates / 5,787 audited raw frames**
+(2,992 train / 368 validation / 775 test), bound in
+`data/sim_data/status/recovered_seed17_v3_20260909.json`. Six representative
+recovered cards were individually inspected and accepted: four visible petiole
+cut points and two correct leaf-occluded abstentions. Fresh v3 visual QA now has
+26 unique decisions (25 accepts, one enforced hold), with 94 broader cards still
+pending. Assistant inspection is not human/agronomic or physical cut approval.
+
+The recovered lane advanced to a new seed103 job; seed37 and seed31 are saving
+new native head-camera frames under detached supervision. These unfinished jobs
+do not inflate audited totals. The first resumed frame's RGB/source hashes and
+unchanged native camera-Z were verified. Progress reporting now recognizes the
+recovered audit path; final regression is 495 tests plus 47 subtests passed.
+Train volume/class counts, validation volume, held-out medium balance, remaining
+QA and portable release validation still precede actual VLM fine-tuning.
+
+Further one-by-one QA inspected 15 broader cards (14 accepts, one hold). The
+new seed61 nominal cut point blends into a tomato in untouched RGB, despite
+correct native petiole identity. It is held at source/export level for RGB
+readability uncertainty, not relabeled as anatomical fruit or depth-occluded.
+The current snapshot is **4,134 candidates / 5,787 audited raw** (2,992 train /
+368 validation / 774 test), at
+`data/sim_data/status/v3_after_nominal_rgb_hold_20260909.json`.
+
+Fresh v3 QA now totals **41 unique inspections: 39 accepts / two enforced holds**.
+The broader set has 79 pending cards and its new held selection needs replacement
+in a fresh QA bundle. All old sources/reviews are retained; exact reused reviews
+are not additional independent inspections. See
+`data/sim_data/status/visual_qa_followup_20260909_v3.json`. Query readability
+alone cannot certify nominal-cut readability; explicit RGB inspection remains
+necessary. Complete release gates still apply. Latest tests: 495 + 47 subtests.

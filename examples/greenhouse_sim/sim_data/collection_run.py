@@ -16,6 +16,51 @@ import time
 from .collection_plan import load_plan
 from .dataset_review import read_json, require, write_json
 from .depth_preview import sha256
+from .collection_process import EXIT_SCHEMA
+
+
+def checked_exit(folder, exit_path):
+    folder,exit_path=Path(folder).resolve(),Path(exit_path).resolve()
+    receipt=read_json(exit_path); launch=read_json(folder/'launch.json')
+    require(receipt.get('schema_version')==EXIT_SCHEMA and
+            receipt.get('method') in ('subprocess_wait','retained_verified_windows_process_handle'), 'Unverified exit method')
+    require(Path(receipt['launch_path']).resolve()==folder/'launch.json' and
+            receipt['launch_sha256']==sha256(folder/'launch.json') and
+            receipt['pid']==launch['pid'] and receipt['command']==launch['command'], 'Exit receipt/launch mismatch')
+    require(type(receipt['returncode']) is int and type(receipt['timed_out']) is bool,'Invalid exit status')
+    command=launch['command']
+    require(command[1:4]==['-u','-m','sim_data.collection_worker'] and
+            Path(command[command.index('--output')+1]).resolve()==folder/'capture', 'Wrong native capture output')
+    return receipt,launch
+
+
+def finalize_job(folder, job, exit_path, *, grounding=True, audit_name='audit'):
+    """Resume audit only from a real bound exit receipt, never from shutdown text."""
+    folder=Path(folder).resolve(); capture=folder/'capture'
+    require(not (folder/'result.json').exists(),'Never overwrite a worker result')
+    require(audit_name in ('audit','audit_recovered'),'Unexpected independent audit destination')
+    receipt,launch=checked_exit(folder,exit_path)
+    require(launch['command'][launch['command'].index('--job')+1]==job['job_id'],'Wrong recovered job')
+    manifest=read_json(capture/'manifest.json') if (capture/'manifest.json').is_file() else None
+    state=worker_state(receipt['returncode'],receipt['timed_out'],manifest)
+    elapsed=(datetime.fromisoformat(receipt['observed_exit_utc'])-datetime.fromisoformat(launch['started_utc'])).total_seconds()
+    record=dict(job_id=job['job_id'],plant_family=job['plant_family'],state=state,
+        returncode=receipt['returncode'],timed_out=receipt['timed_out'],elapsed_s=elapsed,
+        capture_state=manifest.get('state') if manifest else None,log_sha256=sha256(folder/'worker.log'),
+        sample_count=len(manifest.get('samples',[])) if manifest else 0,training_eligible=False,
+        exit_receipt_path=str(Path(exit_path).resolve()),exit_receipt_sha256=sha256(exit_path))
+    if state=='ready_for_independent_audit':
+        try:
+            from .dataset_review import audit
+            destination=folder/audit_name
+            result=audit(capture,destination,stream_cards=True) if grounding else audit(capture,destination)
+            record.update(state='audited_prototype_pending_visual_review',audit_path=str(destination/'audit.json'),
+                audit_sha256=sha256(destination/'audit.json'),
+                numerical_clear_views=sum(s['quality']['clear_view_gate_passed'] for s in result['samples']))
+        except Exception as exc:
+            record.update(state='stopped_independent_audit_failed',error=str(exc))
+    write_json(folder/'result.json',record)
+    return record
 
 
 def worker_state(returncode, timed_out, manifest):
@@ -91,22 +136,13 @@ def run_jobs(plan_path, output, *, max_jobs=1, timeout_s=1200, job_ids=None, ren
                         process.terminate()
                         process.wait(timeout=20)
                     raise
-            manifest = read_json(capture/'manifest.json') if (capture/'manifest.json').is_file() else None
-            state = worker_state(process.returncode, timed_out, manifest)
-            record = {'job_id': job['job_id'], 'plant_family': job['plant_family'], 'state': state,
-                'returncode': process.returncode, 'timed_out': timed_out, 'elapsed_s': time.monotonic()-started,
-                'capture_state': manifest.get('state') if manifest else None, 'log_sha256': sha256(folder/'worker.log'),
-                'sample_count': len(manifest.get('samples', [])) if manifest else 0, 'training_eligible': False}
-            if state == 'ready_for_independent_audit':
-                try:
-                    from .dataset_review import audit
-                    result = audit(capture, folder/'audit', stream_cards=True) if grounding else audit(capture, folder/'audit')
-                    record.update(state='audited_prototype_pending_visual_review',
-                        audit_sha256=sha256(folder/'audit/audit.json'),
-                        numerical_clear_views=sum(s['quality']['clear_view_gate_passed'] for s in result['samples']))
-                except Exception as exc:
-                    record.update(state='stopped_independent_audit_failed', error=str(exc))
-            write_json(folder/'result.json', record)
+                finally:
+                    if process.poll() is not None:
+                        write_json(folder/'worker_exit.json',dict(schema_version=EXIT_SCHEMA,
+                            launch_path=str(folder/'launch.json'),launch_sha256=sha256(folder/'launch.json'),
+                            pid=process.pid,command=command,method='subprocess_wait',returncode=process.returncode,
+                            timed_out=timed_out,observed_exit_utc=datetime.now(timezone.utc).isoformat(),training_approved=False))
+            record=finalize_job(folder,job,folder/'worker_exit.json',grounding=grounding)
             ledger['jobs'].append(record)
             print('COLLECTION_JOB_RESULT', json.dumps(record), flush=True)
             if record['state'] != 'audited_prototype_pending_visual_review':
