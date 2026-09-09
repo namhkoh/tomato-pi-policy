@@ -2835,3 +2835,83 @@ One logical change per commit; no AI attribution trailers.
   allocation, split/source/shard mismatches, failed/stale predecessors, bounded
   short polling, serial execution, duplicate launches, low disk and stop-on-error.
   No physics, teleop, model training or external inference was performed.
+
+#### 2026-09-09 13:50 KST: all-family visual QA and first clean scale completions
+
+- Completed actual inspection and individual assistant records for all 63 cards
+  in `dataset_reviews/grounding_release_wave2_20260909_v2`, covering the remaining
+  15 initial-coverage families. Combined with wave 1, this is 104 inspected
+  examples across all 24 families, not 104 human confirmations. Reviewed clean
+  full head-camera RGB, cut overlays, native petiole identity, camera-Z, query
+  association and the exact task answer. No unviewed card was auto-approved;
+  one display failure was reloaded and inspected before its decision was saved.
+- The seed101 scale worker completed all 973 planned frames, exited 0 without
+  timeout, and passed the independent audit. Its result elapsed time is
+  7,807.109 s; audit SHA-256 is
+  `e29e95806afb469d6d91784f94eb2de55876a8b9697914b4b36ee97bc6351077`.
+  Current v2 derivation accepts 688: 524 easy / 7 medium / 157 hard. The other
+  285 are excluded: 100 disconnected queries, 38 unusable distal queries,
+  122 ambiguous junctions, 6 insufficient sampling/exposure, 19 unknown
+  visibility. No failed or partial worker data was promoted.
+- Inspected all six representative scale-seed101 cards and recorded individual
+  notes in `dataset_reviews/grounding_scale_seed101_20260909_v2`. Its partial
+  cases retain a visible query-to-cut segment despite nearby occlusion; hidden
+  cuts remain null-coordinate abstentions. Leaves, fruit and the main stem can
+  all occlude a cut. Strong backlighting remains a dataset limitation.
+- Combined source/label/deduplication and visual-evidence verification passed:
+  25 audits, 2,076 audited raw, 1,522 eligible (1,232 train / 141 validation /
+  149 test), with 110 actual inspections. Difficulty counts are 925/10/297
+  train, 97/3/41 validation and 121/3/25 test (easy/medium/hard). Training cut
+  spread is 178 bins; query-copy median error is 58.62 px. Receipt:
+  `data/sim_data/status/coverage_plus_scale_v2_20260909_1350.json`.
+  Its state is explicitly `audited_visually_checked_snapshot_not_a_complete_release`.
+- Confirmed the predecessor handoff: lane 01 started held-out seed13 only after
+  seed101's clean audited completion. Lane 03 subsequently completed seed79:
+  267/267 frames, exit 0, audit passed, worker elapsed 2,274.047 s; audit hash
+  `eb076df1ddae7e9aedb22adfcca6c3e44b9cc1f2b0d9ce1d619edb42adda030e`.
+  It automatically continued to training seed17. The seed79 completion is not
+  included in the preceding 25-audit frozen count. Its six selected QA cards
+  were actually inspected and recorded separately; a new combined recount is
+  in progress. Lane requests remain initial-state provenance, not live status.
+- Four capture workers remain the limit. At 13:48 KST free RAM was 11.6 GiB,
+  GPU allocation 21,197/32,607 MiB and D: free disk 449.9 GiB. No unrelated
+  simulator or fifth capture worker was launched. Original source images,
+  failed historical runs, v1 decisions and incomplete exports were preserved.
+- Updated the dataset guide to distinguish historical v1 render qualification
+  (18 eligible / 3 excluded) from the already recomputed current v2 result
+  (17 eligible / 4 excluded), including the 15 changed query pixels. The
+  labeling, rendering, split and release gates were not changed.
+
+#### 2026-09-09 13:58 KST: second scale yield and native-depth requirement
+
+- The frozen 26-audit snapshot adds seed79's 199 eligible / 267 raw examples:
+  146 easy / 5 medium / 48 hard. All six selected scale-seed79 cards were
+  inspected and recorded as assistant QA, not human confirmation or model tuning.
+  The combined result is 1,721 eligible / 2,343 raw: 1,232 train, 141 validation,
+  348 test. Test difficulty is now 267 easy / 8 medium / 73 hard, meeting the
+  localized/occluded test-count gates but not test volume or medium coverage.
+  All 116 representative decisions pass exact source/task/hash binding checks.
+  Receipt: `data/sim_data/status/coverage_plus_two_scale_v2_20260909_1355.json`,
+  with a companion hash-bound row-identity index. This snapshot is not a release.
+- Reaffirmed the user's native-depth-only requirement in both dataset guides.
+  Traced `capture_pilot.make_writer` to the native `distance_to_image_plane`
+  annotator; `validate_payload` copies that float32 array, and `write_sample`
+  saves it unchanged. `capture_search` uses that same production path. Our
+  geometric projections provide anatomical supervision only; they do not
+  generate the depth image. `depth_preview` only colour-displays saved values.
+- Checked completed seed79 `sample_0152`: native 408x848 float32 camera-Z metres,
+  saved-file hash valid, and loaded-array byte hash exactly matches the native
+  capture's `synchronization.freshness.depth_sha256`
+  (`b22a0535eb62081ab7055488bfcbd99f8c1ced0d784496ff9bee8e752c58df7f`).
+  Static capture is still explicit: native frame number is unavailable and
+  dynamic sensor synchronization is not claimed.
+- Extended the depth provenance check to all 2,343 raw frames in the frozen
+  snapshot: saved depth-file hashes match the sample metadata, and loaded
+  float32 array byte hashes match the native capture hashes; shape and camera-Z convention
+  checks also pass. No raw array was modified. Evidence is preserved in
+  `data/sim_data/status/native_depth_provenance_20260909_1358.json`.
+- Focused contract/export/visual-QA/campaign tests: 73 passed in 4.27 s.
+  Native payload/pilot/depth-display tests: 45 passed in 7.59 s. An earlier
+  invocation used a nonexistent test filename and ran zero tests; it was
+  corrected to `training_test.py`. These focused suites are not added to the
+  historical 472-test total. No capture or training contract code was changed.

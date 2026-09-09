@@ -602,8 +602,10 @@ dataset**, not a bimanual trajectory dataset. The detailed versioned task,
 release coverage/balance gates, provenance, export layout, unsupported features
 and commands are in [TRAINING_DATASET.md](examples/greenhouse_sim/sim_data/TRAINING_DATASET.md).
 The portable exporter and offline loader are implemented and tested. The
-four-row engineering smoke package is explicitly incomplete; no complete VLM
-training release exists yet. Dataset-scale rendering/QA is still in progress.
+historical four-row v1 smoke package is obsolete for the current task contract.
+The current v2 engineering package contains 317 validated rows and is explicitly
+incomplete; no complete VLM training release exists yet. Dataset-scale
+rendering/QA is still in progress.
 
 The active contract is now `greenhouse.target_conditioned_cutpoint_rgb.v2`:
 visual inspection caught queries on isolated visible petiole fragments. For a
@@ -620,8 +622,8 @@ checks, failed experiments, current limitations and pending release gates.
 
 ### 2026-09-09: full coverage recount and scale collection
 
-All 24 source families now have successful coverage audits. The current contract
-accepts 834 of 1,103 raw observations (544 train / 141 validation / 149 test).
+All 24 source families now have successful coverage audits. The initial coverage
+snapshot accepts 834 of 1,103 raw observations (544 train / 141 validation / 149 test).
 Source-family coverage, target diversity and cut-location spread satisfy the
 first-release checks; volume and partial-occlusion coverage do not. There are
 only three medium examples in each split. No thresholds were relaxed to fill
@@ -633,3 +635,34 @@ Training families use up to 160 candidate views per target and held-out families
 64; both use new, non-overlapping viewpoint windows. Native captures, final
 stratified QA and the portable release audit must finish before fine-tuning.
 Operational details and the source-bound count report are documented in `dev.md`.
+
+### 2026-09-09: all-family visual QA and first audited scale yield
+
+Actual representative inspection now covers all 24 initial-coverage families:
+41 prior plus 63 newly inspected, individually recorded v2 examples. Six more
+examples from the first completed scale run cover its easy, medium and hard
+strata. The combined 25-audit snapshot passes hash-bound stratified QA with
+110 inspected examples and contains 1,522 eligible rows from 2,076 audited raw
+frames (1,232 train / 141 validation / 149 test). These are synthetic annotation
+checks, not human confirmation or a statistical label-accuracy estimate.
+
+The first scale family contributes 688 eligible rows from 973 raw: 524 easy,
+7 medium and 157 hard. Full-scene robot-head RGB, native masks, camera-Z and
+query/cut association were inspected without changing the source images or
+label thresholds. Strong backlighting and thin pixel-scale petioles remain
+limitations. Training has 10 medium examples; validation and test each still
+have three in this frozen snapshot. More collection is required before the
+10,000/500/500 release, final QA/portable export, and any model fine-tuning.
+
+The subsequent 26-audit snapshot, including the completed seed79 scale run,
+contains 1,721 eligible / 2,343 raw (1,232 train / 141 validation / 348 test).
+All 116 representative visual decisions verify against those exact sources.
+Medium counts are now 10/3/8 by split; this remains below the release gates.
+
+Depth-source requirement reaffirmed: acquire the native Isaac Sim Replicator
+`distance_to_image_plane` output on the mounted head camera, preserve float32
+metric camera-Z unchanged, and store validity separately. Our scripts may save,
+validate and colour-display the sensor array, but must not generate replacement
+depth from RGB, custom geometry or projected anatomical XYZ. Heatmaps are for
+review only; RGB-D fine-tuning, if selected later, must read the native metric
+array and calibration rather than those coloured PNGs.

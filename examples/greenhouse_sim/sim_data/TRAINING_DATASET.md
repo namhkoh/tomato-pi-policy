@@ -11,10 +11,14 @@ The current v2 engineering export is
 remain incomplete. Larger workers are collecting separately. The task contract
 is v2; the portable release container schema remains v1. See `dev.md` for evidence.
 
-The subsequent complete 24-family coverage recount found 834 eligible examples
+The initial complete 24-family coverage recount found 834 eligible examples
 from 1,103 audited raw frames (544 train / 141 validation / 149 test). Family,
-target-diversity and cut-spread checks pass; volume, medium-class coverage and
-all-family visual QA remain incomplete. The 317-row engineering export above
+target-diversity and cut-spread checks pass. All-family representative visual QA
+has since passed: 104 actually inspected examples across two v2 review bundles.
+Adding the first two completed scale jobs gives a verified 26-audit snapshot
+of 1,721 eligible examples from 2,343 raw (1,232 train / 141 validation / 348 test),
+with 116 source-bound visual inspections. Volume and medium-class coverage remain
+incomplete; this is not a complete release. The 317-row engineering export above
 is a separately validated subset, not an extra 317 unique training examples.
 
 ## Task
@@ -44,6 +48,16 @@ Native optical-axis depth in metres, validity, camera calibration, robot pose,
 anatomical camera/world XYZ, and the accepted projected interval are sidecars.
 Centreline XYZ is not substituted for front-surface camera depth. RGB alone
 does not guarantee metric 3D inference; RGB-D modeling remains a separate task.
+
+Depth must come directly from Isaac Sim Replicator's `distance_to_image_plane`
+annotator on the same head-camera render product as RGB. The writer copies its
+native float32 array unchanged into `inputs/depth_m.npy` (408 rows x 848 columns).
+No custom ray casting, RGB depth estimator, centreline projection, interpolation
+or hole filling supplies or replaces this measurement. Invalid values remain in
+the raw array and are described by a separate validity mask. `depth_preview`
+only maps those saved values to colours for inspection; heatmaps are never the
+metric depth observation or a substitute for it. This is ideal simulator depth,
+not a calibrated model of physical D405 noise.
 
 ## Collection and quality
 
@@ -220,10 +234,13 @@ gates. The default therefore remains the established fixed 56-subframe budget.
 `--render-reference-check` is opt-in diagnostic work, not a qualified faster profile.
 
 A separate, explicit `--render-budget warm56_then8 --instance-backend fast`
-profile has now passed bounded task-level qualification at 21 matched poses
-across two source families: native target masks and depth agree; all 18 jointly
-accepted task answers agree (easy/medium/hard represented), and three examples
-are excluded by both budgets. Inspected saved RGB/mask/depth evidence is under
+profile has passed bounded task-level qualification at 21 matched poses
+across two source families: native target masks and depth agree. Recomputed
+under the current v2 contract, all 17 jointly eligible task answers agree
+(14 easy / 1 medium / 2 hard), and four examples are excluded by both budgets.
+The earlier 18/3 result used v1 and remains historical evidence. Query pixels
+differ in 15 matched pairs, so this is not an identical-query controlled VLM
+comparison. Inspected saved RGB/mask/depth evidence is under
 `grounding_short_profile_20260909_v1` and `grounding_short_seed101_20260909_v1` in
 `data/sim_data/dataset_reviews`. Median after-first-frame capture was about
 4.8-4.9 seconds versus 32-34 seconds for the long budget in these measurements.
