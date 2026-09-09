@@ -101,13 +101,14 @@ def build_chat_payload(
     max_tokens: int,
     temperature: float,
     structured_mode: str,
+    system_prompt: str = SYSTEM_PROMPT,
 ) -> dict[str, Any]:
     """Build one provider request; private simulator labels are not accepted."""
 
     payload: dict[str, Any] = {
         "model": model,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": [
@@ -156,6 +157,7 @@ class OpenAICompatibleVisionClient:
         max_tokens: int = 768,
         temperature: float = 0.0,
         structured_mode: str = "auto",
+        system_prompt: str = SYSTEM_PROMPT,
     ) -> ChatResult:
         """Run inference, falling back only when structured-output syntax is unsupported."""
 
@@ -169,6 +171,7 @@ class OpenAICompatibleVisionClient:
                 max_tokens=max_tokens,
                 temperature=temperature,
                 structured_mode=mode,
+                system_prompt=system_prompt,
             )
             try:
                 response, latency_s = self._post(payload)

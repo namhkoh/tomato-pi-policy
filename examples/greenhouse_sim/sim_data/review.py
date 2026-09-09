@@ -75,8 +75,12 @@ def _output_directory(report, output):
     return output
 
 
-def record_review(report, target_id, decision, reviewer, notes, output, *, reason_code=None, evidence=None, supersedes=()):
+def record_review(report, target_id, decision, reviewer, notes, output, *, reason_code=None, evidence=None, supersedes=(), view_context=None):
     row = _review_row(report, target_id, decision, reviewer, notes, reason_code, evidence, supersedes)
+    if view_context is not None:
+        if view_context.get("training_input_allowed") is not False:
+            raise ValueError("Review view context must remain diagnostic-only")
+        row["view_context"] = view_context
     output = _output_directory(report, output)
     output.mkdir(parents=True, exist_ok=True)
     result = output / f"{row['review_id']}.json"

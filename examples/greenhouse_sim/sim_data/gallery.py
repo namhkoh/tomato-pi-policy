@@ -11,6 +11,7 @@ from .audit import audit_manifest, ROOT
 from .batch import History, attach_cached_geometry, fingerprints, review_queue, target_flags
 from .review import REASONS, record_batch, record_review
 from .review_scene import ReviewScene
+from .review_camera import has_head_camera, select_review_view, view_context
 
 
 class BatchReviewPanel:
@@ -21,6 +22,8 @@ class BatchReviewPanel:
 
         self.stage, self.viewport, self.output = stage, viewport, Path(output)
         self.previous_camera = viewport.camera_path
+        self.previous_resolution = viewport.get_texture_resolution()
+        self.review_view_mode = "robot_head" if has_head_camera(stage) else "diagnostic_closeup"
         self.records = {Path(r["manifest_path"]).parent.name: r for r in records}
         manifests = sorted((Path(package) / "plants/components").glob("*/manifest.json")) if package else [Path(r["manifest_path"]) for r in records]
         self.reports = [audit_manifest(p) for p in manifests]
@@ -62,7 +65,13 @@ class BatchReviewPanel:
                     ui.Button("Previous", clicked_fn=lambda: self.move(-1))
                     ui.Button("Next unreviewed", clicked_fn=lambda: self.move(1))
                 ui.Button("Isolate target / restore scene", clicked_fn=self.isolate, height=28)
+                with ui.HStack(height=28):
+                    ui.Button("Robot head POV / refresh", clicked_fn=lambda: self.set_review_view("robot_head"))
+                    ui.Button("Diagnostic close-up", clicked_fn=lambda: self.set_review_view("diagnostic_closeup"))
+                self.view_label = ui.Label("", word_wrap=True, height=75)
                 ui.Button("Build six-image gallery", clicked_fn=self.start_gallery, height=30)
+                from .reachability_ui import ReachabilityControls
+                self.reachability = ReachabilityControls(self)
                 ui.Label("Reviewer (required):", height=20)
                 ui.StringField(model=self.reviewer, height=25)
                 self.reason = ui.ComboBox(0, "Choose a reason...", *[r[0] for r in REASONS.values()]).model
@@ -147,6 +156,7 @@ class BatchReviewPanel:
         return self.borrowed_record
 
     def _display(self, entry):
+        self.reachability.invalidate()
         if self.scene:
             self.viewport.set_active_camera(str(self.previous_camera))
             self.scene.close()
@@ -156,8 +166,27 @@ class BatchReviewPanel:
             raise ValueError("Structurally blocked asset cannot be assembled; inspect its audit")
         record = self._record(report)
         self.scene = ReviewScene(self.stage, record["plant_root"], record["component_paths"], report)
-        attachment = self.scene.select(target)
-        self.scene.focus(self.viewport, attachment)
+        self.scene.select(target)
+        select_review_view(self.stage, self.viewport, self.scene, target, self.review_view_mode)
+        self.update_view_label(target)
+
+    def update_view_label(self, target):
+        context = view_context(self.stage, self.viewport, self.scene, target)
+        kind = "Mounted head POV" if context["view_kind"] == "robot_head" else "Diagnostic close-up (NOT robot POV)"
+        self.view_label.text = (f"{kind}: {context['resolution'][0]}x{context['resolution'][1]}.\n"
+                                f"Attachment at last refresh: {context['projection_status']}. Occlusion NOT measured.\n"
+                                "View changes do not reposition the robot or establish reachability.")
+
+    def set_review_view(self, mode):
+        if self.busy or self.closed or not self.scene or not self.entries:
+            return
+        try:
+            target = self.entries[self.index][1]
+            select_review_view(self.stage, self.viewport, self.scene, target, mode)
+            self.review_view_mode = mode
+            self.update_view_label(target)
+        except (ValueError, RuntimeError) as exc:
+            self.message.text = str(exc)
 
     def description(self, entry):
         report, target = entry
@@ -177,6 +206,7 @@ class BatchReviewPanel:
 
     def show(self):
         if not self.entries:
+            self.reachability.invalidate("No target selected.")
             self.label.text = "No targets in this queue. Choose All / revisit or another queue."
             return
         entry = self.entries[self.index]
@@ -216,6 +246,7 @@ class BatchReviewPanel:
             reason = REASONS[key]
             path = record_review(report, target["target_id"], reason[1], self.reviewer.as_string,
                                  self.notes.as_string.strip() or reason[3], self.output, reason_code=key,
+                                 view_context=view_context(self.stage, self.viewport, self.scene, target),
                                  supersedes=self.superseded(target["target_id"]))
             self.history.refresh()
             self.update_summary()
@@ -250,7 +281,7 @@ class BatchReviewPanel:
 
         with self.gallery.frame:
             with ui.VStack(spacing=5):
-                ui.Label("REVIEW ONLY: inspect each image, then explicitly select it. Nothing is selected automatically.", height=25)
+                ui.Label(f"REVIEW ONLY / {self.review_view_mode}: inspect each image, then explicitly select it. Nothing is selected automatically.", height=25)
                 with ui.HStack(height=28):
                     ui.Label("Reviewer:", width=75)
                     ui.StringField(model=self.reviewer, width=190)
@@ -301,6 +332,9 @@ class BatchReviewPanel:
                         await application.next_update_async()
                     camera = self.stage.GetPrimAtPath(self.viewport.camera_path)
                     camera_matrix = UsdGeom.XformCache().GetLocalToWorldTransform(camera)
+                    context = view_context(self.stage, self.viewport, self.scene, target)
+                    if self.review_view_mode == "robot_head" and context["view_kind"] != "robot_head":
+                        raise RuntimeError("Mounted head view changed before capture; rebuild the gallery")
                     path = directory / f"card_{index}.png"
                     capture = capture_viewport_to_file(self.viewport, str(path))
                     await asyncio.wait_for(capture.wait_for_result(), timeout=20)
@@ -308,19 +342,26 @@ class BatchReviewPanel:
                     while True:
                         try:
                             with Image.open(path) as captured:
+                                if list(captured.size) != context["resolution"]:
+                                    raise RuntimeError("Capture resolution changed during review")
                                 captured.verify()
                             break
                         except (OSError, SyntaxError):
                             if time.monotonic() > deadline:
                                 raise RuntimeError("Thumbnail encoder timed out")
                             await application.next_update_async()
+                    if view_context(self.stage, self.viewport, self.scene, target) != context:
+                        raise RuntimeError("Camera/robot/target changed during capture; rebuild the gallery")
                     self.evidence[key] = {"target_id": key, "manifest_sha256": report["manifest_sha256"],
                                           "component_asset_hashes": fingerprints(report),
                                           "image_path": str(path.resolve()), "image_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                                           "camera_to_world": [list(row) for row in camera_matrix],
+                                          "view_context": context,
                                           "isolated": False, "training_input_allowed": False}
                     with self.image_frames[key]:
-                        ui.Image(str(path), fill_policy=ui.FillPolicy.PRESERVE_ASPECT_FIT, height=150)
+                        with ui.VStack():
+                            ui.Image(str(path), fill_policy=ui.FillPolicy.PRESERVE_ASPECT_FIT, height=125)
+                            ui.Label(f"{context['view_kind']}: {context['projection_status']}", word_wrap=True, height=25)
                 except (OSError, RuntimeError, ValueError, asyncio.TimeoutError) as exc:
                     with self.image_frames[key]:
                         ui.Label(f"Capture unavailable: {exc}\nCannot batch-approve this card.", word_wrap=True)
@@ -391,6 +432,7 @@ class BatchReviewPanel:
         if self.closed:
             return
         self.closed = True
+        self.reachability.close()
         if self.capture_task and not self.capture_task.done():
             self.capture_task.cancel()
         if self.scene:
@@ -398,6 +440,7 @@ class BatchReviewPanel:
             self.scene.close()
             self.scene = None
         self._restore_borrowed()
+        self.viewport.set_texture_resolution(self.previous_resolution)
         self.window.set_visibility_changed_fn(None)
         self.gallery.set_visibility_changed_fn(None)
         self.window.visible = False

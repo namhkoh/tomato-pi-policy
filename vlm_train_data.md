@@ -4,9 +4,52 @@ Date: 2026-09-06
 
 Branch: `koh-dev/sim-data`
 
-Status: Phase 1 audit/review tools implemented; initial human anatomy reviews exist. Batch/exception review added 2026-09-07. Approved cut/grasp regions, dataset collection and training are still pending.
+Status: Phase 1 audit/review tools and prototype cut-region drafts are implemented. The bounded full-greenhouse robot-head RGB-D pilot now has opt-in viewpoint screening and renderer-identity organ masks for the two detailed plants. Synchronization remains static-only, not a dynamic recorder or approved training dataset. The user-agreed engineering rule is 10 mm nominal / 10-20 mm along the petiole centreline; per-target approval and horticultural validation remain pending. Complete-scene organ annotation, approved cut/grasp regions, dynamic synchronization, scaled collection and training are still pending. See `examples/greenhouse_sim/sim_data/PHASE1.md` for the refined-pilot command, visibility scope and provisional quality gates.
 
 ## 1. Goal and recommended approach
+
+Latest Phase 1 increment (2026-09-08): the human-reviewed, hash-bound snapshot is
+[robot_head_prototype_v3/review.md](data/sim_data/datasets/robot_head_prototype_v3/review.md).
+The user confirmed original B05 samples 0004/0005 and held B03 samples 0001/0003;
+the index contains two confirmed prototype labels and seven diagnostic holds.
+The confirmations are two views of one B05 target, not two independent targets.
+All nine original camera poses were independently reconstructed from RB-Y1 A
+v1.2 joint/base transforms and the fixed head-camera mount; native projection
+and uncropped 848x408 optics agree. These are actual simulated robot snapshots,
+not free/cinematic cameras or live lab robot poses.
+
+A focused base-XY/yaw and real-head recapture now supplies six additional audited
+views without moving plants, changing the mount/resolution or tuning lighting:
+[robot_head_focused_v3/review.md](data/sim_data/datasets/robot_head_focused_v3/review.md).
+The assistant inspected RGB/overlay/native mask/native depth for all six and
+recommended three clearer B03 views, now explicitly confirmed by the user.
+B06 remains held: one numerically visible but visually ambiguous cut, and two
+cuts obscured by identified leaves. Total human-confirmed evidence is five
+images across two target geometries, not five independent targets. All training
+eligibility flags remain false. The focused review GUI is on port 8878, independently of the original on
+8877. The capture artifacts passed audit, but Kit shutdown returned nonzero;
+clean shutdown and dynamic synchronization are not established. See PHASE1.md
+for commands, numerical evidence, scope limits and remaining approval boundaries.
+
+The next increment adds a deterministic native multi-plant scheduler. It audits
+all 24 source families (870 geometry candidates), reserves 16/4/4 target-family
+train/validation/test groups and selects seed11/seed17 native SubStem_41/42 for
+the first bounded batch. No branches are added or moved, no leaves are hidden,
+and actual mounted head views retain native RGB/Z/identity QA. Shared greenhouse
+and backdrop context is not held out. Job subprocesses run serially and must
+pass both process-exit checks and independent data audit; failed attempts remain
+diagnostic evidence. See PHASE1.md for the schedule/run commands and dev.md for
+measured batch results. Native targets receive no copied human confirmations,
+difficulty assignments, physical-cut labels or training approval.
+
+Measured native result (2026-09-09 KST): both workers exited 0 and eight views
+of four petioles on two new plants passed independent audit. Assistant review
+recommended five views and held three, despite seven numerical clear-view passes.
+The user then confirmed all five recommendations. Across original/focused and
+native pilots, there are ten confirmed images of five targets from four source
+families; this is still prototype label agreement, not training readiness.
+[Native evidence report](data/sim_data/collection_batches/native_20260908_v2/visual_review.md).
+The combined review page on port 8879 preserves separate source/audit identities.
 
 Given greenhouse observations and a deleafing instruction, identify an appropriate petiole, determine whether it is observable and accessible, and generate coordinated guidance for the left gripper and right knife. The system must be able to inspect, reveal, or reject a target when necessary.
 
@@ -37,7 +80,7 @@ Available:
 
 Important limitations and findings:
 
-- The new package does not yet integrate the RB-Y1, validated grasp/cut behavior, semantic annotation, or synchronized dataset recording. See [SIM_DATA.md](examples/greenhouse_sim/SIM_DATA.md).
+- The new package has a static RB-Y1 Model A v1.2 preview with three mounted 848x408 D405 RGB views and stock grippers. The new `sim_data.capture_pilot` captures clean full-greenhouse head RGB, metric depth, validity and calibration for B03/B05/B06, with separate provisional-label review overlays. Native frame IDs/times are unavailable in this paused rendering mode; the pilot validates one writer payload against a frozen scene and camera/content freshness. It is not a moving-demo recorder. Validated grasp/cut behavior and semantic dataset annotation are not yet integrated. See [Phase 1 notes](examples/greenhouse_sim/sim_data/PHASE1.md).
 - The inspected manifests contain 38-42 substems marked `deleafed` per plant. A `sub_stem` class alone cannot identify a valid cutting target.
 - The plant generator is not included. Camera and lighting randomization do not turn 24 source plants into thousands of independent plant geometries.
 - The older `_TeleopCameraRecorder` can reuse a previous valid RGB frame after a capture error. The dataset exporter must instead reject or retry incomplete captures so RGB, depth, and labels remain synchronized. See [interactive_greenhouse.py](examples/greenhouse_sim/interactive_greenhouse.py).
@@ -524,3 +567,53 @@ Commands, evidence paths, and test instructions:
   coverage still need resolution before Phase 1 can be declared complete.
 - Gallery images are inspection evidence only, never VLM training observations.
   Cut/grasp coordinates and physical feasibility remain unapproved.
+
+### 2026-09-07: automatic configuration-specific reach diagnostics
+
+- Added a review-panel check using current v1.2 robot/plant transforms, bounded
+  position IK and a conservative endpoint overlap screen. Both arms are checked
+  independently with fixed base and torso; there is no motion command.
+- Reach results are separate snapshot-bound diagnostic JSON, not human anatomy
+  decisions or dataset approvals. Relocated gallery samples are explicitly marked;
+  failure to find IK is not labeled definitively unreachable. Orange outlines are
+  review-only and disappear when the target or relevant geometry changes.
+- The probe remains an uncalibrated finger-centre midpoint at the manifest
+  attachment with unconstrained orientation. Approved cut/grasp regions, full
+  collision/path checks and bimanual physical validation still need implementation.
+  This increment reduces manual geometric guesswork but does not complete Phase 1.
+
+### 2026-09-07: robot-conditioned review views
+
+- Default robot-loaded review/gallery capture to the real mounted head D405 at
+  848x408; retain explicit floating close-up inspection as a separate mode.
+- Record view/robot/plant context and attachment projection in new review data.
+  Projection into an image is not measured occlusion, and an annotated review
+  image with overlays is not a clean training input.
+- Interpret fixed-base reach failures only for that base/torso configuration,
+  never as asset-global target ineligibility. Dataset stance sampling must precede
+  image-dependent visibility and manipulation-feasibility labeling.
+- Floor-supported, gutter-clear base/torso stance selection and pose-conditioned
+  collision/path validation remain to implement; no automatic repositioning was
+  added in this increment.
+# 2026-09-09: first training-release implementation status
+
+The active work is a **target-conditioned RGB cut-point/visibility/abstention
+dataset**, not a bimanual trajectory dataset. The detailed versioned task,
+release coverage/balance gates, provenance, export layout, unsupported features
+and commands are in [TRAINING_DATASET.md](examples/greenhouse_sim/sim_data/TRAINING_DATASET.md).
+The portable exporter and offline loader are implemented and tested. The
+four-row engineering smoke package is explicitly incomplete; no complete VLM
+training release exists yet. Dataset-scale rendering/QA is still in progress.
+
+The active contract is now `greenhouse.target_conditioned_cutpoint_rgb.v2`:
+visual inspection caught queries on isolated visible petiole fragments. For a
+localized answer, the visible query must connect to the cut in the same native
+petiole mask component, without gap filling. Hidden-cut examples abstain;
+ambiguous examples are excluded. Historical v1 counts and changed-query review
+decisions are not current-v2 validation. Complete releases additionally require
+hash-bound stratified visual inspection, not just sufficient image counts.
+
+Implementation, tests, GUI/config assets and this plan are being checkpointed on
+`koh-dev/sim-data`; generated datasets and review evidence remain in ignored
+`data/sim_data/`. Cleanup does not remove that evidence. See `dev.md` for measured
+checks, failed experiments, current limitations and pending release gates.

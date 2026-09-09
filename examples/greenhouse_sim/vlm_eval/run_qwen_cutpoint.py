@@ -18,6 +18,7 @@ if __package__ in {None, ""}:
     from vlm_eval.openai_compatible import encode_image
     from vlm_eval.overlay import render_prediction_overlay
     from vlm_eval.prompt import DEFAULT_INSTRUCTION
+    from vlm_eval.prompt import SYSTEM_PROMPT
     from vlm_eval.prompt import build_cutpoint_prompt
     from vlm_eval.schema import CutPointPrediction
     from vlm_eval.schema import PredictionValidationError
@@ -28,6 +29,7 @@ else:
     from .openai_compatible import encode_image
     from .overlay import render_prediction_overlay
     from .prompt import DEFAULT_INSTRUCTION
+    from .prompt import SYSTEM_PROMPT
     from .prompt import build_cutpoint_prompt
     from .schema import CutPointPrediction
     from .schema import PredictionValidationError
@@ -109,6 +111,7 @@ def main() -> int:
         "model": args.model,
         "view_name": args.view_name,
         "instruction": args.instruction,
+        "system_prompt": SYSTEM_PROMPT,
         "prompt": prompt,
         "image": {
             "path": str(encoded.path),

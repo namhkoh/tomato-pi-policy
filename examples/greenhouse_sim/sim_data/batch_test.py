@@ -4,7 +4,7 @@ import copy
 import hashlib
 import json
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from . import audit_test as fixtures
 from .audit import audit_manifest
@@ -63,6 +63,16 @@ class BatchTests(unittest.TestCase):
         history = History([report], [path.parent])
         self.assertFalse(history.complete(target))
         self.assertEqual(len(review_queue([report], history, "Exceptions")), 1)
+
+    def test_single_review_retains_view_context_without_changing_anatomy_scope(self):
+        report, target = self.setup_report()
+        context = {"training_input_allowed": False, "camera_path": "/World/HeadCamera", "resolution": [848, 408]}
+        path = record_review(report, target, "unresolved", "fixture", "fixture", self.root / "reviews",
+                             reason_code="out_of_view", view_context=context)
+        row = json.loads(path.read_text())
+        self.assertEqual(row["view_context"], context)
+        self.assertEqual(row["review_scope"], "visibility")
+        self.assertFalse(row["cut_approval"])
 
     def test_stale_source_and_unknown_records_do_not_approve_targets(self):
         report, target = self.setup_report()
@@ -247,7 +257,9 @@ class BatchTests(unittest.TestCase):
         panel = self.panel_fixture(report)
         panel.entries = [(report, t) for t in report['targets']]
         panel.history.directories = [panel.output]
-        panel.save_reason('anatomy_matches')
+        panel.stage, panel.viewport, panel.scene = Mock(), Mock(), Mock()
+        with patch('sim_data.gallery.view_context', return_value={'training_input_allowed': False}):
+            panel.save_reason('anatomy_matches')
         self.assertEqual([t['target_id'] for _, t in panel.entries], [second['target_id']])
         self.assertEqual(panel.index, 0)
         panel.show.assert_called_once()

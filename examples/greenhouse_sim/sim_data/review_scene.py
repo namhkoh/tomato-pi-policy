@@ -47,8 +47,8 @@ class ReviewScene:
         self.target = target
         key = target["component_id"]
         cache = UsdGeom.XformCache()
-        matrix = cache.GetLocalToWorldTransform(self.stage.GetPrimAtPath(self.plant_root))
-        attachment = matrix.Transform(Gf.Vec3d(*target["attachment_plant_m"]))
+        from .review_camera import attachment_world
+        attachment = attachment_world(self.stage, self.paths, self.report, target)
         with Usd.EditContext(self.stage, self.stage.GetSessionLayer()):
             root = UsdGeom.Xform.Define(self.stage, OVERLAY)
             root.GetPrim().SetCustomDataByKey("review_only", True)

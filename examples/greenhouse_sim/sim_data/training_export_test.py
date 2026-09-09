@@ -1,0 +1,129 @@
+from copy import deepcopy
+import json
+from pathlib import Path
+import shutil
+
+import numpy as np
+from PIL import Image
+import pytest
+
+from sim_data import training_export as export
+from sim_data.dataset_review import SCHEMA
+from sim_data.depth_preview import sha256
+from sim_data.training_contract import CONTRACT, contract_hash
+
+
+def row(family='one',split='train',key='a',status='localized'):
+    return dict(id=key,split=split,source_plant_family=family,target_id=family+'/Petiole',rgb_sha256=key,
+                difficulty='easy' if status=='localized' else 'hard',query_pixel_uv=[510.,204.],
+                answer=dict(status=status,cut_point_uv=[434.,204.] if status=='localized' else None,
+                    visibility='clear' if status=='localized' else 'occluded',
+                    next_action='inspect_cut_region' if status=='localized' else 'change_viewpoint'))
+
+
+def test_small_dataset_cannot_pass_release():
+    result=export.check_release_rows([row()])
+    assert not result['passed'] and 'train_rows:1<10000' in result['failures']
+    assert result['query_copy_baseline_median_error_px']==76.
+
+
+@pytest.mark.parametrize('kind',['family','image'])
+def test_split_leakage_is_fatal(kind):
+    rows=[row(),row('two','test','b')]
+    if kind=='family': rows[1]['source_plant_family']='one'
+    else: rows[1]['rgb_sha256']='a'
+    with pytest.raises(ValueError,match='leaks'): export.check_release_rows(rows)
+
+
+def test_duplicate_images_within_one_split_do_not_inflate_counts():
+    rows=[row(),row()]
+    with pytest.raises(ValueError,match='Duplicate RGB'): export.check_release_rows(rows)
+
+
+@pytest.fixture
+def source_audit(tmp_path,monkeypatch):
+    root=tmp_path/'source'; capture=root/'capture'; sample=capture/'sample_0001'; audit_dir=root/'audit'
+    (sample/'inputs').mkdir(parents=True); (sample/'supervision').mkdir(); audit_dir.mkdir()
+    rgb=np.full((408,848,3),120,np.uint8)
+    Image.fromarray(rgb).save(sample/'inputs/rgb.png')
+    np.save(sample/'inputs/depth_m.npy',np.full((408,848),1.,np.float32))
+    Image.fromarray(np.full((408,848),255,np.uint8)).save(sample/'inputs/depth_valid.png')
+    Image.fromarray(np.full((408,848),255,np.uint8)).save(sample/'supervision/target_visible.png')
+    files={p.relative_to(sample).as_posix():{'sha256':sha256(p)} for p in sample.rglob('*') if p.is_file()}
+    metadata=dict(files=files,calibration=dict(clipping_range_m=[.04,10],intrinsics=np.eye(3).tolist(),camera_to_world_usd_row_vectors=np.eye(4).tolist()),robot_snapshot={},
+                  supervision=dict(projected_interval=[{'pixel_xy':[434,204]},{'pixel_xy':[444,204]}],interval_world_m=[[0,0,0],[.01,0,0]]))
+    (sample/'sample.json').write_text(json.dumps(metadata))
+    plan=dict(schema_version='greenhouse.grounding_collection_plan.v1',family_assignments={'one':'train'},
+              jobs=[dict(job_id='job_001',plant_family='one',split='train',source_manifest_path='unused_fixture')])
+    plan_path=root/'plan.json'; plan_path.write_text(json.dumps(plan))
+    manifest=dict(state='pilot_ready_for_review',source_assets_unchanged=True,package=str(tmp_path/'package'),
+                  source_collection_plan_path=str(plan_path),source_collection_plan_sha256=sha256(plan_path),collection_job_id='job_001')
+    (capture/'manifest.json').write_text(json.dumps(manifest))
+    bindings={str(p):sha256(p) for p in root.rglob('*') if p.is_file()}
+    audit=dict(schema_version=SCHEMA,state='complete_engineering_audit_not_approval',training_dataset_approved=False,
+               source_run=str(capture),bindings_sha256=bindings,cards_sha256={},samples=[
+                   dict(sample_id='sample_0001',integrity_and_recomputed_annotations_passed=True,camera={'mounted_robot_pov_verified':True})])
+    audit_path=audit_dir/'audit.json'; audit_path.write_text(json.dumps(audit))
+    result=dict(returncode=0,timed_out=False,audit_sha256=sha256(audit_path),state='audited_prototype_pending_visual_review')
+    (root/'result.json').write_text(json.dumps(result))
+    label=dict(eligible=True,task_id=CONTRACT['task_id'],contract_sha256=contract_hash(),
+               target_id='one/Petiole',difficulty='easy',query_pixel_uv=[510.,204.],answer=row()['answer'])
+    monkeypatch.setattr(export,'audit_manifest',lambda p:{'fixture':True})
+    monkeypatch.setattr(export,'derive_label',lambda *a:deepcopy(label))
+    return audit_path,tmp_path/'release'
+
+
+def test_incomplete_default_export_refuses_without_writing(source_audit):
+    path,output=source_audit
+    with pytest.raises(ValueError,match='Release coverage'): export.build([path],output)
+    assert not output.exists()
+
+
+def test_counts_alone_cannot_complete_a_release(source_audit,monkeypatch):
+    path,output=source_audit
+    monkeypatch.setattr(export,'check_release_rows',lambda *a,**k:dict(passed=True,failures=[]))
+    with pytest.raises(ValueError,match='Stratified visual QA incomplete'): export.build([path],output)
+    assert not output.exists()
+
+
+def test_portable_incomplete_export_is_lossless_and_not_misrepresented(source_audit):
+    path,output=source_audit
+    result=export.build([path],output,allow_incomplete=True)
+    assert result['state']=='incomplete_engineering_export_do_not_claim_release'
+    assert not result['acceptance']['passed']
+    assert export.validate(output,allow_incomplete=True)['rows']==1
+    with pytest.raises(ValueError,match='Incomplete release'): export.validate(output)
+    # The loader must not depend on original source paths or the original release root.
+    moved=output.parent/'portable_copy'; shutil.copytree(output,moved)
+    assert export.validate(moved,allow_incomplete=True)['portable_loader_verified']
+    with pytest.raises(ValueError,match='never overwrite'): export.build([path],output,allow_incomplete=True)
+
+
+@pytest.mark.parametrize('kind',['nonzero','timeout','audit_hash','source_changed'])
+def test_incomplete_or_changed_capture_never_exports(source_audit,kind):
+    path,output=source_audit
+    result_path=path.parent.parent/'result.json'; r=json.loads(result_path.read_text())
+    if kind=='nonzero': r['returncode']=1
+    if kind=='timeout': r['timed_out']=True
+    if kind=='audit_hash': r['audit_sha256']='changed'
+    if kind=='source_changed': (path.parent.parent/'capture/manifest.json').write_text('{}')
+    result_path.write_text(json.dumps(r))
+    with pytest.raises((ValueError,KeyError)): export.build([path],output,allow_incomplete=True)
+    assert not output.exists()
+
+
+@pytest.mark.parametrize('file',['splits/train.jsonl','index.jsonl','contract.json'])
+def test_portable_loader_rejects_modified_training_artifacts(source_audit,file):
+    path,output=source_audit
+    export.build([path],output,allow_incomplete=True)
+    with (output/file).open('a') as f: f.write(' ')
+    with pytest.raises(ValueError,match='Changed release artifact'): export.validate(output,allow_incomplete=True)
+
+
+def test_identical_scene_camera_has_same_signature_despite_numeric_roundoff():
+    a={'calibration':{'intrinsics':np.eye(3).tolist(),'camera_to_world_usd_row_vectors':np.eye(4).tolist()}}
+    b=deepcopy(a); b['calibration']['camera_to_world_usd_row_vectors'][3][0]+=1e-12
+    assert export.view_signature(a,'one')==export.view_signature(b,'one')
+    assert export.view_signature(a,'one')!=export.view_signature(a,'two')
+    b['calibration']['camera_to_world_usd_row_vectors'][3][0]+=.01
+    assert export.view_signature(a,'one')!=export.view_signature(b,'one')

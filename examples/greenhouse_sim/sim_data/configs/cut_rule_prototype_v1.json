@@ -1,0 +1,13 @@
+{
+  "schema_version": "greenhouse.cut_rule.v1",
+  "rule_id": "petiole_arc_10_20mm_prototype.v1",
+  "units": "meters",
+  "distance_reference": "manifest_attachment_along_petiole_centerline_toward_leaves",
+  "nominal_distance_m": 0.01,
+  "accepted_interval_m": [0.01, 0.02],
+  "anchor_match_tolerance_m": 0.000001,
+  "status": "prototype_user_agreed",
+  "horticultural_validation": "pending",
+  "physical_execution_validated": false,
+  "notes": "An asymmetric +0 to +10 mm interval, not a spherical tolerance. Attachment coordinates must be reviewed against the actual junction; this does not establish external stub length. Full blade stroke and protected-organ clearance must be validated separately."
+}

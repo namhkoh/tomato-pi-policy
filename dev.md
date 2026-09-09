@@ -2033,3 +2033,722 @@ One logical change per commit; no AI attribution trailers.
   inspector. Actual greenhouse head-view capture is 848x408. Full new-model
   bimanual/plant/RL acceptance and physical adapter review remain pending.
   Commands, scope and evidence: `examples/greenhouse_sim/ROBOT_V12.md`.
+- 2026-09-07 - Corrected the new package preview's robot/floor placement. The
+  old root Z=0 embedded the wheels in the visible greenhouse slab, whose local
+  surface is Z=0.101 m (not the distant raised-strip maximum of 0.111 m).
+  The launcher now measures floor-triangle heights at wheel/footprint samples,
+  seats both rendered wheel bounds, checks chassis clearance and rejects
+  missing or uneven support. The complete robot/cameras move together in the
+  session layer; this is geometric alignment, not a physics/contact validation.
+  Robot visual payloads are explicitly loaded even in a LoadNone host stage.
+  Added floor/root/wheel-clearance provenance to launch status. Passed 52 floor
+  and annotation regressions plus 10 subtests, including the actual supplied
+  package and generated v1.2 robot; existing anatomy reviews are not modified.
+- 2026-09-07 - At the user's request, annotation previews now default to the
+  original right parallel gripper. Reactivated the retained stock body and two
+  finger visual scopes and deactivated the complete knife subtree in the session
+  only; both wrist D405 assemblies and the head camera remain. The generated
+  asset/interactive physics workflow stay unchanged. Tool choice is explicit via
+  `--right-tool gripper|knife_only` and recorded in launch status. Inspection
+  found that the legacy knife geometry exists but projects back into the wrist;
+  that mount still needs correction if knife use resumes (not a missing-file or
+  solved-fit claim). Added real full-hand render views and tool-configuration
+  regressions. 55 focused tests plus 10 subtests passed; nine-view Isaac RGB
+  smoke passed at `data/sim_data/robot_v12_gripper_restore_20260907_1441/`, and
+  the restored right-hand render was visually inspected. Static anatomy review,
+  not physical gripper operation or grasp/cut validation, remains this mode's scope.
+- 2026-09-07 - Added on-demand automatic reachability diagnostics to Phase 1
+  anatomy review on koh-dev/sim-data. Reads measured v1.2 FK, current target/plant
+  placement and gripper/camera envelopes; performs bounded multistart position IK
+  independently for both arms with fixed base/torso/other arm. Separates a sound
+  conservative outer-radius rejection from numerical failure, timeout and an IK
+  solution. Partial endpoint overlap screening remains explicitly non-certifying.
+  Worker execution keeps the UI updating; optional orange pose outlines never
+  move the robot. Target/robot/screened-geometry changes invalidate results and
+  remove outlines. Snapshot/source-fingerprinted diagnostic JSON is separate from
+  human reviews; no anatomy, grasp, cut, training or physical approval is inferred.
+  Knife-only right tools are not evaluated as grippers. Passed 335 regressions and
+  10 subtests (one skip), plus real Isaac UI smoke at
+  data/sim_data/reachability_smokes/20260907T055757Z_e076afe6/ with an intentionally
+  relocated attainable fixture, rendered UI, cancellation/staleness checks and
+  unchanged robot/source/review data. Full pose-constrained grasp, collision-safe
+  paths and bimanual physical execution remain future work. Usage and limitations
+  are documented in examples/greenhouse_sim/sim_data/PHASE1.md.
+- 2026-09-07 - Corrected the mismatch between floating anatomy close-ups and
+  fixed-parking-pose reachability. Robot-loaded annotation/gallery views now
+  default to the actual mounted head D405 at 848x408 and retain that mode across
+  target changes; floating 1280x720 close-up is an explicit diagnostic option.
+  Added attachment projection/frustum status (NOT occlusion), current camera,
+  intrinsics, robot/plant pose context in new review/capture records, and checks
+  against context/resolution changes during capture. The complete robot and
+  camera mounting transforms stay unchanged. Reach UI explicitly states that
+  out-of-range applies to CURRENT base/torso only and does not reject the target
+  globally. All existing human annotations remain unchanged. Passed 344 focused
+  regressions plus 10 subtests (one skip). Base/torso stance selection and safe
+  repositioning remain separate future work, as do clean VLM dataset captures.
+  Real Isaac head-POV/six-card capture smoke passed at
+  data/sim_data/reachability_smokes/20260907T061610Z_785a6e97/; the actual rendered
+  UI was inspected. Existing live user sessions are not force-restarted by tests.
+- 2026-09-07 - Added opt-in `--extra-cut-candidates 1|2|3` to the supplied-package
+  static preview. Three candidates per foreground plant yields six attached
+  leaf-bearing petiole subtrees at existing lower-main-stem stub nodes. Reuses
+  complete supplied donor geometry with translation-only assembly; hides only
+  empty recipient stubs in the session layer. Records new variant/component IDs,
+  source hashes, complete subtree parent mapping and world attachment positions
+  in candidate_branches.json; keeps original-plant split groups and inherits no
+  human reviews. Original meshes/manifests and saved annotations are unchanged.
+  Added a lower-branch diagnostic camera/capture alongside all mounted D405 views.
+  Added targets remain unreviewed; physical cutting/grasping, collision/occlusion
+  validation and cut/grasp labels are NOT implemented by this augmentation.
+  Rejects annotation mode with variants until its metadata adapter exists.
+  Also fixed restart rejection of saved camera-only USD overrides under an
+  undefined /World/RBY1 root; preserves those overrides, still rejects a defined
+  duplicate robot. Focused tests passed (82 tests plus 27 subtests), including
+  real donor meshes, world transforms, attachment bounds/capsules, source hashes,
+  duplicate protection, reversible session edits and saved camera overrides.
+  Full selected robot/sim-data suite: 351 passed, one skipped, 27 subtests passed.
+  Visible Isaac 6.0.1 preview reached PACKAGE_READY and its head/branch renders
+  were inspected at data/sim_data/candidate_preview_20260907_160045_809b00/.
+  Six branches comprise 43 added components; the greenhouse file hash stayed
+  unchanged from launch, including pre-existing saved camera overrides.
+- 2026-09-07 - Added assisted draft anatomy labels for the six candidate branch
+  variants (`sim_data.label_drafts`). Re-audits source geometry and exact recipe
+  fingerprints, reconstructs the derived parent graph, and exports B01-B06 IDs,
+  petiole/parent/leaf membership, attachment and centreline geometry plus a
+  Markdown review packet. Headless offline renders show normal appearance,
+  isolated role colours and an alternate junction close-up (18 images total).
+  Blue=petiole, green=leaf subtree, red=parent stem, yellow=attachment NOT cut.
+  This is not a live/head-camera capture or an occlusion/reachability label;
+  all human decisions remain pending and cut/grasp regions remain null. Source
+  plants, variant sidecar and human reviews are not changed by generation.
+  Fixed Hydra material restoration by using a removable diagnostic USD layer
+  rather than reimporting the entire session, and added blank-render colour QA.
+  First failed render packet was explicitly marked rejected and retained.
+  Passed 67 focused regressions and 31 subtests. Final review packet:
+  data/sim_data/label_drafts/20260907_223123_e879b8/review.md.
+- 2026-09-07 - Implemented optional versioned prototype cut-region proposals:
+  10 mm nominal, accepted 10-20 mm along the petiole centreline, measured from
+  the manifest attachment (not the enlarged yellow marker or a spherical radius).
+  Rule JSON records pending horticultural/physical validation. Arc-length
+  interpolation preserves centreline bends and supports reversed endpoint order;
+  ambiguous, degenerate, non-finite, too-short or misattached geometry is flagged
+  with no guessed/extrapolated cut label. Draft v2 records proposed points,
+  interval samples/radii/tangents and cut-plane normal separately from still-null
+  approved cut/grasp labels. Rule/configuration fingerprints are rechecked before
+  publication. Added optional --cut-rule to the existing offline review exporter,
+  with white nominal-point and magenta interval overlays in six extra close-ups.
+  Prior anatomy-only mode, source assets, saved variants and reviews are retained.
+  Per-target review, main-stem/blade-stroke clearance, executable grasp/cut paths
+  and horticultural validation are NOT inferred from these proposals. The next
+  collection gate is user review of the six examples, followed by a synchronized
+  robot-head RGB-D exporter/20-sample pilot (not implemented in this increment).
+  Final selected robot/sim-data suite: 366 passed, one skipped, 47 subtests
+  passed. Final headless Isaac review packet (24 images; all six cut-region
+  views visually inspected):
+  data/sim_data/cut_region_drafts/20260907_235517_89790c/review.md.
+  Added a nominal-point distance diagnostic against parent capsule geometry:
+  B02 (~0.95 mm) and B04 (~1.91 mm) have point gaps smaller than their petiole
+  radii and are flagged for potential envelope overlap. This is only a proxy,
+  not an exact mesh/full-interval/blade-stroke clearance test; unflagged targets
+  are NOT thereby approved. The stored attachment is not necessarily the outer
+  main-stem surface, so the rule does not guarantee a 10 mm external stub.
+  Cut close-up cameras look partly from the distal petiole side to expose the
+  interval; hidden/partially visible yellow/white markers remain subject to
+  scene depth, not forced overlay visibility. No source geometry was moved.
+  DRAFT_PACKET_READY reached; Kit emitted Fabric VtValue/array warnings after
+  publication and shut down normally. Source manifests/variants and existing
+  reviews remain unchanged; no physical grasp/cut execution occurred.
+
+### 2026-09-08: Full-greenhouse mounted-head RGB-D pilot
+
+- Implemented `sim_data/capture_contract.py`, `capture_scene.py` and
+  `capture_pilot.py`, plus their regression tests. Captured nine actual
+  848x408 mounted RB-Y1 v1.2 head-camera samples: three views each of
+  provisional B03/B05/B06. B01/B02/B04 remain held for junction checks.
+  Full greenhouse context is retained: two detailed plants, 142 backdrop
+  instances and all six added branches, with the complete stock-gripper robot.
+  No plant isolation, recolouring, source-geometry movement or label overlays
+  in RGB inputs. Unbundled external props remain excluded as in the preview.
+- Each sample stores clean RGB, raw float32 optical-axis depth in metres,
+  a separate validity mask, actual camera calibration, robot/plant transforms,
+  provisional world/camera/pixel cut labels and file hashes. Review overlays
+  are separate. Nominal 10 mm and admissible 10-20 mm centreline intervals
+  remain proposals, not human-approved cuts or demonstrated blade clearance.
+- Loads the source through a disposable anonymous root layer; relative assets
+  remain correctly resolved. Only the capture session freezes 75 gutter-base
+  rigid bodies. Head framing uses actual mounted-camera extrinsics and
+  URDF-limited head joints; robot snapshots change aisle offset without moving
+  source plants. This does not certify arm reachability or collision-free poses.
+- Synchronization is explicitly STATIC ONLY. Installed Isaac 6.0.1 rc.7 /
+  Replicator 1.13.27 reports zero ReferenceTime and NoFrameNumber for this
+  paused path and emits host-buffer WriterSyncGate illegal-cycle warnings.
+  Dynamic native frame-ID synchronization is not verified. Static capture
+  checks one copied writer payload, unchanged scene/pose/material-binding
+  fingerprints, rendered calibration, fresh callback counters, distinct camera
+  poses and changes in BOTH RGB/depth buffers. Counters are not engine frame IDs.
+  GPU preflight verifies known plane depths at 2.0/2.4 m, on/off-axis optical Z,
+  projection and both buffers' freshness. No installed Isaac extensions edited.
+- Successful evidence:
+  `data/sim_data/rgbd_pilots/pilot_20260908_005526/review.md`.
+  Manifest: `pilot_ready_for_review`, `source_assets_unchanged=true`.
+  Independent post-publication audit passed all nine sample records, 36 image/
+  array file hashes, depth shape/dtype/validity masks, nominal-point projection
+  and loaded source USD hashes. Earlier failed attempts are retained and marked
+  `failed_do_not_train`; none of their outputs are promoted as accepted evidence.
+- Visually reviewed all nine overlays. Eight targets are depth-consistent
+  WITHOUT verified instance visibility; sample_0009 has foreground-occlusion
+  evidence. No automatic visible/difficulty/approval labels were inferred.
+  Native-resolution petiole diameters are only about 2.2-2.6 px and projected
+  admissible intervals about 2-5 px, with strong backlighting. Improve physically
+  appropriate viewpoints before scaling; capture success is not proof that
+  these images support precise cut-point learning.
+- Verification: capture-specific tests 41 passed; final selected robot/sim-data
+  suite 407 passed, one skipped, 47 subtests passed. Headless pilot completed
+  and shut down. No GUI relaunch, physical robot commands, grasp/cut execution,
+  training, human-review mutations, commit or push in this increment.
+- Next: review the full-scene pairs, refine robot viewpoints, add organ-instance
+  masks and visibility checks, and validate cut eligibility before extending
+  the pilot. Moving demonstrations, grasp/trajectory labels, D405 sensor-noise
+  modelling and training approval remain unsupported by this exporter.
+
+### 2026-09-08: Screened viewpoints, native organ visibility, and live preview
+
+- Added opt-in `--refine-views` to `sim_data.capture_pilot`; the baseline capture
+  command and interactive preview behaviour are preserved. New modules:
+  `capture_viewpoints.py`, `capture_visibility.py`, `capture_search.py`, with
+  viewpoint/visibility regression tests. No commit or push requested/performed.
+- Search samples original base X and up to 0.3 m nearer, plus three aisle offsets,
+  using only real head joints and whole-robot translations. Robot yaw, arm/torso
+  pose, mounted-camera extrinsics, 848x408 optics, source plants and lighting stay
+  unchanged. Floor-support and joint-limit checks remain enabled. This is a
+  geometry-guided static dataset pilot, not blind evaluation or robot navigation.
+- Added conservative whole-visible-robot/scene bound screening, including USD
+  instance proxies. Integration revealed that merged backdrop plant AABBs cover
+  large empty spaces and the actual archive contains mixed triangles/quads.
+  Plant surface refinement now tests triangles against enclosing robot-local
+  boxes; both quad diagonal choices are retained conservatively. A 10 mm margin
+  is used; rigid greenhouse shapes keep conservative AABB checks. Possible
+  overlaps are not exact collision findings. Self-collision, paths, dynamics,
+  hidden collision shapes and closed-plant-volume containment are not certified.
+- The writer now optionally exports native uncolorized instance IDs alongside
+  RGB-D. GPU preflight passed known 2.0/2.4 m optical depth and object identity,
+  then correctly identified/depth-tested a foreground occluder added and removed.
+  Scene/camera/static-content checks and mask freshness remain fail-closed.
+  Installed native frame IDs remain unavailable in this paused path; existing
+  WriterSyncGate/Fabric warnings persist. No dynamic synchronization is claimed.
+- Exact renderer prim paths map to 870 active source/variant components across
+  the two detailed plants. Deepest component ownership separates child leaves
+  from petioles. Backdrops retain native prim identities but do not receive
+  invented organ labels. Raw instance IDs, component/organ masks, exact visible
+  target masks and identity tables are written under `supervision/`, never into
+  the model observation allowlist. Review-only green highlights preserve inputs.
+- Nominal visibility requires BOTH petiole identity and compatible depth at the
+  projected pixel. The accepted 10-20 mm interval reports unique-pixel sampled
+  coverage, not amodal surface visibility. Known foreground occluders and same-
+  instance depth conflicts are distinguished; unknowns are not auto-approved.
+  Provisional image-quality gates and explicit rejection reasons are recorded.
+- Completed evidence:
+  `data/sim_data/rgbd_pilots/refined_20260908_135740/review.md`.
+  36 candidate poses screened, 10 rejected for possible geometry proximity,
+  26 rendered, nine selected. Manifest: `pilot_ready_for_review`, unchanged source
+  assets. Three selected views pass the provisional clear-view gates: B05
+  sample_0004/sample_0005 and B06 sample_0007. They have estimated widths
+  3.08-3.61 px and projected intervals 7.38-8.97 px. This is not training approval.
+  B03 remains limited: its best identity/depth-confirmed views are 2.55-2.72 px
+  wide; moving nearer introduces foreshortening/depth conflict in this search.
+  The six failed-gate selections remain explicit diagnostic examples.
+- Verification: 435 selected robot/teleop/sim-data tests passed, one skipped,
+  47 subtests passed. Independently audited all nine samples / 90 exported-file
+  hashes, RGB-D shapes/validity, reprojection, and component ownership/masks using
+  parent-path lookup. Checked all 872 loaded source USD hashes, the draft hash
+  and all six capture-module hashes against the final manifest. Visually
+  inspected all nine overlays and representative exact-mask highlights.
+- The bounded headless run shut down after about 19.6 minutes while a separate
+  GUI preview remained open. This is not a throughput benchmark; profile native
+  annotation/warm-up overhead before scaled collection. Existing failed and
+  blocked attempts remain retained and are not promoted to dataset evidence.
+- At the user's additional request, launched interactive Isaac Sim 6.0.1 with
+  RB-Y1 Model A v1.2, both stock grippers, three mounted D405 views and six added
+  branches. Verified the GUI window and ongoing PACKAGE_HEARTBEAT output.
+  Launch evidence: `data/sim_data/candidate_preview_20260908_135338/`.
+  Use `Tomato package preview` -> `Robot head D405` / `Added lower branches`.
+  This archive's annotation preview does not enable grasp/cut physics or teleop.
+- Next: review passing and diagnostic full-scene views, improve B03's useful
+  camera geometry, validate horticultural cut eligibility and visibility rules,
+  then expand the pilot. No human approvals, difficulty labels, grasp/path
+  labels, training or physical robot commands were added in this increment.
+
+### 2026-09-08: Colour heatmaps of native Isaac depth
+
+- Added `sim_data/depth_preview.py` and tests. The tool reads saved native
+  Replicator `distance_to_image_plane` float32 arrays DIRECTLY. It does not
+  estimate depth from RGB, reconstruct it from geometry, or invoke another model.
+- Generated 18 review PNGs for the latest nine samples: common linear 0.04-2.0 m
+  near-scene colours and full camera clipping-range colours, each with a metre
+  legend. Yellow is near, purple far, grey checkerboard invalid. Colours saturate
+  at the stated range limits; no raw depth clipping, interpolation, resizing,
+  invalid-pixel filling or changes to RGB/depth/labels are performed.
+  The pixel plane remains 848x408; the legend is a separate 118 px footer.
+- New companion evidence:
+  `data/sim_data/rgbd_pilots/refined_20260908_135740/depth_heatmaps/review.md`.
+  Linked it from the existing image review page and documented the reusable CLI
+  in PHASE1.md. Existing output directories are never overwritten; native input
+  hashes, validity and calibration are checked before producing new previews,
+  then source observation/metadata hashes are checked again afterwards.
+- Verification: selected heatmap/capture/visibility tests 61 passed, including
+  common-scale colour consistency, invalid values, unchanged native pixels,
+  source tamper rejection and preservation of original observations/labels.
+  Visually checked the B05 near-depth heatmap and legend. No simulator restart,
+  live camera alteration, physical robot command, commit or push was performed.
+
+### 2026-09-08: Robot-POV audit, explicit reviews and versioned prototype index
+
+- Added `sim_data/dataset_review.py`, `dataset_package.py` and regression tests.
+  The offline audit reconstructs the RB-Y1 A v1.2 fixed head-camera mount in an
+  in-memory USD and verifies saved camera transforms from URDF FK/base/joints.
+  It checks joint limits, rigid root, unchanged mount/848x408 optics, uncropped
+  inputs, native renderer view/projection, source assets/recipes, geometry,
+  masks, native depth validity and identity/depth visibility. It does not move
+  the live GUI camera or issue any physical robot commands.
+- The latest nine input frames all passed robot-POV verification: camera path
+  `/World/RBY1/link_head_2/attachments/HeadCamera/D405/DepthCamera` and camera
+  translation agreement below 1e-12 m (simulation arithmetic, not physical
+  calibration accuracy). These are geometry-guided simulated whole-robot/head
+  snapshots, NOT cinematic cameras, live lab poses or validated navigation.
+- Inspected original RGB and magnified cut/mask/native-depth panels for 0004,
+  0005 and 0007. B05 0004/0005 recommended for human prototype-label review.
+  B06 0007 held for weak RGB separation near stem/fruit/leaves despite passing
+  numerical visibility checks. Six other frames remain failed-gate diagnostic
+  holds. No automatic easy/medium/hard labels or human approvals were added.
+- Created `data/sim_data/dataset_reviews/review_20260908_v2/audit.json` and nine
+  review-only cards (original full-scene RGB plus labelled 4x crops). Native
+  RGB/depth/labels and original capture metadata were hash-verified unchanged.
+  Recorded three explicit ASSISTANT decisions; local roles are self-declared,
+  not authenticated. Older human anatomy review records remain untouched.
+- Added append-only UUID review records, explicit supersession, stale/tampered
+  source and card rejection, role-separated human prototype confirmation and
+  conflict detection. Neither assistant recommendation nor human prototype
+  confirmation enables training or physical execution in this unvalidated rule.
+- Published `data/sim_data/datasets/robot_head_prototype_v1/review.md` and a
+  versioned JSONL reference index with calibration, robot poses, provisional
+  supervision, input allowlist, provenance and review states. Two recommended
+  for human review, seven holds, zero training-eligible samples. The index is
+  not self-contained; retain linked source/audit folders. With two source plant
+  families, splits/difficulty remain unassigned and related variants stay grouped.
+- Remaining: resolve B06 visual ambiguity/B03 camera geometry using actual robot
+  views; explicitly confirm prototype labels, validate horticultural eligibility
+  and the accepted annotation spec, then expand independent plant/view coverage.
+  Static synchronization limitations, approximate parent-capsule diagnostics,
+  unvalidated blade/grasp/path physics and backdrop organ-label gaps remain.
+- Verification: 480 selected robot/teleop/sim-data tests passed, one skipped,
+  47 subtests passed in 27.13 s, including 34 new review/package tests and a
+  fresh audit of the real nine-sample run. No commit/push was requested or made.
+
+### 2026-09-08: Lightweight browser GUI for human prototype-label review
+
+- Added `sim_data/review_gui.py`, local HTML/CSS/JS under `review_gui_assets/`,
+  `review_gui_test.py`, and the double-clickable `run_dataset_review.cmd` launcher.
+  Default URL is `http://127.0.0.1:8877`. No Isaac application, GPU workload,
+  external models, cloud service or physical robot connection is started.
+- Starts with B05 0004/0005; offers all-sample and pending filters, original RGB,
+  cut overlay, exact native target-mask and directly coloured native-depth tabs,
+  full-size images and labelled evidence cards. Crops remain diagnostic-only.
+- Human enters their name, explicitly acknowledges inspection, then clicks
+  Confirm/Hold/Reject. Save is immediate with pending-sample auto-advance, resume,
+  optional notes and append-only revisions through the existing review API.
+  Failed-gate confirmation, stale browser edits, changed sources/cards and
+  conflicting review history are rejected. Engineering holds stay independent;
+  no training, horticultural or physical-cut approval is inferred.
+- Loopback-only HTTP, exact Host/Origin checks, per-process anti-CSRF token,
+  bounded JSON bodies, allowlisted cached evidence (no arbitrary file serving),
+  restrictive browser CSP and no external assets. Existing matching server is
+  reopened by the launcher; a second server cannot claim the same port.
+- Verified the actual nine-sample page in isolated headless Edge: source image
+  1152x838 review card, correct B05 0004 starting target, 0/2 recommended and 0/9
+  reviewed, confirmation disabled until explicit input, no horizontal overflow
+  at 1440x1050, all image tabs loaded, zero JavaScript runtime errors. Screenshot:
+  `data/sim_data/review_gui/browser_review_20260908.png`.
+- Browser save/revision/reload tests used ONLY a separate synthetic three-sample
+  fixture. Confirm, Hold, Reject, auto-advance, failed-gate disabling and revision
+  persistence passed. Real human-review count remained zero after those tests.
+  Existing capture, audit, assistant records and dataset version remain unchanged.
+- Final targeted GUI/review/native-depth regressions: 73 passed in 12.39 s.
+  Opened the real review page via the existing-server launcher. The synthetic
+  browser-test server and isolated headless browser were stopped; the real GUI
+  remains running. No simulator restart, commit or push was performed.
+
+### 2026-09-08: Human-reviewed v2 snapshot and focused robot-head recapture
+
+- Verified the saved human decisions and all nine source captures again without
+  modifying them: B05 samples 0004/0005 confirmed; B03 sample 0001 held. No
+  conflicts or changed source hashes. Exported the NEW reference index
+  `data/sim_data/datasets/robot_head_prototype_v2/`; two human-confirmed prototype
+  labels, seven diagnostic holds, zero training-eligible samples. v1 is unchanged.
+- Added CPU-only `sim_data.viewpoint_plan` to screen tighter base-XY/yaw samples
+  before expensive native rendering. Same aisle, at most 40 cm approach, at least
+  35 cm base-X to nominal-target-X separation, base yaw 150-210 degrees, unchanged
+  arm/torso joints, fixed head-camera mount and 848x408 optics. Real head joints
+  solve framing; no independent camera repositioning, plant edits or lighting
+  changes. This is not a navigation, self-collision or physical reachability proof.
+- Screened 165 finite poses across B03/B06. Six B03 and three B06 candidates
+  passed projected-sampling and conservative geometry checks. Plan is saved at
+  `data/sim_data/viewpoint_plans/focus_20260908_v1/plan.json`, with full rejections,
+  source fingerprints and selected poses. Predicted widths are not visibility
+  measurements; actual RGB/native-depth/native-ID evidence is still required.
+- `capture_pilot --refine-views --view-plan PLAN` rechecks all selected poses
+  against the loaded scene and uses the existing synchronized static capture.
+  Default capture mode is preserved. Fixed the zero-margin AABB screen so
+  touching/overlapping bounds are not incorrectly cleared when margin is zero.
+- The first focused run failed before any sample because the new planner's
+  import path loaded standalone USD before SimulationApp. Moved USD imports
+  inside the CPU-planning function, added a fresh-process import regression,
+  and retried into a NEW directory. `focused_20260908_v1` remains explicitly
+  `failed_do_not_train`; no source data was altered by the failure.
+- Focused retry `focused_20260908_v2` passed the real-GPU depth/known-occluder
+  preflight, rendered nine planned candidates and saved six selected samples.
+  Independent audit `data/sim_data/dataset_reviews/focused_20260908_v1/audit.json`
+  passed source fingerprints, native head-camera FK/optics, projection, metric
+  depth and exact renderer-derived component/organ masks for all six. Four pass
+  numerical clear-view gates; numerical success is not visual/human acceptance.
+- The browser reviewer now names its source capture run to distinguish sample
+  numbers that repeat across capture sessions. Existing old-run human records
+  are not copied to new camera views.
+- Visually inspected all six full-scene RGB/cut/mask/native-depth cards. New B03
+  0001/0002/0003 are recommended for human prototype-label review: approximately
+  3.97/3.65/3.68 px petiole widths and 6.97/9.08/6.30 px projected cut intervals.
+  All three remain one target geometry. B06 0004 stays held for RGB ambiguity
+  despite numerical visibility; 0005/0006 are obscured by Added03_Leaf_204/205,
+  with native depth 62.34/89.76 mm in front of the nominal centreline pixel.
+  These are occlusion diagnostics, not validated hard-difficulty labels.
+- Saved six assistant-only append-only review records and built a NEW index at
+  `data/sim_data/datasets/robot_head_focused_v1/`: three recommendations, three
+  diagnostic holds, zero human confirmations at export, zero training-eligible
+  samples. Original B05 human confirmations and B03 hold are preserved in v2;
+  neither old observations nor old reviews were rewritten.
+- Launched the focused lightweight reviewer on `http://127.0.0.1:8878`; original
+  review server on 8877 is untouched. Default Recommended shows three new B03
+  views. The GUI labels the capture-run name; no human button clicks were made
+  by the assistant. Documentation includes the explicit focused-review command.
+- Final report inspection caught a hard-coded original nine-image count in the
+  generic package summary. It now derives image/family counts from exported rows,
+  with one- and three-sample fixture regressions. Exported corrected reporting to
+  `data/sim_data/datasets/robot_head_focused_v2/`; focused v1 is retained unchanged.
+  Six captured samples, review records and source hashes are identical between
+  the focused indices. The review GUI continues to use the same audited capture.
+- Process limitation: the six-sample manifest finalized as `pilot_ready_for_review`
+  with unchanged sources and all saved artifacts subsequently passed audit, but
+  Kit exited with code 1 during shutdown and did not print the post-close result.
+  Shutdown cause is not yet established. Do not describe this as a clean-exit
+  capture service; paused/static freshness guards and WriterSyncGate warnings
+  remain separate from any future dynamic recorder validation.
+- Verification: 525 selected robot/teleop/sim-data tests passed, one skipped,
+  47 subtests passed in 32.54 s. Includes bounded planning, lazy USD imports,
+  zero-margin overlap checks, capture-run naming and report-count regressions.
+  Final hash checks passed for both current review indices and the six-sample
+  camera audit. No commit or
+  push was requested or made. Next: review the new B03 examples, retain B06 holds,
+  then expand independent plant/target coverage before scaling or training.
+
+### 2026-09-08: Native multi-plant collection scheduler and reviewed v3 snapshots
+
+- Verified the three new B03 human confirmations and the updated original B03
+  holds. Exported NEW `robot_head_prototype_v3` and `robot_head_focused_v3` review
+  indices: five confirmed images across two distinct targets, with source/card
+  hashes intact. Earlier snapshots and all append-only human records remain.
+- Added `sim_data.collection_plan`, `collection_worker`, `collection_run` and
+  `collection_test`. Scheduling reconstructs native cut proposals from original
+  manifests; it does not depend on B03/B05/B06 or create/reposition branches.
+  Target status, protected descendants, relevant source warnings, centreline
+  validity and parent-proxy warnings are filtered with recorded reasons.
+- Audited all 24 source families and reserved 16 train / 4 validation / 4 test
+  target-family groups deterministically. Previously reviewed seed101/103 stay
+  in train; the initial batch selects two NEW train families (seed11/seed17),
+  two native petioles each, at most two rendered views per target. Family splits
+  cover target ancestry only: greenhouse/backdrop context is shared and no
+  scene-disjoint generalization claim is made. No difficulty/training approval.
+- Plan: `data/sim_data/collection_plans/native_20260908_v1/plan.json`. It binds all
+  source component manifests/meshes and greenhouse/backdrop USDs, the prototype
+  cut rule, deterministic target selections, exclusions and split assignments.
+  Changed sources, target coordinates, budgets or assignments fail validation.
+- Worker loads the selected plant at the existing detailed greenhouse slot,
+  leaving original gutter placement, neighbouring vegetation, light settings,
+  native geometry, robot mounting and 848x408 optics unchanged. It searches actual
+  bounded base/head poses and reuses native RGB/Z/instance writer, static freshness
+  guards, visibility gates and independent FK/depth/mask audit. No teleop, free
+  camera, physics/cutting or executable trajectory is introduced.
+- Scheduler uses one isolated Kit subprocess at a time with raw binary logs,
+  exact return codes, bounded timeout, and independent audit before the next job.
+  Failures stop the batch, never become successful data or trigger overwrite/
+  automatic retry. Manifest/result output is durable BEFORE Kit fast shutdown;
+  the installed close implementation can terminate before post-close prints.
+- First bounded attempt `collection_batches/native_20260908_v1` stopped with
+  exit 1 before any saved images: CPU pose search left the root at its last
+  candidate, correctly tripping the subsequent original-base consistency check.
+  Added transactional root/link restoration on success AND failure; exact-matrix
+  regressions pass. The failed job and logs remain; job 2 never started.
+- Retrying the unchanged two-plant schedule in NEW
+  `data/sim_data/collection_batches/native_20260908_v2/`. Final rendered results,
+  process exit status and explicit visual inspection will be appended below.
+
+#### 2026-09-09 KST: native batch completed and human reviews received
+
+- Retry v2 completed both isolated jobs with exit code 0: seed11 in 299.44 s,
+  seed17 in 308.83 s (worker time, excluding offline audit). All eight saved
+  views passed independent RGB/Z/mask/projection/FK/source integrity checks.
+  Seven pass numerical clear-view gates; this does not imply seven clear images.
+- Inspected all eight RGB/cut/mask/native-depth cards. Recommended seed11
+  0001/0002 and seed17 0001/0002/0003. Held seed11 0003 (petiole/parent blend),
+  seed11 0004 (occluded nominal cut) and seed17 0004 (ambiguous/obscured junction).
+- Independently reconstructed all 827/824 native component paths, organ types
+  and source-family mappings from source manifest parent chains; each saved
+  catalogue matched exactly. Each job audit binds 10,282 source/artifact files.
+- Saved eight assistant-only records and immutable native_seed11_review_v1 /
+  native_seed17_review_v1 indices. The user then explicitly confirmed all five
+  recommended views. New native per-plant v2 indices preserve those confirmations;
+  earlier assistant-only snapshots and original/focused v3 snapshots remain.
+  Confirmations are prototype image-label agreement, not training/cut approval.
+- Added collection_review: one lightweight page for both jobs on port 8879,
+  job-prefixed UI sample IDs, original per-job audit/records save routing, local
+  same-origin/CSRF protections and stale-review checks inherited from ReviewApp.
+  All 40 image tabs loaded at expected dimensions. Old 8877/8878 pages untouched.
+- Evidence: data/sim_data/collection_batches/native_20260908_v2/visual_review.md.
+  Both supervised native jobs demonstrated real zero exits. Earlier nonzero
+  shell-reported shutdown was not retroactively reclassified; its cause remains
+  unproven. Static synchronization limits and WriterSyncGate warnings remain.
+- Verification before the batch-review adapter: 556 passed, one skipped,
+  47 subtests in 35.97 s. Adapter plus existing GUI tests: 32 passed in 7.29 s.
+  No real human review was submitted by the assistant. No commit/push performed.
+
+### 2026-09-09: Target-conditioned VLM dataset release engineering (in progress)
+
+- The user requested persistence to a complete first VLM training dataset.
+  Scope is RGB cut-point/visibility/abstention grounding; bimanual trajectories,
+  dynamic synchronization, physical execution, agronomic validation and Cosmos
+  real-hard remain separate. No lab-robot command, commit or push was made.
+- Added training_plan/contract/export/evaluate modules and TRAINING_DATASET.md.
+  Clean mounted 848x408 RGB plus an explicit visible distal petiole query pixel
+  disambiguates the target. The query is at least 45 mm along the source petiole
+  and 18 pixels from the nominal cut, not the answer coordinate. Output is a
+  cut pixel or an explicit occlusion abstention. Native camera-Z, calibration,
+  centreline camera/world XYZ and evaluation intervals remain sidecars.
+- Preserved seed-0 target-family reservations (16 train / 4 validation / 4 test).
+  New collection uses continuously varied framing; fixed-position pilot frames
+  are not silently promoted. The shared greenhouse/backdrop is NOT scene-disjoint.
+- Conservative label derivation on the previous native batch agrees with its
+  five confirmed clear examples and excludes all three held examples. Numerical
+  visibility alone is insufficient: visible parent separation and proximal
+  context are also required. Unknown occlusion is excluded, not a false negative.
+- Added explicit job selection, streaming saved captures and streaming audit
+  cards. Zero worker exit plus independent audit is required for export. Portable
+  JSONL chats, clean RGB, native depth/validity, per-sample labels, hashes, exclusion
+  ledger and offline loader are implemented. Source prototype approvals remain
+  false; new labels explicitly describe automatic synthetic-task supervision.
+- Release gates require 10,000 train / 500 validation / 500 test unique images,
+  family/target/difficulty coverage, varied cut locations and portable-loader
+  consistency. --allow-incomplete is a diagnostic path and never grants release
+  status. Constant-pixel, query-copy, train-fitted query-offset and always-abstain
+  baselines are available; they are NOT a trained VLM evaluation.
+- First randomized smoke: collection_batches/grounding_smoke_20260909_v1,
+  job_003 seed11, seven captured/audited frames, worker exit 0, 409.28 s worker
+  time. Four accepted automatic hard/abstention labels; three undersampled
+  positives excluded. Portable grounding_engineering_smoke_20260909_v1 passes
+  its loader but explicitly FAILS coverage and is not a complete training release.
+  Inspected its first RGB/mask/native-depth card: the nominal cut is leaf-occluded.
+- Dataset-scale throughput remains under investigation. StaticSceneMonitor
+  keeps an initial full static scan and USD edit notices, allowing only explicit
+  between-frame robot snapshots. First optimized attempt v2 failed closed on
+  Replicator /Orchestrator bookkeeping before any saved frames; failed logs remain.
+  Added that observed renderer-graph exception and guard regressions. Fresh v3
+  comparison is running; do not claim a speedup or successful optimized capture yet.
+- Tests so far: 101 capture/contract/source/audit regressions passed; 74 selected
+  export/contract/audit tests passed; 51 guard/contract/export tests passed;
+  10 real-URDF posture-diversity/evaluation tests passed. These overlapping suites
+  are not added together. Full combined suite and dataset-scale QA still pending.
+
+#### Capture qualification and coverage follow-up (2026-09-09)
+
+- Grounding smoke v3 completed with seven independently audited frames and a
+  real zero worker exit in 313.94 seconds. The initial full scan plus USD notice
+  guard worked; original native depth matched the same-pose long-render baseline.
+- Short-render experiments v4-v8 failed closed with zero saved training frames.
+  Native geometry/instance identity agreed, but RGB convergence or comparison
+  against the long render failed. v8 global mean absolute RGB difference was
+  3.3056/255 against the declared 3.0 limit. These are failed qualifications,
+  not successful speedups. All logs remain available.
+- Runtime readback identifies RealTimePathTracing, DLSS AA, exposure adaptation
+  off. The source scene overrides a requested legacy RaytracedLighting mode.
+  Both legacy-mode diagnostics failed before images; the temporary RT2 switch
+  was restored and preference persistence disabled. No installed SDK or source
+  scene was edited to force a renderer.
+- Production now defaults explicitly to the established seven eight-subframe
+  captures (six warmups plus final callback). Short/reference comparison is
+  opt-in only. Added bounded-loop, final-callback and failed-reference tests.
+- Started grounding_coverage_20260909_v1/job_003 with real torso/head/base
+  snapshot diversity. First nine complete image files provisionally include one
+  easy, two medium and four hard examples; two are excluded. This is a LIVE
+  yield observation, not a completed audit/release. Original mounted RGB for
+  sample_0003 was inspected; its label is medium with proximal visibility 0.92.
+- Added training_progress: reports saved files, provisional label/exclusion
+  counts and independently audited counts separately. It cannot grant release
+  approval. Added opt-in first-render CPU profiling. One small profile worker
+  temporarily runs alongside the coverage worker (two total isolated workers)
+  after low GPU utilization and memory headroom were observed; each supervisor
+  still owns at most one child. No live user simulator or robot is controlled.
+- Added class-balance release gates (5,000 localized/1,000 occluded train;
+  250/50 each validation and test), exact camera/scene-condition deduplication,
+  and explicit reviewer hold/reject vetoes. Noise cannot inflate image counts.
+- Full selected suite passed 665 tests, one skip and 47 subtests before these
+  last renderer/progress additions. Latest focused suite: 42 passed. The current
+  four-row engineering export remains explicitly incomplete; no training
+  release or VLM fine-tuning result is being claimed.
+
+#### First completed coverage job and native annotator qualification
+
+- grounding_coverage_20260909_v1/job_003 completed with 63 saved frames, a real
+  zero worker exit and independent audit hash
+  85e08dad174ceb1b3fe3235fcbb39a19bc2e2ca462fce79c70cb41d3c1633ae7.
+  Worker elapsed time was 2209.78 s. The task contract accepts 42 labels:
+  29 easy, 2 medium and 11 hard. It excludes 21 (3 missing visible distal query,
+  13 ambiguous junctions, 5 unknown visibility). These counts are not a full
+  multi-family release. Collection of the other 23 families has started in
+  grounding_coverage_remaining_20260909_v1 with the established render budget.
+- Added training_qa to produce hash-bound native RGB/mask/depth cards without
+  altering observation files or inventing approvals. Inspected samples 0003,
+  0009, 0015, 0023; observations are in
+  data/sim_data/dataset_reviews/grounding_live_20260909_v1/visual_review.md.
+  No obvious wrong-organ localization in those four; the scene is strongly
+  backlit and this small review is not a statistical accuracy certificate.
+- CPU profiling found repeated legacy instance-label serialization expensive.
+  Added native_instances plus --instance-backend fast/compare. Comparison mode
+  checks the same callback's complete uint32 image and all observed prim paths;
+  writer errors are fatal, never replaced by an earlier successful callback.
+  The two-frame full-greenhouse comparison and GPU calibration/occluder preflight
+  passed; both fast-only and comparison jobs exited zero and passed audit.
+  Each comparison frame checked all 345,984 pixels (228/592 observed IDs).
+- The fast path removes the legacy JSON conversion graph without changing RGB,
+  native depth, full-image resolution or scene geometry. It has NOT yet shown a
+  clear total wall-clock speedup under concurrent collection. CPU profile time
+  is not substituted for total capture time. No installed NVIDIA files changed.
+- Consolidating the requested 56 subframes into one step failed the current
+  strict RGB-difference comparison, with native geometry/identity unchanged.
+  The failed run saved zero training frames. Added a repeated-reference noise
+  characterization mode: experimental candidate/first-reference RGB remain
+  review-only, and the final established-budget reference is the observation.
+  This measures whether the comparison itself is below the renderer noise floor;
+  it does not automatically approve a faster renderer.
+- Added deterministic --view-offset shards. Disjoint windows preserve the same
+  global base/head/torso proposal sequence; later batches cannot repeat prior
+  windows just to fill a quota. Existing seed-0 plans still load unchanged.
+- Recent selected suites: 65 native-adapter/capture tests; 82 shard/posture/
+  planning tests; 425 sim_data + vlm_eval_test + robot-verifier tests with 47
+  subtests. These overlap and are not added. A complete 10k/500/500 training
+  release is still pending collection, stratified QA and final export.
+
+#### Task-qualified faster capture and non-overlapping scale collection
+
+- The repeated-reference noise diagnostic failed at its second pose; its one
+  saved reference observation is excluded because the worker exited nonzero.
+  Original logs remain. Native identity comparison now resolves prim identity
+  per pixel instead of treating renderer-local ID renumbering or unobserved
+  mapping entries as geometry changes; the earlier failure cause is not asserted.
+- Added an explicitly different capture profile, warm56_then8: initial full
+  56-subframe warmup followed by fresh eight-subframe static snapshots. This is
+  task-level qualification, NOT a claim that failed strict RGB comparisons passed.
+  The long-budget default and all native capture/label integrity gates remain.
+- First-family qualification: nine matched poses, identical native target masks
+  and Z depth, eight identical accepted answers (5 easy / 1 medium / 2 hard),
+  one no-query exclusion in both. Measured after-first-frame median fell from
+  32.202 s to 4.870 s. Actually inspected six independent cards and the hard
+  sample 0004 overlay; notes are in grounding_short_profile_20260909_v1.
+- Second-family qualification: 12 matched poses, identical native masks and Z,
+  10 identical easy answers and two ambiguous-junction exclusions in both.
+  Measured median fell from 33.990 s to 4.788 s. Actually inspected three cards;
+  notes are in grounding_short_seed101_20260909_v1. Strong backlighting remains.
+- The established-budget seed101 job completed with 54 frames, zero exit and
+  independent audit f3fb9531dd470b0d30895c8d089762bb2f0b714792a103057af32159d8072f3a.
+  Preserved it and the 63-frame seed11 job. To switch the remaining queue,
+  terminated only its verified newly started job_002 child with zero saved
+  samples. Its nonzero cancellation ledger and operator note remain unchanged.
+- Two new isolated fast coverage queues A/B cover the remaining 22 families.
+  First four finished jobs (41, 53, 39 and 20 frames) all exited zero and passed
+  independent audit. Counts of raw frames are not counts of training labels.
+- Fast native mapping now stores all observed renderer IDs only, retaining
+  every pixel and observed prim path and the full anatomical component catalogue.
+  The compact-mapping 53-frame job passed independent audit; sample 0002 is
+  6.39 MB instead of approximately 11.8 MB with the unused mapping entries.
+- Created scale plan: all original 297 height-band targets, up to 160 views per
+  target, deterministic view-offset 8, varied valid torso/base/head snapshots.
+  Started two additional isolated workers for already-reviewed seed101/seed11
+  after checking GPU headroom (maximum four workers, no user GUI/robot control).
+  These are new proposal windows, not repeated images to inflate a quota.
+- The 10,000 / 500 / 500 accepted-image release, final stratified visual QA,
+  portable export/loader audit and baseline evaluation remain unfinished.
+
+#### Stratified release QA and query-association correction
+
+- Added training_release_review: hash-bound full-scene/native-evidence cards,
+  review-only cyan query marker and exact answer, append-only explicit decisions,
+  and separate assistant/human attribution. Complete exports now require two
+  inspected examples per nonempty family/difficulty stratum (or all if only one),
+  plus every capture profile. Preparing cards grants no approval. Holds/rejects,
+  stale records and missing strata fail closed. Portable releases retain the
+  inspection evidence and recompute its coverage instead of trusting a flag.
+- Refactored validated candidate gathering for reuse by review/export. Cached
+  per-audit hashes instead of rehashing a large audit for every candidate.
+  Portable validation also rejects duplicate RGB within a split, not only
+  train/test leakage. Relevant broad suite: 442 passed plus 47 subtests before
+  the subsequent v2 association correction; latest focused suite: 65 passed.
+- At 11:22 KST, nine completed coverage families supplied 408 independently
+  audited frames. The then-current v1 label contract accepted 331 (246 easy,
+  8 medium, 77 hard), spanning 74 targets. These are historical v1 counts,
+  NOT current-v2 accepted totals or a training release. Four capture workers
+  continue; large jobs spend substantial CPU time preparing screened poses.
+- Actual first-wave visual QA found a visible-cut example whose input query
+  was an isolated petiole fragment across foreground foliage. Native mask
+  connectivity confirmed this; related v1 examples also had disconnected
+  associations. Preserved all initial decisions and added explicit holds and
+  a follow-up note under grounding_release_wave1_20260909_v1. No failed review
+  is silently rewritten into a pass.
+- Versioned the task as greenhouse.target_conditioned_cutpoint_rgb.v2.
+  Localized queries must share the nominal cut's eight-connected native visible
+  target region, with no gap filling, while retaining >=45 mm attachment arc
+  and >=18 pixel query/cut separation. Choose among valid connected queries;
+  exclude when none exists. Occluded hard examples retain abstention and do not
+  pretend a visible connection. Raw camera/depth/geometry captures are unchanged.
+  New tests cover isolated-fragment rejection, connected alternative selection
+  and hidden-cut abstention. A separate v2 review bundle is being prepared;
+  accepted counts and visual evidence must be recomputed under this rule.
+
+#### 2026-09-09: reproducible code checkpoint (dataset collection unfinished)
+
+- Keep the implementation, tests, review GUI assets, versioned cut-rule config
+  and operating documentation in Git on `koh-dev/sim-data`. Generated captures,
+  native depth/masks, review decisions, collection ledgers and exports remain
+  under the already ignored `data/` tree; they are not deleted by Git cleanup.
+  No credentials or model-service calls are needed for this checkpoint.
+- The current task is v2 target-conditioned RGB localization/abstention, using
+  the actual mounted 848x408 head camera. The nominal cut is 10 mm along the
+  petiole with a 10-20 mm acceptable arc interval. This is not autonomous target
+  selection, dynamic manipulation, a trajectory release, or a trained VLM.
+- The older `vlm_eval` exploratory prompt retains its historical 2-5 mm visual
+  heuristic and autonomous target selection; it is NOT the current training
+  contract. Training exports embed their own versioned prompt and contract hash.
+- Added a diagnostic synchronous-USD viewpoint preplanner, with no Kit app,
+  RGB/depth capture or approval. Its seed17 coverage probe completed in 118.67 s
+  (99.85 s preparation) and every planned field matched the completed native
+  worker reference within absolute numeric tolerance 1e-9. Scene/source guards
+  passed. Evidence: `collection_preplans/grounding_cpu_seed17_probe_20260909_v1`
+  under `data/sim_data`. This single-family diagnostic is NOT integrated into
+  production workers and does not establish a general collection speedup.
+- Before this diagnostic's comparison tests, the broad relevant suite passed
+  446 tests plus 47 subtests. Current collection and v2 stratified visual review
+  remain active; 10,000 train / 500 validation / 500 test accepted examples,
+  all coverage gates, complete visual QA, portable release validation and
+  baseline evaluation are still required before declaring dataset completion.
+- Final checkpoint regression: `python.bat -B -m pytest sim_data
+  vlm_eval/vlm_eval_test.py verify_robot_v12.py -q` passed **458 tests and
+  47 subtests in 52.33 s**. `git diff --check` passed. The scoped changed-file
+  credential-pattern scan found no matches; generated data/caches remain ignored.
+  At the subsequent audit snapshot, 16 completed coverage jobs contained 725
+  independently audited raw frames. V2 eligible counts are computed separately;
+  raw counts do not imply training eligibility or complete visual sign-off.

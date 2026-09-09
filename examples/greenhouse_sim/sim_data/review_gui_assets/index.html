@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="review-token" content="__CSRF__">
+  <title>Robot-head label review</title>
+  <link rel="stylesheet" href="/ui/style.css">
+  <script src="/ui/app.js" defer></script>
+</head>
+<body>
+  <header>
+    <div><span class="eyebrow">GREENHOUSE / PHASE 1</span><h1>Robot-head label review</h1><small id="run-name"></small></div>
+    <div class="progress"><strong id="progress">Loading verified evidence…</strong><small>Local only · no simulator or GPU needed</small></div>
+  </header>
+  <div id="notice" role="status" aria-live="polite"></div>
+  <main>
+    <section class="viewer" aria-label="Captured evidence">
+      <div class="toolbar">
+        <label>Review set <select id="filter"><option value="recommended">Recommended first</option><option value="all">All samples (including holds)</option><option value="pending">Not yet reviewed</option></select></label>
+        <label>Sample <select id="sample"></select></label>
+        <button id="prev" type="button" title="Previous sample (left arrow)">← Previous</button>
+        <button id="next" type="button" title="Next sample (right arrow)">Next →</button>
+      </div>
+      <div class="tabs" role="group" aria-label="Evidence view">
+        <button data-view="card" class="selected" aria-pressed="true">All evidence</button>
+        <button data-view="rgb" aria-pressed="false">Original RGB</button>
+        <button data-view="overlay" aria-pressed="false">Cut overlay</button>
+        <button data-view="mask" aria-pressed="false">Petiole mask</button>
+        <button data-view="depth" aria-pressed="false">Native depth</button>
+      </div>
+      <p id="caption" class="caption"></p>
+      <a id="full-image" target="_blank" rel="noopener" title="Open full-size evidence in a new tab"><img id="evidence" alt="Robot-head RGB, proposed cut, native mask and depth review evidence"></a>
+      <p class="legend">White: nominal cut at 10 mm · Magenta: 10–20 mm centreline interval · Green: visible petiole identity.<br>All evidence includes labelled 4× review crops. The actual input remains the uncropped 848×408 robot-head RGB.</p>
+    </section>
+    <aside>
+      <div class="panel">
+        <div class="eyebrow">YOUR REVIEW</div>
+        <h2 id="target">—</h2>
+        <p id="saved-status" class="badge">No human decision yet</p>
+        <p class="scope">Confirm that the point and interval lie on the correct petiole. You are reviewing a <strong>prototype image label</strong>, not certifying cut safety or approving training.</p>
+        <label class="field">Your name <input id="reviewer" maxlength="120" autocomplete="name" placeholder="Enter once; remembered on this browser"></label>
+        <label class="field">Notes <span class="muted">(optional)</span><textarea id="notes" maxlength="4000" rows="3" placeholder="Wrong stem, unclear attachment, need another view…"></textarea></label>
+        <label class="check"><input type="checkbox" id="inspected"> I inspected the RGB, proposed cut, native mask and depth evidence.</label>
+        <p id="gate-warning" class="warning" hidden></p>
+        <div class="actions">
+          <button id="confirm" class="confirm" data-decision="confirm" disabled>✓ Confirm label</button>
+          <button id="hold" class="hold" data-decision="hold" disabled>? Hold / uncertain</button>
+          <button id="reject" class="reject" data-decision="reject" disabled>× Reject label</button>
+        </div>
+        <small id="help">Enter your name, inspect the evidence and tick the checkbox to save.</small>
+        <small>Each click saves immediately, then advances. Revisiting a sample creates a revision; earlier decisions are retained.</small>
+      </div>
+      <details class="panel" open><summary>Engineering review</summary><p id="assistant"></p><p id="metrics" class="muted"></p></details>
+      <details class="panel"><summary>Camera &amp; saved records</summary><p id="camera"></p><p id="records" class="path"></p><p>Simulated RB-Y1 A v1.2 mounted head camera. Not a cinematic camera or live lab robot stream. Saved dataset versions stay immutable; your reviews will be used in the next index version.</p></details>
+    </aside>
+  </main>
+</body>
+</html>

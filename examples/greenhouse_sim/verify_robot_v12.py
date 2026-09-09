@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("data/sim_data/robot_v12_fit"))
+    parser.add_argument("--right-tool", choices=("knife_only", "gripper"), default="knife_only")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     from isaacsim import SimulationApp
@@ -35,7 +36,7 @@ def main():
         stage = omni.usd.get_context().get_stage()
         UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
         UsdGeom.SetStageMetersPerUnit(stage, 1.0)
-        robot = add_robot_preview(stage, gutter_x=-1.0)
+        robot = add_robot_preview(stage, gutter_x=-1.0, right_tool=args.right_tool)
         dome = UsdLux.DomeLight.Define(stage, "/World/Dome")
         dome.CreateIntensityAttr(1200)
         sun = UsdLux.DistantLight.Define(stage, "/World/Sun")
@@ -71,6 +72,20 @@ def main():
             camera.CreateClippingRangeAttr(Gf.Vec2f(.005, 50))
             camera.AddTransformOp().Set(Gf.Matrix4d().SetLookAt(Gf.Vec3d(*eye), Gf.Vec3d(*center), Gf.Vec3d(0,0,1)).GetInverse())
             views[name] = str(camera.GetPath())
+        # Include both sibling finger links, not only the wrist attachments.
+        for side, direction in (("left", (-1, -1, .6)), ("right", (-1, 1, .6))):
+            extent = Gf.Range3d()
+            for link in (f"ee_{side}", f"ee_finger_{side[0]}1", f"ee_finger_{side[0]}2"):
+                extent.UnionWith(bounds_cache.ComputeWorldBound(stage.GetPrimAtPath(f"/World/RBY1/{link}")).ComputeAlignedRange())
+            center = np.asarray(extent.GetMidpoint())
+            radius = np.linalg.norm(np.asarray(extent.GetSize())) / 2
+            direction = np.asarray(direction) / np.linalg.norm(direction)
+            eye = center + direction * max(.4, radius * 7)
+            camera = UsdGeom.Camera.Define(stage, f"/World/Fit_{side}_hand")
+            camera.CreateFocalLengthAttr(24)
+            camera.CreateClippingRangeAttr(Gf.Vec2f(.005, 50))
+            camera.AddTransformOp().Set(Gf.Matrix4d().SetLookAt(Gf.Vec3d(*eye), Gf.Vec3d(*center), Gf.Vec3d(0,0,1)).GetInverse())
+            views[f"{side}_hand"] = str(camera.GetPath())
         views.update({name.split()[0].lower() + "_rgb": path for name, path in robot["camera_paths"].items()})
         report = {"robot": robot, "physics_tested": False, "views": {}, "passed": False}
         for name, camera_path in views.items():

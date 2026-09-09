@@ -10,6 +10,7 @@ from .openai_compatible import OpenAICompatibleVisionClient
 from .openai_compatible import build_chat_payload
 from .openai_compatible import encode_image
 from .overlay import render_prediction_overlay
+from .prompt import SYSTEM_PROMPT
 from .prompt import build_cutpoint_prompt
 from .schema import CutPointPrediction
 from .schema import PredictionValidationError
@@ -64,9 +65,23 @@ def test_structured_payload_contains_only_public_image_and_prompt() -> None:
     )
     serialized = json.dumps(payload)
     assert "greenhouse_vlm_cutpoint_v1" in serialized
+    assert payload["messages"][0] == {"role": "system", "content": SYSTEM_PROMPT}
     assert "public instruction" in serialized
     assert "SubStem" not in serialized
     assert "api_key" not in serialized
+
+
+def test_payload_accepts_task_specific_system_prompt() -> None:
+    payload = build_chat_payload(
+        model="qwen3-vl-32b-instruct",
+        prompt="Locate the red cup.",
+        image_data_url="data:image/png;base64,AA==",
+        max_tokens=128,
+        temperature=0.0,
+        structured_mode="json_object",
+        system_prompt="You are an object-localization evaluator.",
+    )
+    assert payload["messages"][0]["content"] == "You are an object-localization evaluator."
 
 
 def test_encode_and_overlay_round_trip(tmp_path) -> None:
@@ -94,6 +109,14 @@ def test_prompt_defines_pixel_frame_and_abstention() -> None:
     )
     assert "1280 pixels wide by 720 pixels high" in prompt
     assert "top-left" in prompt
+    assert "x must be 0-1279 and y must be" in prompt
+    assert "0-719" in prompt
+    assert "Do not use normalized 0-1000 coordinates" in prompt
+    assert "vertical, diagonal, leaning, or curved" in prompt
+    assert "largest y is the lowest candidate" in prompt
+    assert "cut_point_px must visibly land on green basal petiole tissue" in prompt
+    assert "rather than background" in prompt
+    assert "Occlusion of distal leaves alone is not a reason to abstain" in prompt
     assert 'return "uncertain"' in prompt
     for field in (
         "schema_version", "decision", "primary_view", "target_bbox_px", "cut_point_px", "cut_direction_px",

@@ -1581,10 +1581,14 @@ class Rby1Kinematics:
         seed_degrees,
         base_matrix: np.ndarray,
         torso_degrees=None,
+        maximum_evaluations: int = 5000,
+        check_cancel=None,
     ) -> IKResult:
         """Place one tool point while retaining the seed's redundant branch."""
         from scipy.optimize import least_squares
 
+        if maximum_evaluations < 1:
+            raise ValueError("maximum_evaluations must be positive")
         local_point = np.append(np.asarray(local_point_m, dtype=np.float64), 1.0)
         target = np.asarray(target_point_m, dtype=np.float64)
         seed = np.radians(np.asarray(seed_degrees, dtype=np.float64))
@@ -1593,6 +1597,8 @@ class Rby1Kinematics:
         upper = np.radians(upper) - 1e-5
 
         def residual(radians: np.ndarray) -> np.ndarray:
+            if check_cancel is not None:
+                check_cancel()
             actual = self.forward(
                 side,
                 np.degrees(radians),
@@ -1611,7 +1617,7 @@ class Rby1Kinematics:
             residual,
             np.clip(seed, lower, upper),
             bounds=(lower, upper),
-            max_nfev=5000,
+            max_nfev=int(maximum_evaluations),
             xtol=1e-12,
             ftol=1e-12,
             gtol=1e-12,
