@@ -21,6 +21,7 @@ from .depth_preview import sha256
 from .training_contract import CONTRACT, SYSTEM_PROMPT, contract_hash, derive_label, validate_answer, user_prompt
 from .capture_contract import fingerprint
 from .dataset_package import active_reviews
+from .query_visibility import QueryVisibility
 
 SCHEMA_RELEASE='greenhouse.grounding_training_release.v1'
 # A complete first substantive release, not a ten-image plumbing demonstration.
@@ -213,7 +214,8 @@ def build(audit_paths,output,*,allow_incomplete=False,visual_reviews=None):
         source_bindings_sha256=bindings,excluded_counts=dict(Counter(x['reason'] for x in exclusions)),
         synthetic_training_task_only=True,physical_execution_approved=False,human_approved_count=0,
         split_scope='target_source_families_only_shared_greenhouse_backdrop_context',
-        implementation_sha256={p:sha256(Path(__file__).with_name(p)) for p in ('training_export.py','training_contract.py')})
+        implementation_sha256={p:sha256(Path(__file__).with_name(p)) for p in
+            ('training_export.py','training_contract.py','query_visibility.py','training_release_review.py')})
     verify_bindings(bindings)
     write_json(output/'manifest.json',result)
     validate(output,allow_incomplete=allow_incomplete)
@@ -251,6 +253,8 @@ def validate(root,*,allow_incomplete=False):
             mask=np.asarray(Image.open(safe_file(root,r['files']['target_mask'])))
             x,y=np.floor(label['query_pixel_uv']).astype(int)
             require(mask.shape==(408,848) and mask[y,x]==255,'Query is not on visible target')
+            usability=QueryVisibility(np.asarray(rgb),mask==255).inspect(label['query_pixel_uv'])
+            require(usability['passed'] and label.get('query_usability')==usability,'Query usability failed or evidence changed')
             require(sha256(safe_file(root,r['files']['rgb']))==r['rgb_sha256'],'RGB identity mismatch')
     require(seen==set(indexed),'Index rows missing from training chats')
     gates=check_release_rows(rows,gates=manifest['acceptance']['thresholds'])

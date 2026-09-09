@@ -1,15 +1,38 @@
-# Synthetic cut-point grounding release v1
+# Synthetic cut-point grounding dataset (task v3)
 
 This is the first perception-only training dataset, not the full bimanual
 deleafing-policy dataset. The original reviewed pilot remains immutable.
 
-Status (2026-09-09 checkpoint): **collection in progress, no complete release**.
-The current v2 engineering export is
+Status (2026-09-09 post-anatomy-audit checkpoint): **collection in progress, no
+complete release; current task v3 needs fresh visual QA**. The one-by-one audit
+of all 63 wave-2 cards found 33 correct visible nominal labels and 30 hidden-cut
+abstentions (16 foreground leaves, 9 fruit, 5 main stems). Two query fragments
+were visually inadequate; the earlier representative QA was too permissive.
+The old white/magenta overlays also misleadingly displayed hidden geometry on
+foreground surfaces. These were review overlays, not marks in training RGB.
+
+V3 adds a conservative native-query usability screen and visibility-gated
+review cards. Re-screening the same 63 sources retains 54 candidates (32
+localizations, 22 abstentions) and excludes 9; 45 retained queries changed.
+The reported `seed41_full_7ab04f3e6924202fd315` is now excluded because its query
+neighborhood is too dark, even though the native identity is the petiole.
+Both earlier visual holds are excluded too. All original data/decisions remain
+unchanged. Old approvals cannot authorize changed v3 queries.
+
+Evidence: `data/sim_data/dataset_audits/wave2_anatomy_20260909/audit_report.html`;
+corrected one-by-one browser:
+`data/sim_data/dataset_reviews/grounding_wave2_rescreen_20260909_v3/index.html`.
+Only four retained v3 examples have fresh explicit assistant review records at
+this checkpoint; the remainder are pending, not implicitly accepted.
+
+### Historical v2 evidence (not current v3 approval)
+
+The historical v2 engineering export is
 `data/sim_data/training_releases/grounding_v2_engineering_20260909_v1` (317 rows,
 215 train / 102 validation / no test). Its portable loader and the selected
 41-example, nine-family visual QA passed; size, split and difficulty coverage
 remain incomplete. Larger workers are collecting separately. The task contract
-is v2; the portable release container schema remains v1. See `dev.md` for evidence.
+was v2; the portable release container schema remains v1. See `dev.md` for evidence.
 
 The initial complete 24-family coverage recount found 834 eligible examples
 from 1,103 audited raw frames (544 train / 141 validation / 149 test). Family,
@@ -77,6 +100,22 @@ not a calibrated model of physical D405 noise.
   validated. No physics, teleop or lab-robot motion is introduced.
 - Per-image integrity, projection, visible identity, native depth and camera
   FK checks precede training-label derivation. Failed worker exits are excluded.
+- V3 query gates use the original RGB and exact eight-connected native target
+  mask: at least 100 island pixels, 64 target pixels and 20 px extent inside
+  a 33x33 neighborhood, 1.5 px interior radius, and 16 px frame margin. No more
+  than half the local target pixels may have luminance below 20/255. Median
+  target/background luminance contrast must be at least 6/255 with at least
+  16 background-ring pixels. The three-pixel ring measures background only;
+  no target-mask gap filling or depth modification is performed. These are
+  conservative engineering screens, not calibrated human/VLM readability
+  guarantees; they may reject valid but dark or low-contrast petioles. Threshold
+  changes require a new contract and re-review, not quota-driven relaxation.
+- The portable loader independently recomputes query usability from copied RGB
+  and the exact native target mask. If no usable query candidate exists, the
+  source is excluded rather than relabeled as a useful hard example.
+- Review cards suppress cut marks for hidden/unknown nominal visibility and
+  show a separate query RGB/mask/native-Z crop. Magenta interval segments require
+  visible native probe evidence and are clipped to native target pixels.
 - Positive labels additionally require resolved proximal context and visible
   parent/target separation. The first native regression matches all five
   human-confirmed examples and excludes all three held examples. This is a
@@ -187,7 +226,7 @@ complete release. Representative assistant visual-inspection notes are under
 
 ## Portable layout and use
 
-The active task contract is now `greenhouse.target_conditioned_cutpoint_rgb.v2`.
+The active task contract is now `greenhouse.target_conditioned_cutpoint_rgb.v3`.
 Visual QA found that v1 could choose a visible distal fragment disconnected
 from an otherwise visible cut by foreground foliage. V2 requires localized
 queries to share the exact eight-connected native visible petiole region with
@@ -196,8 +235,22 @@ and all cut/visibility/ambiguity gates remain. If no such query exists, exclude
 the image from localization training. Hard examples still abstain on hidden
 cuts without claiming a visible path. Raw observations are unchanged, but v1
 label counts and changed-query approvals cannot be presented as v2 results.
-Review records bind the exact task-contract hash. Historical v1 engineering
-exports remain immutable diagnostics, not the current release.
+Review records bind the exact task-contract hash. V3 additionally enforces the
+query usability policy above and uses visual-QA schema v2 with explicit query
+neighborhood inspection. Historical v1/v2 engineering exports remain immutable
+diagnostics, not the current release; the current loader intentionally rejects
+their old task contracts. Re-screen a prior bundle without migrating approvals:
+
+```powershell
+# From examples/greenhouse_sim; choose a NEW output path.
+& 'D:\isaac-sim-6.0.1\python.bat' -B -m sim_data.training_rescreen `
+  --previous-bundle D:/research/tomato-pi-policy/data/sim_data/dataset_reviews/grounding_release_wave2_20260909_v2/bundle.json `
+  --output D:/research/tomato-pi-policy/data/sim_data/dataset_reviews/YOUR_NEW_RESCREEN
+```
+
+This validates source hashes, writes a per-image comparison and local browser,
+and creates a new pending review bundle. Excluded rows have diagnostic cards but
+no eligible bundle entry; untouched sources remain available for later study.
 
 The legacy `vlm_eval` exploratory prompt is a separate autonomous-selection
 experiment with a historical 2-5 mm visual heuristic. Do not substitute it for

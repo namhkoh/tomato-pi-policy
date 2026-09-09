@@ -4,6 +4,13 @@ Date: 2026-09-06
 
 Branch: `koh-dev/sim-data`
 
+Current checkpoint (2026-09-09, post-anatomy audit): the 63-image wave-2 audit is
+complete. Task v3 now gates query legibility and suppresses hidden-cut overlays;
+54/63 sources remain candidates and 9 are excluded. Fresh v3 visual review and
+larger native-camera collection are still in progress. Earlier v2 counts and
+approvals below are historical, not v3 release approval. See the final audit
+entry below and `examples/greenhouse_sim/sim_data/TRAINING_DATASET.md`.
+
 Status: Phase 1 audit/review tools and prototype cut-region drafts are implemented. The bounded full-greenhouse robot-head RGB-D pilot now has opt-in viewpoint screening and renderer-identity organ masks for the two detailed plants. Synchronization remains static-only, not a dynamic recorder or approved training dataset. The user-agreed engineering rule is 10 mm nominal / 10-20 mm along the petiole centreline; per-target approval and horticultural validation remain pending. Complete-scene organ annotation, approved cut/grasp regions, dynamic synchronization, scaled collection and training are still pending. See `examples/greenhouse_sim/sim_data/PHASE1.md` for the refined-pilot command, visibility scope and provisional quality gates.
 
 ## 1. Goal and recommended approach
@@ -666,3 +673,42 @@ validate and colour-display the sensor array, but must not generate replacement
 depth from RGB, custom geometry or projected anatomical XYZ. Heatmaps are for
 review only; RGB-D fine-tuning, if selected later, must read the native metric
 array and calibration rather than those coloured PNGs.
+
+### 2026-09-09: anatomy-audit correction and task v3
+
+The user's wave-2 complaint was audited one image at a time across all 63 cards.
+All 33 visible nominal labels mapped to their intended leaf-bearing petioles;
+the 30 hidden nominal points were behind 16 leaves, 9 fruit and 5 main stems.
+Those hidden samples had abstention answers, but the review renderer painted
+white/magenta geometric projections on the foreground and was misleading.
+Two old query points were inadequate (2-pixel and 49-pixel target islands).
+The complete report preserves per-image anatomy, native identity/depth,
+query crops and visual findings, without changing the source annotations.
+
+Implemented task v3 query size/interior support, local exposure/contrast and
+frame-context screens; alternate usable queries are selected deterministically.
+Positive queries still require native visible connectivity to the nominal cut.
+Hard examples still require a usable visible target query plus independently
+identified cut occlusion; hidden XYZ is never an RGB localization answer.
+Review cards now explicitly distinguish hidden cut evidence from a visible cut
+and provide separate query RGB/native-mask/native-Z crops. The portable loader
+rechecks usability independently. Native Isaac camera-Z and raw RGB remain
+unchanged. No robot, optics, physics, teleop or source plant geometry was changed.
+
+The revised policy retains 54/63 prior cards (32 localization / 22 abstention),
+excludes 9 (including both visual holds and the reported seed41 image), and
+changes 45 retained queries. These are conservative engineering thresholds,
+not a statistically validated readability model. The original bundle, its
+decisions and 63 images are preserved. A fresh hash-bound review bundle has four
+actually inspected assistant accept records; other v3 reviews remain pending.
+Full sim-data regression: 486 tests plus 47 subtests passed. Collection continues
+under the original frozen family splits; complete-release gates are unchanged.
+
+Open the corrected browser:
+`data/sim_data/dataset_reviews/grounding_wave2_rescreen_20260909_v3/index.html`.
+The underlying one-by-one anatomy report is
+`data/sim_data/dataset_audits/wave2_anatomy_20260909/audit_report.html`.
+Next: complete fresh stratified QA of v3 candidates across completed batches,
+fill volume/medium-class deficits with native robot-head captures, and build
+and validate a portable release before VLM fine-tuning. Do not use historical
+v2 eligible counts as current v3 totals or migrate changed-query approvals.

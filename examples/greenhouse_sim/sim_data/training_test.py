@@ -96,6 +96,8 @@ def label_fixture(tmp_path):
     ids=np.zeros((408,848),np.uint32)
     ids[201:209,424:625]=2
     ids[180:230,418:424]=1
+    rgb=np.full((408,848,3),120,np.uint8); rgb[ids==2]=(50,100,30)
+    Image.fromarray(rgb).save(tmp_path/'inputs/rgb.png')
     np.save(tmp_path/'supervision/component_id.npy',ids)
     (tmp_path/'supervision/identities.json').write_text(json.dumps(dict(component_catalogue=[
         dict(component_id='Petiole',variant_id='fixture',component_index=2),
@@ -119,6 +121,27 @@ def test_proved_occlusion_is_abstention_not_hidden_point_regression(label_fixtur
         status='foreground_occluder_identified',observed_component={'organ_type':'leaf'})
     v=contract.derive_label(d,m,r)
     assert v['eligible'] and v['difficulty']=='hard' and v['answer']['cut_point_uv'] is None
+
+
+def test_two_pixel_hidden_query_is_excluded_not_called_hard(label_fixture):
+    d,m,r=label_fixture
+    ids=np.load(d/'supervision/component_id.npy'); ids[ids==2]=0
+    ids[204,469:471]=2
+    np.save(d/'supervision/component_id.npy',ids)
+    m['supervision']['visibility_evidence']['nominal']=dict(visible_target_evidence=False,
+        status='foreground_occluder_identified',observed_component={'organ_type':'main_stem'})
+    v=contract.derive_label(d,m,r)
+    assert not v['eligible'] and v['reason']=='no_usable_visible_query'
+    assert v['query_usability_rejection_counts']['minimum_island_pixels']
+
+
+def test_query_gate_versions_contract_and_does_not_edit_observations(label_fixture):
+    d,m,r=label_fixture
+    files=[*d.glob('inputs/*'),*d.glob('supervision/*')]
+    before={p:p.read_bytes() for p in files}
+    v=contract.derive_label(d,m,r)
+    assert v['task_id'].endswith('.v3') and v['query_usability']['passed']
+    assert all(p.read_bytes()==b for p,b in before.items())
 
 
 def test_disconnected_distal_query_does_not_make_a_localizable_example(label_fixture):

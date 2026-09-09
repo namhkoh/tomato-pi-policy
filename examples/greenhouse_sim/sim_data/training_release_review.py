@@ -16,13 +16,15 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from .capture_contract import fingerprint
-from .dataset_review import read_json, require, review_card, safe_file, write_json
-from .depth_preview import sha256
+from .dataset_review import read_json, require, review_canvas, safe_file, write_json
+from .depth_preview import sha256, colour_depth
 
-SCHEMA='greenhouse.grounding_stratified_visual_QA.v1'
-CHECKLIST=['full_scene_rgb','cut_overlay','native_identity_mask','native_depth','target_query_and_task_answer']
+SCHEMA='greenhouse.grounding_stratified_visual_QA.v2'
+CHECKLIST=['full_scene_rgb','visibility_gated_cut_overlay','native_identity_mask','native_depth',
+           'target_query_and_task_answer','query_rgb_neighborhood_and_usability']
 POLICY={'minimum_inspected_per_nonempty_family_difficulty':2,
         'minimum_inspected_per_capture_profile':1,
+        'card_version':'visibility_gated_cut_and_separate_query_crops.v2',
         'claim':'representative_visual_QA_not_statistical_accuracy_or_human_confirmation'}
 
 
@@ -50,6 +52,40 @@ def selected_rows(rows):
     return sorted(selected.values(),key=lambda r:(r['split'],r['source_plant_family'],r['difficulty'],r['id']))
 
 
+def task_review_canvas(row, buffers):
+    """Diagnostic card only: no overlays/crops enter the model observation."""
+    rgb, depth, valid, target = buffers
+    canvas=Image.new('RGB',(1152,1230),(22,26,33))
+    canvas.paste(review_canvas(row['metadata'],buffers),(0,0))
+    draw=ImageDraw.Draw(canvas); query=row['query_pixel_uv']
+    draw.ellipse((query[0]-5,query[1]+23,query[0]+5,query[1]+33),outline='cyan',width=2)
+    nominal=row['metadata']['supervision']['visibility_evidence']['nominal']
+    observed=nominal.get('observed_component') or {}
+    occluder=' / '.join(str(observed.get(k,'unknown')) for k in ('organ_type','component_id'))
+    status=('VISIBLE CUT: localization label' if row['answer']['status']=='localized' else
+            'ABSTAIN: hidden cut; no visible cut point. Foreground: '+occluder)
+    excluded=row['answer']['status']=='excluded'
+    if excluded: status='EXCLUDED: not a training example. '+row['answer']['reason']
+    draw.text((8,850),status,fill='yellow')
+    lines=[row['id']+' | '+row['split']+' / '+row['difficulty']+' / '+row['target_id'],
+           f"{'OLD rejected' if excluded else 'INPUT'} query {query}; cyan circle is review-only. Training RGB is untouched.",
+           'ANSWER: '+str(row['answer'])]
+    draw.multiline_text((8,870),'\n'.join('\n'.join(textwrap.wrap(s,165)) for s in lines),fill='white',spacing=3)
+    x,y=np.floor(query).astype(int)
+    left,top=max(0,min(x-28,848-56)),max(0,min(y-28,408-56))
+    box=(left,top,left+56,top+56)
+    masked=rgb.copy(); masked[target]=(0,255,80)
+    tiles=(Image.fromarray(rgb),Image.fromarray(masked),Image.fromarray(colour_depth(depth,valid,.04,2.)))
+    titles=('QUERY: original RGB 4x','QUERY: exact native target 4x','QUERY: native camera-Z 4x')
+    for i,(tile,title) in enumerate(zip(tiles,titles)):
+        draw.text((i*384+8,948),title,fill='cyan')
+        canvas.paste(tile.crop(box).resize((224,224),Image.Resampling.NEAREST),(i*384+8,968))
+        cx=i*384+8+(query[0]-left)*4; cy=968+(query[1]-top)*4
+        draw.ellipse((cx-6,cy-6,cx+6,cy+6),outline='cyan')
+    draw.text((8,1206),'Engineering/visual QA only; not human confirmation, agronomic approval or physical cut safety.',fill='white')
+    return canvas
+
+
 def prepare(audits,output):
     from .training_export import gather
     output=Path(output).resolve()
@@ -65,21 +101,7 @@ def prepare(audits,output):
         valid=np.asarray(Image.open(directory/'inputs/depth_valid.png'))==255
         target=np.asarray(Image.open(directory/'supervision/target_visible.png'))==255
         card=row['id']+'.png'
-        review_card(output/card,meta,(rgb,depth,valid,target))
-        # Review-only extra context. The actual model RGB remains untouched.
-        with Image.open(output/card) as original:
-            canvas=Image.new('RGB',(1152,1030),(22,26,33)); canvas.paste(original,(0,0))
-        draw=ImageDraw.Draw(canvas)
-        query=row['query_pixel_uv']
-        draw.ellipse((query[0]-5,query[1]+23,query[0]+5,query[1]+33),outline='cyan',width=2)
-        lines=[row['id'],f"{row['split']} / {row['difficulty']} / {row['target_id']} / {row['capture_profile']}",
-               f"Cyan circle: INPUT query {query}; not the cut. Training RGB has NO circle.",
-               'ANSWER: '+str(row['answer']),
-               'GT white/magenta marks can be hidden behind foreground in hard examples. Check abstention.',
-               'Inspection is representative synthetic-label QA, not agronomic or physical execution approval.']
-        text='\n'.join('\n'.join(textwrap.wrap(s,150)) for s in lines)
-        draw.multiline_text((8,850),text,fill='white',spacing=4)
-        canvas.save(output/card)
+        task_review_canvas(row,(rgb,depth,valid,target)).save(output/card)
         entries.append(dict(**identity(row),card=card,card_sha256=sha256(output/card)))
     result=dict(schema_version=SCHEMA,state='pending_actual_visual_inspection',policy=POLICY,
                 created_utc=datetime.now(timezone.utc).isoformat(),entries=entries,

@@ -2,9 +2,11 @@ from copy import deepcopy
 import json
 
 import pytest
+import numpy as np
 
 from sim_data import training_release_review as review
 from sim_data.depth_preview import sha256
+from sim_data.dataset_review import review_canvas
 
 
 def row(i=1,level='easy',family='one',profile='warm56_then8'):
@@ -68,3 +70,43 @@ def test_record_requires_actual_inspection_and_no_overwrite(tmp_path):
     with pytest.raises(ValueError,match='Never overwrite'): review.record(bundle,[row()['id']],notes,inspected=True)
     card.write_bytes(b'changed')
     with pytest.raises(ValueError,match='Changed inspected card'): review.verify_reviews([bundle],[row()])
+
+
+def test_old_review_contract_or_policy_cannot_approve_new_queries():
+    r=row(); rec=record(r); rec['entry']['task_contract_sha256']='old-v2'
+    with pytest.raises(ValueError,match='exact task example'): review.check_evidence(evidence([rec]),[r])
+    old=evidence([record(r)]); old['schema_version']='greenhouse.grounding_stratified_visual_QA.v1'
+    with pytest.raises(ValueError,match='policy'): review.check_evidence(old,[r])
+
+
+@pytest.mark.parametrize('visible',[False,True])
+def test_review_hides_hidden_cut_and_keeps_native_buffers_unchanged(visible):
+    rgb=np.full((408,848,3),(60,80,40),np.uint8)
+    depth=np.ones((408,848),np.float32); valid=np.ones((408,848),bool)
+    target=np.zeros((408,848),bool); target[198:211,420:460]=True
+    point={'pixel_xy':[434.,204.]}; other={'pixel_xy':[450.,204.]}
+    probes=[dict(visible_target_evidence=visible,projected=p) for p in (point,other)]
+    meta=dict(sample_id='sample_0001',supervision=dict(nominal_projected=point,
+        projected_interval=[point,other],visibility_evidence=dict(nominal=dict(visible_target_evidence=visible),interval_probes=probes)))
+    buffers=(rgb,depth,valid,target); before=[b.copy() for b in buffers]
+    card=np.asarray(review_canvas(meta,buffers))
+    # Only compare the first RGB cut crop, not text or the identity/depth tiles.
+    crop=card[454:838,:384]
+    white=np.all(crop==[255,255,255],axis=2).any()
+    magenta=np.all(crop==[255,0,190],axis=2).any()
+    assert bool(white) is visible and bool(magenta) is visible
+    r=row(); r.update(metadata=meta)
+    if not visible: r['answer']={'status':'abstain','cut_point_uv':None}
+    assert review.task_review_canvas(r,buffers).size==(1152,1230)
+    assert all(np.array_equal(a,b) for a,b in zip(buffers,before))
+
+
+def test_interval_overlay_does_not_fill_native_mask_gap():
+    rgb=np.zeros((408,848,3),np.uint8); depth=np.ones((408,848),np.float32)
+    target=np.ones((408,848),bool); target[:,440:445]=False
+    p={'pixel_xy':[434.,204.]}; q={'pixel_xy':[450.,204.]}
+    meta=dict(sample_id='gap',supervision=dict(nominal_projected=p,visibility_evidence=dict(
+        nominal={'visible_target_evidence':True},interval_probes=[dict(projected=a,visible_target_evidence=True) for a in (p,q)])))
+    card=np.asarray(review_canvas(meta,(rgb,depth,np.ones_like(target),target)))
+    # Nominal-centred crop starts at x=386,y=156, magnified fourfold.
+    assert not card[454+(204-156)*4:454+(205-156)*4,(440-386)*4:(445-386)*4].any()

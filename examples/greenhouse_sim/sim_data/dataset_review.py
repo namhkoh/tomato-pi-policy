@@ -204,7 +204,7 @@ def check_sample(directory, metadata, draft, model, mount, reference_cal):
     return result, (rgb, depth, valid, target)
 
 
-def review_card(path, metadata, buffers):
+def review_canvas(metadata, buffers):
     """Review-only magnification: original RGB/depth/masks remain untouched."""
     rgb, depth, valid, target = buffers
     point = metadata["supervision"]["nominal_projected"]["pixel_xy"]
@@ -216,20 +216,38 @@ def review_card(path, metadata, buffers):
     draw = ImageDraw.Draw(canvas)
     draw.text((8, 8), metadata["sample_id"] + " - ORIGINAL full-scene ROBOT HEAD RGB (848x408)", fill="white")
     draw.rectangle((left, top+28, left+96, top+124), outline="yellow", width=1)
-    draw.text((858, 45), "Yellow: crop location\nWhite: nominal 10 mm\nMagenta: 10-20 mm\nGreen: native petiole mask\n\nBottom: 4x NEAREST\nreview-only crops\n\nNo training approval\nNo cut safety approval", fill="white")
+    evidence = metadata['supervision'].get('visibility_evidence', {})
+    visible = evidence.get('nominal', {}).get('visible_target_evidence') is True
+    visible = visible and 0 <= x < 848 and 0 <= y < 408 and bool(target[y, x])
+    legend = ('VISIBLE nominal cut\nWhite: nominal 10 mm\nMagenta: verified 10-20 mm' if visible else
+              'CUT NOT VISIBLE\nNo white/magenta cut marks\nCrop is occluder evidence,\nNOT a cut on foreground')
+    draw.text((858, 45), 'Yellow: crop location\n' + legend +
+              '\nGreen: native petiole mask\n\nBottom: 4x NEAREST\nreview-only crops\n\nNo training approval\nNo cut safety approval', fill="white")
     marked = Image.fromarray(rgb).copy()
-    painter = ImageDraw.Draw(marked)
-    poly = [tuple(p["pixel_xy"]) for p in metadata["supervision"]["projected_interval"]]
-    painter.line(poly, fill=(255, 0, 190), width=1)
-    painter.line((point[0]-3, point[1], point[0]+3, point[1]), fill="white", width=1)
-    painter.line((point[0], point[1]-3, point[0], point[1]+3), fill="white", width=1)
+    if visible:
+        interval = Image.new('L', (848, 408)); ink = ImageDraw.Draw(interval)
+        probes = evidence.get('interval_probes', [])
+        for a, b in zip(probes, probes[1:]):
+            if a.get('visible_target_evidence') is True and b.get('visible_target_evidence') is True:
+                ink.line([tuple(p['projected']['pixel_xy']) for p in (a, b)], fill=255)
+        pixels = rgb.copy()
+        pixels[(np.asarray(interval) != 0) & target] = (255, 0, 190)
+        marked = Image.fromarray(pixels)
+        painter = ImageDraw.Draw(marked)
+        painter.line((point[0]-3, point[1], point[0]+3, point[1]), fill="white", width=1)
+        painter.line((point[0], point[1]-3, point[0], point[1]+3), fill="white", width=1)
     masked = rgb.copy()
     masked[target] = (0, 255, 80)
     tiles = [marked, Image.fromarray(masked), Image.fromarray(colour_depth(depth, valid, .04, 2.))]
-    for i, (tile, label) in enumerate(zip(tiles, ("RGB + projected cut", "Exact native visible petiole", "Native camera-Z: yellow near / purple far"))):
+    title = 'RGB + visible cut' if visible else 'RGB at hidden nominal: NOT a visible cut'
+    for i, (tile, label) in enumerate(zip(tiles, (title, "Exact native visible petiole", "Native camera-Z: yellow near / purple far"))):
         draw.text((i*384+6, 440), label, fill="white")
         canvas.paste(tile.crop(box).resize((384, 384), Image.Resampling.NEAREST), (i*384, 454))
-    canvas.save(path)
+    return canvas
+
+
+def review_card(path, metadata, buffers):
+    review_canvas(metadata, buffers).save(path)
 
 
 def audit(run, output, *, stream_cards=False):

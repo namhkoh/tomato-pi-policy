@@ -15,14 +15,16 @@ from PIL import Image
 from .capture_contract import project, transform_points, depth_evidence
 from .cut_regions import _oriented_chain, _sample
 from .dataset_review import read_json, require
+from .query_visibility import POLICY as QUERY_POLICY, QueryVisibility
 
-TASK_ID='greenhouse.target_conditioned_cutpoint_rgb.v2'
+TASK_ID='greenhouse.target_conditioned_cutpoint_rgb.v3'
 CONTRACT={
     'task_id':TASK_ID, 'input':'unaltered_full_robot_head_rgb_plus_visible_petiole_query_pixel',
     'resolution':[848,408], 'coordinates':'continuous_pixels_top_left_edge_origin_x_right_y_down',
     'nominal_arc_m':.01, 'accepted_arc_m':[.01,.02],
     'target_query':'visible_petiole_centerline_at_least_45mm_from_attachment_and_18px_from_nominal',
     'positive_query_association':'same_8_connected_native_visible_petiole_region_as_the_nominal_cut_no_gap_filling',
+    'query_usability':QUERY_POLICY,
     'label_source':'automatic_manifest_geometry_plus_native_instance_and_camera_Z',
     'human_review_claim':'none_unless_separate_explicit_record',
     'release_scope':'synthetic_perception_finetuning_not_agronomic_or_physical_cut_approval',
@@ -113,15 +115,17 @@ def derive_label(directory, metadata, report):
 
     nominal=np.asarray(sup['nominal_projected']['pixel_xy'])
     nominal_visible=sup['visibility_evidence']['nominal']['visible_target_evidence']
-    connectivity=None
+    query_screen=QueryVisibility(np.asarray(Image.open(directory/'inputs/rgb.png')),
+                                components==target['component_index'])
+    connectivity=query_screen.components
     nominal_component=0
     if nominal_visible:
-        from scipy.ndimage import label as connected_components
-        connectivity,_=connected_components(components==target['component_index'],structure=np.ones((3,3),bool))
         nx,ny=np.floor(nominal).astype(int)
         if 0<=nx<848 and 0<=ny<408: nominal_component=int(connectivity[ny,nx])
     query_candidates=[]
     unconnected_visible_candidates=0
+    unusable_visible_candidates=0
+    usability_rejections={}
     if lengths[-1]>=.045:
         for d in np.linspace(.045,min(lengths[-1]*.85,.25),41):
             if d<.045: continue
@@ -134,14 +138,23 @@ def derive_label(directory, metadata, report):
                     if nominal_visible and (not nominal_component or int(connectivity[y,x])!=nominal_component):
                         unconnected_visible_candidates+=1
                         continue
-                    query_candidates.append((p,query))
+                    usability=query_screen.inspect(query)
+                    if not usability['passed']:
+                        unusable_visible_candidates+=1
+                        for reason in usability['reasons']:
+                            usability_rejections[reason]=usability_rejections.get(reason,0)+1
+                        continue
+                    query_candidates.append((p,query,usability))
     base=dict(task_id=TASK_ID,contract_sha256=contract_hash(),eligible=False,human_review_performed=False,
-              target_id=sup['target_id'],source_plant_family=report['plant_id'],label_origin=CONTRACT['label_source'])
+              target_id=sup['target_id'],source_plant_family=report['plant_id'],label_origin=CONTRACT['label_source'],
+              query_usability_rejected_candidates=unusable_visible_candidates,
+              query_usability_rejection_counts=usability_rejections)
     if not query_candidates:
-        return {**base,'reason':'no_visible_query_connected_to_cut' if unconnected_visible_candidates else 'no_unambiguous_visible_distal_query'}
+        return {**base,'reason':'no_usable_visible_query' if unusable_visible_candidates else
+                'no_visible_query_connected_to_cut' if unconnected_visible_candidates else 'no_unambiguous_visible_distal_query'}
     # Vary query distance; do not teach a fixed query-to-cut vector.
     index=int.from_bytes(hashlib.sha256((sup['target_id']+metadata['sample_id']).encode()).digest()[:4],'little')%len(query_candidates)
-    query_evidence,query=query_candidates[index]
+    query_evidence,query,usability=query_candidates[index]
     proximal=[probe(d,{target['component_index']} if d>=.008 else {target['component_index'],parent['component_index']})
               for d in np.linspace(.004,.030,27)]
     unique={}
@@ -160,7 +173,7 @@ def derive_label(directory, metadata, report):
         if len(xx): parent_distance=float(np.min(np.hypot(xx+.5-nominal[0],yy+.5-nominal[1])))
     visibility=sup['visibility_evidence']
     q=metadata['quality']
-    base.update(query_pixel_uv=query,query_evidence=query_evidence,proximal_evidence=proximal,
+    base.update(query_pixel_uv=query,query_evidence=query_evidence,query_usability=usability,proximal_evidence=proximal,
                 query_cut_visible_connection_verified=bool(nominal_visible and nominal_component),
                 query_association_scope='8_connected_native_visible_target_pixels_no_morphological_gap_filling' if nominal_visible else 'hidden_cut_abstention_no_visible_connection_claim',
                 proximal_visible_pixel_fraction=fraction,attachment_parent_visible_pixels=parent_pixels,

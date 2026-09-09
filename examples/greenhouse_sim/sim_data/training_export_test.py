@@ -11,6 +11,7 @@ from sim_data import training_export as export
 from sim_data.dataset_review import SCHEMA
 from sim_data.depth_preview import sha256
 from sim_data.training_contract import CONTRACT, contract_hash
+from sim_data.query_visibility import QueryVisibility
 
 
 def row(family='one',split='train',key='a',status='localized'):
@@ -45,10 +46,12 @@ def source_audit(tmp_path,monkeypatch):
     root=tmp_path/'source'; capture=root/'capture'; sample=capture/'sample_0001'; audit_dir=root/'audit'
     (sample/'inputs').mkdir(parents=True); (sample/'supervision').mkdir(); audit_dir.mkdir()
     rgb=np.full((408,848,3),120,np.uint8)
+    mask=np.zeros((408,848),bool); mask[201:209,424:625]=True
+    rgb[mask]=(50,100,30)
     Image.fromarray(rgb).save(sample/'inputs/rgb.png')
     np.save(sample/'inputs/depth_m.npy',np.full((408,848),1.,np.float32))
     Image.fromarray(np.full((408,848),255,np.uint8)).save(sample/'inputs/depth_valid.png')
-    Image.fromarray(np.full((408,848),255,np.uint8)).save(sample/'supervision/target_visible.png')
+    Image.fromarray(mask.astype(np.uint8)*255).save(sample/'supervision/target_visible.png')
     files={p.relative_to(sample).as_posix():{'sha256':sha256(p)} for p in sample.rglob('*') if p.is_file()}
     metadata=dict(files=files,calibration=dict(clipping_range_m=[.04,10],intrinsics=np.eye(3).tolist(),camera_to_world_usd_row_vectors=np.eye(4).tolist()),robot_snapshot={},
                   supervision=dict(projected_interval=[{'pixel_xy':[434,204]},{'pixel_xy':[444,204]}],interval_world_m=[[0,0,0],[.01,0,0]]))
@@ -67,7 +70,8 @@ def source_audit(tmp_path,monkeypatch):
     result=dict(returncode=0,timed_out=False,audit_sha256=sha256(audit_path),state='audited_prototype_pending_visual_review')
     (root/'result.json').write_text(json.dumps(result))
     label=dict(eligible=True,task_id=CONTRACT['task_id'],contract_sha256=contract_hash(),
-               target_id='one/Petiole',difficulty='easy',query_pixel_uv=[510.,204.],answer=row()['answer'])
+               target_id='one/Petiole',difficulty='easy',query_pixel_uv=[510.,204.],answer=row()['answer'],
+               query_usability=QueryVisibility(rgb,mask).inspect([510.,204.]))
     monkeypatch.setattr(export,'audit_manifest',lambda p:{'fixture':True})
     monkeypatch.setattr(export,'derive_label',lambda *a:deepcopy(label))
     return audit_path,tmp_path/'release'

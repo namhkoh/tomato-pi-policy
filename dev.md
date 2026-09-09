@@ -4,6 +4,10 @@ Goal: an Isaac Sim benchmark for evaluating VLAs on tomato **deleafing** (removi
 orphan/lower leaves from high-wire vines), targeting demo collection → π0.5
 finetuning → deployment on the Rainbow Robotics **RB-Y1** (sim and real).
 
+Current dataset track: `koh-dev/sim-data`, Isaac Sim 6.0.1 at
+`D:\isaac-sim-6.0.1`; static robot-head native RGB-D capture. The legacy runtime
+and branch description below belongs to the earlier physics/RL integration.
+
 Environment: Isaac Sim **5.1.0-rc.19** (Kit 107.3.3, omni.physx 107.3.26, USD 0.24.5)
 at `D:\isaac-sim`, Windows 11. Current integration branch `koh-dev/online-rl`
 (fork of openpi).
@@ -2915,3 +2919,61 @@ One logical change per commit; no AI attribution trailers.
   invocation used a nonexistent test filename and ran zero tests; it was
   corrected to `training_test.py`. These focused suites are not added to the
   historical 472-test total. No capture or training contract code was changed.
+
+#### 2026-09-09: complete wave-2 anatomy audit and v3 quality correction
+
+- Completed actual individual inspection of all 63 wave-2 cards, including all
+  30 hidden-query closeups and the boundary positive. The 33 visible nominal
+  labels are on intended petioles; hidden nominal foregrounds are 16 leaves,
+  9 fruit, 5 main stems. All hidden examples already answered abstain/null.
+  The 57 distinct targets are intact leaf-bearing sub-stems, not fruit trusses.
+  Report: `data/sim_data/dataset_audits/wave2_anatomy_20260909/audit_report.html`,
+  with Markdown, CSV, source-bound diagnostics and per-image visual findings.
+  Source bundle SHA-256:
+  `9ae4b0ceb88486b120d7c5877563f64ff89330acd38264dcf49a0a4d6df914c3`.
+- The reported seed41/SubStem_38 nominal projects behind MainStem_25; its native
+  camera-Z is 0.319352 m vs target centreline Z 0.344622 m. This 25.27 mm Z gap
+  is occlusion evidence, not a blade-clearance measurement. Source mesh checks
+  did not place the nominal/10-20 mm interval inside checked own-plant main
+  stems. These geometric checks are supervision diagnostics, not synthesized
+  depth or robot/blade-safety certification.
+- Found two inadequate old queries: seed71 `603809db886dad985f06` has a two-pixel
+  connected visible island; seed53 `88e335449fb97690a44b` has 49 pixels and poor
+  RGB readability. Earlier representative acceptance was too permissive.
+- Fixed root causes in `dataset_review.py`, `training_release_review.py` and
+  `training_contract.py`: hidden-cut overlays are suppressed; visible interval
+  marks require native evidence and do not fill mask gaps; each training card
+  includes a separate query crop and prominent localization/abstention/exclusion
+  state. New `query_visibility.py` checks native island/local segment support,
+  interior radius, frame margin, local exposure and luminance contrast. It
+  never dilates target connectivity or generates/replaces native depth.
+- Versioned task contract v3 and visual-QA schema v2. Portable export validation
+  independently rechecks query usability. New `training_rescreen.py` validates
+  original audit/card/sample bindings, derives new labels and writes exclusive
+  comparison/card/browser outputs. It cannot migrate prior approvals or silently
+  overwrite existing review decisions. Old portable v1/v2 task releases are
+  historical artifacts and are intentionally not accepted by the v3 loader.
+- Re-screened all 63 prior cards and their 15 audited source batches: 54 survive
+  (32 localized / 22 abstentions), 9 excluded, 45 retained queries changed.
+  Twenty old query points fail the new gate; usable alternatives rescue some.
+  Both original holds and the reported seed41 card are now exporter-excluded;
+  the latter's local target dark fraction is 0.5612, exceeding the 0.5 gate.
+  The 15 source batches contain 488 v3 candidates and 207 exclusions. These
+  numerical thresholds are conservative engineering judgments, not measured
+  human/VLM readability accuracy; do not relax them merely to fill quotas.
+- New evidence browser:
+  `data/sim_data/dataset_reviews/grounding_wave2_rescreen_20260909_v3/index.html`.
+  Personally inspected the three reported/held regenerated cards and four
+  retained easy/medium/hard cards. Recorded only those four retained examples
+  as fresh assistant QA; remaining v3 decisions are pending. No blanket approval,
+  no human/agronomic confirmation, and no claim of a complete training release.
+- Full sim-data tests: **486 passed, 47 subtests passed** (47.72 s). Added
+  regressions for tiny/isolated/thin/dark/low-contrast/edge queries, immutable
+  native observations, hidden overlays, mask gaps, stale approvals, exclusive
+  re-screen outputs and rejected-source handling. Raw package/assets, RGB,
+  native camera-Z, original annotations and old decisions were preserved.
+- Active collection and the user's opened GUI were left running. A separate
+  frozen 29-audit v3 recount is checking completed coverage/scale batches and
+  native depth byte provenance; live unfinished workers are not release data.
+  Fresh all-family v3 QA, sufficient volume/difficulty balance and portable
+  complete-release validation remain before fine-tuning.
