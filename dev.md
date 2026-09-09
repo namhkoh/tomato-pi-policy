@@ -2791,3 +2791,47 @@ One logical change per commit; no AI attribution trailers.
 - Collection continues in the existing four isolated workers; no live robot
   command or GUI reset was used for review/export. The complete 10k/500/500
   dataset and final all-family QA remain unfinished.
+
+#### 2026-09-09 13:03 KST: complete coverage recount and scheduled scale campaign
+
+- Recomputed all 24 successful coverage-job audits under the unchanged v2
+  contract. Result: **834 eligible / 1,103 audited raw frames**: 544 train,
+  141 validation, 149 test. Easy/medium/hard counts are 401/3/140 train,
+  97/3/41 validation, 121/3/25 test. Exclusions: 19 unusable queries,
+  88 disconnected query-to-cut regions, 135 ambiguous junctions, 19 unknown
+  visibility cases, 8 insufficient sampling/exposure cases. These are not
+  automatically visual-review-approved observations.
+- Family coverage now passes 16/4/4; distinct targets pass at 135/30/33;
+  training cut spread passes at 162 occupied bins, with query-copy median
+  error 59.27 px. Volume, localized/occluded counts, medium examples and final
+  visual QA remain open. The immutable count/evidence receipt is
+  `data/sim_data/status/coverage_complete_v2_20260909_1250.json`.
+- Added `sim_data.collection_campaign` to schedule the remaining 22 source
+  families without duplicating the two running training jobs. A new held-out
+  plan uses 64 candidate views/target; training retains 160. Both preserve
+  target cap 16, the original geometry, real torso/head snapshots, seed-0
+  family assignments, and non-overlapping view-offset 8. Partial occlusion is
+  still measured, never fabricated to fill the scarce medium class.
+- Frozen campaign: `data/sim_data/collection_campaigns/grounding_scale_20260909_v1`.
+  Four serial lanes cover 14 remaining training + 4 validation + 4 test
+  families, up to 34,016 additional raw frames before geometry/visibility
+  filtering. This is a maximum, not a promised yield or complete release.
+  Held-out jobs precede training jobs within each lane. Lane 01 waits for
+  seed101/job_001; lane 02 waits for seed11/job_003. Both require a matching
+  clean-exit completion ledger and independently hashed audit before starting.
+- Launched all four lane supervisors. Verified lane 03 starts seed79/job_020
+  and lane 04 starts seed61/job_016; lanes 01/02 remain waiting with no capture
+  folders. Exactly four capture workers were observed including the two
+  existing jobs; GPU use was 20,465/32,607 MiB and free RAM 18.4 GiB at this
+  check. The concurrency guarantee covers this campaign and its named
+  predecessors, not unrelated simulators started externally.
+- Each lane runs one bounded worker at a time, stops on capture/audit failure,
+  refuses duplicate lane launches, and performs no automatic retry or deletion.
+  Before each job it requires 169 GiB free disk for this schedule: a 64 GiB
+  reserve plus four worst-job 12 MiB/sample storage envelopes. Queued jobs do
+  not count as saved, audited or eligible training data.
+- Regression suite passed **472 tests + 47 subtests in 36.15 s** (not additive
+  with the previous 458-test run). New tests cover complete/nonduplicate
+  allocation, split/source/shard mismatches, failed/stale predecessors, bounded
+  short polling, serial execution, duplicate launches, low disk and stop-on-error.
+  No physics, teleop, model training or external inference was performed.

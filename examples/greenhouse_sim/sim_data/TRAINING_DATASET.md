@@ -11,6 +11,12 @@ The current v2 engineering export is
 remain incomplete. Larger workers are collecting separately. The task contract
 is v2; the portable release container schema remains v1. See `dev.md` for evidence.
 
+The subsequent complete 24-family coverage recount found 834 eligible examples
+from 1,103 audited raw frames (544 train / 141 validation / 149 test). Family,
+target-diversity and cut-spread checks pass; volume, medium-class coverage and
+all-family visual QA remain incomplete. The 317-row engineering export above
+is a separately validated subset, not an extra 317 unique training examples.
+
 ## Task
 
 The observation is the unmodified 848x408 RGB image from the RB-Y1 A v1.2
@@ -96,6 +102,31 @@ An exporter may create an explicitly named incomplete engineering package with
 as satisfying the release gates. Old pilot approval flags are never changed.
 
 ## Commands
+
+The active scale campaign is
+`data/sim_data/collection_campaigns/grounding_scale_20260909_v1/campaign.json`.
+It schedules 22 remaining families in four serial lanes; the two existing
+training jobs occupy reserved slots until their successful audits complete.
+Supervisors were launched for all four lanes. **Do not launch these lanes again**:
+their exclusive output directories intentionally reject duplicate starts.
+
+For a *new* campaign, from `examples/greenhouse_sim`, use the same existing
+Isaac Python interpreter for these commands:
+
+```text
+python -m sim_data.collection_campaign create --train-plan TRAIN_PLAN --heldout-plan HELDOUT_PLAN --after-batch EXISTING_TRAIN_BATCH_1 --after-batch EXISTING_TRAIN_BATCH_2 --output NEW_CAMPAIGN
+python -m sim_data.collection_campaign run --campaign NEW_CAMPAIGN/campaign.json --lane lane_01
+```
+
+Launch each of `lane_01` through `lane_04` exactly once in separate processes.
+The first two wait for the named predecessor audits; the other two can start
+immediately. Do not run unrelated capture workers concurrently. Source/split
+checks, a per-job disk reserve, 4-hour worker timeouts and stop-on-error remain
+mandatory. There is no automatic retry, resume-overwrite, deletion or visual
+approval. Lane `request.json` is initial-state provenance, not live status;
+per-job capture/result files show progress, and lane `result.json` is written
+on completion or controlled failure. After a failure, inspect the preserved
+evidence and create a new schedule for genuinely missing views.
 
 Complete releases additionally require explicit visual inspection records:
 two examples per nonempty family/difficulty stratum (or every example if only

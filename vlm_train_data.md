@@ -617,3 +617,19 @@ Implementation, tests, GUI/config assets and this plan are being checkpointed on
 `koh-dev/sim-data`; generated datasets and review evidence remain in ignored
 `data/sim_data/`. Cleanup does not remove that evidence. See `dev.md` for measured
 checks, failed experiments, current limitations and pending release gates.
+
+### 2026-09-09: full coverage recount and scale collection
+
+All 24 source families now have successful coverage audits. The current contract
+accepts 834 of 1,103 raw observations (544 train / 141 validation / 149 test).
+Source-family coverage, target diversity and cut-location spread satisfy the
+first-release checks; volume and partial-occlusion coverage do not. There are
+only three medium examples in each split. No thresholds were relaxed to fill
+this gap, and the complete training dataset has not been released.
+
+The remaining 22 families are scheduled in a bounded four-lane campaign, with
+the two already-running jobs retaining their slots until clean audited exits.
+Training families use up to 160 candidate views per target and held-out families
+64; both use new, non-overlapping viewpoint windows. Native captures, final
+stratified QA and the portable release audit must finish before fine-tuning.
+Operational details and the source-bound count report are documented in `dev.md`.
