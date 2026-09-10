@@ -25,5 +25,7 @@ a { color: #245d41; cursor: pointer; font-size: 12px; } :focus-visible { outline
 #hold { color: #80600b; } #reject { color: #a03628; }
 #notice { margin: 0 auto; padding: 0 24px; max-width: 1850px; color: #235c3c; font-size: 13px; } #notice:not(:empty) { padding-top: 12px; } #notice.error { color: #a32b20; }
 summary { cursor: pointer; font-size: 13px; font-weight: 650; } .panel p { font-size: 12px; line-height: 1.6; }
+.suggestion { border-left: 3px solid #52749b; background: #f1f5fa; padding: 10px; margin: 12px 0; }
+.suggestion select { max-width: 100%; width: 100%; } .suggestion button { margin-top: 8px; }
 @media (max-width: 1000px) { main { grid-template-columns: minmax(0,1fr) 310px; padding: 12px; } select { max-width: 230px; } }
 @media (max-width: 760px) { main { display: block; } aside { position: static; max-height: none; margin-top: 12px; } header { padding: 14px; } h1 { font-size: 22px; } }

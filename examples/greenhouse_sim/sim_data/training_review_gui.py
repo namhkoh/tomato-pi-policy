@@ -1,6 +1,7 @@
 """Local task-v3 card reviewer. No simulator, image generation or model calls.
 
-Only pending task decisions can be written; existing decisions are read-only.
+Human decisions are append-only; legacy assistant decisions can receive a
+separate human follow-up. Suggestions never count as final decisions.
 Negative decisions block the source first, so interrupted saves fail closed.
 Human is a local self-declared reviewer role, not authenticated identity.
 """
@@ -24,10 +25,13 @@ from .depth_preview import sha256
 from .review_gui import make_server
 from .training_contract import contract_hash, validate_answer
 from .training_release_review import CHECKLIST, POLICY, SCHEMA, record
+from .review_suggestions import Suggestions
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_BUNDLE = ROOT/'data/sim_data/dataset_reviews/grounding_all_sources_20260909_v3/bundle.json'
 UI = Path(__file__).with_name('training_review_gui_assets')
+GUI_VERSION = 'assistant_suggestions_and_human_followup.v1'
+DEFAULT_SUGGESTIONS = ROOT/'data/sim_data/dataset_audits/independent_v3_20260909'
 SOURCE_FILES = ('inputs/rgb.png', 'inputs/depth_m.npy', 'inputs/depth_valid.png', 'supervision/target_visible.png')
 
 
@@ -44,7 +48,7 @@ class CheckedImages:
 
 
 class TrainingReviewApp:
-    def __init__(self, bundle_path):
+    def __init__(self, bundle_path, suggestions=None):
         self.bundle_path = Path(bundle_path).resolve()
         self.bundle_hash = sha256(self.bundle_path)
         bundle = read_json(self.bundle_path)
@@ -96,6 +100,9 @@ class TrainingReviewApp:
             self.images.paths[sid, 'card'] = (card, e['card_sha256'])
             self.images.paths[sid, 'rgb'] = (directory/'inputs/rgb.png', e['rgb_sha256'])
             self._check_source(sid)
+        self.suggestions = Suggestions(suggestions, self.bundle_hash, self.entries,
+                                       {sid: s['files'] for sid, s in self.sources.items()})
+        self.suggestions_directory = str(Path(suggestions).resolve()) if suggestions else None
         self._state()
 
     def _check_source(self, sid):
@@ -113,8 +120,11 @@ class TrainingReviewApp:
 
     def _state(self):
         require(sha256(self.bundle_path) == self.bundle_hash, 'Bundle changed; restart reviewer')
+        self.suggestions.check()
         decisions = {}
-        for path in sorted(self.records.glob('*.json')):
+        previous = {}
+        paths = sorted(self.records.glob('*.json')) + sorted((self.bundle_path.parent/'human_decisions').glob('*.json'))
+        for path in paths:
             d = read_json(path); e = d['entry']; sid = e['id']
             require(d['schema_version'] == SCHEMA and d['bundle_sha256'] == self.bundle_hash
                     and e == self.entries.get(sid) and path.name == sid+'.json', 'Stale or unknown saved decision')
@@ -122,18 +132,30 @@ class TrainingReviewApp:
                     and d['inspected'] == CHECKLIST and d['human_confirmation'] is (d['reviewer_role'] == 'human')
                     and d['physical_execution_approved'] is False, 'Invalid saved review scope')
             require(sha256(self.images.paths[sid, 'card'][0]) == e['card_sha256'], 'Saved review card changed')
-            decisions[sid] = d
+            if path.parent.name == 'human_decisions':
+                require(d['reviewer_role'] == 'human' and sid in previous
+                        and d.get('prior_assistant_review_sha256') == sha256(self.records/(sid+'.json')),
+                        'Invalid human follow-up history')
+            if d['reviewer_role'] == 'human':
+                require(sid not in decisions, 'Duplicate human decision')
+                decisions[sid] = d
+            else:
+                previous[sid] = d
         result = []
         for sid, e in self.entries.items():
             active, _ = self._source_history(sid)
             blocks = [r for (sample, _), r in active.items() if sample == self.sources[sid]['sample']['sample_id'] and r['decision'] in ('hold', 'reject')]
             result.append(dict(id=sid, target=e['target_id'], split=e['split'], difficulty=e['difficulty'],
                 query=e['query_pixel_uv'], answer=e['answer'], decision=decisions.get(sid),
+                previous_decision=previous.get(sid), suggestion=self.suggestions.rows.get(sid),
                 source_blocks=[dict(decision=r['decision'], notes=r['notes'], role=r['reviewer_role']) for r in blocks],
                 images={kind:f'/image/{sid}/{kind}' for kind in ('rgb', 'card')}))
-        return dict(bundle_sha256=self.bundle_hash, bundle_path=str(self.bundle_path), samples=result,
+        return dict(gui_version=GUI_VERSION, bundle_sha256=self.bundle_hash, bundle_path=str(self.bundle_path), samples=result,
+                    suggestions_directory=self.suggestions_directory,
                     total=len(result), pending=len(result)-len(decisions), recorded=dict(Counter(d['decision'] for d in decisions.values())),
                     human_recorded=sum(d['reviewer_role']=='human' for d in decisions.values()),
+                    legacy_assistant_recorded=len(previous), suggestions_count=len(self.suggestions.rows),
+                    advisory_holds=sum(s['suggested_decision']=='hold' for s in self.suggestions.rows.values()),
                     records_directory=str(self.records), training_release_approved=False)
 
     def state(self):
@@ -166,7 +188,8 @@ class TrainingReviewApp:
 
     def save(self, payload):
         with self.lock:
-            require(isinstance(payload, dict) and set(payload) == {'sample_id', 'reviewer', 'decision', 'notes', 'inspected', 'bundle_sha256'}, 'Invalid review fields')
+            required = {'sample_id', 'reviewer', 'decision', 'notes', 'inspected', 'bundle_sha256'}
+            require(isinstance(payload, dict) and required <= set(payload) <= required | {'suggestion_context'}, 'Invalid review fields')
             sid, reviewer, decision, notes = (payload[k] for k in ('sample_id', 'reviewer', 'decision', 'notes'))
             require(isinstance(sid, str) and sid in self.entries, 'Unknown sample')
             require(payload['bundle_sha256'] == self.bundle_hash, 'Stale browser bundle')
@@ -175,14 +198,29 @@ class TrainingReviewApp:
             require(isinstance(decision, str) and decision in ('accept', 'hold', 'reject'), 'Invalid decision')
             require(payload['inspected'] is True, 'Confirm actual RGB, query, answer, mask and native-depth inspection')
             self._check_source(sid)
-            require(not (self.records/(sid+'.json')).exists(), 'Already recorded; existing decisions are read-only. Refresh the page.')
+            state = self._state()
+            current = next(s for s in state['samples'] if s['id'] == sid)
+            require(current['decision'] is None, 'Already recorded; human decisions are read-only. Refresh the page.')
+            suggestion = self.suggestions.rows.get(sid)
+            context = payload.get('suggestion_context')
+            if suggestion is not None:
+                require(isinstance(context, dict) and set(context) == {'sha256', 'response'}
+                        and context['sha256'] == suggestion['sha256']
+                        and context['response'] in ('independent', 'agree', 'disagree'), 'Choose how your decision relates to the current suggestion')
+                require(context['response'] != 'agree' or decision == suggestion['suggested_decision'], 'Decision does not agree with suggestion')
+                require(context['response'] != 'disagree' or decision != suggestion['suggested_decision'], 'Decision does not differ from suggestion')
+            else:
+                require(context is None, 'No current suggestion for this card')
+            prior = current['previous_decision']
+            require(decision != 'accept' or not prior or prior['decision'] == 'accept', 'Acceptance cannot clear an earlier task hold')
             active, _ = self._source_history(sid)
             blocked = any(r['decision'] in ('hold','reject') for (sample,_),r in active.items() if sample == self.sources[sid]['sample']['sample_id'])
             require(decision != 'accept' or not blocked, 'Source is held/rejected; acceptance cannot clear it')
             source_record = None
             if decision in ('hold', 'reject'):
                 source_record = self._block_source(sid, reviewer.strip(), decision, notes.strip())
-            path = record(self.bundle_path, [sid], notes.strip(), decision=decision, role='human', reviewer=reviewer.strip(), inspected=True)[0]
+            path = record(self.bundle_path, [sid], notes.strip(), decision=decision, role='human', reviewer=reviewer.strip(), inspected=True,
+                          human_followup=prior is not None, suggestion_context=context)[0]
             return dict(saved=read_json(path), source_block_path=str(source_record) if source_record else None, state=self._state())
 
 
@@ -191,14 +229,25 @@ def main(argv=None):
     p.add_argument('--bundle', type=Path, default=DEFAULT_BUNDLE)
     p.add_argument('--port', type=int, default=8880)
     p.add_argument('--open', action='store_true')
+    p.add_argument('--suggestions', type=Path, help='Hash-bound independent assessment directory')
+    p.add_argument('--no-suggestions', action='store_true', help='Explicitly review without advisory suggestions')
     a = p.parse_args(argv); url = f'http://127.0.0.1:{a.port}'
+    require(not (a.suggestions and a.no_suggestions), 'Choose suggestions or no-suggestions')
+    suggestions = a.suggestions
+    if not a.no_suggestions and suggestions is None and a.bundle.resolve() == DEFAULT_BUNDLE.resolve() and DEFAULT_SUGGESTIONS.exists():
+        suggestions = DEFAULT_SUGGESTIONS
     if a.open and a.port:
+        existing = None
         try:
             with urlopen(url+'/api/state', timeout=2) as response: existing = json.load(response)
-            if existing.get('bundle_sha256') == sha256(a.bundle) and Path(existing.get('bundle_path','')).resolve() == a.bundle.resolve():
+            if (existing.get('gui_version') == GUI_VERSION and existing.get('bundle_sha256') == sha256(a.bundle)
+                    and Path(existing.get('bundle_path','')).resolve() == a.bundle.resolve()
+                    and existing.get('suggestions_directory') == (str(suggestions.resolve()) if suggestions else None)):
                 webbrowser.open(url); print('Opened existing task-v3 reviewer: '+url, flush=True); return
         except (OSError, ValueError, AttributeError): pass
-    app = TrainingReviewApp(a.bundle)
+        if existing is not None:
+            p.error(f'Port {a.port} already serves a different/older reviewer. Leave ongoing reviews intact; choose --port 8881 (or another free port).')
+    app = TrainingReviewApp(a.bundle, suggestions=suggestions)
     with make_server(app, a.port, ui=UI) as server:
         url = f'http://127.0.0.1:{server.server_port}'
         print(f'Task-v3 reviewer ready: {url} | {app.state()["pending"]} pending | no simulator/GPU', flush=True)

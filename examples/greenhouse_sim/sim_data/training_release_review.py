@@ -111,7 +111,8 @@ def prepare(audits,output):
     return result
 
 
-def record(bundle_path,ids,notes,*,decision='accept',role='assistant',reviewer='Codex',inspected=False):
+def record(bundle_path,ids,notes,*,decision='accept',role='assistant',reviewer='Codex',inspected=False,
+           human_followup=False, suggestion_context=None):
     bundle_path=Path(bundle_path).resolve(); bundle=read_json(bundle_path)
     require(bundle.get('schema_version')==SCHEMA and bundle['policy']==POLICY,'Invalid visual bundle')
     require(inspected and isinstance(notes,str) and len(notes.strip())>=20,'Actual inspection and substantive notes required')
@@ -119,18 +120,31 @@ def record(bundle_path,ids,notes,*,decision='accept',role='assistant',reviewer='
     require(bool(reviewer.strip()) and ids and len(ids)==len(set(ids)),'Reviewer and unique IDs required')
     entries={e['id']:e for e in bundle['entries']}
     require(set(ids)<=set(entries),'Unknown reviewed ID')
-    folder=bundle_path.parent/'decisions'; folder.mkdir(exist_ok=True)
+    require(not human_followup or role == 'human', 'Only a human may add a final follow-up')
+    require(suggestion_context is None or (role == 'human' and len(ids) == 1), 'Suggestion context requires a single human review')
+    folder=bundle_path.parent/('human_decisions' if human_followup else 'decisions'); folder.mkdir(exist_ok=True)
     paths=[]
     for sid in ids:
         e=entries[sid]
         require(sha256(safe_file(bundle_path.parent,e['card']))==e['card_sha256'],'Changed visual card')
         path=folder/(sid+'.json')
         require(not path.exists(),'Never overwrite or silently supersede a visual decision')
+        prior = None
+        if human_followup:
+            prior_path = bundle_path.parent/'decisions'/(sid+'.json')
+            prior = read_json(prior_path)
+            require(prior['reviewer_role'] == 'assistant' and prior['entry'] == e
+                    and prior['bundle_sha256'] == sha256(bundle_path), 'Follow-up needs a bound assistant review')
+            require(decision != 'accept' or prior['decision'] == 'accept', 'Acceptance cannot clear an earlier task hold')
         row=dict(schema_version=SCHEMA,review_id=uuid.uuid4().hex,bundle_sha256=sha256(bundle_path),
                  created_utc=datetime.now(timezone.utc).isoformat(),entry=e,reviewer_role=role,reviewer=reviewer,
                  decision=decision,notes=notes,inspected=CHECKLIST,
                  human_confirmation=role=='human',physical_execution_approved=False,
                  identity_authentication='local_self_declared_role_not_authenticated')
+        if prior is not None:
+            row['prior_assistant_review_sha256'] = sha256(prior_path)
+        if suggestion_context is not None:
+            row['suggestion_context'] = suggestion_context
         write_json(path,row); paths.append(path)
     return paths
 
@@ -172,9 +186,17 @@ def verify_reviews(bundles,rows,*,require_complete=True):
         require(bundle['schema_version']==SCHEMA and bundle['policy']==POLICY,'Invalid visual review bundle')
         entries={e['id']:e for e in bundle['entries']}
         sources[str(path)]=h
-        for p in sorted((path.parent/'decisions').glob('*.json')):
+        decision_paths = sorted((path.parent/'decisions').glob('*.json'))
+        decision_paths += sorted((path.parent/'human_decisions').glob('*.json'))
+        for p in decision_paths:
             row=read_json(p); sid=row['entry']['id']
             require(row['schema_version']==SCHEMA and row['bundle_sha256']==h and row['entry']==entries.get(sid),'Changed or stale visual decision')
+            require(p.name == sid+'.json', 'Misnamed visual review')
+            if p.parent.name == 'human_decisions':
+                prior_path = path.parent/'decisions'/p.name
+                prior = read_json(prior_path)
+                require(row['reviewer_role'] == 'human' and prior['reviewer_role'] == 'assistant'
+                        and row.get('prior_assistant_review_sha256') == sha256(prior_path), 'Stale human follow-up')
             require(row['review_id'] not in seen_reviews,'Duplicate visual review record')
             seen_reviews.add(row['review_id'])
             e=row['entry']; card=safe_file(path.parent,e['card'])

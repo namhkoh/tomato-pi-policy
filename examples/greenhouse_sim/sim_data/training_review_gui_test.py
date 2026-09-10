@@ -60,8 +60,9 @@ def payload(app, **kwargs):
 
 def test_load_readonly_pending_and_original_bytes(app, v3_bundle):
     before = sorted(app.records.glob('*.json'))
-    s = app.state(); assert s['pending'] == 2 and s['human_recorded'] == 0
-    assert s['samples'][2]['decision']['reviewer_role'] == 'assistant'
+    s = app.state(); assert s['pending'] == 3 and s['human_recorded'] == 0
+    assert s['samples'][2]['decision'] is None
+    assert s['samples'][2]['previous_decision']['reviewer_role'] == 'assistant'
     assert app.images['one_1','rgb'] == app.images.paths['one_1','rgb'][0].read_bytes()
     assert sorted(app.records.glob('*.json')) == before
     assert not (v3_bundle.parent.parent/'audit/records').exists()
@@ -71,7 +72,7 @@ def test_save_persists_human_role_and_restart_resumes(app, v3_bundle):
     r = app.save(payload(app)); assert r['saved']['reviewer_role'] == 'human'
     assert r['saved']['human_confirmation'] and not r['saved']['physical_execution_approved']
     assert not r['state']['training_release_approved'] and r['source_block_path'] is None
-    assert TrainingReviewApp(v3_bundle).state()['pending'] == 1
+    assert TrainingReviewApp(v3_bundle).state()['pending'] == 2
     with pytest.raises(ValueError, match='Already recorded'): app.save(payload(app))
 
 
@@ -110,11 +111,17 @@ def test_hidden_correct_abstention_can_be_accepted_despite_pilot_clear_gate(app)
 def test_invalid_or_stale_writes_refused(app, change):
     p = payload(app); p.update(change)
     with pytest.raises(ValueError): app.save(p)
-    assert app.state()['pending'] == 2
+    assert app.state()['pending'] == 3
 
 
 def test_existing_assistant_record_cannot_be_replaced(app):
     p = payload(app); p['sample_id'] = 'one_3'
+    before = sha256(app.records/'one_3.json')
+    result = app.save(p)
+    assert sha256(app.records/'one_3.json') == before
+    assert result['saved']['prior_assistant_review_sha256'] == before
+    assert result['saved']['reviewer_role'] == 'human'
+    assert (app.bundle_path.parent/'human_decisions/one_3.json').is_file()
     with pytest.raises(ValueError, match='Already recorded'): app.save(p)
 
 
@@ -151,7 +158,7 @@ def test_http_ui_and_explicit_save_security(server, app):
 def test_reopening_existing_gui_does_not_make_reviews(server, app, monkeypatch):
     opened = []; monkeypatch.setattr('sim_data.training_review_gui.webbrowser.open', opened.append)
     main(['--bundle', str(app.bundle_path), '--port', str(server.server_port), '--open'])
-    assert opened == [f'http://127.0.0.1:{server.server_port}'] and app.state()['pending'] == 2
+    assert opened == [f'http://127.0.0.1:{server.server_port}'] and app.state()['pending'] == 3
 
 
 def test_client_requires_both_views_and_no_bulk_save():

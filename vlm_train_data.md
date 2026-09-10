@@ -4,6 +4,65 @@ Date: 2026-09-06
 
 Branch: `koh-dev/sim-data`
 
+## Current increment: reviewable active perception (2026-09-10)
+
+Goal remains a robot-view VLM that can localize an observable petiole cut,
+recognize insufficient evidence/invalid targets, and eventually request a
+validated reveal action before bimanual grasp–cut–deposit execution.
+
+The latest static pilot has **28 task examples**: eight visible cuts, eight
+occluded cuts, eight invalid candidates and four leaf-covered uncertain regions.
+These reuse native head-camera frames (848x408 RGB plus original Isaac depth),
+not fresh captures or executed action sequences. Unknown regions intentionally
+do not assert hidden target presence or absence. The older 24-example pilot is
+retained. Current path: `data/sim_data/dataset_reviews/active_perception_20260910_v3/`.
+
+The v4 reviewer at <http://127.0.0.1:8882> now supports native RGB/mask/depth tabs,
+optional query/region markers, explicit per-label human review, separate
+assistant records and immutable evidence bindings. Existing v3 reviews remain
+separate at port 8881. `run_active_perception_review.cmd` reopens this new GUI.
+Saved Isaac optical-Z is coloured only for display; no replacement depth is
+estimated. SVG markers are explicitly hidden on depth images with legends.
+
+A guarded exporter can package only explicitly human-accepted, unheld v4 rows
+as a **reviewed perception subset**. It preserves family splits, copies original
+RGB/depth bytes and keeps privileged XYZ/native metadata out of model messages.
+It does not certify the full release, train a model, or create motion labels.
+No real v4 training package or dynamic episode has been released here.
+
+Next: complete new-label QA; capture genuinely assessed no-target regions;
+expand and balance native task classes; validate and export the static release.
+Then integrate actual native timestamp/frame synchronization and collect
+collision-checked viewpoint/left-arm reveal successes, failures and recovery.
+See [the v4 guide](examples/greenhouse_sim/sim_data/ACTIVE_PERCEPTION.md).
+
+The checkpoint notes below are retained chronologically; they are not a claim
+that every earlier pending item is still missing after this increment.
+
+User direction (2026-09-10): broadly agrees with the assistant's assessment and
+will follow its recommendations. Use it as the working review baseline while
+preserving explicit individual decisions and unresolved flags. This endorsement
+does not assert per-image human inspection, clear source holds, approve the entire
+training release, or transfer approval onto the new v4 task. Eighteen individual
+human decisions were present at this follow-up; earlier counts below describe
+the prior implementation checkpoint. The statement is logged separately in
+`data/sim_data/dataset_audits/independent_v3_20260909/endorsements/`.
+
+Latest implementation (2026-09-10): the review GUI now loads separate assistant
+suggestions and supports append-only human follow-ups to legacy assistant
+decisions. Fourteen existing human decisions were preserved; 79 advisory findings
+(72 support / 7 holds) are available. See the updated
+[GUI guide](examples/greenhouse_sim/sim_data/TRAINING_REVIEW_GUI.md).
+
+An adjacent task-v4 observability contract and bounded static pilot are implemented:
+eight matched visible/occluded target pairs plus eight native-identity invalid-organ
+queries, all pending new-task human review. Task-v3 labels/hash are unchanged.
+No-target-in-region is distinct from hidden/unknown/invalid/execution-blocked.
+The pilot contains **zero dynamic episodes**, no copied approvals and no synthesized
+depth. Full no-target collection, moving-camera synchronization, physical reveal
+trajectories and v4 review/export remain next steps. See
+[active-perception scope and commands](examples/greenhouse_sim/sim_data/ACTIVE_PERCEPTION.md).
+
 Current checkpoint (2026-09-09, post-anatomy audit): the 63-image wave-2 audit is
 complete. Task v3 now gates query legibility and suppresses hidden-cut overlays;
 54/63 sources remain candidates and 9 are excluded. Fresh v3 visual review and
@@ -306,15 +365,16 @@ Cosmos-generated imagery is appearance-augmented synthetic data, not real-world 
 
 ### 7.3 Negative examples
 
-Start with approximately 20% negatives, adjusting after pilot review. Include:
+Use an initial approximately 20% no-cut/inspect mixture only as a pilot sampling
+hypothesis, not an optimal class ratio. Preserve distinct labels rather than
+putting all non-cut outcomes into a single negative class:
 
-- Already-cut stubs.
-- No eligible target.
-- Ambiguous target selection.
-- Fully hidden attachments.
-- Fruit-truss or main-stem distractors.
-- No safe grasp or blade approach.
-- Targets outside the available observation.
+- Invalid candidate: already-cut stub, main stem, fruit or protected fruit truss.
+- No eligible target in an explicitly bounded, fully observed region.
+- Unknown eligibility / ambiguous target selection: inspect, not assert absence.
+- Occluded attachment: valid hidden geometry is evaluator-only; reveal or inspect.
+- Valid anatomy but blocked grasp/blade approach: execution constraint, not invalid anatomy.
+- Target outside the supplied observation: obtain another view, not a global no-target claim.
 
 A model that always returns a cutting point must score poorly.
 

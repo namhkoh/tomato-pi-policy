@@ -12,7 +12,7 @@
   <p id="notice" role="status" aria-live="polite"></p>
   <main>
     <section class="viewer">
-      <nav><label>Show <select id="filter"><option value="pending">Pending only</option><option value="all">All cards</option><option value="recorded">Already recorded (read-only)</option></select></label>
+      <nav><label>Show <select id="filter"><option value="pending">Awaiting human review</option><option value="holds">Assistant holds to inspect</option><option value="all">All cards</option><option value="recorded">Human-reviewed (read-only)</option></select></label>
         <label class="sample-select">Image <select id="sample"></select></label>
         <button id="prev">← Previous</button><button id="next">Next →</button><button id="refresh">Refresh</button></nav>
       <div class="tabs"><button data-view="rgb">1 · Original RGB</button><button data-view="card">2 · Annotated evidence</button>
@@ -26,6 +26,13 @@
       <section class="panel"><small>YOUR DECISION</small><h2 id="target">—</h2><p id="sample-id" class="path"></p>
         <p id="saved-status" class="badge"></p><p id="task"></p><pre id="answer"></pre>
         <p id="warning" class="warning" hidden></p>
+        <section id="suggestion-panel" class="suggestion" hidden>
+          <p id="suggestion-title"></p>
+          <small>First inspect original RGB independently. Advice does not alter the label or approve this sample.</small>
+          <details id="suggestion-details"><summary>Show assistant reasoning</summary><p id="suggestion-notes"></p><small id="suggestion-source"></small></details>
+          <button id="copy-suggestion" type="button" disabled>Copy suggestion into editable note</button>
+          <label>Your assessment of this suggestion<select id="suggestion-response"><option value="">Choose after inspection…</option><option value="independent">Independent decision</option><option value="agree">Agree with suggested decision</option><option value="disagree">Disagree with suggested decision</option></select></label>
+        </section>
         <label>Your name<input id="reviewer" maxlength="120" autocomplete="name" placeholder="Enter once"></label>
         <label>What did you observe? <small>Required · at least 20 characters</small><textarea id="notes" rows="3" maxlength="4000" placeholder="Petiole and cut are distinct; or explain the ambiguity/error…"></textarea></label>
         <label class="check"><input id="inspected" type="checkbox"> I inspected both views, the query and answer, and native mask/depth evidence.</label>
@@ -33,13 +40,13 @@
         <div class="actions"><button id="accept" data-decision="accept" disabled>✓ Accept label</button>
           <button id="hold" data-decision="hold" disabled>? Hold / uncertain</button>
           <button id="reject" data-decision="reject" disabled>× Reject label</button></div>
-        <small>Each decision saves immediately and advances. Saved decisions are read-only; ask for explicit reconciliation if you made a mistake.</small>
+        <small>Each decision saves immediately. Human decisions are read-only. Earlier assistant records are preserved; your final pass is saved separately. Editing a note does not change cut coordinates: Hold incorrect labels for correction.</small>
       </section>
       <details class="panel" open><summary>How to judge</summary><p>Is the cyan query on a distinguishable petiole in RGB? For a visible cut, do white/magenta marks follow that petiole—not fruit or the main stem?</p>
         <p>For a hidden cut, a foreground leaf or tomato is expected: accept only if the target query remains identifiable and the answer abstains with a null cut point.</p>
         <p>Hold anything too dark, blurry or ambiguous. Native identity alone does not establish RGB readability. Accepting a label does not certify physical cut safety or approve the whole dataset.</p></details>
       <details class="panel"><summary>Saved evidence &amp; progress</summary><p id="records" class="path"></p><p id="prior-notes"></p>
-        <p>Existing assistant decisions remain assistant decisions. New clicks are attributed to your locally entered name, not an authenticated account. Hold/Reject also blocks the source frame from export.</p></details>
+        <p>Existing assistant decisions remain assistant decisions. Suggestions never count as human approvals. New clicks are attributed to your locally entered name, not an authenticated account. Hold/Reject also blocks the source frame from export; Accept cannot clear earlier source or task holds.</p></details>
     </aside>
   </main>
 </body></html>

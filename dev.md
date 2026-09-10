@@ -8,6 +8,113 @@ Current dataset track: `koh-dev/sim-data`, Isaac Sim 6.0.1 at
 `D:\isaac-sim-6.0.1`; static robot-head native RGB-D capture. The legacy runtime
 and branch description below belongs to the earlier physics/RL integration.
 
+## VLM source checkpoint before simulator integration, 2026-09-10
+
+- Checkpoint the pending VLM work on `koh-dev/sim-data` before creating
+  `koh-dev/sim-vlm` from that commit: task-v3 advisory review/human follow-ups,
+  task-v4 static active-perception contract, pilot, reviewer and subset exporter,
+  launchers, browser checks, regression tests and documentation.
+- Fresh verification: Isaac Sim 6.0.1 Python ran
+  `-B -m pytest sim_data -q -p no:cacheprovider` from
+  `examples/greenhouse_sim`: **591 tests and 47 subtests passed** (65.02 s).
+  Node syntax checks passed for both reviewer clients and both browser-smoke
+  scripts; changed Python files parsed successfully. This checkpoint did not
+  rerun a live browser or launch Isaac Kit.
+- Preserve existing source images, native depth, frozen splits, review decisions
+  and generated evidence outside the source commit. No collection, training,
+  model inference or changes to existing running jobs were performed.
+- Physics restoration remains future work on the new branch; this checkpoint
+  adds no dynamic episodes or claim of validated grasping/cutting. The revised
+  research objective is automatically generated manipulation experience without
+  teleoperated demonstrations, with VLM strategy proposals checked by geometry
+  and feedback controllers. Historical teleoperation/RL notes remain below.
+
+## Active-perception review/export increment, 2026-09-10
+
+- Continued the dataset track on `koh-dev/sim-data`; no physical robot, Kit
+  scene, original RGB/depth, or task-v3 label/contract changes in this increment.
+- Prepared `data/sim_data/dataset_reviews/active_perception_20260910_v3/`:
+  **28 review-only task examples** = 8 visible + 8 occluded + 8 invalid-organ
+  queries + 4 new leaf-covered uncertain regions, on reused native frames from
+  8 source families. These are not 28 fresh independent captures. The new
+  regions use exact native leaf identities and valid depth; they are unknown,
+  not fabricated no-target cases. True bounded absence needs new scene evidence.
+- Added the separate task-v4 GUI and `run_active_perception_review.cmd` on port
+  8882. It displays original 848x408 head RGB, native identity and coloured saved
+  Isaac optical-Z; preserves source holds; and binds append-only assistant and
+  human records separately to the exact pilot/example. No v3 decision is edited.
+- Added a reviewed-subset exporter: explicit human acceptance required; source
+  holds/unreviewed cases excluded; exact native RGB/depth copies, source-family
+  splits, and private-truth separation checked. Chat messages are RGB-only;
+  calibration/depth/evaluator truth stay in sidecars. It is not a full release,
+  trainer integration or a motion dataset. No actual v4 training export yet.
+- Browser verification exposed an SVG bug: assigning an HTML-style `hidden`
+  property did not hide SVG markers. Fixed with an actual attribute toggle and
+  added computed-style assertions. This prevents misleading query overlays on
+  depth images with legends. An earlier transient image-load timeout did not
+  reproduce in the subsequent full pass; the underlying endpoint returned 200.
+- Current work still needs new-task visual review, true scoped no-target
+  captures, broader balanced collection and release QA. Physical occlusion
+  handling additionally requires verified native dynamic frame/time capture,
+  executed viewpoint/left-arm reveal and recovery, and grasp-to-cut transitions.
+  There are **zero collected dynamic episodes** in this pilot.
+- Usage and safeguards: `examples/greenhouse_sim/sim_data/ACTIVE_PERCEPTION.md`.
+
+## Dataset review suggestions and active-perception prototype, 2026-09-10
+
+- Subsequent user feedback: "I had a look at your assessment and they largely
+  look good. So I will follow yours." Recorded as broad endorsement of using the
+  assistant assessment as the working baseline, not fabricated per-image human
+  inspection. At this check, 18 human decisions were saved. Of the seven advisory
+  flags, one had a human acceptance, four had human holds, and two remained
+  unreviewed. Existing individual decisions were preserved; no reviews, source
+  gates or GUI counts were changed by this acknowledgment. Unresolved flags and
+  current export gates remain in effect. The original assessment remains
+  assistant-authored; neither the whole release nor new v4 labels are approved.
+  Provenance: `data/sim_data/dataset_audits/independent_v3_20260909/endorsements/user_follow_assessment_20260910.json`.
+- Implemented hash-bound, read-only assistant suggestions in the task-v3 GUI:
+  79 prior findings (72 support, seven advisory holds), evidence-first inspection,
+  optional editable note copying, explicit independent/agree/disagree selection,
+  and an advisory-holds filter. Suggestions never create approvals or source holds.
+- Preserved all 14 existing human reviews and all 29 legacy assistant records.
+  The 29 assistant-reviewed cards can now receive a separate human final pass in
+  `human_decisions/`, bound to the unchanged prior record. Pending now means
+  awaiting a human decision (94/108 at verification), not absence of any review.
+  Export verification includes both histories and fails on human holds/rejections.
+- Original RGB/depth/labels/assets are unchanged. Saved human decisions remain
+  read-only. Real source/task holds cannot be cleared by accepting advice.
+  Updated reviewer runs on `http://127.0.0.1:8881`; the existing 8880 process was
+  not interrupted. Command: `examples\greenhouse_sim\run_training_review.cmd --port 8881`.
+- Added separate `greenhouse.active_perception.rgb.v4` prototype contract/prompt
+  and validators for observable eligibility, hidden/unknown targets, explicit
+  invalid candidates, scoped no-target and measured execution constraints.
+  Task-v3 contract hash remains unchanged. Hidden XYZ stays evaluator-only;
+  non-localization cutting points are null, and no output authorizes a knife motion.
+- Added bounded, reproducible static pilot preparation with immutable native
+  source bindings, family-preserving splits, same-anatomy visible/hidden contrasts,
+  native-supported invalid-organ queries, conservative hold filtering and explicit
+  human resolution of current advice. No approvals are copied to new v4 tasks.
+- Latest pilot: `data/sim_data/dataset_reviews/active_perception_20260910_v2/`:
+  8 visible + 8 occluded + 8 invalid-candidate draft examples across 8 families;
+  the negatives are five main stems and three fruits. All remain review-only,
+  with zero dynamic episodes. v1 retained as an earlier all-main-stem pilot.
+- Browser checks exercised the live GUI without real-data review writes and
+  loaded the pilot's original images. The assistant visually inspected all eight
+  v2 invalid-candidate screenshots; this is advisory, not human or physical approval.
+- Verification: full `pytest sim_data -q` passed **559 tests plus 47 subtests**
+  (43.75 s); JavaScript syntax and live browser checks passed with zero review
+  writes. All 253 pilot source/advice/history bindings were rechecked unchanged.
+  Browser evidence: `data/sim_data/review_gui/suggestions_20260910_v1/browser_final/`.
+- Remaining: v4 human review/export, true bounded no-target/unknown examples,
+  native frame/time synchronized dynamic recording, collision-checked viewpoint
+  movement, physically validated left-arm reveal/recovery and transition to target
+  grasp, then coordinated cutting. Frozen view pairs are not action demonstrations.
+  See `examples/greenhouse_sim/sim_data/ACTIVE_PERCEPTION.md` and
+  `vlm_train_data.md` for scope.
+
+The legacy simulator/RL status below is historical and is not a claim that these
+physical capabilities have been integrated into the current dataset preview.
+
 Environment: Isaac Sim **5.1.0-rc.19** (Kit 107.3.3, omni.physx 107.3.26, USD 0.24.5)
 at `D:\isaac-sim`, Windows 11. Current integration branch `koh-dev/online-rl`
 (fork of openpi).

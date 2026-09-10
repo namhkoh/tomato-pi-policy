@@ -1,0 +1,21 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="review-token" content="__CSRF__"><title>Greenhouse active-perception review · v4</title>
+<link rel="stylesheet" href="/ui/style.css"><script src="/ui/app.js" defer></script></head><body>
+<header><h1>Active-perception review <small>Task v4 · static observations, not robot actions</small></h1><p id="progress">Loading native evidence…</p></header>
+<p id="notice" role="status" aria-live="polite"></p>
+<main><section class="viewer">
+<nav><label>Show<select id="filter"><option value="pending">Awaiting human review</option><option value="all">All examples</option><option value="visible">Visible cuts</option><option value="occluded">Occluded cuts</option><option value="invalid_candidate">Invalid candidates</option><option value="uncertain_region">Insufficient evidence</option></select></label>
+<label class="wide">Example<select id="sample"></select></label><button id="prev">Previous</button><button id="next">Next</button><button id="refresh">Refresh</button></nav>
+<p id="instruction"></p><div class="tabs"><button data-view="rgb">1 · Original RGB</button><button data-view="mask">2 · Native identity</button><button data-view="depth">3 · Native depth</button></div>
+<label class="inline"><input id="markers" type="checkbox">Show review-only query/region and visible cut</label>
+<div class="frame"><img id="evidence" alt="Native robot-head evidence"><svg id="overlay" viewBox="0 0 848 408" aria-label="Review-only scope markers"></svg></div>
+<p id="caption"></p><p class="legend">Cyan circle: candidate query, not cut. Cyan box: region to inspect, not a target box.<br>White cross: proposed visible cut only. Green: native target/foreground identity.<br>Depth: yellow near, purple far; grey checkerboard invalid. Colours display saved Isaac optical-Z, never estimated depth.</p></section>
+<aside><h2 id="kind"></h2><p id="identity"></p><p id="saved-status"></p><p id="warning" hidden></p>
+<h3>Proposed answer</h3><pre id="answer"></pre><details><summary>How to judge this case</summary><p>Visible: trace the petiole and attachment; ensure the cut is on that petiole. Occluded: require a null cut and inspection, not a guessed hidden coordinate. Invalid: the indicated organ is not an eligible petiole. Insufficient evidence: a leaf-covered region is not proof of absence; the answer must remain unknown.</p></details>
+<details id="advice-panel" hidden><summary>Assistant assessment (not your approval)</summary><p id="advice"></p></details>
+<label>Your name<input id="reviewer" maxlength="120" autocomplete="name"></label>
+<label>Your observation<textarea id="notes" rows="4" maxlength="4000" placeholder="At least 20 characters; explain agreement or the label problem."></textarea></label>
+<label class="inline"><input id="inspected" type="checkbox">I inspected RGB, scope, answer, native identity and depth.</label>
+<p id="help"></p><div class="actions"><button id="accept" data-decision="accept" disabled>Accept this label</button><button id="hold" data-decision="hold" disabled>Hold / uncertain</button><button id="reject" data-decision="reject" disabled>Reject this label</button></div>
+<p>Each click saves one human decision. Existing records are read-only. This does not approve knife execution or the full training release. Describe corrections in a Hold note; this page does not move geometric labels.</p><p id="records"></p></aside></main>
+</body></html>
