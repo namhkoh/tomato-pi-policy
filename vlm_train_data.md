@@ -868,3 +868,25 @@ family reservations remain. The new 84-row engineering export validates
 portably but is **not a complete training release**. It has no medium examples
 and does not replace the historical 14,235-candidate broader dataset recount.
 No new qualified dynamic episodes or trained action policy are claimed.
+
+Continuation: `grounding_sunday_20260911_v4` completed 106 additional native
+captures (35 validation / 71 test), both clean worker exits and independent
+audits. Current task labeling retains 79; 27 are excluded. Eight representative
+cards were individually inspected as assistant QA. There are no medium samples
+in this batch, so it does not close held-out medium coverage.
+
+The combined increment preview is now
+`data/sim_data/training_exports/grounding_sunday_20260911_engineering_v2`:
+**163 rows** (11 train / 60 validation / 92 test), **25 representative reviews**,
+from 204 raw captures. Portable RGB/native-depth validation passed without Isaac;
+the normal training loader rejects its explicit incomplete-release status.
+This is not the final H200 transfer archive and must not replace the broader
+corpus. The historical global recount still requires deduplicated reconciliation.
+
+Additionally, 22 previously unreviewed broader cards were actually inspected and
+accepted with individual notes. The 108-card broader queue now has 58 accepts,
+8 holds, 3 rejects and 39 pending. Existing decisions are preserved. Continue
+stratified QA and targeted native partial-occlusion capture; the recent random
+view increments have not yielded medium examples. Do not relax their definition
+or collection/release gates to meet a deadline. No training, remote server
+access, hardware action or new dynamic training episode was started.

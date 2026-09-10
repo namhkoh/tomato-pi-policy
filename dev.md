@@ -3912,3 +3912,44 @@ Continuation:
   independent audits and new visual QA must be checked after both workers exit;
   no approval or successful collection is implied by launch. Frozen splits,
   existing decisions and native depth provenance remain unchanged.
+
+### 2026-09-11: collection completion and handoff-preview validation
+
+Physics checkpoint committed as `d98b82e`; no successful cut is claimed.
+Bounded offline yaw 50/55-degree variants at the previously held grasp arc
+still fail right transit; yaw 65 is rejected for a torso/plant spawn overlap.
+No unsafe configuration was executed or collision margin relaxed.
+
+- `collection_batches/grounding_sunday_20260911_v4` completed serial jobs004
+  and009 with durable exit code zero, unchanged source bindings and independent
+  audits. Validation seed13: 35 raw in 348.72 s, 31 eligible (28 easy / 3 hard).
+  Test seed31: 71 raw in 526.37 s, 48 eligible (45 easy / 3 hard). Total
+  **106 raw / 79 eligible / 27 excluded**, zero medium. Logs and failed
+  label reasons are preserved. This is static task-v3 data, not task-v4 action
+  experience despite the batch version suffix.
+- Actually inspected all eight representative cards in new
+  `dataset_reviews/grounding_sunday_20260911_v5` (four localized, four occluded)
+  using full head RGB and both cut/query RGB, native-mask and native-depth
+  crops. Recorded individual assistant accepts with limitations, not human
+  confirmation, anatomical-fracture validation or tool-safety approval.
+- Also individually inspected and recorded **22** previously unreviewed cards
+  in `grounding_all_sources_20260909_v3` across seed19/23/41/43/47/53/67.
+  Broader queue now: **58 accept / 8 hold / 3 reject / 39 unreviewed** out of
+  108. Old decisions and human history are untouched. These are representative
+  inspections, not a measured dataset-wide accuracy estimate.
+- Built NEW `training_exports/grounding_sunday_20260911_engineering_v2` from
+  the seven completed jobs across three recent batches. **163 deduplicated
+  rows / 204 raw**: train11 (9 easy / 2 hard), validation60 (56 easy / 4 hard),
+  test92 (83 easy / 9 hard). Includes 25 hash-bound representative QA records.
+  Prior preview is retained. No addition to the historical 14,235-candidate
+  global total is claimed without a fresh global deduplicated recount.
+- Ordinary `egodelta_robot` Python validates every portable RGB/depth,
+  validity, label, chat and hash with explicit engineering mode. The normal
+  `GroundingDataset` correctly rejects this preview with `Incomplete release`.
+  No model weights/processor, training process, server connection or hardware
+  command was launched. H200 transfer follows a future complete release only.
+- All native workers from this increment have exited; no collection/training
+  or physics worker is left running. Existing unrelated review servers remain.
+  Next data work is targeted medium-visibility acquisition plus remaining
+  stratified QA and global reconciliation, not blind relabeling of easy/hard
+  frames. Updated `H200_HANDOFF.md` and `vlm_train_data.md` accordingly.

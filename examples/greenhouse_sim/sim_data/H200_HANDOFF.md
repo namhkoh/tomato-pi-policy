@@ -51,6 +51,24 @@ do not add this increment to that number without a new deduplicated recount.
 Complete broader QA and held-out medium coverage remain pending. There are no
 qualified dynamic grasp-cut training episodes in this increment.
 
+Subsequent bounded batch `grounding_sunday_20260911_v4` completed both native
+workers cleanly: 106 raw / 79 task-eligible (validation 28 easy + 3 hard; test
+45 easy + 3 hard). Twenty-seven are excluded, not reclassified. Eight new
+representative cards were actually inspected and accepted as assistant QA in
+`dataset_reviews/grounding_sunday_20260911_v5`. No medium examples were produced.
+
+Latest **engineering preview**, not the transfer-ready release:
+`data/sim_data/training_exports/grounding_sunday_20260911_engineering_v2`.
+This combines seven completed jobs from three batches: 204 raw / 163 portable
+deduplicated rows (11 train, 60 validation, 92 test), 25 bound representative
+reviews, original RGB and byte-preserved native depth. Validation passed under
+ordinary non-Isaac Python with explicit incomplete mode. The normal training
+loader correctly rejects it as incomplete. The old preview remains unchanged.
+These increment counts are not a fresh global recount or a substitute for the
+broader training corpus. Broader QA gained 22 individually inspected assistant
+accepts; its 108-card queue now has 58 accepts, 8 holds, 3 rejects, 39 pending.
+No prior/human decisions, release gates or family assignments were changed.
+
 ## Adapter implemented; real-model validation pending
 
 `sim_data/qwen_adapter.py` shares RGB/prompt conversion for supervised encoding
