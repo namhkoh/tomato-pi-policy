@@ -69,3 +69,25 @@ def test_original_knife_and_blade_release_preserve_source(native):
     assert not UsdPhysics.Joint.Get(stage,rig.cut_joint_path).GetJointEnabledAttr().Get()
     rig.restore_authored_state()
     assert stage.GetRootLayer().ExportToString()==original
+
+
+def test_bimanual_replan_cannot_skip_self_screen(monkeypatch):
+    from sim_physics.bimanual import BimanualRobot
+    from sim_physics.full_robot import FullRobotGripper
+    robot=object.__new__(BimanualRobot)
+    robot.self_screen=object();robot.right=np.zeros(7)
+    monkeypatch.setattr(FullRobotGripper,'plan_approach',lambda self:setattr(self,'path_q',np.zeros((3,7))))
+    monkeypatch.setattr(robot,'check_self',lambda *args:dict(passed=False,minimum_clearance_m=-.01))
+    with pytest.raises(RuntimeError,match='path index 0'): robot.plan_approach()
+
+
+def test_known_bad_torso_station_rejected_before_native_physics(native):
+    from pxr import Gf,UsdGeom
+    from sim_physics.plant import build
+    from sim_physics.bimanual import BimanualRobot
+    stage,record=native;stage.SetEditTarget(stage.GetSessionLayer())
+    UsdGeom.Xformable(stage.GetPrimAtPath('/World/Plant')).AddTranslateOp().Set(Gf.Vec3d(-.005,0,.9))
+    rig=build(stage,record,'SubStem_41')
+    with pytest.raises(RuntimeError,match='Pregrasp self-collision screen'):
+        BimanualRobot(stage,rig,sparse_contacts=True,approach_tilt=10,grasp_roll=180,
+            station_offset=(.16,.22),torso_degrees=[0,0,0,0,0,20],ground_height=lambda x,y:.101)

@@ -44,6 +44,57 @@ def test_capture_can_be_disabled_without_disabling_rendering():
     assert args.render_hz==30 and not args.capture_milestones
 
 
+@pytest.mark.parametrize('offset',[['nan','0'],['.31','0'],['.25','.25']])
+def test_station_offset_fails_before_kit(tmp_path,offset):
+    from sim_physics.benchmark import main
+    with pytest.raises(ValueError,match='Station offset requires'):
+        main(['--output',str(tmp_path/'unused'),'--full-robot-probe','--station-offset',*offset])
+    assert not (tmp_path/'unused').exists()
+
+
+def test_station_offset_requires_full_robot(tmp_path):
+    from sim_physics.benchmark import main,parser
+    with pytest.raises(ValueError,match='Station offset requires'):
+        main(['--output',str(tmp_path/'unused'),'--station-offset','.2','.2'])
+    assert parser().parse_args(['--output','unused']).station_offset is None
+
+
+@pytest.mark.parametrize('option,value',[
+    ('--torso-yaw','nan'),('--torso-yaw','46'),('--torso-yaw','20'),
+    ('--approach-distance','nan'),('--approach-distance','.009'),
+    ('--approach-distance','.081'),('--approach-distance','.02'),('--grasp-roll','180')])
+def test_initial_pose_options_fail_closed_without_qualified_full_robot(tmp_path,option,value):
+    from sim_physics.benchmark import main
+    with pytest.raises(ValueError): main(['--output',str(tmp_path/'unused'),option,value])
+    assert not (tmp_path/'unused').exists()
+
+
+def test_default_initial_pose_is_preserved():
+    from sim_physics.benchmark import parser
+    args=parser().parse_args(['--output','unused'])
+    assert args.grasp_roll==args.torso_yaw==0 and args.approach_distance==.08
+
+
+def test_shorter_approach_does_not_move_base_or_grasp_and_roll_preserves_geometry(native):
+    from pxr import Gf,UsdGeom
+    from sim_physics.plant import build
+    from sim_physics.full_robot import FullRobotGripper
+    stage,record=native
+    stage.SetEditTarget(stage.GetSessionLayer())
+    UsdGeom.Xformable(stage.GetPrimAtPath('/World/Plant')).AddTranslateOp().Set(Gf.Vec3d(0,0,.9))
+    rig=build(stage,record,'SubStem_41')
+    kwargs=dict(approach_tilt=10,torso_degrees=[0]*6,ground_height=lambda x,y:.101)
+    first=FullRobotGripper(stage,rig,**kwargs)
+    first_base=first.base.copy();first_goal=first.goal.copy()
+    stage.RemovePrim(first.root)
+    second=FullRobotGripper(stage,rig,approach_distance=.02,grasp_roll=180,**kwargs)
+    np.testing.assert_allclose(first_base,second.base,atol=1e-9)
+    np.testing.assert_allclose(first_goal[:3,3],second.goal[:3,3],atol=1e-9)
+    np.testing.assert_allclose(first_goal[:3,2],second.goal[:3,2],atol=1e-9)
+    np.testing.assert_allclose(first_goal[:3,:2],-second.goal[:3,:2],atol=1e-9)
+    assert np.linalg.norm(second.start[:3,3]-second.goal[:3,3])==pytest.approx(.02)
+
+
 def test_cutting_cannot_silently_run_without_native_contact_and_gripper_guards(tmp_path):
     from sim_physics.benchmark import main
     with pytest.raises(ValueError,match='Bimanual cutting requires'):

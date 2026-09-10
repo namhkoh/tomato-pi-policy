@@ -3743,3 +3743,71 @@ split, review decision, approved release, or hardware state was changed.
   edits only restrict candidate support orientation to the upward side and
   remove unused imports. No collection/physics worker from this turn remains
   running. All data/review releases and training jobs are unchanged.
+
+### Guarded bimanual planning and portable Qwen preparation (2026-09-11)
+
+Started clean on `koh-dev/sim-vlm` at `985791f`. User requests continued guarded
+grasp/cut work, native data collection and a clean committed worktree. User will
+transfer the finished dataset to H200 servers before training. No training,
+hardware commands, source-asset edits, split changes or human review edits.
+
+- Added bounded initial station offset, equivalent gripper roll, fixed torso
+  yaw and 10-80 mm pregrasp distance options. Original defaults stay unchanged;
+  shortening approach does not silently reposition the base. These are initial
+  test-station choices, not mobile-base/torso trajectories or qualified poses.
+- Refined startup capsule/triangle screening with exact finite segment/triangle
+  distance. Enclosing-box empty corners no longer falsely imply capsule contact;
+  true intersections, convex solid containment and unsupported-shape fallbacks
+  remain. Native contacts are never disabled to make the knife reachable.
+- Added cached actual-capsule robot self screening, including arm-versus-torso,
+  before native initialization and on initial/gravity-settled left paths and
+  right candidate paths. Existing joint/mount filters are read, not expanded.
+  Full robot coverage is 17 capsules / 118 eligible pairs; 16 non-capsule tool,
+  gripper, camera and chassis shapes remain explicitly unsupported by this
+  particular screen. It does not certify full tooling or whole-scene paths.
+- Cut-plan diagnostics now record endpoint IK errors/evaluation counts,
+  clearance rejection and failed paths, instead of an uninformative empty list.
+  An experimental collision-penalty IK residual did not find a valid solution
+  and was removed; no unused new optimization API is shipped.
+- Preserved failed native runs: `data/sim_physics/bimanual_cut_20260911_05`
+  rejects shifted-base robot/plant overlap at startup. `_06` clears the plant
+  screen but native guard stops a folded left arm intersecting torso_5 on the
+  first step. No grasp/cut occurs in either. The new self screen rejects the
+  exact `_06` pose before physics, covered by a regression test.
+- Offline diagnostics find torso-clear short-pregrasp configurations, including
+  forward/left offset (0.06,0.24) m, torso yaw 20 degrees, roll 180 degrees.
+  Twelve right endpoints solve IK and three clear endpoint screens, but all
+  three straight joint-space approaches cross the left arm. Endpoint reach is
+  not a collision-free trajectory. This configuration is not native-qualified;
+  no successful full grasp-cut-retain/deposit sequence is claimed.
+- Completed new serial native collection `grounding_sunday_20260911_v3`, plan
+  with 2 targets / 16 views / offset 208, frozen family reservations unchanged:
+  job004 seed13 validation 18 raw (205.52 s), job009 seed31 test 32 raw
+  (298.38 s). Both durable worker exits are zero and independent audits complete.
+  Forty task-v3 eligible rows (16 validation easy, 22 test easy / 2 test hard).
+  The other 10 are excluded, not relabeled. No medium examples in this batch.
+- Together with `grounding_sunday_small_20260910_v2`, 98 raw / 84 eligible:
+  train11 (9 easy / 2 hard), validation29 (28 easy / 1 hard), test44 (38 easy /
+  6 hard). New hash-bound review bundles `grounding_sunday_20260911_v3` and `_v4`
+  contain 17 individually viewed assistant accept decisions (10 visible,
+  7 occluded). The folder suffix is a review wave, not a task-v4 dynamic dataset.
+  Human decisions and prior assistant holds/rejects remain untouched.
+- New `training_exports/grounding_sunday_20260911_engineering` has 84 portable
+  rows, original RGB and byte-preserved native Isaac Replicator optical-Z,
+  validity/calibration/evaluator sidecars, frozen chats and review/hash receipts.
+  Validated using ordinary non-Isaac Python with explicit incomplete mode. It
+  deliberately remains `incomplete_engineering_export_do_not_claim_release`.
+  Do not add its counts to the historical global recount without deduplication.
+- Added `sim_data/qwen_adapter.py`: exact system/user/assistant preservation,
+  original 848x408 RGB only, shared prompt conversion, verified generation-prefix
+  loss masking, no truncation and no incomplete-release training override.
+  Tests use a fake processor with Torch, not loaded Qwen weights/tokenizer.
+  Actual model forward/backward, LoRA/distributed trainer and H200 performance
+  remain untested; no inference-to-motion bridge is claimed. See new
+  `sim_data/H200_HANDOFF.md` for user-transfer sequence and acceptance gates.
+- Heavy Isaac jobs were serialized due Windows commit pressure; no collections
+  or native physics trials from this increment are left running. Existing review
+  servers are untouched. New data/logs remain ignored runtime artifacts, while
+  source/tests/documentation are committed as a verified engineering checkpoint.
+- Regression: **764 tests + 47 subtests passed (60.19 s)**. This validates code
+  contracts/offline geometry, not physical cut reliability or Qwen performance.

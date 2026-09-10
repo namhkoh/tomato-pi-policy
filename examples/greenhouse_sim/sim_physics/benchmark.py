@@ -8,6 +8,7 @@ from dataclasses import asdict
 from datetime import datetime,timezone
 import hashlib
 import json
+import math
 from pathlib import Path
 import time
 import traceback
@@ -43,6 +44,14 @@ def parser():
     p.add_argument('--sparse-contacts',action='store_true',help='Native event accounting including all greenhouse/neighbor contacts')
     p.add_argument('--finger-gravity',action='store_true',help='Compensate native finger weight inside the original 0.5 N total effort budget')
     p.add_argument('--approach-tilt',type=float,default=0.,help='Bounded diagnostic wrist tilt around the shaft, in degrees')
+    p.add_argument('--station-offset',type=float,nargs=2,metavar=('FORWARD_M','LEFT_M'),
+        help='Initial fixed-base station offset only (norm <=0.3 m); never moves a running robot')
+    p.add_argument('--grasp-roll',type=int,choices=(0,180),default=0,
+        help='Initial equivalent finger orientation about palm approach axis; native grasp must be requalified')
+    p.add_argument('--torso-yaw',type=float,default=0.,
+        help='Fixed initial torso_5 yaw in package robot tests, bounded to +/-45 degrees')
+    p.add_argument('--approach-distance',type=float,default=.08,
+        help='Initial palm approach distance 0.01..0.08 m; leaves the selected fixed base unchanged')
     p.add_argument('--profile',action='store_true',help='Save diagnostic Python/native call timing alongside the non-training report')
     p.add_argument('--step-profile',action='store_true',help='Time the installed physics-only step phases without bypassing physics manager events')
     p.add_argument('--no-physics-profiler',action='store_true',help='Disable optional native profiling instrumentation in this process only')
@@ -57,6 +66,18 @@ def parser():
 
 def main(argv=None):
     args=parser().parse_args(argv)
+    if args.station_offset is not None and (not args.full_robot_probe
+            or not all(math.isfinite(x) for x in args.station_offset)
+            or math.hypot(*args.station_offset)>.3):
+        raise ValueError('Station offset requires a full robot and finite norm <=0.3 m')
+    if args.grasp_roll and not args.full_robot_probe:
+        raise ValueError('Grasp roll requires a full robot')
+    if not math.isfinite(args.approach_distance) or not .01<=args.approach_distance<=.08 or (
+            args.approach_distance!=.08 and not args.full_robot_probe):
+        raise ValueError('Approach distance requires a full robot and finite 10..80 mm')
+    if not math.isfinite(args.torso_yaw) or abs(args.torso_yaw)>45 or (
+            args.torso_yaw and not (args.full_robot_probe and args.scene=='package')):
+        raise ValueError('Torso yaw requires a package full robot and finite +/-45 degrees')
     if args.bimanual_cut and (not args.full_robot_probe or not args.sparse_contacts or not args.finger_gravity or args.seconds<20):
         raise ValueError('Bimanual cutting requires full robot, sparse contacts, finger gravity and >=20 seconds')
     if args.robot_interactive and (not args.full_robot_probe or not args.gui or not args.render_hz):
@@ -131,7 +152,9 @@ def main(argv=None):
         source_hashes={manifest:hashlib.sha256(manifest.read_bytes()).hexdigest()}
         for component in audit['components'].values():
             path=manifest.parent/component['file'];source_hashes[path]=component['asset_sha256']
-        robot_options=dict(sparse_contacts=args.sparse_contacts,finger_gravity=args.finger_gravity,approach_tilt=args.approach_tilt)
+        robot_options=dict(sparse_contacts=args.sparse_contacts,finger_gravity=args.finger_gravity,
+            approach_tilt=args.approach_tilt,grasp_roll=args.grasp_roll,approach_distance=args.approach_distance)
+        if args.station_offset is not None: robot_options['station_offset']=args.station_offset
         if args.scene=='package' and args.full_robot_probe:
             from .greenhouse_scene import prepare
             from sim_data.floor_alignment import PACKAGE_FLOOR
@@ -142,7 +165,7 @@ def main(argv=None):
             stage=context.get_stage();stage.SetEditTarget(stage.GetSessionLayer())
             record,height,scene_report=prepare(stage,DEFAULT_PACK,args.plant,sparse_backdrop=not args.context_gutters)
             report['greenhouse']=scene_report
-            robot_options.update(ground_height=height,torso_degrees=[0.]*6,floor_root=PACKAGE_FLOOR)
+            robot_options.update(ground_height=height,torso_degrees=[0.,0.,0.,0.,0.,args.torso_yaw],floor_root=PACKAGE_FLOOR)
         elif args.scene=='package':
             from launch_sim_data import load_local_payloads,populate
             from sim_data.robot_preview import add_robot_preview,select_camera

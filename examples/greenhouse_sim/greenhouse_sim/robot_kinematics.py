@@ -1575,6 +1575,7 @@ class Rby1Kinematics:
             orientation_error_rad=orientation_error,
             cost=float(result.cost),
             succeeded=bool(result.success and position_error < 5e-4 and orientation_error < 5e-3),
+            evaluations=int(result.nfev),
         )
 
     def solve_position(

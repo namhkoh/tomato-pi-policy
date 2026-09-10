@@ -853,3 +853,18 @@ See `examples/greenhouse_sim/sim_data/TRAINING_REVIEW_GUI.md`. Full tests:
 516 passed plus 47 subtests; actual browser rendering verified without saving
 any automatic human reviews. This UI does not grant whole-release or cut-safety
 approval and does not replace the remaining dataset collection/QA/export work.
+
+### 2026-09-11: portable Qwen handoff increment
+
+The user will transfer the completed release to H200 servers before training.
+No local/server training was launched. See
+`examples/greenhouse_sim/sim_data/H200_HANDOFF.md` for the exact task, portable
+file layout, validation command, model adapter and remaining acceptance gates.
+
+Two additional bounded batches contain 98 raw captures / 84 eligible v3 rows
+(11 train, 29 validation, 44 test), with 17 actual assistant visual QA accepts.
+Depth is unchanged native Isaac optical-Z; all original review decisions and
+family reservations remain. The new 84-row engineering export validates
+portably but is **not a complete training release**. It has no medium examples
+and does not replace the historical 14,235-candidate broader dataset recount.
+No new qualified dynamic episodes or trained action policy are claimed.

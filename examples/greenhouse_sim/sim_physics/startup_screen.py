@@ -10,6 +10,7 @@ import numpy as np
 def screen(stage,robot):
     from pxr import Usd,UsdGeom,UsdPhysics
     from sim_data.capture_viewpoints import triangles_intersect_box
+    from .capsule_surface import world_capsule,segment_triangles_distance
     cache=UsdGeom.BBoxCache(Usd.TimeCode.Default(),['default','render','guide','proxy'],False,True)
     transforms=UsdGeom.XformCache()
     robots=[];obstacles=[];hits=[];tested=0
@@ -59,6 +60,12 @@ def screen(stage,robot):
                     local=triangles[near]@inv[:3,:3].T+inv[:3,3]
                     bounds=cache.ComputeUntransformedBound(rp).ComputeAlignedRange()
                     overlap=triangles_intersect_box(local,np.asarray(bounds.GetMin()),np.asarray(bounds.GetMax()))
+                    capsule=world_capsule(rp,np.asarray(transforms.GetLocalToWorldTransform(rp)).T)
+                    if overlap and capsule is not None:
+                        start,end,radius=capsule
+                        # Retain 1 mm conservatism beyond the actual capsule;
+                        # this clears empty box corners, not physical contacts.
+                        overlap=segment_triangles_distance(start,end,triangles[near])<=radius+.001
                 if hull_equations is not None:
                     # Surface-only tests must not clear a robot box fully
                     # enclosed in a solid convex leaf collision shape.
@@ -67,5 +74,5 @@ def screen(stage,robot):
             if overlap: hits.append(dict(robot_collider=rpath,scene_collider=path))
     return dict(passed=not hits,possible_overlap_count=len(hits),possible_overlaps=hits[:30],
         robot_collision_shapes=len(robots),scene_collision_shapes=len(obstacles),tested_broad_pairs=tested,
-        method='collision_boxes_with_static_triangle_surface_refinement',
+        method='collision_boxes_with_triangle_and_uniform_capsule_surface_refinement',
         whole_path_certified=False,self_collision_certified=False)

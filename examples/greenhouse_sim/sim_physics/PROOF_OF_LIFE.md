@@ -13,6 +13,12 @@ These are pending visual review, not additional approved/exported task-v3
 records. The larger first batch failed system-memory allocation at 114 captures
 and remains `failed_do_not_train`. No tuning or dynamic collection was started.
 
+Later September 11 update supersedes the pending-review status above: 17 new
+representative assistant reviews cover that batch and a second 50-frame batch.
+The two batches yield an 84-row **incomplete engineering** portable export.
+See `../sim_data/H200_HANDOFF.md`. The user will transfer the completed dataset
+to H200 before training; no local training/server access is needed now.
+
 An opt-in bimanual native-contact/seam-release harness now exists, including a
 session-only correction for the backward knife. The corrected-knife greenhouse
 run reaches left grasp but rejects the right cutting approach. Thus the core

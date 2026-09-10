@@ -23,7 +23,7 @@ def finger_force_budget(gravity):
 
 class FullRobotGripper(GripperFixture):
     def __init__(self,stage,rig,*,arc=.08,friction=.5,ground_height=None,
-                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2)):
+                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08):
         from pxr import Gf,Sdf,Usd,UsdGeom,UsdPhysics,UsdShade
         from greenhouse_sim.robot_model import DEFAULT_ASSET,DEFAULT_URDF
         from greenhouse_sim.robot_kinematics import Rby1Kinematics,base_transform
@@ -61,14 +61,23 @@ class FullRobotGripper(GripperFixture):
         angle=np.radians(approach_tilt)
         z=np.cos(angle)*z+np.sin(angle)*np.cross(y,z)
         self.goal=np.eye(4);self.goal[:3,:3]=np.column_stack([np.cross(y,z),y,z])
+        if grasp_roll not in (0,180): raise ValueError('Grasp roll must be 0 or 180 degrees')
+        self.grasp_roll=grasp_roll
+        if grasp_roll==180: self.goal[:3,:2]*=-1
         self.goal[:3,3]=point+.1025*z
-        self.start=self.goal.copy();self.start[:3,3]+=.08*self.goal[:3,2]
+        if not np.isfinite(approach_distance) or not .01<=approach_distance<=.08:
+            raise ValueError('Initial approach distance must be 10..80 mm')
+        self.approach_distance=float(approach_distance)
+        self.start=self.goal.copy();self.start[:3,3]+=self.approach_distance*self.goal[:3,2]
         # Approach from the open side. The +Y station overlapped the fixed
         # upper canopy with the torso; never disable those plant contacts.
         yaw=float(np.degrees(np.arctan2(-z[1],-z[0])))
         angle=np.radians(yaw);forward=np.array([np.cos(angle),np.sin(angle),0.])
         left=np.array([-np.sin(angle),np.cos(angle),0.])
-        self.base=base_transform(self.start[:3,3]-.4*forward-.22*left,yaw);self.base[2,3]=.001
+        # Keep station selection independent of the approach length. Shortening
+        # the approach must not silently move the entire robot toward the plant.
+        station_reference=self.goal[:3,3]+.08*self.goal[:3,2]
+        self.base=base_transform(station_reference-.4*forward-.22*left,yaw);self.base[2,3]=.001
         self.station_offset=np.asarray(station_offset,dtype=float)
         if self.station_offset.shape!=(2,) or not np.isfinite(self.station_offset).all() or np.linalg.norm(self.station_offset)>.3:
             raise ValueError('Initial station adjustment must be finite and within 0.3 m')
@@ -205,6 +214,8 @@ class FullRobotGripper(GripperFixture):
             finger_gravity_compensation=self.finger_gravity,total_finger_effort_limit_n=.5,
             torso_degrees=self.kin.default_torso_degrees().tolist(),floor_root=self.floor_root,
             approach_tilt_degrees=self.approach_tilt,
+            grasp_roll_degrees=self.grasp_roll,
+            approach_distance_m=self.approach_distance,
             approach_side=self.approach_side,
             minimum_planned_interarm_capsule_clearance_m=self.minimum_interarm,
             right_arm='parked_with_original_fitted_knife_not_cutting',
