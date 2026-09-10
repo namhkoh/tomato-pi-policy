@@ -12,6 +12,7 @@ from collections.abc import Callable
 import numpy as np
 
 from greenhouse_sim import rl_env
+from greenhouse_sim.physics_clock import advance_one_physics_step
 
 
 _LEFT_JAW_CENTRE_M = np.asarray([0.0, 0.0, -0.1025], dtype=np.float64)
@@ -23,9 +24,7 @@ def _advance_one_physics_step(context, *, render: bool) -> None:
     which is four physics samples at this scene's 60/240 Hz timing.
     """
 
-    context.step(render=False)
-    if render:
-        context.render()
+    advance_one_physics_step(context, render=render)
 
 
 

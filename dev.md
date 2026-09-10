@@ -3246,3 +3246,228 @@ One logical change per commit; no AI attribution trailers.
 - Instructions: `examples/greenhouse_sim/sim_data/TRAINING_REVIEW_GUI.md`.
   GUI decisions are per-label review only; the full dataset and physical cut
   safety are not approved. Future source holds require a fresh candidate recount.
+
+#### 2026-09-10: VLM checkpoint and opt-in current-package physics
+
+- Committed VLM/active-perception tooling on `koh-dev/sim-data` as
+  `68f35001fbcbad07b6bb800592300150ff53ea95`, then created `koh-dev/sim-vlm`.
+  No push or dataset/review/split mutation.
+- Read-only recount across 55 completed grounding audits: 19,932 raw frames,
+  14,235 current-contract candidates (11,627 train / 1,317 validation / 1,291
+  test). These are static candidates, not individually approved dynamic
+  demonstrations. Numerical release gates still fail validation medium 7/20
+  and test medium 17/20; visual review and portable release remain incomplete.
+- Current 108-card v3 human review: 18 decisions (8 accept / 7 hold / 3 reject).
+  The v4 pilot has 28 static contrasts (8 visible / 8 occluded / 8 invalid /
+  4 uncertain), zero human v4 decisions and zero dynamic episodes. No new
+  collection, training, inference or physical-robot command was started.
+- Added opt-in `examples/greenhouse_sim/sim_physics`: native-source petiole
+  adapter, exact 10 mm separable seam, beam joints, area-integrated leaf
+  inertia, batched PhysX state/contact access, shared physics/render clock
+  and bounded qualification/reset harness. Original art, source layers and
+  all dataset observations remain unchanged.
+- Found duplicate active colliders behind hidden replaced plant meshes.
+  Disable only replaced source contacts; retain neighboring plant collisions.
+  Axis-aligned elementary joint probes match analytical deflection, but
+  the full loaded chain is NOT qualified. Failure artifacts are preserved
+  under `data/sim_physics`; no robot grasp/cut/retention success is claimed.
+- Prevent SimulationContext from overriding requested solver/gravity settings.
+  Earlier `_11`/`_12` comparisons are invalid; new runs check effective
+  configuration. Isaac 6 tensor views reuse its explicitly attached stage.
+- Metric depth remains original Replicator `distance_to_image_plane` float32
+  camera-Z metres; color heatmaps are display-only. Dynamic native frame
+  synchronization remains a separate required gate.
+- Regression checkpoint: 611 tests and 47 subtests passed before leaf-inertia
+  additions; latest focused mechanics/USD/clock tests: 22 passed.
+  See `examples/greenhouse_sim/sim_physics/README.md` for commands and limits.
+  Physics work remains experimental and uncommitted.
+
+#### 2026-09-10: continued loaded-petiole qualification and dataset clarification
+
+- Clarified the eligible v3 training pool: 11,627 static training candidates,
+  comprising 9,156 localized (9,044 easy / 112 medium) and 2,471 occluded
+  abstention examples. Validation/test are separate; these counts are not a
+  final approved release. The task is RGB plus candidate-pixel instruction
+  to cut-point UV / visibility / inspect-or-change-viewpoint JSON, not
+  executable XYZ, robot trajectories, or dynamic action-outcome supervision.
+  Native camera-Z stays a sidecar, not an inferred replacement.
+- Retained additional failed physical probes. Increasing full-chain frequency
+  to 1920 Hz (_15) still yielded 515 mm deflection; regular D6 constraints
+  (_16) yielded 480 mm. An explicitly world-fixed articulation (_17) still
+  exceeded the velocity gate. The main simulator has NOT been switched to
+  this experimental adapter.
+- Added attached-only diagnostic scope and a fixed-base comparison. It
+  explicitly rejects seam release because that mode requires a validated,
+  state-preserving topology transition. Tests verify the world anchor,
+  unchanged source/session behavior for rejected modes, and no output/Kit
+  startup when the fixed-base release request is invalid.
+- The two-body joint reproduction exposes orientation/inertia-sensitive
+  errors with no plant collisions. An angular-position-only pass was too
+  weak: joint_probe_20260910_12.json shows a fixed-base angle error of
+  0.000083 rad but residual joint velocity RMS of 0.263 rad/s. Added the
+  final-half-second RMS velocity gate; these cases correctly remain failed.
+  Root authoring alone is not a complete fix; cause is not yet fully isolated.
+- The attempted GPU joint probe (_11) was overridden to CPU by context
+  initialization, as its effective-scene record shows. It is NOT a GPU
+  comparison. New probes reject requested/effective mismatch after reset.
+- All diagnostic trials are non-training and kept under data/sim_physics.
+  No new collection, inference, training, review edits, split changes,
+  hardware commands, main-UI restart, or commit occurred in this continuation.
+- Final regression run: 617 tests and 47 subtests passed (66.80 s), covering
+  sim_data, sim_physics and explicit-clock/legacy-tick tests. This is code
+  regression evidence, not a pass of the failed loaded-plant physics gates.
+
+#### 2026-09-10: bounded original-petiole mechanics pass; robot task still gated
+
+- Added opt-in coupled implicit elastic efforts using the native articulation
+  mass matrix, original SI masses/inertias and authored stiffness/damping.
+  Native drives are disabled only in this experimental mode. Native PhysX still
+  integrates motion; no artificial mass floor, pose teleport or root spring
+  force is used. Known force projection verifies COM Jacobians against native
+  gravity compensation. Unknown contact loads remain explicitly unqualified.
+- `data/sim_physics/qualification_20260910_28/report.json` passes bounded
+  gravity/20 mN force response, attachment, diagnostic release and reset gates
+  on the original SubStem_41 geometry. Measured pulse tip change: 21.75 mm;
+  recovery residual: 1.08 mm. Reset restores controller parameters and exactly
+  reproduces the first 0.5 s tip trace. Diagnostic joint release/free fall is
+  NOT tissue cutting, robot grasping, retention or deposit. Training stays false.
+- Fixed-root 240/480 Hz comparisons (_21/_22) give 38.86 mm steady sag and
+  pulse changes of 21.65/21.99 mm. Mesh refinement (_21/_26/_27, segment limits
+  25/12.5/6.25 mm) gives sag 38.86/40.83/41.90 mm but pulse response
+  21.65/24.10/26.86 mm: transient/damping convergence is NOT yet established.
+  Material constants remain engineering priors, not measured tomato tissue.
+- Added process-local physics-thread selection and opt-in Fabric transport.
+  Paired _24/_25 trajectories have identical SHA256; headless tick wall time
+  improves from 5.63 to 3.85 s for 6 simulated seconds. Latest _28 takes 3.82 s
+  (~1.57x real time). This is an isolated single-petiole CPU result, not a
+  rendered full-greenhouse performance claim. Native sensor sync is unverified.
+- Regression before the final reset-replay addition: 629 tests and 47 subtests
+  passed (54.57 s); _28 subsequently passes the actual native reset/replay gate.
+  Failed native-drive probes remain preserved. README includes the explicit
+  working experimental command and all scope limitations.
+- Still on koh-dev/sim-vlm at base 68f3500, physics edits uncommitted. Main UI,
+  dataset/review/splits and hardware were not changed; no collection/training
+  started. Next gates: mesh/damping consistency, contact/grasp/slip validation,
+  contact-verified cutting, retention/deposit, dynamic native RGB-D and then
+  integrated greenhouse performance. Do not yet promote this as robot-ready.
+
+#### 2026-09-10: visible original-petiole physics demo launched on request
+
+- Added opt-in `run_physics_demo.cmd` / `sim_physics.demo` using the same native
+  adapter and coupled elastic efforts, not a visual animation. Keeps a visible
+  Isaac Sim window open with run-pull/recover, pause/resume, diagnostic seam
+  release, reset/reattach, target close-up and whole-plant view controls. UI
+  commands execute only at controller boundaries; reset rebuilds tensor views.
+- Launched the isolated source plant with one dynamic petiole. The rest remains
+  fixed; the main greenhouse/static collector was not replaced. Repeat uses
+  bounded six-second trials with explicit reset; diagnostic release stops after
+  0.3 s of free fall. Contact/velocity/support/deflection guards pause on failure.
+- Inspected native `settled.png` and `pulled.png` under
+  `data/sim_physics/demo_20260910_01`: the textured stem and original leaf meshes
+  visibly follow the native motion. Initial/settled/pulled/recovered captures
+  show zero body-pose advancement during render-only capture waits. These are
+  diagnostic viewport views, not robot-camera or training observations.
+- The visible process completed repeated pull/recovery and a diagnostic release
+  with no recorded fault. Measured rendered tick real-time factor was ~0.62-0.68
+  in initial cycles, before deliberate pacing/capture waits. This is slower than
+  the headless qualification; no real-time full-scene claim is made.
+- Focused mechanics, demo argument/force, clock and legacy-tick regression:
+  52 passed (10.73 s); git diff whitespace check clean. No collection, training,
+  physical-robot commands, dataset/review changes or commit. Existing review
+  services were left running. Physics is still experimental and uncommitted.
+
+#### 2026-09-10: actual left-gripper contact, movement and retention tests
+
+- Audited the old `LeftGraspManager`: it belongs to the legacy runtime and can
+  enable a fixed grasp joint. It is not integrated with the new package rig.
+  Added separate `sim_physics.gripper_probe` instead of claiming that legacy
+  task-state logic proves a physical grasp in the current environment.
+- The fixture references current RBY1-A v1.2 left palm/finger/camera geometry,
+  preserves imported finger masses and uses dynamic force-limited prismatic
+  fingers. Palm motion is kinematic fixture motion, NOT full-arm IK. No physical
+  robot command, artificial plant-gripper weld, plant pose following, collection
+  or training is used. Dataset/review/splits and the visible pull demo are intact.
+- Test `_01` at the requested 120 mm grasp position contacts off-shaft geometry
+  on a leaf-bearing carrier during approach; the plant reaches 29.58 m/s and
+  stops before grasping. This is a retained failure, not a corrected contact
+  model. General leaf contact remains unqualified.
+- At the clearer requested 80 mm location (actual segment centre 71.13 mm),
+  `_02` establishes opposing native shaft contacts and follows a 10 mm palm
+  translation by 9.187 mm, with 1.207 mm maximum relative slip. Maximum measured
+  penetration is 0.465 mm. This passes limited fixture gates, not calibrated
+  tissue grasp realism, safe neighboring-plant clearance or population reliability.
+- `_03` uses the same case with zero finger friction (minimum combine mode).
+  The fingers still load the shaft but target movement is -0.006 mm and slip is
+  10.006 mm: correctly fails grasp-follow/slip gates. This negative control
+  supports that the positive result comes from contact friction, not a weld.
+- `_04` tests diagnostic seam release at 4.75 s. The branch remains between
+  fingers in the saved 5.3 s view but slips up to 11.188 mm in the 4.8-5.4 s
+  hold interval. Opposing load is present in 82.1% of samples, failing the
+  explicit low-slip retention gate. Do not claim reliable post-cut retention.
+  Joint release is still NOT blade/tissue cutting; no deposit was attempted.
+- `_05` repeats the positive case headlessly and includes reset/replay gates.
+  Its complete physical trace exactly matches rendered `_02`. Native reset body
+  error is 1.054 mm and first-half-second replay error is zero (_03/_04/_05).
+  Artifacts: `data/sim_physics/gripper_20260910_01` through `_05`.
+- Inspected native `_02/closed.png` and `_04/hold_after_diagnostic_release.png`.
+  RGB captures freeze physics during render waits and are non-training diagnostic
+  viewpoints, not robot-camera observations. Grasp coordinates are privileged
+  fixture inputs, never presented as observation-verified VLM execution.
+- Added fixture/no-weld/session-isolation/argument/force tests. A new offline
+  regression caught drive writes going to a weaker root-layer edit target;
+  closure now explicitly writes only the session layer. Live probes already
+  used the session edit target, so this repair does not change their physics.
+  Open-prismatic anchor warnings remain documented; no warning was hidden.
+- Next: leaf-contact stability, contact-feedback retention and calibration,
+  then collision-checked full-arm integration and dynamic native RGB-D. Do not
+  collect action demonstrations or promote the current fixture as robot-ready.
+- Final regression after the session-layer repair: **654 tests and 47 subtests
+  passed (53.99 s)**. `git diff --check` is clean. All five bounded gripper
+  probes have exited; the original visible pull demo and review services remain
+  running. Changes are uncommitted on `koh-dev/sim-vlm`.
+
+### 2026-09-10 ? Full-robot grasp diagnostic and replay repair
+
+- Added `sim_physics/full_robot.py`, its tests, benchmark full-robot options,
+  and `run_full_robot_grasp_demo.cmd`. Uses the complete v1.2 robot with a
+  fixed base, dynamic links and fingers, joint-drive IK, and the original plant
+  raised 350 mm in an isolated test station before physics construction.
+  Right arm/knife stays parked. No hardware commands, data collection or training.
+- Full-robot tests exposed what the kinematic-palm fixture could not: contacts
+  between the palm and fixed neighboring foliage. Replaced the top-down entry
+  with side entry and moved the robot clear of the upper canopy. No plant
+  collision exclusions or grasp weld were added.
+- Eight explicitly listed mounting-proxy self-contact exclusions are used
+  for this fixed-torso diagnostic. Other self contacts, inter-arm checks and
+  plant contacts remain enabled. These conservative proxy exclusions are NOT
+  a validated collision model for arbitrary torso/tool motions.
+- Native evidence: `data/sim_physics/full_robot_demo_20260910_01/trial_001`.
+  Completed all 1,680 steps: bilateral shaft grasp, target movement 8.884 mm
+  for 10 mm command, maximum slip 1.542 mm, maximum penetration 0.401 mm,
+  maximum gripper contact 0.282 N. Reset/replay gate passed. One case only;
+  no claim of reliable cutting, retention/deposit or whole-greenhouse readiness.
+  Target coordinates are privileged test inputs, not perception-verified.
+- Full-robot rendered tick throughput was 0.45x real time in this trial
+  (7 simulated seconds / 15.47 tick-wall seconds), excluding capture waits.
+  Do not claim this diagnostic is yet optimized for real-time greenhouse use.
+- Earlier failed startup/placement trials are retained in
+  `data/sim_physics/full_robot_20260910_01` through `_06`.
+- The first GUI trial passed, but a requested replay closed the app because
+  camera setup appended a duplicate transform operation. Camera setup is now
+  session-only and repeatable; added a three-call regression test.
+  Full robot / close-up / head and wrist D405 view buttons are available.
+  Changes remain uncommitted; dataset reviews/splits and source assets untouched.
+
+### 2026-09-10 - User-confirmed full-robot checkpoint
+
+- Relaunch `full_robot_demo_20260910_02` passed the same grasp/move gates;
+  the user reports the grasp looks very good and requests greenhouse integration.
+- Before the camera repair, the full regression completed: 663 tests and
+  47 subtests passed. After repair, 27 focused tests passed, including the new
+  repeat-camera/session-layer regression. No collection or training started.
+- Commit the current isolated physics/full-robot checkpoint before beginning
+  greenhouse integration. Next increment: actual supplied greenhouse geometry,
+  local detailed plant physics, native environment contacts, repeatable grasp
+  test and measured timing. Keep the static dataset workflow unchanged.
+- Final checkpoint regression: **664 tests and 47 subtests passed (58.86 s)**.
+  User-confirmed demo remains running; reviews and source assets are untouched.
