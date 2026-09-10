@@ -1,7 +1,8 @@
 """Full dynamic RB-Y1 diagnostic. Joint-drive IK, native finger contact, no weld.
 
-This is a privileged isolated test station, not observation-driven execution,
-whole-greenhouse validation, tissue cutting or a training-data collector.
+This is a privileged test station (isolated or in the supplied greenhouse),
+not observation-driven execution, general plant manipulation, tissue cutting
+or a training-data collector.
 """
 import json
 import time
@@ -12,8 +13,17 @@ import numpy as np
 from .gripper_probe import GripperFixture
 
 
+def finger_force_budget(gravity):
+    """Reserve native gravity effort inside, not in addition to, the 0.5 N cap."""
+    gravity=np.asarray(gravity,dtype=float)
+    if gravity.shape!=(2,) or not np.isfinite(gravity).all() or np.any(np.abs(gravity)>.4):
+        raise ValueError('Finger gravity leaves insufficient bounded grasp effort')
+    return .5-np.abs(gravity)
+
+
 class FullRobotGripper(GripperFixture):
-    def __init__(self,stage,rig,*,arc=.08,friction=.5):
+    def __init__(self,stage,rig,*,arc=.08,friction=.5,ground_height=None,
+                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.):
         from pxr import Gf,Sdf,Usd,UsdGeom,UsdPhysics,UsdShade
         from greenhouse_sim.robot_model import DEFAULT_ASSET,DEFAULT_URDF
         from greenhouse_sim.robot_kinematics import Rby1Kinematics,base_transform
@@ -22,6 +32,9 @@ class FullRobotGripper(GripperFixture):
         self.stage,self.rig,self.asset=stage,rig,DEFAULT_ASSET
         self.root='/World/RBY1'
         self.kin=Rby1Kinematics()
+        if torso_degrees is not None: self.kin.set_default_torso_degrees(torso_degrees)
+        self.sparse_contacts=sparse_contacts;self.event_monitor=None;self.floor_root=floor_root
+        self.finger_gravity=finger_gravity;self.finger_compensation=np.zeros(2)
         self.body_index=int(np.argmin(np.abs((rig.arcs[:-1]+rig.arcs[1:])/2-arc)))
         if self.body_index<rig.cut_index or rig.arcs[self.body_index]<.035:
             raise ValueError('Grasp must leave clearance from the diagnostic seam')
@@ -35,6 +48,11 @@ class FullRobotGripper(GripperFixture):
         point=rig.rest_frames[self.body_index,:3,3]
         y=rig.rest_frames[self.body_index,:3,2]
         z=np.array([1.,-1.,.2]);z-=y*np.dot(y,z);z/=np.linalg.norm(z)
+        if not np.isfinite(approach_tilt) or abs(approach_tilt)>30:
+            raise ValueError('Diagnostic approach tilt must be within 30 degrees')
+        self.approach_tilt=float(approach_tilt)
+        angle=np.radians(approach_tilt)
+        z=np.cos(angle)*z+np.sin(angle)*np.cross(y,z)
         self.goal=np.eye(4);self.goal[:3,:3]=np.column_stack([np.cross(y,z),y,z])
         self.goal[:3,3]=point+.1025*z
         self.start=self.goal.copy();self.start[:3,3]+=.08*self.goal[:3,2]
@@ -44,7 +62,9 @@ class FullRobotGripper(GripperFixture):
         angle=np.radians(yaw);forward=np.array([np.cos(angle),np.sin(angle),0.])
         left=np.array([-np.sin(angle),np.cos(angle),0.])
         self.base=base_transform(self.start[:3,3]-.4*forward-.22*left,yaw);self.base[2,3]=.001
+        if ground_height is not None: self.base[2,3]+=ground_height(*self.base[:2,3])
         self.pose=dict(SDK_READY_POSE_DEGREES)
+        self.pose.update({f'torso_{i}':float(v) for i,v in enumerate(self.kin.default_torso_degrees())})
         self.right=np.array([self.pose[f'right_arm_{i}'] for i in range(7)])
         result=self.kin.solve_pose('left',self.start,[self.pose[f'left_arm_{i}'] for i in range(7)],self.base)
         if not result.succeeded: raise ValueError('Full-robot pregrasp IK failed: '+str(result))
@@ -78,7 +98,11 @@ class FullRobotGripper(GripperFixture):
                     self.body_paths.append(str(prim.GetPath()))
                     body=UsdPhysics.RigidBodyAPI(prim);body.CreateRigidBodyEnabledAttr(True);body.CreateKinematicEnabledAttr(False)
                     body.CreateVelocityAttr(Gf.Vec3f(0));body.CreateAngularVelocityAttr(Gf.Vec3f(0))
-                    physics_schema(prim,'PhysxContactReportAPI',[('physxContactReport:threshold',Sdf.ValueTypeNames.Float,0.)])
+                    # Anchored wheels can sit inside the floor's contact offset
+                    # with zero load. Report meaningful support contacts, not
+                    # zero-impulse proximity; collision itself remains enabled.
+                    report_threshold=.001 if prim.GetName() in ('base','wheel_l','wheel_r') else 0.
+                    physics_schema(prim,'PhysxContactReportAPI',[('physxContactReport:threshold',Sdf.ValueTypeNames.Float,report_threshold)])
                 if prim.HasAPI(UsdPhysics.CollisionAPI):
                     # Preserve source-active arm, chassis and tool colliders.
                     UsdPhysics.CollisionAPI(prim).CreateCollisionEnabledAttr(True)
@@ -113,11 +137,13 @@ class FullRobotGripper(GripperFixture):
             for first,second in self.mount_exclusions:
                 UsdPhysics.FilteredPairsAPI.Apply(stage.GetPrimAtPath(self.root+'/'+first)).CreateFilteredPairsRel().AddTarget(self.root+'/'+second)
             self._author_initial_joints()
-            floor=UsdGeom.Cube.Define(stage,'/World/RobotTestFloor')
-            floor.CreateSizeAttr(1.)
-            xf=UsdGeom.Xformable(floor);xf.AddTranslateOp().Set(Gf.Vec3d(0,0,-.04));xf.AddScaleOp().Set(Gf.Vec3f(8,8,.08))
-            floor.CreateDisplayColorAttr([(0.18,0.20,0.22)])
-            UsdPhysics.CollisionAPI.Apply(floor.GetPrim())
+            if ground_height is None:
+                floor=UsdGeom.Cube.Define(stage,'/World/RobotTestFloor')
+                floor.CreateSizeAttr(1.)
+                xf=UsdGeom.Xformable(floor);xf.AddTranslateOp().Set(Gf.Vec3d(0,0,-.04));xf.AddScaleOp().Set(Gf.Vec3f(8,8,.08))
+                floor.CreateDisplayColorAttr([(0.18,0.20,0.22)])
+                UsdPhysics.CollisionAPI.Apply(floor.GetPrim())
+                self.floor_root='/World/RobotTestFloor'
             self.plant_filter_paths=list(rig.body_paths)+[
                 str(p.GetPath()) for p in Usd.PrimRange(stage.GetPrimAtPath('/World/Plant'))
                 if p.HasAPI(UsdPhysics.CollisionAPI) and UsdPhysics.CollisionAPI(p).GetCollisionEnabledAttr().Get()]
@@ -163,6 +189,10 @@ class FullRobotGripper(GripperFixture):
             robot_base_world=self.base.tolist(),grasp_body=self.grasp_path,grasp_arc_m=self.arc,
             source_colliders_retained=len(self.collider_paths),finger_max_drive_force_n=.5,
             mounting_proxy_exclusions=self.mount_exclusions,self_collision_enabled=True,
+            contact_monitor='sparse_native_events' if self.sparse_contacts else 'dense_pair_matrices',
+            finger_gravity_compensation=self.finger_gravity,total_finger_effort_limit_n=.5,
+            torso_degrees=self.kin.default_torso_degrees().tolist(),floor_root=self.floor_root,
+            approach_tilt_degrees=self.approach_tilt,
             minimum_planned_interarm_capsule_clearance_m=self.minimum_interarm,
             right_arm='parked_with_original_fitted_knife_not_cutting',
             target_source='privileged_test_fixture_not_perception_verified',
@@ -179,6 +209,7 @@ class FullRobotGripper(GripperFixture):
                     body.CreateVelocityAttr(Gf.Vec3f(0));body.CreateAngularVelocityAttr(Gf.Vec3f(0))
             self._author_initial_joints()
         self.expected_palm=self.start.copy();self.stop_requested=False
+        self.finger_compensation=np.zeros(2)
 
     def bind(self,simulation_view):
         super().bind(simulation_view)
@@ -200,18 +231,27 @@ class FullRobotGripper(GripperFixture):
             force[0,i]=.5 if is_finger else .7*limit
             self.feedforward_limit[0,i]=0 if is_finger else .3*limit
         self.targets=targets
+        self.force_limits=force
         self.robot.set_dof_stiffnesses(k,self.index);self.robot.set_dof_dampings(d,self.index)
         self.robot.set_dof_max_forces(force,self.index)
         self.robot.set_dof_position_targets(targets,self.index)
         # Filter only plant loads, so wheel support does not look like damage.
-        self.plant_contacts=simulation_view.create_rigid_contact_view(self.body_paths,
-            filter_patterns=[self.plant_filter_paths]*len(self.body_paths))
-        self.self_contacts=simulation_view.create_rigid_contact_view(self.body_paths,
-            filter_patterns=[self.body_paths]*len(self.body_paths))
-        if self.plant_contacts.sensor_count!=len(self.body_paths): raise RuntimeError('Incomplete robot contact sensors')
+        if self.event_monitor is not None: self.event_monitor.close()
+        if self.sparse_contacts:
+            from .contact_events import ContactEvents
+            self.event_monitor=ContactEvents(robot_root=self.root,target_root=self.rig.root,
+                fingers=self.paths[1:],floor_root=self.floor_root)
+            self.event_monitor.subscribe()
+        else:
+            self.plant_contacts=simulation_view.create_rigid_contact_view(self.body_paths,
+                filter_patterns=[self.plant_filter_paths]*len(self.body_paths))
+            self.self_contacts=simulation_view.create_rigid_contact_view(self.body_paths,
+                filter_patterns=[self.body_paths]*len(self.body_paths))
+            if self.plant_contacts.sensor_count!=len(self.body_paths): raise RuntimeError('Incomplete robot contact sensors')
         self.robot_bodies=simulation_view.create_rigid_body_view(self.body_paths)
 
     def target_palm(self,position):
+        if self.event_monitor is not None: self.event_monitor.begin_step()
         delta=self.goal[:3,3]-self.start[:3,3]
         fraction=float(np.dot(np.asarray(position)-self.start[:3,3],delta)/np.dot(delta,delta))
         if not -.01<=fraction<=1.15: raise RuntimeError('Command outside checked IK corridor')
@@ -221,7 +261,13 @@ class FullRobotGripper(GripperFixture):
         self.targets[0,self.left_indices]=np.radians(q)
         self.expected_palm=expected
         self.robot.set_dof_position_targets(self.targets,self.index)
-        compensation=np.clip(self.robot.get_gravity_compensation_forces(),-self.feedforward_limit,self.feedforward_limit)
+        gravity=self.robot.get_gravity_compensation_forces()
+        compensation=np.clip(gravity,-self.feedforward_limit,self.feedforward_limit)
+        if self.finger_gravity:
+            self.finger_compensation=np.array(gravity[0,self.finger_indices])
+            self.force_limits[0,self.finger_indices]=finger_force_budget(self.finger_compensation)
+            self.robot.set_dof_max_forces(self.force_limits,self.index)
+            compensation[0,self.finger_indices]=self.finger_compensation
         self.robot.set_dof_actuation_forces(compensation.astype(np.float32),self.index)
 
     def close(self,fraction):
@@ -232,6 +278,21 @@ class FullRobotGripper(GripperFixture):
     def check(self,dt,palm):
         error=float(np.linalg.norm(palm[:3,3]-self.expected_palm[:3,3]))
         speed=float(np.linalg.norm(self.robot_bodies.get_velocities()[:,:3],axis=1).max())
+        if self.event_monitor is not None:
+            metrics=self.event_monitor.measurements(dt)
+            # Positive native finger tensor loads must be observed by the
+            # sparse stream too; a disconnected callback must not look safe.
+            if getattr(self,'latest_finger_bilateral',False) and metrics['allowed_target_contact_n']<.01:
+                raise RuntimeError('Sparse contact stream missed native bilateral grasp load')
+            if (not np.isfinite([error,speed,*metrics.values()]).all()
+                    or error>.012 or speed>3 or metrics['unwanted_contact_n']>.5 or metrics['self_contact_n']>3):
+                self.last_fault=dict(palm_error_m=error,speed_m_s=speed,**metrics,
+                    pairs=[[a,b,v/dt] for (a,b),v in self.event_monitor.pairs.items()])
+                print('FULL_ROBOT_GUARD '+json.dumps(self.last_fault),flush=True)
+                raise RuntimeError('Full robot contact/tracking guard: '+json.dumps(self.last_fault))
+            return dict(palm_tracking_error_m=error,max_body_speed_m_s=speed,**metrics,
+                finger_gravity_effort_n=self.finger_compensation.tolist(),
+                joint_positions_rad=self.robot.get_dof_positions()[0].tolist())
         # get_net_contact_forces includes all contacts regardless of filters;
         # the force matrix, below, is the plant-specific measurement.
         matrix=np.asarray(self.plant_contacts.get_contact_force_matrix(dt))
@@ -258,18 +319,27 @@ class FullRobotGripper(GripperFixture):
         return dict(palm_tracking_error_m=error,max_body_speed_m_s=speed,
             non_finger_plant_load_n=unwanted,joint_positions_rad=self.robot.get_dof_positions()[0].tolist())
 
+    def contact(self,dt,frame):
+        result=super().contact(dt,frame)
+        self.latest_finger_bilateral=result['bilateral']
+        return result
+
     def setup_views(self,viewport):
         from pxr import Gf,UsdGeom
         self.viewport=viewport
         target=self.rig.rest_frames[self.body_index,:3,3]
         centre=(target+self.base[:3,3])/2;centre[2]=.9
+        greenhouse=self.floor_root!='/World/RobotTestFloor'
+        wide_eye=self.base[:3,3]+np.array([.2,-2.2,1.25]) if greenhouse else centre+np.array([2.5,-3.,1.3])
+        close_eye=target+np.array([.5,-.7,.3]) if greenhouse else target+np.array([.60,.68,.35])
         self.views={}
         for name,eye,at in (
-            ('Full robot',centre+np.array([2.5,-3.,1.3]),centre),
-            ('Grasp close-up',target+np.array([.60,.68,.35]),target)):
+            ('Full robot',wide_eye,centre),
+            ('Grasp close-up',close_eye,target)):
             path='/World/RobotProbe'+('Wide' if name=='Full robot' else 'Close')
             camera=UsdGeom.Camera.Define(self.stage,path)
-            camera.CreateFocalLengthAttr(24.);camera.CreateClippingRangeAttr(Gf.Vec2f(.005,100))
+            camera.CreateFocalLengthAttr(12. if greenhouse and name=='Full robot' else 24.)
+            camera.CreateClippingRangeAttr(Gf.Vec2f(.005,100))
             xf=UsdGeom.Xformable(camera);xf.ClearXformOpOrder()
             xf.AddTransformOp().Set(Gf.Matrix4d().SetLookAt(Gf.Vec3d(*eye),Gf.Vec3d(*at),Gf.Vec3d(0,0,1)).GetInverse())
             self.views[name]=path
@@ -291,7 +361,8 @@ def interactive(app,sim,rig,fixture,args,output):
     from .gripper_probe import run
     from .runtime import PlantRuntime
     from .implicit_springs import ImplicitJointSprings
-    UsdLux.DomeLight.Define(rig.stage,'/World/RobotProbeLight').CreateIntensityAttr(1400.)
+    if args.scene=='isolated':
+        UsdLux.DomeLight.Define(rig.stage,'/World/RobotProbeLight').CreateIntensityAttr(1400.)
     fixture.setup_views(get_active_viewport())
     request={'run':True,'reset':False};runs=[]
     def command(name): request[name]=True

@@ -248,3 +248,61 @@ Native startup also warns about the open prismatic joint anchor offsets; the
 recorded fingers retain their open spacing, but joint initialization deserves
 explicit qualification before full integration. Do not suppress the warning or
 interpret the fixture pass as a complete bimanual robot-task pass.
+
+## Full robot in the supplied greenhouse (2026-09-10)
+
+The isolated, user-confirmed full-robot checkpoint is commit `ea168ab`.
+The new greenhouse diagnostic uses the actual supplied
+`data/sim_data/package_20260905/tomato_greenhouse_pack/house/green_house_base.usd`.
+All 75 gutters, the building and floor retain their original geometry and
+collisions. One detailed original plant occupies the same station as the
+package preview; four distant same-gutter instances provide context.
+Only the selected petiole/leaf carriers are dynamic in this increment.
+This is not the full populated-greenhouse collector.
+
+From repository root (choose a NEW output):
+
+```powershell
+examples\greenhouse_sim\run_greenhouse_physics_demo.cmd --output ..\..\data\sim_physics\my_greenhouse_grasp
+```
+
+The persistent window has Run / Stop / Reset, full-robot and grasp views,
+and the existing head/left/right D405 views at 848x408. The right arm/knife
+remains parked. The left arm performs an IK approach, physical finger closure,
+a grasp-gated 10 mm movement, hold and opening. Targets come from privileged
+fixture geometry, not observation-verified perception. No hardware commands.
+
+- Robot base sits 1 mm above the original local floor surface (0.101 m), with
+  upright torso; no artificial ground or plant-height shortcut.
+- Sparse native contact events cover self, target and environment contacts;
+  only the designated fingers on the target and chassis/wheels on the floor
+  are permitted. Existing eight mounting-proxy exclusions remain unchanged
+  and are not qualified for arbitrary torso motion.
+- Finger gravity compensation shares the original 0.5 N total actuator budget.
+  In this near-vertical jaw orientation, ignoring approximately 0.31 N of
+  finger weight produced uneven contact. No grasp weld or force-limit increase.
+- The tested 10-degree wrist-entry tilt avoids the camera/leaf contact seen
+  with the original entry. It is a tested fixture pose, not a general-purpose
+  collision-certified planner.
+- `greenhouse_physics_20260910_06` passes all 1,680 steps and reset/replay:
+  target motion **7.825 mm**, maximum slip **2.489 mm**, maximum penetration
+  **0.370 mm**, maximum gripper net contact **0.233 N**. One case only.
+- Failed variants `_01` through `_05` are retained. They include insufficient
+  opposing contact, unsuccessful pressure/centering experiments (removed),
+  camera/leaf contact, and a rejected wrist approach hitting fixed foliage.
+- Native wide and close-up PNGs are diagnostic evidence, not dataset images.
+  Demo lighting is reduced by three exposure stops in the session layer to
+  avoid saturation; source lighting and dataset capture settings are unchanged.
+
+Performance remains a gate: the initial rendered greenhouse trial was about
+0.11x real time, with a median native step near 34 ms. Adding CPU threads and
+removing zero-load floor-warning spam did not resolve this. Do not advertise
+real-time performance or extrapolate an isolated headless result to this scene.
+Bounded tests accept `--profile` for call timing. A dedicated PhysX dispatcher
+experiment (`_07`) stalled at initialization and was stopped; that experimental
+option was removed. The known-working dispatcher remains unchanged.
+
+Next gates are wider contact/approach coverage, performance, post-severance
+retention, verified blade cutting and deposit, followed by synchronized native
+robot-camera RGB-D action/outcome records. Material parameters and force limits
+still require calibration. No dynamic training eligibility is implied.

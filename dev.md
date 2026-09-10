@@ -3471,3 +3471,77 @@ One logical change per commit; no AI attribution trailers.
   test and measured timing. Keep the static dataset workflow unchanged.
 - Final checkpoint regression: **664 tests and 47 subtests passed (58.86 s)**.
   User-confirmed demo remains running; reviews and source assets are untouched.
+
+### 2026-09-10 - Supplied-greenhouse physics integration (qualification in progress)
+
+- User-confirmed isolated physics and full-robot grasp checkpoint committed as
+  `ea168ab` on `koh-dev/sim-vlm`. The isolated GUI was subsequently closed
+  gracefully to run bounded greenhouse tests without competing simulations.
+- New `sim_physics/greenhouse_scene.py` loads the supplied package's
+  `house/green_house_base.usd`, preserves all 75 gutters and their geometry,
+  and uses the exact foreground-plant placement from the package preview:
+  `seed101_full` at [-0.005, 0, 0.900] m. Four distant instanced plants on
+  the same gutter provide context; nearby neighboring plants are not added yet.
+- One detailed target petiole remains compliant; other plant structures are
+  static collision geometry. Building, floor and gutter collisions stay active.
+  The robot is a complete fixed-base dynamic v1.2 articulation, upright torso,
+  with base support sampled from the original floor triangles (surface 0.101 m,
+  base origin 0.102 m). No artificial floor or source-gutter height changes.
+  This floor-placement geometry calculation is NOT camera depth generation.
+- New sparse native contact-event accounting checks robot self contact,
+  non-finger target contact, and finger/arm contacts with the environment or
+  non-target plants. Opposing impulses cannot cancel each other. Native tensor
+  bilateral contact is cross-checked against the callback stream; callback
+  errors latch until reset/rebind. No collision pairs are disabled for speed.
+- `sparse_contacts_20260910_01`: isolated control passes; all recorded physical
+  poses/contact/slip fields exactly match the earlier rendered full-robot
+  checkpoint. Native event monitoring itself did not change those dynamics.
+- Greenhouse `greenhouse_physics_20260910_01`: bounded 7-second run and reset
+  pass, target follows 8.747 mm with 1.591 mm maximum slip, but loaded opposing
+  contact falls below the required 90% movement fraction. This is NOT a pass.
+- `_02`: a bounded pressure-bias experiment weakens the grasp and correctly
+  blocks movement. This controller was removed. A 0.001 N contact-report
+  threshold on the fixed base/wheels eliminates zero-impulse floor proximity
+  warning spam without disabling floor collisions.
+- `_03`: a bounded tactile-centering experiment also fails sustained contact;
+  removed rather than made the default. Four physics worker threads do not
+  improve native step time in this scene.
+- `_04`: identified uncompensated gravity along the nearly vertical finger
+  slides. Native compensation is approximately 0.311 N per finger. New optional
+  `--finger-gravity` reserves that effort INSIDE the original 0.5 N total
+  budget, leaving about 0.189 N drive force. Both shaft contact loads are now
+  balanced (~0.10 N each). However, pulling brings a leaf into the wrist-camera
+  collision body at 4.296 s; the 0.623 N unwanted-contact guard correctly stops
+  the trial. Do not claim completed greenhouse grasp/move or ignore this hit.
+- Native integration is still slow: median native step approximately 34 ms at
+  a requested 240 Hz; rendered runs about 0.11x real time. Warning suppression
+  and additional threads did not solve the bottleneck. Optional `--profile`
+  records call timing; performance is not yet qualified.
+- All diagnostic artifacts are under `data/sim_physics/`, non-training and
+  ignored by Git. Original asset hashes remain unchanged. No review decisions,
+  dataset splits, collectors, training jobs or hardware interfaces were changed.
+- Next tests: bounded wrist-entry tilt to clear the camera/leaf interaction,
+  readable greenhouse views, native timing investigation and full regression.
+  Cutting, post-release retention, deposit, general leaf-contact robustness and
+  synchronized dynamic robot-camera RGB-D remain separate unpassed gates.
+- `_05`: -15-degree wrist tilt is rejected by native contact with fixed
+  neighboring foliage during approach. `_06`: +10-degree tilt passes the
+  complete 7-second greenhouse grasp/move/open test and deterministic reset.
+  Target movement 7.825 mm, maximum slip 2.489 mm, penetration 0.370 mm,
+  maximum gripper net contact 0.233 N. This is a single-case pass, not a
+  success-rate estimate, tissue-cutting result or general collision plan.
+- Native images visually inspected: `_05/initial.png` (exposure corrected,
+  wide framing subsequently improved) and `_06/closed_detail.png`.
+  Demo-only source-light exposure is lowered by three stops in the session
+  layer; no original lighting assets or dataset capture settings are changed.
+- `_07`: attempted the dedicated PhysX CPU dispatcher. It failed to reach
+  the probe-ready marker after roughly four minutes, with no progress beyond
+  local-payload loading. Stopped only its verified process (PID 116268);
+  removed the experimental option. No episode or speedup is claimed.
+- Final integration regression: **674 tests and 47 subtests passed (63.28 s)**.
+  The passing `_06` run has opposing shaft load in **94.19%** of movement
+  samples, maximum unwanted contact **0.111 N** (below the 0.5 N stop bound),
+  zero reported non-excluded self-contact load, unchanged source hashes and
+  zero first-half-second reset/replay error. Rendered tick throughput remains
+  **0.108x real time**, median native step **34.20 ms**. Performance is still
+  an explicit blocker; passing the grasp gates does not waive it.

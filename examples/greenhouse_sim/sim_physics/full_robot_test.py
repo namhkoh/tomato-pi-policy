@@ -3,9 +3,18 @@ import pytest
 from sim_physics.plant_test import native
 
 
+def test_finger_gravity_is_inside_total_force_budget():
+    from sim_physics.full_robot import finger_force_budget
+    np.testing.assert_allclose(finger_force_budget([.31,-.31]),[.19,.19])
+    np.testing.assert_allclose(finger_force_budget([0,0]),[.5,.5])
+    with pytest.raises(ValueError): finger_force_budget([float('nan'),0])
+    with pytest.raises(ValueError): finger_force_budget([.41,0])
+
+
 @pytest.mark.parametrize('extra',[
     [],['--diagnostic-detach'],['--physics-hz','480'],['--scene','package'],
-    ['--finger-friction','nan'],['--grasp-arc-m','.001'],['--gripper-probe']])
+    ['--finger-friction','nan'],['--grasp-arc-m','.001'],['--gripper-probe'],
+    ['--approach-tilt','nan'],['--approach-tilt','31']])
 def test_full_robot_configuration_fail_closed_before_kit(tmp_path,extra):
     from sim_physics.benchmark import main
     args=['--output',str(tmp_path/'unused'),'--full-robot-probe']
@@ -19,6 +28,14 @@ def test_interactive_robot_needs_visible_window(tmp_path):
     from sim_physics.benchmark import main
     with pytest.raises(ValueError,match='Robot interactive requires'):
         main(['--output',str(tmp_path/'unused'),'--robot-interactive'])
+
+
+@pytest.mark.parametrize('option',['--sparse-contacts','--finger-gravity','--profile'])
+def test_robot_options_are_not_silently_ignored(tmp_path,option):
+    from sim_physics.benchmark import main
+    with pytest.raises(ValueError):
+        main(['--output',str(tmp_path/'unused'),option])
+    assert not (tmp_path/'unused').exists()
 
 
 def test_complete_robot_native_joints_and_no_plant_weld_are_session_only(native):

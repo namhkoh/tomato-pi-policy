@@ -186,7 +186,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         from pxr import UsdLux
         from omni.kit.viewport.utility import get_active_viewport
         viewport=get_active_viewport();viewport.set_texture_resolution((1280,720))
-        UsdLux.DomeLight.Define(rig.stage,'/World/ProbeLight').CreateIntensityAttr(1400.)
+        if args.scene=='isolated':
+            UsdLux.DomeLight.Define(rig.stage,'/World/ProbeLight').CreateIntensityAttr(1400.)
         target=rig.rest_frames[fixture.body_index,:3,3]
         viewport.set_active_camera(setup_probe_camera(rig.stage,target))
         if full_robot: fixture.setup_views(viewport)
@@ -263,7 +264,12 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             clock.tick(before=before,after=after,before_render=lambda _:runtime.sync_visuals())
             if viewport:
                 for name,t in (('approach',1.9),('closed',3.4),('moved',4.5),('hold_after_diagnostic_release',5.3),('opened',6.6)):
-                    if clock.stamp.simulation_time_s>=t and name not in captures: capture(name)
+                    if clock.stamp.simulation_time_s>=t and name not in captures:
+                        capture(name)
+                        if name=='closed' and full_robot and not args.gui:
+                            previous=str(viewport.camera_path)
+                            fixture.select_view('Grasp close-up');capture('closed_detail')
+                            viewport.set_active_camera(previous)
             if full_robot and args.gui: time.sleep(max(0.,1/args.physics_hz-(time.monotonic()-tick_start)))
     except Exception as exc:
         fault=str(exc)

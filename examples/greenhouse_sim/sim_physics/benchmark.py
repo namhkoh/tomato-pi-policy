@@ -39,6 +39,10 @@ def parser():
     p.add_argument('--diagnostic-detach',action='store_true')
     p.add_argument('--full-robot-probe',action='store_true',help='Full dynamic v1.2 robot with an IK-driven left arm')
     p.add_argument('--robot-interactive',action='store_true',help='Keep the full-robot test window open with replay controls')
+    p.add_argument('--sparse-contacts',action='store_true',help='Native event accounting including all greenhouse/neighbor contacts')
+    p.add_argument('--finger-gravity',action='store_true',help='Compensate native finger weight inside the original 0.5 N total effort budget')
+    p.add_argument('--approach-tilt',type=float,default=0.,help='Bounded diagnostic wrist tilt around the shaft, in degrees')
+    p.add_argument('--profile',action='store_true',help='Save diagnostic Python/native call timing alongside the non-training report')
     return p
 
 
@@ -46,11 +50,16 @@ def main(argv=None):
     args=parser().parse_args(argv)
     if args.robot_interactive and (not args.full_robot_probe or not args.gui or not args.render_hz):
         raise ValueError('Robot interactive requires full-robot probe, GUI and rendering')
-    if args.full_robot_probe and (args.gripper_probe or args.interactive or args.scene!='isolated'
+    if args.full_robot_probe and (args.gripper_probe or args.interactive or (args.scene=='package' and not args.sparse_contacts)
             or args.constraint_mode!='articulation' or args.spring_mode!='implicit_effort'
             or args.solver!='PGS' or args.physics_hz!=240 or args.gravity!=9.81 or args.seconds<7
-            or args.diagnostic_detach or not 0<=args.finger_friction<=1 or not .04<=args.grasp_arc_m<=.25):
-        raise ValueError('Full robot probe requires isolated implicit articulation, PGS 240 Hz, gravity, >=7 s, bounded grasp/friction and no diagnostic detach')
+            or args.diagnostic_detach or not -30<=args.approach_tilt<=30
+            or not 0<=args.finger_friction<=1 or not .04<=args.grasp_arc_m<=.25):
+        raise ValueError('Full robot probe requires implicit articulation, PGS 240 Hz, gravity, >=7 s, bounded grasp/friction, no diagnostic detach and sparse contacts for package scenes')
+    if (args.sparse_contacts or args.finger_gravity or args.approach_tilt) and not args.full_robot_probe:
+        raise ValueError('Robot contact/gravity/approach options require the full robot probe')
+    if args.profile and (not (args.gripper_probe or args.full_robot_probe) or args.robot_interactive):
+        raise ValueError('Profiling requires a bounded gripper or full-robot probe')
     if args.gripper_probe and (args.interactive or args.scene!='isolated'
             or args.constraint_mode!='articulation' or args.spring_mode!='implicit_effort'
             or args.solver!='PGS' or args.gravity!=9.81 or args.seconds<7
@@ -100,7 +109,19 @@ def main(argv=None):
         source_hashes={manifest:hashlib.sha256(manifest.read_bytes()).hexdigest()}
         for component in audit['components'].values():
             path=manifest.parent/component['file'];source_hashes[path]=component['asset_sha256']
-        if args.scene=='package':
+        robot_options=dict(sparse_contacts=args.sparse_contacts,finger_gravity=args.finger_gravity,approach_tilt=args.approach_tilt)
+        if args.scene=='package' and args.full_robot_probe:
+            from .greenhouse_scene import prepare
+            from sim_data.floor_alignment import PACKAGE_FLOOR
+            scene=DEFAULT_PACK/'house/green_house_base.usd'
+            source_hashes[scene]=hashlib.sha256(scene.read_bytes()).hexdigest()
+            if not context.open_stage(str(scene),load_set=omni.usd.UsdContextInitialLoadSet.LOAD_NONE):
+                raise RuntimeError('Cannot open supplied greenhouse')
+            stage=context.get_stage();stage.SetEditTarget(stage.GetSessionLayer())
+            record,height,scene_report=prepare(stage,DEFAULT_PACK,args.plant)
+            report['greenhouse']=scene_report
+            robot_options.update(ground_height=height,torso_degrees=[0.]*6,floor_root=PACKAGE_FLOOR)
+        elif args.scene=='package':
             from launch_sim_data import load_local_payloads,populate
             from sim_data.robot_preview import add_robot_preview,select_camera
             from sim_data.floor_alignment import PACKAGE_FLOOR
@@ -131,7 +152,7 @@ def main(argv=None):
         fixture=None
         if args.full_robot_probe:
             from .full_robot import FullRobotGripper
-            fixture=FullRobotGripper(stage,rig,arc=args.grasp_arc_m,friction=args.finger_friction)
+            fixture=FullRobotGripper(stage,rig,arc=args.grasp_arc_m,friction=args.finger_friction,**robot_options)
             source_hashes[fixture.asset]=hashlib.sha256(fixture.asset.read_bytes()).hexdigest()
             report['robot_probe']=fixture.report()
         if args.gripper_probe:
@@ -161,6 +182,10 @@ def main(argv=None):
             gpu_dynamics=settings.GetEnableGPUDynamicsAttr().Get(),
             update_to_usd=process_settings.get('/physics/updateToUsd'),
             physics_threads=process_settings.get(thread_setting))
+        report['native_diagnostics_settings']={k:process_settings.get(k) for k in (
+            '/physics/enableSynchronousKernelLaunches','/physics/exposeProfilerData',
+            '/persistent/physics/pvdEnabled','/physics/omniPvdOutputEnabled','/physics/omniPvdIsRecording',
+            '/physics/physxDispatcher','/physics/updateVelocitiesToUsd')}
         effective=report['effective_scene_after_reset']
         if (effective['solver']!=args.solver or effective['gpu_dynamics']
                 or not np.isclose(effective['gravity_m_s2'],args.gravity,rtol=1e-6,atol=1e-8)
@@ -182,7 +207,13 @@ def main(argv=None):
                 from .full_robot import interactive
                 report.update(interactive(app,sim,rig,fixture,args,output))
             else:
-                report.update(run(app,sim,rig,runtime,springs,fixture,args,output))
+                if args.profile:
+                    import cProfile
+                    profile=cProfile.Profile();profile.enable()
+                    try: report.update(run(app,sim,rig,runtime,springs,fixture,args,output))
+                    finally:
+                        profile.disable();profile.dump_stats(str(output/'profile.pstats'))
+                else: report.update(run(app,sim,rig,runtime,springs,fixture,args,output))
             report['source_assets_unchanged']=all(hashlib.sha256(path.read_bytes()).hexdigest()==h for path,h in source_hashes.items())
             if not report['source_assets_unchanged']: raise RuntimeError('Source asset changed during probe')
             (output/'report.json').write_text(json.dumps(report,indent=2,allow_nan=False),encoding='utf-8')
