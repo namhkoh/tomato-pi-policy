@@ -4,6 +4,45 @@ This is an opt-in engineering harness on `koh-dev/sim-vlm`, not a replacement
 for the static dataset collector, and not yet a validated robot manipulation
 environment. Do not collect training demonstrations from this harness.
 
+## Experimental knife integration, September 11
+
+`run_bimanual_cut_probe.cmd --output <new-directory>` is an **unqualified**
+bounded integration test, not a working end-to-end demonstration. The existing
+grasp-demo launchers remain unchanged. Add `--gui --robot-interactive` only for
+diagnostic replay; a failed plan/guard never forces release.
+
+- `knife.py` corrects the original right knife in the session layer. Its old
+  blade occupied EE +Z=0..71.48 mm, overlapping the wrist's +Z=0..46.5 mm.
+  The 180-degree EE-Y correction places the same blade/support along distal
+  -Z, retains the flat +Y cutting direction and leaves source meshes unchanged.
+  This is geometric flange alignment, not a new CAD fastener certification.
+- `bimanual.py` caches source knife transforms, reads native right-wrist state
+  and contact positions, and searches bounded IK/edge-wing alternatives. Arm
+  capsule clearance is only one screen, not full-tool/path certification.
+- `startup_screen.py` rejects possible initial robot/scene collision overlaps
+  before starting dynamics. Static triangle/quad surfaces refine broad boxes;
+  convex solids retain containment checks. Hidden and instanced collisions
+  count. Runtime native force, speed, tracking, slip and window guards remain.
+- `bimanual_probe.py` gates right motion on opposing left stem contact. Only
+  the actual flat leading strip on the selected seam-adjacent stem capsules
+  can authorize `PlantRig.release_from_blade`. Arc, camera, neighbors, broad
+  blade-face impacts, stationary force and separate taps cannot trigger it.
+- The current shear prior is 0.2 N sustained for 25 ms plus 0.3 mm measured
+  relative loading travel, bounded by 0.5 N tool force and 3 mm grasp slip.
+  These are **unvalidated engineering thresholds**, not tomato tissue data.
+  Release disables one preauthored 10 mm joint; it is not continuum fracture,
+  arbitrary-position mesh cutting, or verified physical deleafing success.
+- Retention/separation and withdrawal are separate measured gates after
+  release. Deposit, recovery, synchronized dynamic camera records and VLM/VLA
+  execution are not implemented by this probe. No result is training-approved.
+
+Measured current blocker: `data/sim_physics/bimanual_cut_20260911_03` passed
+the spawn screen and reached the left grasp (all 120 measured hold frames had
+opposing stem contact). At 3.5 s, the right IK/arm-clearance search failed and
+the test stopped without a cut. An earlier opposite-side candidate in
+`bimanual_cut_20260910_01` collided at spawn; it is rejected, not a demo setup.
+Do not report a completed grasp-cut-retain sequence from either run.
+
 ## Latest full-robot checkpoint
 
 The complete v1.2 RB-Y1 is now exercised through native joint drives, with
@@ -306,3 +345,79 @@ Next gates are wider contact/approach coverage, performance, post-severance
 retention, verified blade cutting and deposit, followed by synchronized native
 robot-camera RGB-D action/outcome records. Material parameters and force limits
 still require calibration. No dynamic training eligibility is implied.
+
+## Dense context and latency optimization (2026-09-10)
+
+The greenhouse demo launcher now adds `--batch-gutter-visuals`,
+`--local-wire-physics --context-gutters 3` and `--no-capture-milestones`.
+The command above still works with a new output directory. Override
+`--context-gutters 1` or `5` for alternate bounded layouts; only three rows
+have been exercised in the native dense-context grasp test at this checkpoint.
+This restores the original preview's **144 plant positions**, not plants on
+all 75 greenhouse gutters. All 75 gutters remain visible.
+
+- Batched 3,525 identical, non-physical gutter modules into one USD point
+  instancer. Original geometry/materials/transforms remain; all 75 gutter
+  collision proxies remain at their source coordinates. Animated, mixed-
+  prototype or physical modules are rejected by the batching adapter.
+- Kept 12 wire collision proxies intersecting a fixed 4x4 m XY workspace;
+  deactivated 7,038 unreachable **guide-purpose** proxies, not rendered wires.
+  Full collision bounds decide membership, not visibility or prim origins.
+  Every robot and dynamic plant collision sphere is checked each step with a
+  15 cm boundary margin. This is fixed-base only: rebuild the collision window
+  before moving the base, changing stations or promoting another plant.
+- Restored 143 supplied backdrop instances plus the detailed target. In the
+  tested three-row layout, 71 nearby backdrop plants receive static native
+  triangle-mesh collisions, while 72 distant ones are visual-only instances.
+  Anonymous prototype stages keep source USDs immutable. Nearby context is
+  **not compliant**; selected petiole/carriers remain the only dynamic plant.
+- Preserved gravity, 240 Hz solver step, finger effort/friction, collision
+  guards, IK sequence and all head/wrist camera view buttons. This does not
+  qualify contact with every leaf or implement full-robot cutting.
+- Interactive milestone PNG capture is off by default to avoid repeated
+  diagnostic pauses. The new UI checkbox enables it for the next trial, or
+  pass `--capture-milestones`. Bounded qualification still captures by default.
+  Captures are native viewport images, not synchronized training RGB-D.
+
+Measured on this workstation, one target, PGS/240 Hz, one physics worker:
+
+| Run under `data/sim_physics/` | Median native step | Rendered tick throughput |
+|---|---:|---:|
+| Original `greenhouse_physics_20260910_06` | 34.20 ms | 0.108x real time |
+| Batched, sparse `greenhouse_opt_20260910_06` | 5.99 ms | 0.446x |
+| Batched, 144 plants `greenhouse_dense_20260910_01` | 6.82 ms | 0.411x |
+| Dense without Fabric `greenhouse_dense_20260910_02` | 9.10 ms | 0.331x |
+| Normal step dense repeat `greenhouse_dense_20260910_03` | 6.75 ms | 0.421x |
+| Visible GUI `greenhouse_optimized_demo_20260910_01/trial_001` | 8.36 ms | 0.345x |
+
+All three optimized runs passed the limited grasp/reset gates. Their entire
+1,680-step physical records equal the original trajectory exactly. Native
+wide images from the sparse/dense runs were inspected. Tick throughput excludes
+startup, paused milestone snapshots and post-trial reset; it is not total
+job throughput, camera FPS, an average over targets, or a real-time claim.
+The existing once-per-trial IK replan still costs about 0.9 s.
+
+Causal root-removal controls are saved separately as
+`greenhouse_scene_profile_20260910_01` through `_04`. Removing only the repeated
+gutter visual modules reduced native step time to about 10 ms even with wire
+proxies retained. Removing disabled rigid-body APIs or profiling instrumentation
+did not help. Disabling far wire CollisionAPI values alone did not help;
+deactivating unreachable guide prims did. These ablations are **not qualifying
+physics runs** and must never be presented as successful demos.
+
+Opt-in diagnostics: `--step-profile` splits the installed Isaac physics-only
+step path; `--scene-profile` performs non-qualifying root/module removal timing
+controls in a bounded headless process and restores session state. All new
+behavior is isolated from the static dataset capture/review/export pipeline.
+
+Remaining runtime warning: Isaac Fabric reports a point-instancer prototype
+mismatch on reset, even though the static gutter visuals render and physical
+reset replay matches. It is not suppressed or treated as proof of sensor
+synchronization. Additional native render/reset verification is required
+before using this representation for dynamic dataset capture.
+The native `greenhouse_dense_20260910_03/reset_replay.png` was inspected and
+retains the visible robot, vines and gutters. The relaunched GUI passes the
+grasp/reset gates with automatic milestone capture disabled.
+
+For the smallest VLM + low-level-controller experiment and its explicit
+unimplemented gates, see [PROOF_OF_LIFE.md](PROOF_OF_LIFE.md).

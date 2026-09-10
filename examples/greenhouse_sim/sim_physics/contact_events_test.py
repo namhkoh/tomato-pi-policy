@@ -31,3 +31,15 @@ def test_self_contact_and_malformed_data_fail_closed():
     m.error='bad native buffer'
     m.begin_step()  # A callback fault stays latched until explicit rebind.
     with pytest.raises(RuntimeError): m.measurements(.01)
+
+
+def test_expected_tool_contact_is_point_specific_and_not_a_collision_disable():
+    m=monitor()
+    m.tool_contact=lambda robot,other,point,impulse: robot=='/World/R/knife/plate' and other=='/World/Target/Stem' and point[0]<.001
+    m.consume('/World/R/knife/plate','/World/Target/Stem',[(.001,0,0),(.002,0,0)],[(0,0,0),(.01,0,0)])
+    assert m.measurements(.01)['allowed_tool_contact_n']==pytest.approx(.1)
+    assert m.measurements(.01)['unwanted_contact_n']==pytest.approx(.2)
+    m.consume('/World/R/knife/arc','/World/Target/Stem',[(.003,0,0)],[(0,0,0)])
+    assert m.measurements(.01)['unwanted_contact_n']==pytest.approx(.5)
+    m.consume('/World/R/knife/plate','/World/Neighbor/Stem',[(.001,0,0)],[(0,0,0)])
+    assert m.measurements(.01)['unwanted_contact_n']==pytest.approx(.6)

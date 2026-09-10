@@ -5,7 +5,7 @@ import numpy as np
 from pxr import Gf,Usd,UsdGeom,UsdLux,UsdPhysics
 
 
-def prepare(stage,package,plant):
+def prepare(stage,package,plant,*,sparse_backdrop=True):
     from launch_sim_data import load_local_payloads
     from sim_data.audit import audit_manifest
     from sim_data.geometry import assemble_plant
@@ -46,12 +46,13 @@ def prepare(stage,package,plant):
         # The near interaction area contains one detailed plant initially.
         backdrop=sorted((package/'plants/backdrop').glob('backdrop_*.usd'))
         if not backdrop: raise ValueError('Missing supplied backdrop plants')
-        for i,y in enumerate((-6.,-4.,4.,6.)):
+        for i,y in enumerate((-6.,-4.,4.,6.) if sparse_backdrop else ()):
             prim=UsdGeom.Xform.Define(stage,f'/World/PhysicsBackdrop/Plant_{i:02d}')
             prim.AddTranslateOp().Set(Gf.Vec3d(cx+.195,y,.90))
             prim.GetPrim().GetReferences().AddReference(str(backdrop[i%len(backdrop)]))
             prim.GetPrim().SetInstanceable(True)
-    stage.Load('/World/Plant');stage.Load('/World/PhysicsBackdrop')
+    stage.Load('/World/Plant')
+    if sparse_backdrop: stage.Load('/World/PhysicsBackdrop')
     triangles=floor_triangles(stage,PACKAGE_FLOOR)
     def height(x,y): return surface_height(triangles,x,y)
     colliders=sum(p.HasAPI(UsdPhysics.CollisionAPI) and bool(UsdPhysics.CollisionAPI(p).GetCollisionEnabledAttr().Get())
@@ -60,7 +61,7 @@ def prepare(stage,package,plant):
     report=dict(scene=str(package/'house/green_house_base.usd'),selected_gutter=gutter,
         plant_position_world_m=position.tolist(),placement='same_foreground_station_as_package_preview',
         greenhouse_geometry_moved=False,gutters_in_asset=len(stations),
-        detailed_plants=1,distant_instanced_plants=4,near_neighbors='not_yet_added',
+        detailed_plants=1,distant_instanced_plants=4 if sparse_backdrop else 0,near_neighbors='see_context_report' if not sparse_backdrop else 'not_yet_added',
         static_infrastructure_bodies=fixed_bodies,static_infrastructure_joints_disabled=disabled_joints,
         source_scenes_disabled=disabled_scenes,active_collision_prims=colliders,
         excluded_unbundled_props=len(excluded),floor_path=PACKAGE_FLOOR,

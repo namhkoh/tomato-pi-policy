@@ -30,11 +30,24 @@ def test_interactive_robot_needs_visible_window(tmp_path):
         main(['--output',str(tmp_path/'unused'),'--robot-interactive'])
 
 
-@pytest.mark.parametrize('option',['--sparse-contacts','--finger-gravity','--profile'])
+@pytest.mark.parametrize('option',['--sparse-contacts','--finger-gravity','--profile','--local-wire-physics','--batch-gutter-visuals','--scene-profile'])
 def test_robot_options_are_not_silently_ignored(tmp_path,option):
     from sim_physics.benchmark import main
     with pytest.raises(ValueError):
         main(['--output',str(tmp_path/'unused'),option])
+    assert not (tmp_path/'unused').exists()
+
+
+def test_capture_can_be_disabled_without_disabling_rendering():
+    from sim_physics.benchmark import parser
+    args=parser().parse_args(['--output','unused','--render-hz','30','--no-capture-milestones'])
+    assert args.render_hz==30 and not args.capture_milestones
+
+
+def test_cutting_cannot_silently_run_without_native_contact_and_gripper_guards(tmp_path):
+    from sim_physics.benchmark import main
+    with pytest.raises(ValueError,match='Bimanual cutting requires'):
+        main(['--output',str(tmp_path/'unused'),'--bimanual-cut'])
     assert not (tmp_path/'unused').exists()
 
 

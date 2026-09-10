@@ -29,4 +29,14 @@ def test_actual_package_placement_floor_and_collisions_are_session_only():
     assert all(v==0 for v in robot.report()['torso_degrees'])
     assert robot.report()['finger_gravity_compensation']
     assert report['demo_lights_adjusted']>0
+    from sim_physics.collision_window import configure
+    window=configure(stage,robot)
+    assert window['retained_wire_colliders']>0
+    assert window['disabled_unreachable_wire_colliders']>6000
+    assert UsdPhysics.CollisionAPI(stage.GetPrimAtPath(report['selected_gutter']+'/Collision')).GetCollisionEnabledAttr().Get()
+    assert stage.GetRootLayer().ExportToString()==before
+    from sim_physics.gutter_instances import batch
+    batched=batch(stage)
+    assert batched['module_count']==3525 and batched['collision_proxies_retained']==75
+    assert UsdPhysics.CollisionAPI(stage.GetPrimAtPath(report['selected_gutter']+'/Collision')).GetCollisionEnabledAttr().Get()
     assert stage.GetRootLayer().ExportToString()==before

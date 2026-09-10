@@ -178,7 +178,12 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     from .runtime import pose_matrices
     fixture.bind(sim.physics_sim_view)
     full_robot=bool(getattr(args,'full_robot_probe',False))
-    clock=PhysicsClock(sim,physics_hz=args.physics_hz,render_hz=args.render_hz)
+    capture_milestones=bool(getattr(args,'capture_milestones',True))
+    step_context=sim
+    if getattr(args,'step_profile',False):
+        from .step_profile import MeasuredStep
+        step_context=MeasuredStep(sim)
+    clock=PhysicsClock(step_context,physics_hz=args.physics_hz,render_hz=args.render_hz)
     records=[];events=[];stable=0;grasp_local=None;baseline=None;goal_set=False
     moved=False;fault=None;release_authorized=False;captures={}
     viewport=None
@@ -249,6 +254,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             contact=c,slip_m=slip,max_speed_m_s=speed,max_gripper_net_contact_n=total,
             support_error_m=support,tip_deflection_m=displacement,cut=rig.cut))
         if full_robot:
+            fixture.check_plant_window(frames)
             records[-1]['robot']=fixture.check(dt,palm)
             fixture.on_sample(records[-1])
         if speed>20 or total>3 or support>1e-5 or (not rig.cut and displacement>.12):
@@ -256,13 +262,13 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
 
     print('GRIPPER_PROBE_READY '+json.dumps(fixture.report()),flush=True)
     try:
-        if viewport: capture('initial')
+        if viewport and capture_milestones: capture('initial')
         for _ in range(int(args.seconds*args.physics_hz)):
             tick_start=time.monotonic()
             if not app.is_running(): raise RuntimeError('Probe closed before completion')
             if full_robot and fixture.stop_requested: raise RuntimeError('Stopped by user; reset before replay')
             clock.tick(before=before,after=after,before_render=lambda _:runtime.sync_visuals())
-            if viewport:
+            if viewport and capture_milestones:
                 for name,t in (('approach',1.9),('closed',3.4),('moved',4.5),('hold_after_diagnostic_release',5.3),('opened',6.6)):
                     if clock.stamp.simulation_time_s>=t and name not in captures:
                         capture(name)
@@ -307,14 +313,19 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         replay.append(float(np.linalg.norm(reset_runtime.tip()-np.array(records[i]['tip']))))
     measurements['reset_replay_error_m']=max(replay,default=None)
     gates['reset_replays']=len(replay)==int(.5*args.physics_hz) and measurements['reset_body_error_m']<.005 and max(replay)<.001
+    if viewport and capture_milestones:
+        runtime=reset_runtime
+        capture('reset_replay')
     result=dict(state='passed_gripper_mechanism_not_robot_task' if all(gates.values()) else 'failed_gripper_qualification',
         gates=gates,measurements=measurements,error=fault,events=events,timing=clock.report(),images=captures,
+        paused_milestone_captures=capture_milestones,
         grasp_fixture_only=True,full_robot_ik_verified=False,physical_cut_verified=False,training_eligible=False,
         unknown_contact_load_prediction='not_included_in_elastic_predictor_native_contact_response_under_test')
     if full_robot:
         result.update(grasp_fixture_only=False,full_robot_ik_executed=True,
             robot=fixture.report(),full_robot_ik_verified=fault is None,
             full_deleafing_task_verified=False)
+    if step_context is not sim: result['step_profile']=step_context.report()
     (output/'gripper_trajectory.json').write_text(json.dumps(records,allow_nan=False),encoding='utf-8')
     sim.stop()
     return result

@@ -7,13 +7,15 @@ class ContactEvents:
         self.robot_root=robot_root;self.target_root=target_root
         self.fingers=set(fingers);self.floor_root=floor_root
         self.subscription=None;self.paths={};self.total_events=0;self.error=None
+        self.tool_contact=None
         self.begin_step()
 
     def begin_step(self):
         self.pairs={}
         self.allowed_target_impulse=0.;self.unwanted_impulse=0.;self.self_impulse=0.
+        self.allowed_tool_impulse=0.
 
-    def consume(self,first,second,impulses):
+    def consume(self,first,second,impulses,points=None):
         """Pure accounting entry point also used by regression tests."""
         r0=first.startswith(self.robot_root+'/');r1=second.startswith(self.robot_root+'/')
         if not r0 and not r1: return
@@ -40,7 +42,16 @@ class ContactEvents:
         else:
             # Includes finger hits on neighbors/gutters and non-finger target
             # contact, not only the selected plant or a pre-enumerated subset.
-            self.unwanted_impulse+=magnitude
+            if points is not None and len(points)!=len(impulses):
+                raise ValueError('Native contact position/impulse count mismatch')
+            if points is not None and self.tool_contact is not None:
+                for point,impulse in zip(points,impulses,strict=True):
+                    if len(point)!=3 or not all(math.isfinite(v) for v in point):
+                        raise ValueError('Nonfinite native contact position')
+                    if self.tool_contact(robot,other,point,impulse):
+                        self.allowed_tool_impulse+=math.hypot(*impulse)
+                    else: self.unwanted_impulse+=math.hypot(*impulse)
+            else: self.unwanted_impulse+=magnitude
 
     def subscribe(self):
         from omni.physx import get_physx_simulation_interface
@@ -57,7 +68,8 @@ class ContactEvents:
                 start=header.contact_data_offset;stop=start+header.num_contact_data
                 if start<0 or stop>len(data): raise ValueError('Invalid native contact buffer range')
                 impulses=[(float(c.impulse.x),float(c.impulse.y),float(c.impulse.z)) for c in data[start:stop]]
-                self.consume(path(header.collider0),path(header.collider1),impulses)
+                points=[(float(c.position.x),float(c.position.y),float(c.position.z)) for c in data[start:stop]]
+                self.consume(path(header.collider0),path(header.collider1),impulses,points)
         except Exception as exc:
             # Callback exceptions must propagate to the explicit control guard.
             self.error=str(exc)
@@ -67,6 +79,7 @@ class ContactEvents:
         if self.error: raise RuntimeError(self.error)
         return dict(unwanted_contact_n=self.unwanted_impulse/dt,
             self_contact_n=self.self_impulse/dt,allowed_target_contact_n=self.allowed_target_impulse/dt,
+            allowed_tool_contact_n=self.allowed_tool_impulse/dt,
             native_contact_events=self.total_events)
 
     def close(self):

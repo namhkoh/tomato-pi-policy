@@ -23,7 +23,7 @@ def finger_force_budget(gravity):
 
 class FullRobotGripper(GripperFixture):
     def __init__(self,stage,rig,*,arc=.08,friction=.5,ground_height=None,
-                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.):
+                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2)):
         from pxr import Gf,Sdf,Usd,UsdGeom,UsdPhysics,UsdShade
         from greenhouse_sim.robot_model import DEFAULT_ASSET,DEFAULT_URDF
         from greenhouse_sim.robot_kinematics import Rby1Kinematics,base_transform
@@ -35,6 +35,7 @@ class FullRobotGripper(GripperFixture):
         if torso_degrees is not None: self.kin.set_default_torso_degrees(torso_degrees)
         self.sparse_contacts=sparse_contacts;self.event_monitor=None;self.floor_root=floor_root
         self.finger_gravity=finger_gravity;self.finger_compensation=np.zeros(2)
+        self.window=None
         self.body_index=int(np.argmin(np.abs((rig.arcs[:-1]+rig.arcs[1:])/2-arc)))
         if self.body_index<rig.cut_index or rig.arcs[self.body_index]<.035:
             raise ValueError('Grasp must leave clearance from the diagnostic seam')
@@ -47,7 +48,13 @@ class FullRobotGripper(GripperFixture):
         # arm does, so do not reuse its top-down approach blindly.
         point=rig.rest_frames[self.body_index,:3,3]
         y=rig.rest_frames[self.body_index,:3,2]
-        z=np.array([1.,-1.,.2]);z-=y*np.dot(y,z);z/=np.linalg.norm(z)
+        z=np.asarray(approach_vector,dtype=float).copy()
+        if z.shape!=(3,) or not np.isfinite(z).all(): raise ValueError('Invalid approach vector')
+        z-=y*np.dot(y,z)
+        if np.linalg.norm(z)<.1: raise ValueError('Approach vector nearly parallel to stem')
+        z/=np.linalg.norm(z)
+        if approach_side not in (-1,1): raise ValueError('Approach side must be -1 or 1')
+        self.approach_side=approach_side;z*=approach_side
         if not np.isfinite(approach_tilt) or abs(approach_tilt)>30:
             raise ValueError('Diagnostic approach tilt must be within 30 degrees')
         self.approach_tilt=float(approach_tilt)
@@ -62,6 +69,10 @@ class FullRobotGripper(GripperFixture):
         angle=np.radians(yaw);forward=np.array([np.cos(angle),np.sin(angle),0.])
         left=np.array([-np.sin(angle),np.cos(angle),0.])
         self.base=base_transform(self.start[:3,3]-.4*forward-.22*left,yaw);self.base[2,3]=.001
+        self.station_offset=np.asarray(station_offset,dtype=float)
+        if self.station_offset.shape!=(2,) or not np.isfinite(self.station_offset).all() or np.linalg.norm(self.station_offset)>.3:
+            raise ValueError('Initial station adjustment must be finite and within 0.3 m')
+        self.base[:3,3]+=self.station_offset[0]*forward+self.station_offset[1]*left
         if ground_height is not None: self.base[2,3]+=ground_height(*self.base[:2,3])
         self.pose=dict(SDK_READY_POSE_DEGREES)
         self.pose.update({f'torso_{i}':float(v) for i,v in enumerate(self.kin.default_torso_degrees())})
@@ -187,12 +198,14 @@ class FullRobotGripper(GripperFixture):
         return dict(asset=str(self.asset),scope='full_dynamic_robot_native_joint_drives',
             arm_ik_solved=True,grasp_weld=False,plant_pose_override=False,base_fixed=True,
             robot_base_world=self.base.tolist(),grasp_body=self.grasp_path,grasp_arc_m=self.arc,
+            initial_station_forward_left_offset_m=self.station_offset.tolist(),
             source_colliders_retained=len(self.collider_paths),finger_max_drive_force_n=.5,
             mounting_proxy_exclusions=self.mount_exclusions,self_collision_enabled=True,
             contact_monitor='sparse_native_events' if self.sparse_contacts else 'dense_pair_matrices',
             finger_gravity_compensation=self.finger_gravity,total_finger_effort_limit_n=.5,
             torso_degrees=self.kin.default_torso_degrees().tolist(),floor_root=self.floor_root,
             approach_tilt_degrees=self.approach_tilt,
+            approach_side=self.approach_side,
             minimum_planned_interarm_capsule_clearance_m=self.minimum_interarm,
             right_arm='parked_with_original_fitted_knife_not_cutting',
             target_source='privileged_test_fixture_not_perception_verified',
@@ -249,6 +262,9 @@ class FullRobotGripper(GripperFixture):
                 filter_patterns=[self.body_paths]*len(self.body_paths))
             if self.plant_contacts.sensor_count!=len(self.body_paths): raise RuntimeError('Incomplete robot contact sensors')
         self.robot_bodies=simulation_view.create_rigid_body_view(self.body_paths)
+        if len(self.robot_bodies.prim_paths)!=len(self.body_paths) or set(self.robot_bodies.prim_paths)!=set(self.body_paths):
+            raise RuntimeError('Incomplete native robot body coverage')
+        self.body_order=[self.body_paths.index(p) for p in self.robot_bodies.prim_paths]
 
     def target_palm(self,position):
         if self.event_monitor is not None: self.event_monitor.begin_step()
@@ -278,6 +294,11 @@ class FullRobotGripper(GripperFixture):
     def check(self,dt,palm):
         error=float(np.linalg.norm(palm[:3,3]-self.expected_palm[:3,3]))
         speed=float(np.linalg.norm(self.robot_bodies.get_velocities()[:,:3],axis=1).max())
+        if self.window is not None:
+            from .collision_window import inside_window
+            if not inside_window(self.robot_bodies.get_transforms()[:,:3],
+                    self.window_robot_radii[self.body_order],**self.window):
+                raise RuntimeError('Robot collision geometry left the validated local wire window')
         if self.event_monitor is not None:
             metrics=self.event_monitor.measurements(dt)
             # Positive native finger tensor loads must be observed by the
@@ -324,6 +345,12 @@ class FullRobotGripper(GripperFixture):
         self.latest_finger_bilateral=result['bilateral']
         return result
 
+    def check_plant_window(self,frames):
+        if self.window is not None:
+            from .collision_window import inside_window
+            if not inside_window(frames[:,:3,3],self.window_plant_radii,**self.window):
+                raise RuntimeError('Dynamic plant left the validated local wire window')
+
     def setup_views(self,viewport):
         from pxr import Gf,UsdGeom
         self.viewport=viewport
@@ -359,6 +386,9 @@ def interactive(app,sim,rig,fixture,args,output):
     from pxr import UsdLux
     from omni.kit.viewport.utility import get_active_viewport
     from .gripper_probe import run
+    cutting=bool(getattr(args,'bimanual_cut',False))
+    if cutting:
+        from .bimanual_probe import run
     from .runtime import PlantRuntime
     from .implicit_springs import ImplicitJointSprings
     if args.scene=='isolated':
@@ -366,21 +396,27 @@ def interactive(app,sim,rig,fixture,args,output):
     fixture.setup_views(get_active_viewport())
     request={'run':True,'reset':False};runs=[]
     def command(name): request[name]=True
-    window=ui.Window('Full RB-Y1 - physical grasp test',width=390,height=560)
+    window=ui.Window('Full RB-Y1 - physical '+('grasp + cut' if cutting else 'grasp test'),width=390,height=610)
     with window.frame:
         with ui.VStack(spacing=6):
             ui.Label('FULL DYNAMIC RBY1-A v1.2',height=25)
             ui.Label('IK-driven left arm, force-limited fingers. Original plant; only the target petiole is compliant. No grasp weld.',word_wrap=True,height=52)
             status=ui.Label('Ready. Run approach / grasp / 10 mm motion.',word_wrap=True,height=65)
-            ui.Button('Run grasp + 10 mm movement',height=30,clicked_fn=lambda:command('run'))
+            ui.Button('Run left grasp + right knife' if cutting else 'Run grasp + 10 mm movement',height=30,clicked_fn=lambda:command('run'))
             ui.Button('Stop test',height=26,clicked_fn=lambda:setattr(fixture,'stop_requested',True))
             ui.Button('Reset',height=26,clicked_fn=lambda:command('reset'))
+            with ui.HStack(height=23):
+                captures=ui.CheckBox()
+                captures.model.set_value(bool(getattr(args,'capture_milestones',True)))
+                captures.model.add_value_changed_fn(lambda m:setattr(args,'capture_milestones',m.get_value_as_bool()))
+                ui.Label('Save milestone PNGs (pauses next trial)')
             for name in fixture.views:
                 ui.Button(name,height=23,clicked_fn=lambda n=name:fixture.select_view(n))
-            ui.Label('Diagnostic: privileged target, no cutting/deposit qualification, no dataset collection, no hardware commands.',word_wrap=True,height=48)
+            ui.Label('Diagnostic: privileged target; seam release is not calibrated tissue fracture. No deposit qualification, training approval or hardware commands.',word_wrap=True,height=48)
     def on_sample(record):
         if round(record['t']*240)%8: return
         t=record['t'];phase='Settle' if t<1 else 'IK approach' if t<2 else 'Close fingers' if t<3 else 'Grasp hold' if t<3.5 else 'Move if grasp verified' if t<4.5 else 'Hold' if t<5.5 else 'Open'
+        phase=record.get('phase',phase)
         slip=record['slip_m']
         status.text=f"{phase} | {t:.2f} s\nOpposing shaft contact: {record['contact']['bilateral']}\nSlip: {'n/a' if slip is None else format(slip*1000,'.2f')+' mm'}"
     fixture.on_sample=on_sample
@@ -406,7 +442,7 @@ def interactive(app,sim,rig,fixture,args,output):
                 result=run(app,sim,rig,runtime,springs,fixture,args,folder)
                 (folder/'report.json').write_text(json.dumps(result,indent=2,allow_nan=False),encoding='utf-8')
                 runs.append(result)
-                status.text=('Limited grasp test PASSED' if all(result['gates'].values()) else 'Test did NOT pass')+'\n'+str(result['error'] or result['gates'])
+                status.text=('Limited mechanism test PASSED' if all(result['gates'].values()) else 'Test did NOT pass')+'\n'+str(result['error'] or result['gates'])
                 (output/'live_status.json').write_text(json.dumps(result,indent=2,allow_nan=False),encoding='utf-8')
                 print('FULL_ROBOT_TRIAL '+json.dumps(dict(state=result['state'],error=result['error'],gates=result['gates'])),flush=True)
             else: status.text='Reset. Ready for a new grasp trial.'

@@ -8,6 +8,11 @@ Current dataset track: `koh-dev/sim-data`, Isaac Sim 6.0.1 at
 `D:\isaac-sim-6.0.1`; static robot-head native RGB-D capture. The legacy runtime
 and branch description below belongs to the earlier physics/RL integration.
 
+Current physics integration: `koh-dev/sim-vlm`. See the 2026-09-10 latency/
+dense-context entry at the end and
+[`PROOF_OF_LIFE.md`](examples/greenhouse_sim/sim_physics/PROOF_OF_LIFE.md)
+for the revised no-teleoperated-demonstrations VLM + feedback-controller plan.
+
 ## VLM source checkpoint before simulator integration, 2026-09-10
 
 - Checkpoint the pending VLM work on `koh-dev/sim-data` before creating
@@ -3545,3 +3550,196 @@ One logical change per commit; no AI attribution trailers.
   zero first-half-second reset/replay error. Rendered tick throughput remains
   **0.108x real time**, median native step **34.20 ms**. Performance is still
   an explicit blocker; passing the grasp gates does not waive it.
+
+## Greenhouse latency, dense vines and proof-of-life scope, 2026-09-10
+
+- Started from clean `koh-dev/sim-vlm` at `b9b83b8`. Continued the current
+  full-robot greenhouse physics track; no source assets, dataset splits,
+  human/advisory decisions, model credentials or collection jobs changed.
+  Closed only the verified prior physics-demo window to run bounded profiling.
+  Review services were left alone. No training or hardware commands started.
+- Split timing of the installed native physics-only step. Stage/time/dt lookups
+  are small; most time is in native `simulate`. Disabling optional native
+  profiler instrumentation and removing disabled infrastructure body APIs
+  produced no useful improvement. Disabling far wire collision flags alone
+  also did not help. Failed startup diagnostics `greenhouse_opt_20260910_02`
+  and `_03` exposed USD BBox binding/guide-purpose mistakes, fixed before
+  qualification; those runs do not count as successful tests.
+- Causal controls `data/sim_physics/greenhouse_scene_profile_20260910_01`
+  through `_04`: full scene ~35 ms/step; without wires ~29 ms; without
+  gutters ~9-10 ms; without backdrop or building ~35-38 ms. Removing only
+  the repeated gutter visual modules gives ~10 ms. Removing the entire
+  background gives ~3 ms but removes required functionality and is NOT the
+  adopted fix. All ablation records are explicitly non-qualifying.
+- Implemented session-only batching of **3,525 identical gutter visual modules**
+  into one point instancer. Exact source geometry/materials are referenced;
+  all **75 gutter collision proxies** remain. Reject animated, mixed-prototype
+  or physical visual modules. Test transforms, preserved collisions and
+  unchanged source/session ownership.
+- Implemented a guarded fixed-base 4x4 m XY wire collision window. It keeps
+  12 intersecting proxies, deactivates 7,038 unreachable non-rendered guide
+  proxies and leaves visible wires/floor/building/gutter/target geometry.
+  Full world collision bounds (including invisible/guide-purpose shapes)
+  determine retention. All native robot/dynamic-plant collision spheres are
+  checked per step with a 15 cm margin; incomplete body coverage is rejected.
+  This is not mobile-robot streaming: changing the base requires a rebuild.
+- Restored original preview planting positions on three gutters: **143 supplied
+  context plants + one detailed target**. Native static triangle-mesh contact
+  is added to 71 nearby context plants through anonymous prototype stages;
+  72 distant plants remain visual-only instances. Only the selected petiole/
+  carriers are compliant; context is not a validated flexible-plant model.
+  All 75 gutters are still visible, but not all 75 are populated with vines.
+- Rendered bounded results with all original grasp/contact/effort/240 Hz gates:
+  sparse batched `greenhouse_opt_20260910_06` native-step median **5.99 ms**,
+  tick throughput **0.446x real time**; dense
+  `greenhouse_dense_20260910_01` **6.82 ms / 0.411x**, compared with original
+  **34.20 ms / 0.108x**. The no-Fabric dense control `_02` is slower
+  (**9.10 ms / 0.331x**), so Fabric remains enabled.
+  These are per-trial measurements, excluding startup, paused screenshots and
+  reset; not real-time operation, sensor FPS or average task performance.
+- All optimized runs above passed the limited grasp gates. Their **entire
+  1,680-step physical records equal the original baseline**, including robot
+  tracking/contact, plant/finger motion and zero half-second reset replay
+  error. No artificial grasp weld or increased finger force was introduced.
+  Target movement is 7.825 mm, max slip 2.489 mm, penetration 0.370 mm.
+- Inspected native images: sparse `_06/closed.png`, dense `_01/closed.png`,
+  and normal-step repeat `greenhouse_dense_20260910_03/reset_replay.png`.
+  Greenhouse/vines/robot remain visible after reset. The latter run also passes
+  grasp/reset gates without the step-profile wrapper. These are diagnostic
+  viewport images, not new training data or synchronized mounted RGB-D.
+- Isaac Fabric still emits a point-instancer prototype-mismatch warning on
+  reset. It is not suppressed; inspected renders and physical replay pass.
+  Broader sensor/render/reset qualification remains required before dynamic
+  dataset use. A ~0.9 s once-per-trial IK replan also remains a UI latency cost.
+- The default greenhouse launcher now enables batching, the guarded collision
+  window and three populated gutters. Automatic paused milestone PNGs are
+  off for interactive playback; a checkbox enables them for the next trial.
+  Rendering, contact feedback, camera-view buttons, Run/Stop/Reset and bounded
+  evidence capture remain available. Added a post-reset evidence snapshot.
+- Initial regression: **685 tests + 47 subtests passed (61.89 s)**.
+  Final regression and interactive relaunch results are recorded below.
+- Added `examples/greenhouse_sim/sim_physics/PROOF_OF_LIFE.md`: parallel
+  VLM grounding/abstention fine-tuning and completion of the mechanical
+  grasp/cut/retain/deposit controller. Proposed 8B LoRA baseline, frozen 32B
+  comparison, smaller model only after measurement. Four-H200 host access/
+  availability and deadline still need confirmation. No trainer was added
+  or launched in this optimization increment.
+- The existing task-v3 candidate data is static and not a VLA action dataset.
+  Privileged fixture IK does not prove observation-driven VLM execution.
+  Native synchronized reobservation, guarded flat-blade cutting, retained
+  orphan/deposit and recovery must pass before auto-generated dynamic
+  action/outcome records can support a learned low-level policy. Explicit
+  acceptance gates, effort estimates and failure-record requirements are
+  documented; none of those future results are claimed as achieved.
+- Final regression: **685 tests + 47 subtests passed (62.01 s)**;
+  `git diff --check` passed. Normal-step dense repeat `_03` passes at
+  **6.75 ms / 0.421x** with unchanged monitored source hashes.
+- Relaunched the optimized persistent GUI as Kit PID **95964** (hidden helper
+  cmd 60624). Windows reports a responding `Isaac Sim Python 6.0.1` window.
+  `data/sim_physics/greenhouse_optimized_demo_20260910_01/trial_001/report.json`
+  confirms all grasp/reset gates pass with milestone captures disabled.
+  Actual GUI throughput is **0.345x**, 7 simulated seconds in 20.28 measured
+  tick-wall seconds, median native step 8.36 ms. Do not substitute the faster
+  headless rendered timing for this visible-UI measurement.
+
+### Bimanual knife foundation and bounded additional data (2026-09-10/11)
+
+Branch remains `koh-dev/sim-vlm`, based on `b9b83b8`. User explicitly requested
+additional collection, left-hand grasp/right-hand cutting, and use of the
+existing deleafing knife with careful engineering. No source asset, frozen
+split, review decision, approved release, or hardware state was changed.
+
+**New static captures, not trained policies or dynamic episodes:**
+
+- Generated immutable plan `data/sim_data/collection_plans/grounding_sunday_20260910_v1/plan.json`
+  (16 targets, 32 views, new proposal offset 128). The first validation worker
+  failed after 114 captures with NumPy `_ArrayMemoryError` during static
+  geometry screening. Its durable exit receipt records return code 1. Output
+  `collection_batches/grounding_sunday_20260910_v1` remains `failed_do_not_train`;
+  it was not salvaged by overriding worker/review state. Simultaneous heavy
+  collection and physics qualification exhausted Windows commit headroom.
+- Changed scheduling, not data semantics: new plan
+  `collection_plans/grounding_sunday_small_20260910_v2/plan.json`, two targets,
+  12 views, offset 176, unchanged family reservations. Ran three serial workers
+  with `--instance-backend fast --render-budget warm56_then8`, separately from
+  subsequent physics runs. Batch `collection_batches/grounding_sunday_small_20260910_v2`
+  completed with exit/audit receipts for every worker: **48 raw captures**,
+  12 `seed101_full` train-family, 14 `seed13_full` validation-family, and
+  22 `seed31_full` test-family. Automatic clear-view counts are 10/13/18;
+  these are numerical gates, not human anatomy approvals or difficulty quotas.
+- Within each job: `capture/sample_?/inputs/rgb.png` and `depth_m.npy`, with
+  native segmentation, calibration and provenance. Depth is Isaac Replicator
+  `distance_to_image_plane`, not script-reconstructed depth. Native calibration
+  checks passed; full-scene mounted-camera 848x408 capture contract preserved.
+  All 48 remain pending visual review. No new final task-v3 export or VLM
+  training was started; none of this batch is action/outcome experience.
+
+**Knife integration and contact mechanism (experimental):**
+
+- Found an actual mount-frame error in the fitted v1.2 asset: blade EE Z range
+  0..71.48 mm and U-support 61.47..123.77 mm lie back into the arm; wrist
+  geometry occupies Z=0..46.5 mm. `sim_physics/knife.py:mount_forward` rotates
+  the existing knife 180 degrees around EE Y at the same flange origin,
+  retaining flat-edge +Y cutting direction and moving the unchanged geometry
+  to distal -Z. Session-only, idempotent, does not restore the right tongs or
+  edit the source robot/knife. Fastener-level CAD fit remains unqualified.
+- `bimanual.py` adds native right-wrist feedback, cached actual knife geometry,
+  bounded orientation/edge-wing IK candidates and dense inter-arm screens.
+  `robot_kinematics.solve_pose` now accepts a bounded evaluation budget while
+  preserving the old default. Bimanual planning uses 250 evaluations per solve.
+  Whole-tool/swept-scene collision certification is still incomplete.
+- Extended sparse native contact accounting with point-specific expected tool
+  loads. Only `BladeCollision` contacts inside the actual leading-edge strip,
+  on the designated two seam-adjacent stem capsules, qualify. Broad plate,
+  arc, camera, neighboring plant and protected-structure contacts remain guarded.
+- `ShearGate` requires a verified opposing left stem grasp, <3 mm slip,
+  transverse geometry, native force 0.2..0.5 N for >=25 ms and >=0.3 mm measured
+  relative loading travel. No commanded velocity, timer or disconnected taps
+  can substitute for this evidence. Thresholds are **engineering priors**, not
+  measured tomato fracture properties. `release_from_blade` validates evidence
+  before disabling the preauthored 10 mm seam joint. This is a contact-triggered
+  joint-failure proxy, NOT calibrated tissue cutting or arbitrary mesh fracture.
+- `bimanual_probe.py` executes guarded grasp/plan/approach/load/withdraw/retain
+  phases and logs failures separately from successful release. No welds, plant
+  pose overrides, hardware commands, or automatic training approval. Retention,
+  actual material separation and completed withdrawal must independently pass.
+  Deposit/recovery and moving-scene RGB-D observation integration remain TODO.
+- Added a collision-geometry startup screen before native motion, including
+  hidden/instance proxies, triangle/quad surface refinement, and convex solid
+  containment. Broad boxes alone wrongly flagged the empty space of merged
+  foliage; the refined check clears the known safe station while retaining
+  physical contact guards. No collision shapes were disabled for cutting.
+
+**Evidence and current stopping point:**
+
+- `data/sim_physics/bimanual_cut_20260910_01`: rejected opposite-side station;
+  native collision guard stopped at spawn. No cut or valid grasp. Never present
+  it as a successful bimanual demonstration.
+- `bimanual_cut_20260911_02`: conservative preflight rejected broad foliage
+  boxes; this exposed missing quad refinement, subsequently fixed with tests.
+- `bimanual_cut_20260911_03`: original stable station + corrected knife + all
+  143 contextual plants. Refined spawn screen passes (118 broad pairs refined,
+  zero remaining overlaps). Native left-arm approach/grasp ran **840 steps /
+  3.5 s**; every measured 3.0..3.5 s hold frame had opposing stem contact,
+  last minimum separation -0.334 mm, max unintended contact 0.111 N. The right
+  cutting path is not feasible under the current IK/arm-clearance candidates;
+  it fails closed before right motion. **Zero blade contacts, zero cuts, no
+  post-cut retention claim.** Source hashes unchanged; `grasp.png` is rendered
+  diagnostic evidence, not a robot-camera training frame.
+- `run_bimanual_cut_probe.cmd` is explicitly labeled experimental/unqualified;
+  the established grasp demo launchers remain on the prior qualified behavior.
+  Next work is a jointly planned bimanual station/pose with full-tool corridor
+  checks, followed by native force-controlled stroke/retention qualification.
+  Do not weaken contacts, slip/force guards, or classify timed release as a cut
+  to obtain a deadline demonstration. The full requested sequence is NOT ready.
+- Final corrected-mount replay `bimanual_cut_20260911_04/report.json` explicitly
+  records `left_grasp_verified=true`, hold bilateral fraction 1.0, and
+  `collision_clear_right_plan=false`. The knife is visible extending from the
+  flange in `knife_mount.png` (visually inspected); right tongs are absent and
+  the D405 assembly is retained. All monitored source hashes match. This is
+  failed-sequence diagnostic evidence, not a grasp-cut demonstration.
+- Regression: **730 tests + 47 subtests passed (67.27 s)**, covering the native
+  harness, kinematics, fixed physics clock and static data pipeline; subsequent
+  edits only restrict candidate support orientation to the upward side and
+  remove unused imports. No collection/physics worker from this turn remains
+  running. All data/review releases and training jobs are unchanged.

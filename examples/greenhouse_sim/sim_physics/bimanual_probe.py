@@ -1,0 +1,152 @@
+"""Bounded grasp -> blade load -> withdraw -> retention qualification.
+
+Outputs are diagnostic evidence only, never automatically training-approved.
+Grasp is native opposing finger contact; no weld or pose override is used.
+"""
+import asyncio
+import json
+import time
+
+import numpy as np
+
+from .gripper_probe import ramp,setup_probe_camera
+from .runtime import pose_matrices
+
+
+def run(app,sim,rig,runtime,springs,fixture,args,output):
+    from greenhouse_sim.physics_clock import PhysicsClock
+    fixture.bind(sim.physics_sim_view)
+    clock=PhysicsClock(sim,physics_hz=args.physics_hz,render_hz=args.render_hz)
+    records=[];events=[];captures={};fault=None;stable=0;lost=0
+    grasp_local=None;goal_set=False;planned=False;grasp_verified=False;cut_time=None;cut_fraction=0.
+    viewport=None
+    if args.render_hz:
+        from pxr import UsdLux
+        from omni.kit.viewport.utility import get_active_viewport
+        viewport=get_active_viewport()
+        if args.scene=='isolated': UsdLux.DomeLight.Define(rig.stage,'/World/ProbeLight').CreateIntensityAttr(1400.)
+        viewport.set_active_camera(setup_probe_camera(rig.stage,rig.rest_frames[fixture.body_index,:3,3]))
+        fixture.setup_views(viewport)
+
+    def capture(name):
+        from omni.kit.viewport.utility import capture_viewport_to_file
+        runtime.sync_visuals();before=runtime.frames.copy()
+        for _ in range(20): sim.render()
+        future=asyncio.ensure_future(capture_viewport_to_file(viewport,str(output/(name+'.png'))).wait_for_result())
+        deadline=time.monotonic()+30
+        while not future.done():
+            if not app.is_running() or time.monotonic()>deadline: raise RuntimeError('Capture failed')
+            sim.render()
+        future.result();runtime.sample()
+        if not np.allclose(before,runtime.frames,atol=1e-8,rtol=0): raise RuntimeError('Capture advanced physics')
+        captures[name]=name+'.png'
+
+    def before(stamp,dt):
+        nonlocal goal_set,grasp_local,planned,cut_fraction,grasp_verified
+        t=stamp.simulation_time_s
+        if t>=.9 and not goal_set:
+            fixture.goal[:3,3]=runtime.frames[fixture.body_index,:3,3]+.1025*fixture.goal[:3,2]
+            fixture.plan_approach();goal_set=True
+        goal=fixture.start[:3,3]+ramp(t,1,2)*(fixture.goal[:3,3]-fixture.start[:3,3])
+        if cut_time is not None:
+            goal+=.008*ramp(t,cut_time+1,cut_time+2)*fixture.goal[:3,2]
+        fixture.target_palm(goal);fixture.close(ramp(t,2,3))
+        if t>=3.5 and not planned:
+            if stable<int(.1*args.physics_hz): raise RuntimeError('Left grasp was not stable before knife planning')
+            grasp_verified=True
+            events.append(dict(t=t,event='left_grasp_verified',grasp_body=fixture.grasp_path,
+                consecutive_bilateral_steps=stable))
+            palm=pose_matrices(fixture.palm.get_transforms())[0]
+            grasp_local=(runtime.frames[fixture.body_index,:3,3]-palm[:3,3])@palm[:3,:3]
+            q=np.degrees(fixture.robot.get_dof_positions()[0,fixture.left_indices])
+            fixture.plan_cut(runtime.frames,q);planned=True
+            events.append(dict(t=t,event='grasp_verified_and_right_IK_planned',plan=fixture.report()['cut_plan']))
+        phase='park';fraction=0.
+        if planned and t>=4:
+            phase='approach';fraction=ramp(t,4,8)
+            if t>=8:
+                phase='stroke';fraction=ramp(t,8,14)
+                # Planned centre must still match the native seam; no stale
+                # target execution following an unmodeled plant movement.
+                if cut_time is None and np.linalg.norm(fixture.seam(runtime.frames)[0]-fixture.plan['centre'])>.003:
+                    raise RuntimeError('Cut target moved >3 mm since verified plan; reobserve/replan required')
+            if cut_time is not None:
+                if t<cut_time+2:
+                    phase='stroke';fraction=cut_fraction*(1-ramp(t,cut_time,cut_time+2))
+                else:
+                    phase='approach';fraction=1-ramp(t,cut_time+2,cut_time+6)
+            elif t>=14:
+                raise RuntimeError('Cut stroke ended without qualified blade contact; no timed release')
+            if lost>int(.05*args.physics_hz): raise RuntimeError('Left grasp lost during bimanual sequence')
+        fixture.cut_authorized=phase=='stroke'
+        fixture.command_right(phase,fraction)
+        fixture.prepare_step(runtime.frames)
+        springs.step(dt,root_constrained=not rig.cut)
+
+    def after(stamp,dt):
+        nonlocal stable,lost,cut_time,cut_fraction
+        frames,velocity=runtime.sample();frame=frames[fixture.body_index]
+        c=fixture.contact(dt,frame);stable=stable+1 if c['bilateral'] else 0
+        lost=0 if c['bilateral'] else lost+1
+        palm=pose_matrices(fixture.palm.get_transforms())[0]
+        slip=None if grasp_local is None else float(np.linalg.norm((frame[:3,3]-palm[:3,3])@palm[:3,:3]-grasp_local))
+        speed=float(np.linalg.norm(velocity[:,:3],axis=1).max())
+        total=float(np.linalg.norm(fixture.all_contacts.get_net_contact_forces(dt),axis=1).max())
+        support=float(np.linalg.norm(frames[:rig.cut_index,:3,3]-rig.rest_frames[:rig.cut_index,:3,3],axis=1).max())
+        seam,_=fixture.seam(frames)
+        record=dict(t=stamp.simulation_time_s,contact=c,slip_m=slip,palm=palm.tolist(),
+            grasp_point=frame[:3,3].tolist(),max_speed_m_s=speed,max_gripper_net_contact_n=total,
+            support_error_m=support,seam_world=seam.tolist(),
+            detached_seam_gap_m=float(np.linalg.norm(seam-rig.chain_world[rig.cut_index])),cut=rig.cut)
+        records.append(record)
+        fixture.check_plant_window(frames)
+        record['robot']=fixture.check(dt,palm)
+        if (speed>20 or total>3 or support>1e-5 or c['min_separation']<-.001
+                or record['robot']['allowed_tool_contact_n']>.5
+                or (slip is not None and slip>.003)):
+            raise RuntimeError('Bimanual force/slip/penetration/support guard')
+        record['knife']=fixture.inspect_cut(dt,frames,stable>=int(.025*args.physics_hz),slip)
+        record['cut']=rig.cut
+        if rig.cut and cut_time is None:
+            cut_time=stamp.simulation_time_s;cut_fraction=ramp(cut_time,8,14)
+            events.append(dict(t=cut_time,**fixture.cut_event))
+        record['phase']='Retain / withdraw' if rig.cut else 'Blade stroke' if stamp.simulation_time_s>=8 else 'Right approach' if stamp.simulation_time_s>=4 else 'Left grasp'
+        fixture.on_sample(record)
+
+    print('BIMANUAL_PROBE_READY '+json.dumps(fixture.report()),flush=True)
+    try:
+        if viewport and args.capture_milestones:
+            capture('initial')
+            previous=str(viewport.camera_path)
+            fixture.select_view('Right knife mount');capture('knife_mount')
+            viewport.set_active_camera(previous)
+        for _ in range(int(args.seconds*args.physics_hz)):
+            tick=time.monotonic()
+            if not app.is_running() or fixture.stop_requested: raise RuntimeError('Stopped; reset required')
+            clock.tick(before=before,after=after,before_render=lambda _:runtime.sync_visuals())
+            if viewport and args.capture_milestones:
+                for name,t in (('grasp',3.4),('knife_precontact',7.9),('blade_contact',11),('retained',17.5)):
+                    if clock.stamp.simulation_time_s>=t and name not in captures: capture(name)
+                if rig.cut and 'severed' not in captures: capture('severed')
+            if args.gui: time.sleep(max(0,1/args.physics_hz-(time.monotonic()-tick)))
+    except Exception as exc:
+        fault=str(exc)
+        if viewport and app.is_running():
+            try: capture('stopped_on_fault')
+            except Exception as error: captures['fault_capture_error']=str(error)
+    retained=[r for r in records if cut_time is not None and r['t']>=cut_time+2]
+    gates=dict(bounded=fault is None,completed=len(records)==int(args.seconds*args.physics_hz),
+        left_grasp_verified=grasp_verified,collision_clear_right_plan=planned,blade_contact_release=rig.cut,
+        native_retention=bool(retained) and all(r['contact']['bilateral'] and r['slip_m']<.003 for r in retained),
+        released_material_separates=bool(retained) and max(r['detached_seam_gap_m'] for r in retained)>.003,
+        right_withdrawal_completed=cut_time is not None and records[-1]['t']>=cut_time+6)
+    result=dict(state='passed_bimanual_mechanism_not_robot_task' if all(gates.values()) else 'failed_bimanual_qualification',
+        gates=gates,error=fault,events=events,images=captures,timing=clock.report(),robot=fixture.report(),
+        measurements=dict(native_edge_contact_count=fixture.cut_contacts,cut_time_s=cut_time,
+            bilateral_contact_fraction_before_cut_plan=float(np.mean([r['contact']['bilateral'] for r in records if 3<=r['t']<=3.5])) if any(3<=r['t']<=3.5 for r in records) else None,
+            maximum_slip_m=max((r['slip_m'] for r in records if r['slip_m'] is not None),default=None)),
+        physical_cut_verified=False,tissue_fracture_calibrated=False,deposit_verified=False,
+        target_source='privileged_test_fixture_not_perception_verified',training_eligible=False)
+    (output/'bimanual_trajectory.json').write_text(json.dumps(records,allow_nan=False),encoding='utf-8')
+    sim.stop()
+    return result

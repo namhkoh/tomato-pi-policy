@@ -38,16 +38,27 @@ def parser():
     p.add_argument('--grasp-arc-m',type=float,default=.12)
     p.add_argument('--diagnostic-detach',action='store_true')
     p.add_argument('--full-robot-probe',action='store_true',help='Full dynamic v1.2 robot with an IK-driven left arm')
+    p.add_argument('--bimanual-cut',action='store_true',help='Guarded native left grasp and original right knife seam-release qualification')
     p.add_argument('--robot-interactive',action='store_true',help='Keep the full-robot test window open with replay controls')
     p.add_argument('--sparse-contacts',action='store_true',help='Native event accounting including all greenhouse/neighbor contacts')
     p.add_argument('--finger-gravity',action='store_true',help='Compensate native finger weight inside the original 0.5 N total effort budget')
     p.add_argument('--approach-tilt',type=float,default=0.,help='Bounded diagnostic wrist tilt around the shaft, in degrees')
     p.add_argument('--profile',action='store_true',help='Save diagnostic Python/native call timing alongside the non-training report')
+    p.add_argument('--step-profile',action='store_true',help='Time the installed physics-only step phases without bypassing physics manager events')
+    p.add_argument('--no-physics-profiler',action='store_true',help='Disable optional native profiling instrumentation in this process only')
+    p.add_argument('--local-wire-physics',action='store_true',help='Guarded fixed-base 4 m collision window; all wire visuals retained')
+    p.add_argument('--context-gutters',type=int,choices=(1,3,5),help='Restore original preview planting density, with static mesh contacts near the fixed robot')
+    p.add_argument('--scene-profile',action='store_true',help='Non-qualifying root-removal timing controls; never use as demo evidence')
+    p.add_argument('--batch-gutter-visuals',action='store_true',help='Batch all identical static gutter visuals; retain every original gutter collider')
+    p.add_argument('--capture-milestones',action=argparse.BooleanOptionalAction,default=True,
+        help='Save paused diagnostic screenshots during a trial; disable for smoother interactive playback')
     return p
 
 
 def main(argv=None):
     args=parser().parse_args(argv)
+    if args.bimanual_cut and (not args.full_robot_probe or not args.sparse_contacts or not args.finger_gravity or args.seconds<20):
+        raise ValueError('Bimanual cutting requires full robot, sparse contacts, finger gravity and >=20 seconds')
     if args.robot_interactive and (not args.full_robot_probe or not args.gui or not args.render_hz):
         raise ValueError('Robot interactive requires full-robot probe, GUI and rendering')
     if args.full_robot_probe and (args.gripper_probe or args.interactive or (args.scene=='package' and not args.sparse_contacts)
@@ -58,6 +69,14 @@ def main(argv=None):
         raise ValueError('Full robot probe requires implicit articulation, PGS 240 Hz, gravity, >=7 s, bounded grasp/friction, no diagnostic detach and sparse contacts for package scenes')
     if (args.sparse_contacts or args.finger_gravity or args.approach_tilt) and not args.full_robot_probe:
         raise ValueError('Robot contact/gravity/approach options require the full robot probe')
+    if args.local_wire_physics and not (args.full_robot_probe and args.scene=='package'):
+        raise ValueError('Local wire physics requires the fixed full robot in the supplied package')
+    if args.context_gutters and not args.local_wire_physics:
+        raise ValueError('Dense context requires a guarded local collision window')
+    if args.batch_gutter_visuals and not (args.full_robot_probe and args.scene=='package'):
+        raise ValueError('Gutter batching requires a full-robot package scene')
+    if args.scene_profile and not (args.full_robot_probe and args.scene=='package' and not args.robot_interactive and not args.gui):
+        raise ValueError('Scene profiling requires a bounded headless full-robot package diagnostic')
     if args.profile and (not (args.gripper_probe or args.full_robot_probe) or args.robot_interactive):
         raise ValueError('Profiling requires a bounded gripper or full-robot probe')
     if args.gripper_probe and (args.interactive or args.scene!='isolated'
@@ -89,6 +108,9 @@ def main(argv=None):
     process_settings=carb.settings.get_settings()
     thread_setting='/persistent/physics/numThreads'
     previous_threads=process_settings.get(thread_setting)
+    profiler_setting='/physics/exposeProfilerData'
+    previous_profiler=process_settings.get(profiler_setting)
+    if args.no_physics_profiler: process_settings.set_bool(profiler_setting,False)
     if args.physics_threads is not None:
         process_settings.set_int(thread_setting,args.physics_threads)
     report=dict(state='initializing',started_utc=datetime.now(timezone.utc).isoformat(),
@@ -118,7 +140,7 @@ def main(argv=None):
             if not context.open_stage(str(scene),load_set=omni.usd.UsdContextInitialLoadSet.LOAD_NONE):
                 raise RuntimeError('Cannot open supplied greenhouse')
             stage=context.get_stage();stage.SetEditTarget(stage.GetSessionLayer())
-            record,height,scene_report=prepare(stage,DEFAULT_PACK,args.plant)
+            record,height,scene_report=prepare(stage,DEFAULT_PACK,args.plant,sparse_backdrop=not args.context_gutters)
             report['greenhouse']=scene_report
             robot_options.update(ground_height=height,torso_degrees=[0.]*6,floor_root=PACKAGE_FLOOR)
         elif args.scene=='package':
@@ -152,14 +174,33 @@ def main(argv=None):
         fixture=None
         if args.full_robot_probe:
             from .full_robot import FullRobotGripper
-            fixture=FullRobotGripper(stage,rig,arc=args.grasp_arc_m,friction=args.finger_friction,**robot_options)
+            robot_class=FullRobotGripper
+            if args.bimanual_cut:
+                from .bimanual import BimanualRobot
+                robot_class=BimanualRobot
+            fixture=robot_class(stage,rig,arc=args.grasp_arc_m,friction=args.finger_friction,**robot_options)
             source_hashes[fixture.asset]=hashlib.sha256(fixture.asset.read_bytes()).hexdigest()
             report['robot_probe']=fixture.report()
+            if args.local_wire_physics:
+                from .collision_window import configure
+                report['collision_window']=configure(stage,fixture)
+            if args.context_gutters:
+                from .greenhouse_context import populate as populate_context
+                report['context_plants']=populate_context(stage,DEFAULT_PACK,fixture,args.context_gutters)
+                source_hashes.update({Path(p):h for p,h in report['context_plants']['source_sha256'].items()})
+            if args.batch_gutter_visuals:
+                from .gutter_instances import batch
+                report['gutter_visual_batch']=batch(stage)
         if args.gripper_probe:
             from .gripper_probe import GripperFixture
             fixture=GripperFixture(stage,rig,arc=args.grasp_arc_m,friction=args.finger_friction)
             source_hashes[fixture.asset]=hashlib.sha256(fixture.asset.read_bytes()).hexdigest()
             report['gripper_fixture']=fixture.report()
+        if args.bimanual_cut:
+            from .startup_screen import screen
+            report['startup_collision_screen']=screen(stage,fixture)
+            if not report['startup_collision_screen']['passed']:
+                raise RuntimeError('Bimanual spawn has possible collision overlaps; inspect startup_collision_screen before any physics motion')
         physics=UsdPhysics.Scene.Define(stage,'/World/QualificationPhysics')
         physics.CreateGravityDirectionAttr(Gf.Vec3f(0,0,-1));physics.CreateGravityMagnitudeAttr(args.gravity)
         settings=PhysxSchema.PhysxSceneAPI.Apply(physics.GetPrim())
@@ -202,7 +243,14 @@ def main(argv=None):
             if loads:
                 report['force_mapping']=dict(reference=loads.reference,gravity_relative_errors=loads.reference_errors)
         if fixture is not None:
+            if args.scene_profile:
+                from .scene_profile import run as profile_scene
+                report.update(profile_scene(sim,rig,fixture,output))
+                (output/'report.json').write_text(json.dumps(report,indent=2,allow_nan=False),encoding='utf-8')
+                return 0
             from .gripper_probe import run
+            if args.bimanual_cut:
+                from .bimanual_probe import run
             if args.robot_interactive:
                 from .full_robot import interactive
                 report.update(interactive(app,sim,rig,fixture,args,output))
@@ -218,7 +266,7 @@ def main(argv=None):
             if not report['source_assets_unchanged']: raise RuntimeError('Source asset changed during probe')
             (output/'report.json').write_text(json.dumps(report,indent=2,allow_nan=False),encoding='utf-8')
             print('GRIPPER_PROBE_RESULT '+json.dumps({k:report.get(k) for k in ('state','gates','measurements')}),flush=True)
-            return 0 if report['state'] in ('passed_gripper_mechanism_not_robot_task','interactive_full_robot_diagnostic') else 2
+            return 0 if report['state'] in ('passed_gripper_mechanism_not_robot_task','passed_bimanual_mechanism_not_robot_task','interactive_full_robot_diagnostic') else 2
         if args.interactive:
             from .demo import run
             report['state']='interactive_demo_not_qualification'
@@ -333,11 +381,14 @@ def main(argv=None):
         (output/'report.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
         raise
     finally:
+        if args.no_physics_profiler:
+            if previous_profiler is None: process_settings.destroy_item(profiler_setting)
+            else: process_settings.set(profiler_setting,previous_profiler)
         if args.physics_threads is not None:
             if previous_threads is None: process_settings.destroy_item(thread_setting)
             else: process_settings.set(thread_setting,previous_threads)
         # Fast Kit shutdown otherwise exits with zero even after an exception.
-        app.close(exit_code=0 if report['state'] in ('passed_mechanism_qualification_not_robot_task','interactive_demo_not_qualification','passed_gripper_mechanism_not_robot_task','interactive_full_robot_diagnostic') else 2)
+        app.close(exit_code=0 if report['state'] in ('passed_mechanism_qualification_not_robot_task','interactive_demo_not_qualification','passed_gripper_mechanism_not_robot_task','passed_bimanual_mechanism_not_robot_task','interactive_full_robot_diagnostic','scene_ablation_diagnostic_not_qualification') else 2)
 
 
 if __name__=='__main__':

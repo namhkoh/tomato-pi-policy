@@ -2,7 +2,8 @@
 
 The parent plant is a fixed support in this FIRST increment. Leaf laminas are
 rigid carriers with convex contacts; stem art is skinned to its compliant chain.
-Only an explicitly diagnostic seam-release API exists: no false cutting success.
+Release is either explicitly diagnostic or gated by measured blade contact;
+neither API claims calibrated tissue fracture.
 """
 from dataclasses import dataclass,field
 from pathlib import Path
@@ -87,6 +88,31 @@ class PlantRig:
                     material_arc_m=float(self.arcs[self.cut_index]),
                     physical_cut_verified=False,training_eligible=False)
 
+    def release_from_blade(self,evidence):
+        """Internal mechanism API: validate evidence before changing topology."""
+        from .knife import ShearParameters
+        p=ShearParameters()
+        if (evidence.get('target')!=self.source_target
+                or evidence.get('model')!='force_qualified_pre_authored_seam_release'
+                or evidence.get('stable_left_grasp') is not True
+                or evidence.get('flat_edge_contact_verified') is not True
+                or evidence.get('commanded_motion_used_as_evidence') is not False):
+            raise ValueError('Missing blade/grasp evidence for seam release')
+        values=[evidence.get(k,float('nan')) for k in ('peak_force_n','contact_dwell_s',
+            'measured_relative_loading_travel_m','grasp_slip_m')]
+        if (not np.isfinite(values).all() or not p.force_n<=values[0]<=p.maximum_force_n
+                or values[1]<p.dwell_s or values[2]<p.minimum_loading_travel_m
+                or not 0<=values[3]<p.maximum_grasp_slip_m):
+            raise ValueError('Blade evidence outside bounded shear parameters')
+        if self.constraint_mode=='fixed_articulation' or self.cut:
+            raise ValueError('Seam cannot be released in current state')
+        with Usd.EditContext(self.stage,self.stage.GetSessionLayer()):
+            UsdPhysics.Joint.Get(self.stage,self.cut_joint_path).GetJointEnabledAttr().Set(False)
+        self.cut=True
+        return dict(event='blade_contact_joint_release',material_arc_m=float(self.arcs[self.cut_index]),
+            evidence=dict(evidence),physical_cut_verified=False,tissue_fracture_calibrated=False,
+            training_eligible=False)
+
     def restore_authored_state(self):
         """Only while simulation is stopped; caller must rebuild tensor views."""
         with Usd.EditContext(self.stage,self.stage.GetSessionLayer()):
@@ -104,7 +130,7 @@ class PlantRig:
                     stem_visual_meshes=len(self.visuals),cut_material_arc_m=float(self.arcs[self.cut_index]),
                     material_calibration='engineering_prior_not_lab_calibrated',
                     parent_support='fixed_current_increment',leaves='rigid_lamina_convex_contact',
-                    release_model='preauthored_10mm_seam_diagnostic_only',
+                    release_model='preauthored_10mm_seam_diagnostic_or_measured_blade_load',
                     physical_cut_verified=False,robot_grasp_verified=False,training_eligible=False)
 
 

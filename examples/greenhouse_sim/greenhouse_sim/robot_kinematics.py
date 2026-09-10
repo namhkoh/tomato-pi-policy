@@ -1526,10 +1526,15 @@ class Rby1Kinematics:
         seed_degrees,
         base_matrix: np.ndarray,
         torso_degrees=None,
+        *,
+        maximum_evaluations: int = 4000,
     ) -> IKResult:
         """Solve a full end-effector pose while staying on the seed branch."""
         from scipy.optimize import least_squares
         from scipy.spatial.transform import Rotation
+
+        if not isinstance(maximum_evaluations,int) or maximum_evaluations<1:
+            raise ValueError('IK evaluation budget must be a positive integer')
 
         desired = np.asarray(desired, dtype=np.float64)
         seed = np.radians(np.asarray(seed_degrees, dtype=np.float64))
@@ -1552,7 +1557,7 @@ class Rby1Kinematics:
             residual,
             np.clip(seed, lower, upper),
             bounds=(lower, upper),
-            max_nfev=4000,
+            max_nfev=maximum_evaluations,
             xtol=1e-12,
             ftol=1e-12,
             gtol=1e-12,
