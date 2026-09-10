@@ -11,6 +11,16 @@ def test_finger_gravity_is_inside_total_force_budget():
     with pytest.raises(ValueError): finger_force_budget([.41,0])
 
 
+def test_compliant_pad_parameters_are_force_based_and_reject_bad_mass():
+    from sim_physics.full_robot import finger_compliance
+    p=finger_compliance([.03,.03],.001)
+    assert p['stiffness_n_m']==1000 and p['force_based'] and not p['calibrated']
+    assert p['reduced_mass_kg']==pytest.approx(.03*.001/.031)
+    assert p['damping_n_s_m']==pytest.approx(1.4*np.sqrt(1000*.03*.001/.031))
+    with pytest.raises(ValueError): finger_compliance([0,.03],.001)
+    with pytest.raises(ValueError): finger_compliance([.03,.03],float('nan'))
+
+
 @pytest.mark.parametrize('extra',[
     [],['--diagnostic-detach'],['--physics-hz','480'],['--scene','package'],
     ['--finger-friction','nan'],['--grasp-arc-m','.001'],['--gripper-probe'],
@@ -30,7 +40,7 @@ def test_interactive_robot_needs_visible_window(tmp_path):
         main(['--output',str(tmp_path/'unused'),'--robot-interactive'])
 
 
-@pytest.mark.parametrize('option',['--sparse-contacts','--finger-gravity','--profile','--local-wire-physics','--batch-gutter-visuals','--scene-profile'])
+@pytest.mark.parametrize('option',['--sparse-contacts','--finger-gravity','--profile','--local-wire-physics','--batch-gutter-visuals','--scene-profile','--bimanual-hold-control'])
 def test_robot_options_are_not_silently_ignored(tmp_path,option):
     from sim_physics.benchmark import main
     with pytest.raises(ValueError):
@@ -61,6 +71,7 @@ def test_station_offset_requires_full_robot(tmp_path):
 
 @pytest.mark.parametrize('option,value',[
     ('--torso-yaw','nan'),('--torso-yaw','46'),('--torso-yaw','20'),
+    ('--station-yaw','nan'),('--station-yaw','91'),('--station-yaw','45'),
     ('--approach-distance','nan'),('--approach-distance','.009'),
     ('--approach-distance','.081'),('--approach-distance','.02'),('--grasp-roll','180')])
 def test_initial_pose_options_fail_closed_without_qualified_full_robot(tmp_path,option,value):
@@ -72,7 +83,7 @@ def test_initial_pose_options_fail_closed_without_qualified_full_robot(tmp_path,
 def test_default_initial_pose_is_preserved():
     from sim_physics.benchmark import parser
     args=parser().parse_args(['--output','unused'])
-    assert args.grasp_roll==args.torso_yaw==0 and args.approach_distance==.08
+    assert args.grasp_roll==args.torso_yaw==args.station_yaw==0 and args.approach_distance==.08
 
 
 def test_shorter_approach_does_not_move_base_or_grasp_and_roll_preserves_geometry(native):
@@ -111,9 +122,12 @@ def test_complete_robot_native_joints_and_no_plant_weld_are_session_only(native)
         UsdGeom.Xformable(stage.GetPrimAtPath('/World/Plant')).AddTranslateOp().Set(Gf.Vec3d(0,0,.35))
     rig=build(stage,record,'SubStem_41')
     before=stage.GetRootLayer().ExportToString()
-    robot=FullRobotGripper(stage,rig)
+    robot=FullRobotGripper(stage,rig,compliant_fingers=True)
     assert stage.GetRootLayer().ExportToString()==before
     assert not robot.report()['grasp_weld']
+    pad=stage.GetPrimAtPath(robot.root+'/ProbeFingerMaterial')
+    assert pad.GetAttribute('physxMaterial:compliantContactStiffness').Get()==1000
+    assert pad.GetAttribute('physxMaterial:compliantContactAccelerationSpring').Get() is False
     assert robot.minimum_interarm>.01
     assert len(robot.collider_paths)>20
     for name in ('base','link_torso_3','link_left_arm_3','link_right_arm_3','ee_left','ee_finger_l1'):

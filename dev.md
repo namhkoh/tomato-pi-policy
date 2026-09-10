@@ -3811,3 +3811,104 @@ hardware commands, source-asset edits, split changes or human review edits.
   source/tests/documentation are committed as a verified engineering checkpoint.
 - Regression: **764 tests + 47 subtests passed (60.19 s)**. This validates code
   contracts/offline geometry, not physical cut reliability or Qwen performance.
+
+### Sustained hold control and full-tool self screening (2026-09-11)
+
+The prior checkpoint is `05f2a54`. Continued with bounded, headless current-package
+trials; no hardware commands, training or dataset/review/split mutations in this
+physics increment. Default established grasp launchers are unchanged.
+
+- A deterministic outward-shoulder waypoint search now screens direct and up to
+  three shoulder detours. Every vertex and <=1-degree joint sample preserves
+  the 10 mm inter-arm and 3 mm self-clearance gates; finer +/-15/30-degree blade
+  orientation candidates retain the original flat-edge and upward-support
+  constraints. This is a bounded local search, not a complete motion planner.
+- Native `bimanual_cut_20260911_07`: left grasp verified, right endpoint/path
+  accepted by the then capsule-only checks; stopped at **4.5875 s** after losing
+  opposing grasp contact. Zero blade contacts/cuts. The roll-0 control `_08`
+  is rejected at startup because the left D405 overlaps a target leaf.
+- Added explicit `--bimanual-hold-control`, keeping the right arm parked. Its
+  reports intentionally do not pass cutting gates, even when holding completes.
+  `bimanual_hold_control_20260911_01` loses the grasp at **4.65 s** without right
+  movement. Plant trace shows growing torsional joint excursions and elastic
+  energy (0.010 J at 3 s, 0.221 J at 4 s, 0.783 J at 4.3 s). Right-arm movement
+  is therefore not necessary for the instability. A single successful short
+  grasp does not establish sustained-contact or post-cut retention reliability.
+- Added opt-in `--compliant-fingers`: native PhysX force-based compliant contact
+  material on the existing left finger shapes only. Stiffness 1000 N/m;
+  damping 0.7 times critical using the larger finger/stem reduced physical mass
+  (1.0574 N s/m for this fixture). These are **uncalibrated engineering priors**.
+  No mass/beam-stiffness inflation, contact removal, grasp weld, increased
+  finger effort, relaxed slip/penetration thresholds or plant pose override.
+  Native implicit pad compliance is supported by the installed NVIDIA example
+  and [PhysX material schema](https://docs.omniverse.nvidia.com/kit/docs/omni_usd_schema_physics/latest/physxschema/class_physx_schema_physx_material_a_p_i.html).
+- Matched compliant control `bimanual_hold_control_20260911_02`: completes
+  **4,800 steps / 20 s**, no error, 100% bilateral contact throughout 3..20 s,
+  max post-verification slip **0.1132 mm**, max hold penetration **0.1026 mm**.
+  Final 10..20 s plant-body speed <=0.02533 m/s and elastic energy <=0.02347 J.
+  Source hashes unchanged. This is one successful sustained attached-stem hold,
+  NOT a successful cut, detached retention, deposit, calibrated tissue model or
+  qualified VLM action episode. The default rigid-contact demo is not silently
+  promoted to this new material model.
+- Full compliant trial `bimanual_cut_20260911_09` maintains grasp and advances
+  right motion until **6.7583 s**. Native guard stops a right D405 body / left
+  finger contact at 3.028 N; the knife support also brushes a target leaf at
+  0.0123 N. Zero leading-edge contacts and zero cuts. Native feedback correctly
+  exposes that arm-only planning did not cover the attached tool geometry.
+- Extended `SelfCapsuleScreen` with opt-in conservative OBBs for all 16 formerly
+  unsupported camera, bracket, knife, palm, finger and chassis colliders. The
+  bimanual planner enables them: **33 shapes / 463 eligible pairs**. Capsule/
+  capsule and capsule/box distances plus conservative box SAT and lower bounds
+  check all shape bounds; this is still sampled planning, not continuous
+  whole-scene certification. No collision filters are added or broadened.
+  Regression explicitly detects a camera/finger intersection that arm capsules
+  alone miss. Runtime cut planning snapshots the **actual held finger aperture**
+  rather than using the initially open hand's frames.
+- The new full-tool screen rejects previously accepted unsafe knife endpoints.
+  Other grasp arcs, tilts and source-family station probes remain blocked by
+  anatomy, scene, IK or tool-clearance checks; none is mislabeled successful.
+  A jointly feasible grasp/tool station and whole-scene transit remain required
+  before native blade loading, cutting, detached retention and deposit tests.
+- Added plant joint position/velocity/elastic-energy diagnostics, robot joint
+  name mapping, per-second phase/hold logs and explicit hold-only/close-up
+  milestone names. Diagnostic viewport evidence is not native synchronized
+  robot-head RGB-D and is not added to the VLM training set.
+- Regression after the main additions: **768 tests + 47 subtests (60.73 s)**.
+  Final hold repeat and final regression are recorded below before commit.
+
+Continuation:
+
+- Repeated the 20-second compliant negative control in
+  `bimanual_hold_control_20260911_03` and `_04`. Both complete with no fault,
+  unchanged source hashes and the same 0.1132 mm maximum slip. These deterministic
+  repeats are not additional target diversity. Their cutting gates intentionally
+  remain false. The new plant-side diagnostic view improves inspection, but
+  foreground leaves still obscure part of the fingers; screenshots alone do not
+  establish opposing contact. Native contact traces are the evidence.
+- Added bounded initial `--station-yaw` (+/-90 degrees); this changes only
+  initialization, not a live robot base. Zero preserves established launchers.
+  Camera/finger/knife checks stay enabled. A changed station needs new native
+  qualification; it does not inherit the earlier grasp result.
+- Offline station yaw 60 degrees / requested grasp arc 100 mm finds a screened
+  right approach and all 75 stroke samples with a -10-degree blade-plane tilt,
+  30-degree transverse direction and -28 mm edge offset. It uses a -90-degree
+  shoulder waypoint. The planner now tries the original plane first, then
+  +/-10 degrees, retaining the original upward support, anatomical stem axis,
+  angular/contact/force/slip limits and source tool geometry. Proposed blade
+  normal is stored separately from actual stem axis. Stroke rejection records
+  now identify the precise IK, inter-arm or full-tool screen failure.
+- Native `bimanual_cut_20260911_10` tests that station with compliant fingers:
+  left opposing-shaft verification fails at 3.5 s, before right planning/motion.
+  One finger has shaft contact; the other does not. Zero cuts, source assets
+  unchanged. Offline geometric success is therefore NOT a working native
+  sequence. Added failed-grasp event diagnostics for the actual colliding
+  shapes; no broad target contact is promoted to a valid shaft grasp.
+- Regression: **780 tests + 47 subtests passed (66.48 s)** after the bounded
+  blade-plane search. Earlier station-option regression: 771 + 47 (62.40 s).
+- Started two serial collection jobs (004 validation seed13 and 009 test
+  seed31) under `grounding_sunday_20260911_v4`, using the prebuilt 4-target /
+  24-view / offset-240 plan, fast instances and warm56_then8 rendering. This
+  folder suffix is a batch version, not task-v4 dynamic experience. Counts,
+  independent audits and new visual QA must be checked after both workers exit;
+  no approval or successful collection is implied by launch. Frozen splits,
+  existing decisions and native depth provenance remain unchanged.

@@ -19,6 +19,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     clock=PhysicsClock(sim,physics_hz=args.physics_hz,render_hz=args.render_hz)
     records=[];events=[];captures={};fault=None;stable=0;lost=0
     grasp_local=None;goal_set=False;planned=False;grasp_verified=False;cut_time=None;cut_fraction=0.
+    hold_control=bool(getattr(args,'bimanual_hold_control',False))
     viewport=None
     if args.render_hz:
         from pxr import UsdLux
@@ -51,16 +52,26 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         if cut_time is not None:
             goal+=.008*ramp(t,cut_time+1,cut_time+2)*fixture.goal[:3,2]
         fixture.target_palm(goal);fixture.close(ramp(t,2,3))
-        if t>=3.5 and not planned:
-            if stable<int(.1*args.physics_hz): raise RuntimeError('Left grasp was not stable before knife planning')
+        if t>=3.5 and not grasp_verified:
+            if stable<int(.1*args.physics_hz):
+                # Preserve which actual shapes blocked closure, including a
+                # neighboring leaf that cannot count as opposing shaft contact.
+                events.append(dict(t=t,event='left_grasp_verification_failed',
+                    consecutive_bilateral_steps=stable,
+                    last_contact=records[-1]['contact'] if records else None,
+                    native_contact_pairs_n=[[a,b,v/dt] for (a,b),v in fixture.event_monitor.pairs.items()]))
+                raise RuntimeError('Left grasp was not stable before knife planning')
             grasp_verified=True
             events.append(dict(t=t,event='left_grasp_verified',grasp_body=fixture.grasp_path,
                 consecutive_bilateral_steps=stable))
             palm=pose_matrices(fixture.palm.get_transforms())[0]
             grasp_local=(runtime.frames[fixture.body_index,:3,3]-palm[:3,3])@palm[:3,:3]
-            q=np.degrees(fixture.robot.get_dof_positions()[0,fixture.left_indices])
-            fixture.plan_cut(runtime.frames,q);planned=True
-            events.append(dict(t=t,event='grasp_verified_and_right_IK_planned',plan=fixture.report()['cut_plan']))
+            if not hold_control:
+                q=np.degrees(fixture.robot.get_dof_positions()[0,fixture.left_indices])
+                fixture.plan_cut(runtime.frames,q);planned=True
+                events.append(dict(t=t,event='grasp_verified_and_right_IK_planned',plan=fixture.report()['cut_plan']))
+        if t>=4 and lost>int(.05*args.physics_hz):
+            raise RuntimeError('Left grasp lost during bimanual sequence')
         phase='park';fraction=0.
         if planned and t>=4:
             phase='approach';fraction=ramp(t,4,8)
@@ -77,7 +88,6 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                     phase='approach';fraction=1-ramp(t,cut_time+2,cut_time+6)
             elif t>=14:
                 raise RuntimeError('Cut stroke ended without qualified blade contact; no timed release')
-            if lost>int(.05*args.physics_hz): raise RuntimeError('Left grasp lost during bimanual sequence')
         fixture.cut_authorized=phase=='stroke'
         fixture.command_right(phase,fraction)
         fixture.prepare_step(runtime.frames)
@@ -98,6 +108,12 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             grasp_point=frame[:3,3].tolist(),max_speed_m_s=speed,max_gripper_net_contact_n=total,
             support_error_m=support,seam_world=seam.tolist(),
             detached_seam_gap_m=float(np.linalg.norm(seam-rig.chain_world[rig.cut_index])),cut=rig.cut)
+        # Diagnostic dynamics, not camera observations or training approval.
+        plant_q=np.asarray(runtime.articulation.get_dof_positions(),dtype=float)[0]
+        plant_v=np.asarray(runtime.articulation.get_dof_velocities(),dtype=float)[0]
+        record['plant_dynamics']=dict(joint_positions_rad=plant_q.tolist(),
+            joint_velocities_rad_s=plant_v.tolist(),elastic_energy_j=.5*float(np.dot(springs.k*plant_q,plant_q)),
+            fastest_body=rig.body_paths[int(np.argmax(np.linalg.norm(velocity[:,:3],axis=1)))])
         records.append(record)
         fixture.check_plant_window(frames)
         record['robot']=fixture.check(dt,palm)
@@ -110,7 +126,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         if rig.cut and cut_time is None:
             cut_time=stamp.simulation_time_s;cut_fraction=ramp(cut_time,8,14)
             events.append(dict(t=cut_time,**fixture.cut_event))
-        record['phase']='Retain / withdraw' if rig.cut else 'Blade stroke' if stamp.simulation_time_s>=8 else 'Right approach' if stamp.simulation_time_s>=4 else 'Left grasp'
+        record['phase']='Left hold negative control' if hold_control else 'Retain / withdraw' if rig.cut else 'Blade stroke' if stamp.simulation_time_s>=8 else 'Right approach' if stamp.simulation_time_s>=4 else 'Left grasp'
         fixture.on_sample(record)
 
     print('BIMANUAL_PROBE_READY '+json.dumps(fixture.report()),flush=True)
@@ -124,9 +140,21 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             tick=time.monotonic()
             if not app.is_running() or fixture.stop_requested: raise RuntimeError('Stopped; reset required')
             clock.tick(before=before,after=after,before_render=lambda _:runtime.sync_visuals())
+            if clock.stamp.step%args.physics_hz==0 and records:
+                latest=records[-1]
+                print('BIMANUAL_SECOND '+json.dumps(dict(t=latest['t'],phase=latest['phase'],
+                    bilateral=latest['contact']['bilateral'],slip_m=latest['slip_m'],cut=rig.cut)),flush=True)
             if viewport and args.capture_milestones:
-                for name,t in (('grasp',3.4),('knife_precontact',7.9),('blade_contact',11),('retained',17.5)):
-                    if clock.stamp.simulation_time_s>=t and name not in captures: capture(name)
+                milestones=(('grasp',3.4),('hold_10s',10),('hold_20s',20)) if hold_control else (
+                    ('grasp',3.4),('knife_precontact',7.9),('stroke_midpoint',11),('late_sequence',17.5))
+                for name,t in milestones:
+                    if clock.stamp.simulation_time_s>=t and name not in captures:
+                        capture(name)
+                        if name in ('grasp','hold_20s'):
+                            previous=str(viewport.camera_path)
+                            fixture.select_view('Grasp close-up');capture(name+'_close')
+                            fixture.select_view('Grasp plant-side');capture(name+'_plant_side')
+                            viewport.set_active_camera(previous)
                 if rig.cut and 'severed' not in captures: capture('severed')
             if args.gui: time.sleep(max(0,1/args.physics_hz-(time.monotonic()-tick)))
     except Exception as exc:
@@ -146,6 +174,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             bilateral_contact_fraction_before_cut_plan=float(np.mean([r['contact']['bilateral'] for r in records if 3<=r['t']<=3.5])) if any(3<=r['t']<=3.5 for r in records) else None,
             maximum_slip_m=max((r['slip_m'] for r in records if r['slip_m'] is not None),default=None)),
         physical_cut_verified=False,tissue_fracture_calibrated=False,deposit_verified=False,
+        negative_control_no_right_motion=hold_control,
         target_source='privileged_test_fixture_not_perception_verified',training_eligible=False)
     (output/'bimanual_trajectory.json').write_text(json.dumps(records,allow_nan=False),encoding='utf-8')
     sim.stop()

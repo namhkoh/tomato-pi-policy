@@ -2,7 +2,7 @@
 import numpy as np
 
 from .full_robot import FullRobotGripper
-from .knife import KnifeGeometry,ShearGate,mount_forward
+from .knife import KnifeGeometry,ShearGate,mount_forward,cut_plane_normal
 
 
 class BimanualRobot(FullRobotGripper):
@@ -19,7 +19,7 @@ class BimanualRobot(FullRobotGripper):
         self.plan_diagnostics=None
         self.expected_right=self.kin.forward('right',self.right,self.base)
         from .self_screen import SelfCapsuleScreen
-        self.self_screen=SelfCapsuleScreen(self.stage,self.root)
+        self.self_screen=SelfCapsuleScreen(self.stage,self.root,include_tool_boxes=True)
         # This includes arm-versus-torso, which an inter-arm-only check misses.
         # Check initial and dense grasp path before any native physics starts.
         self.check_grasp_path()
@@ -44,7 +44,7 @@ class BimanualRobot(FullRobotGripper):
         pose.update({f'left_arm_{i}':float(v) for i,v in enumerate(left)})
         pose.update({f'right_arm_{i}':float(v) for i,v in enumerate(right)})
         return self.self_screen.check({link:self.base@frame for link,frame in
-            self.kin.all_link_transforms(pose,prismatic_m=self.slides).items()},
+            self.kin.all_link_transforms(pose,prismatic_m=getattr(self,'planning_slides',self.slides)).items()},
             include_clearances=include_clearances)
 
     def bind(self,simulation_view):
@@ -80,6 +80,41 @@ class BimanualRobot(FullRobotGripper):
         self.cut_frame=self.seam(frames)
         self.edge_points=[];self.edge_impulses=[]
 
+    def right_transit(self,left_q,goal):
+        """Bounded shoulder-abduction detours, not a whole-scene planner.
+
+        A clear endpoint can require opening the right shoulder before raising
+        the forearm. Try the direct path first, then fixed URDF-valid outward
+        shoulder waypoints. Every vertex and <=1-degree segment sample retains
+        the same arm/torso clearance checks; no collision filter is modified.
+        """
+        lower,upper=self.kin.arm_limits_degrees('right')
+        goal=np.asarray(goal,dtype=float)
+        if (goal.shape!=(7,) or not np.isfinite(goal).all()
+                or np.any(goal<=lower) or np.any(goal>=upper)):
+            raise ValueError('Invalid right transit goal')
+        waypoints=[None]
+        for angle in (-30.,-60.,-90.):
+            waypoint=self.right.copy();waypoint[1]=angle
+            if np.all((waypoint>lower)&(waypoint<upper)): waypoints.append(waypoint)
+        for waypoint in waypoints:
+            vertices=[self.right,goal] if waypoint is None else [self.right,waypoint,goal]
+            chunks=[]
+            for start,end in zip(vertices[:-1],vertices[1:]):
+                count=max(2,int(np.ceil(np.max(np.abs(end-start))))+1)
+                chunk=np.linspace(start,end,count)
+                chunks.append(chunk if not chunks else chunk[1:])
+            path=np.concatenate(chunks);minimum=float('inf')
+            for row in path:
+                clearance=self.kin.inter_arm_clearance(left_q,row,self.base).clearance_m
+                if clearance<.01 or not self.check_self(left_q,row)['passed']: break
+                minimum=min(minimum,clearance)
+            else:
+                return path,minimum,dict(method='direct' if waypoint is None else 'outward_shoulder_waypoint',
+                    waypoint_degrees=None if waypoint is None else waypoint.tolist(),
+                    maximum_joint_sample_step_degrees=1.,whole_scene_certified=False)
+        return None
+
     def plan_cut(self,frames,left_q):
         """Bounded orientation search, then dense arm-pair screened IK paths.
 
@@ -87,60 +122,79 @@ class BimanualRobot(FullRobotGripper):
         certify the knife, cameras, foliage or gutter swept volume.
         """
         centre,axis=self.seam(frames)
+        # Finger geometry must use the held aperture, not the initial open hand.
+        if hasattr(self,'robot'):
+            positions=self.robot.get_dof_positions()[0]
+            self.planning_slides={name:float(positions[self.names.index(name)]) for name in self.slides}
+        else:
+            # Offline fixture-only plan; native execution always snapshots above.
+            self.planning_slides={'gripper_finger_l1':-self.radius,'gripper_finger_l2':self.radius}
         direction=-self.goal[:3,2];direction-=axis*np.dot(direction,axis);direction/=np.linalg.norm(direction)
-        candidates=[];attempts=[];failures=[]
+        attempts=[];failures=[]
         self.plan=None
         self.plan_diagnostics=dict(endpoint_attempts=attempts,path_failures=failures,
             minimum_required_interarm_m=.01,whole_scene_path_certified=False)
-        for degrees,normal_sign,wing in [(a,s,w) for w in (0.,-.028,.028) for s in (1,-1) for a in (0,45,-45,90,-90,135,-135,180)]:
-            # Keep the curved support on the upward side during cutting;
-            # rotating the parked assembly is not permission to cut with it.
-            if normal_sign*axis[2]<0: continue
-            angle=np.radians(degrees)
-            d=direction*np.cos(angle)+np.cross(axis,direction)*np.sin(angle)
-            desired=self.knife.wrist_for_edge(centre-.025*d,d,normal_sign*axis,wing)
-            solution=self.kin.solve_pose('right',desired,self.right,self.base,maximum_evaluations=250)
-            attempt=dict(angle=degrees,normal_sign=normal_sign,wing_m=wing,
-                position_error_m=solution.position_error_m,orientation_error_rad=solution.orientation_error_rad,
-                evaluations=solution.evaluations,ik_succeeded=solution.succeeded)
-            attempts.append(attempt)
-            if not solution.succeeded:
-                attempt['rejection']='endpoint_IK';continue
-            q=np.array(solution.joint_degrees)
-            clearance=self.kin.inter_arm_clearance(left_q,q,self.base).clearance_m
-            attempt['interarm_clearance_m']=clearance
-            if clearance<.01: attempt['rejection']='endpoint_arm_clearance'
-            if clearance>=.01:
+        # Try the original plane first; only then small oblique planes within
+        # the existing measured angular gate. Never replace actual stem truth
+        # with the proposed blade normal when evaluating native contact.
+        clear_endpoints=0
+        for tilt in (0.,-10.,10.):
+            candidates=[]
+            for degrees,normal_sign,wing in [(a,s,w) for w in (0.,-.028,.028) for s in (1,-1)
+                    for a in (0,15,-15,30,-30,45,-45,90,-90,135,-135,180)]:
+                angle=np.radians(degrees)
+                d=direction*np.cos(angle)+np.cross(axis,direction)*np.sin(angle)
+                normal=cut_plane_normal(d,normal_sign*axis,tilt)
+                if normal[2]<0: continue  # original curved support remains up
+                desired=self.knife.wrist_for_edge(centre-.025*d,d,normal,wing)
+                solution=self.kin.solve_pose('right',desired,self.right,self.base,maximum_evaluations=250)
+                attempt=dict(angle=degrees,normal_sign=normal_sign,wing_m=wing,plane_tilt_degrees=tilt,
+                    position_error_m=solution.position_error_m,orientation_error_rad=solution.orientation_error_rad,
+                    evaluations=solution.evaluations,ik_succeeded=solution.succeeded)
+                attempts.append(attempt)
+                if not solution.succeeded:
+                    attempt['rejection']='endpoint_IK';continue
+                q=np.array(solution.joint_degrees)
+                clearance=self.kin.inter_arm_clearance(left_q,q,self.base).clearance_m
+                attempt['interarm_clearance_m']=clearance
+                if clearance<.01: attempt['rejection']='endpoint_arm_clearance';continue
                 check=self.check_self(left_q,q)
                 attempt['self_capsule_screen']=check
-                if check['passed']: candidates.append((np.linalg.norm(q-self.right),degrees,d,q,normal_sign,wing))
+                if check['passed']:
+                    candidates.append((np.linalg.norm(q-self.right),degrees,d,q,normal_sign,wing,normal))
+                    clear_endpoints+=1
                 else: attempt['rejection']='endpoint_self_collision'
-        for _,angle,d,q,normal_sign,wing in sorted(candidates,key=lambda v:v[0]):
-            approach=np.linspace(self.right,q,161)
-            minimum=min(self.kin.inter_arm_clearance(left_q,row,self.base).clearance_m for row in approach)
-            if minimum<.01:
-                failures.append([angle,'approach_arm_clearance',minimum]);continue
-            if not all(self.check_self(left_q,row)['passed'] for row in approach):
-                failures.append([angle,'approach_self_collision']);continue
-            stroke=[];seed=q
-            for offset in np.linspace(-.025,.012,75):
-                desired=self.knife.wrist_for_edge(centre+offset*d,d,normal_sign*axis,wing)
-                solution=self.kin.solve_pose('right',desired,seed,self.base,maximum_evaluations=250)
-                if not solution.succeeded: break
-                seed=np.asarray(solution.joint_degrees)
-                clearance=self.kin.inter_arm_clearance(left_q,seed,self.base).clearance_m
-                minimum=min(minimum,clearance)
-                if clearance<.01: break
-                if not self.check_self(left_q,seed)['passed']: break
-                stroke.append(seed)
-            if len(stroke)!=75:
-                failures.append([angle,'stroke_IK_or_arm_clearance',minimum]);continue
-            self.plan=dict(approach=approach,stroke=np.asarray(stroke),direction=d,
-                centre=centre.copy(),axis=axis.copy(),angle=angle,normal_sign=normal_sign,wing_m=wing,minimum_interarm_m=minimum)
-            return
+            for _,angle,d,q,normal_sign,wing,normal in sorted(candidates,key=lambda v:v[0]):
+                failure=dict(angle=angle,plane_tilt_degrees=tilt,normal_sign=normal_sign,wing_m=wing)
+                transit=self.right_transit(left_q,q)
+                if transit is None:
+                    failures.append(dict(failure,rejection='bounded_transit_arm_or_self_clearance'));continue
+                approach,minimum,transit_evidence=transit
+                stroke=[];seed=q
+                for offset in np.linspace(-.025,.012,75):
+                    desired=self.knife.wrist_for_edge(centre+offset*d,d,normal,wing)
+                    solution=self.kin.solve_pose('right',desired,seed,self.base,maximum_evaluations=250)
+                    failure.update(offset_m=float(offset),rejection='stroke_IK')
+                    if not solution.succeeded: break
+                    seed=np.asarray(solution.joint_degrees)
+                    clearance=self.kin.inter_arm_clearance(left_q,seed,self.base).clearance_m
+                    minimum=min(minimum,clearance)
+                    failure.update(rejection='stroke_arm_clearance',interarm_clearance_m=clearance)
+                    if clearance<.01: break
+                    check=self.check_self(left_q,seed)
+                    failure.update(rejection='stroke_self_collision',self_screen=check)
+                    if not check['passed']: break
+                    stroke.append(seed)
+                if len(stroke)!=75:
+                    failures.append(failure);continue
+                self.plan=dict(approach=approach,stroke=np.asarray(stroke),direction=d,
+                    centre=centre.copy(),axis=axis.copy(),angle=angle,normal_sign=normal_sign,wing_m=wing,
+                    blade_plane_normal=normal.copy(),plane_tilt_degrees=tilt,
+                    minimum_interarm_m=minimum,transit=transit_evidence)
+                return
         ik=sum(a['ik_succeeded'] for a in attempts)
         raise RuntimeError(f'No bimanual arm-clearance path: endpoints={len(attempts)}, '
-            f'IK_converged={ik}, arm_clear_endpoints={len(candidates)}, path_failures={failures}')
+            f'IK_converged={ik}, arm_clear_endpoints={clear_endpoints}, path_failures={failures}')
 
     def command_right(self,phase,fraction):
         if phase=='park': q=self.right
@@ -171,6 +225,7 @@ class BimanualRobot(FullRobotGripper):
         super().restore_authored_state()
         self.cut_gate=ShearGate(self.rig.source_target);self.cut_authorized=False
         self.cut_event=None;self.plan=None;self.plan_diagnostics=None;self.cut_contacts=0
+        if hasattr(self,'planning_slides'): del self.planning_slides
         self.expected_right=self.kin.forward('right',self.right,self.base)
 
     def setup_views(self,viewport):

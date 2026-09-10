@@ -21,9 +21,25 @@ def finger_force_budget(gravity):
     return .5-np.abs(gravity)
 
 
+def finger_compliance(finger_masses,stem_mass):
+    """Experimental force-based pad compliance; engineering prior, not measured.
+
+    1000 N/m gives 0.5 mm static indentation at the unchanged 0.5 N cap
+    for one contact. Damping uses the larger two-body reduced mass. Neither
+    actor mass nor the beam's material stiffness is changed.
+    """
+    masses=np.asarray(finger_masses,dtype=float)
+    if (masses.shape!=(2,) or not np.isfinite(masses).all() or np.any(masses<=0)
+            or not np.isfinite(stem_mass) or stem_mass<=0):
+        raise ValueError('Positive physical masses required for compliant fingers')
+    reduced=float(np.max(masses*stem_mass/(masses+stem_mass)))
+    return dict(stiffness_n_m=1000.,damping_n_s_m=float(1.4*np.sqrt(1000.*reduced)),
+        reduced_mass_kg=reduced,calibrated=False,force_based=True)
+
+
 class FullRobotGripper(GripperFixture):
     def __init__(self,stage,rig,*,arc=.08,friction=.5,ground_height=None,
-                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08):
+                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.):
         from pxr import Gf,Sdf,Usd,UsdGeom,UsdPhysics,UsdShade
         from greenhouse_sim.robot_model import DEFAULT_ASSET,DEFAULT_URDF
         from greenhouse_sim.robot_kinematics import Rby1Kinematics,base_transform
@@ -71,7 +87,10 @@ class FullRobotGripper(GripperFixture):
         self.start=self.goal.copy();self.start[:3,3]+=self.approach_distance*self.goal[:3,2]
         # Approach from the open side. The +Y station overlapped the fixed
         # upper canopy with the torso; never disable those plant contacts.
-        yaw=float(np.degrees(np.arctan2(-z[1],-z[0])))
+        if not np.isfinite(station_yaw) or abs(station_yaw)>90:
+            raise ValueError('Initial station yaw adjustment must be within +/-90 degrees')
+        self.station_yaw=float(station_yaw)
+        yaw=float(np.degrees(np.arctan2(-z[1],-z[0])))+self.station_yaw
         angle=np.radians(yaw);forward=np.array([np.cos(angle),np.sin(angle),0.])
         left=np.array([-np.sin(angle),np.cos(angle),0.])
         # Keep station selection independent of the approach length. Shortening
@@ -112,6 +131,14 @@ class FullRobotGripper(GripperFixture):
             api.CreateStaticFrictionAttr(friction);api.CreateDynamicFrictionAttr(friction);api.CreateRestitutionAttr(0.)
             physics_schema(material.GetPrim(),'PhysxMaterialAPI',[
                 ('physxMaterial:frictionCombineMode',Sdf.ValueTypeNames.Token,'min')])
+            self.finger_contact_compliance=None
+            if compliant_fingers:
+                mass=lambda path:float(UsdPhysics.MassAPI(stage.GetPrimAtPath(path)).GetMassAttr().Get())
+                self.finger_contact_compliance=finger_compliance([mass(p) for p in self.paths[1:]],mass(self.grasp_path))
+                physics_schema(material.GetPrim(),'PhysxMaterialAPI',[
+                    ('physxMaterial:compliantContactStiffness',Sdf.ValueTypeNames.Float,self.finger_contact_compliance['stiffness_n_m']),
+                    ('physxMaterial:compliantContactDamping',Sdf.ValueTypeNames.Float,self.finger_contact_compliance['damping_n_s_m']),
+                    ('physxMaterial:compliantContactAccelerationSpring',Sdf.ValueTypeNames.Bool,False)])
             for prim in Usd.PrimRange(root):
                 if prim.HasAPI(UsdPhysics.ArticulationRootAPI): prim.RemoveAPI(UsdPhysics.ArticulationRootAPI)
                 if prim.HasAPI(UsdPhysics.RigidBodyAPI):
@@ -208,11 +235,14 @@ class FullRobotGripper(GripperFixture):
             arm_ik_solved=True,grasp_weld=False,plant_pose_override=False,base_fixed=True,
             robot_base_world=self.base.tolist(),grasp_body=self.grasp_path,grasp_arc_m=self.arc,
             initial_station_forward_left_offset_m=self.station_offset.tolist(),
+            initial_station_yaw_adjustment_degrees=self.station_yaw,
             source_colliders_retained=len(self.collider_paths),finger_max_drive_force_n=.5,
             mounting_proxy_exclusions=self.mount_exclusions,self_collision_enabled=True,
             contact_monitor='sparse_native_events' if self.sparse_contacts else 'dense_pair_matrices',
+            finger_contact_compliance=self.finger_contact_compliance,
             finger_gravity_compensation=self.finger_gravity,total_finger_effort_limit_n=.5,
             torso_degrees=self.kin.default_torso_degrees().tolist(),floor_root=self.floor_root,
+            joint_state_names=getattr(self,'names',None),
             approach_tilt_degrees=self.approach_tilt,
             grasp_roll_degrees=self.grasp_roll,
             approach_distance_m=self.approach_distance,
@@ -373,8 +403,9 @@ class FullRobotGripper(GripperFixture):
         self.views={}
         for name,eye,at in (
             ('Full robot',wide_eye,centre),
-            ('Grasp close-up',close_eye,target)):
-            path='/World/RobotProbe'+('Wide' if name=='Full robot' else 'Close')
+            ('Grasp close-up',close_eye,target),
+            ('Grasp plant-side',target-.28*self.goal[:3,2]+np.array([0,0,.14]),target)):
+            path='/World/RobotProbe'+{'Full robot':'Wide','Grasp close-up':'Close','Grasp plant-side':'Contact'}[name]
             camera=UsdGeom.Camera.Define(self.stage,path)
             camera.CreateFocalLengthAttr(12. if greenhouse and name=='Full robot' else 24.)
             camera.CreateClippingRangeAttr(Gf.Vec2f(.005,100))

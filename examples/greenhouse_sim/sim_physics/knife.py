@@ -53,6 +53,23 @@ class ShearParameters:
             raise ValueError('Shear threshold exceeds the contact guard')
 
 
+def cut_plane_normal(direction,stem_axis,tilt_degrees):
+    """Small blade roll about a transverse stroke, not a changed stem axis.
+
+    +/-10 degrees stays inside the existing measured shear angular gates.
+    This only proposes geometry; it does not authorize contact or release.
+    """
+    d=np.array(direction,dtype=float,copy=True);axis=np.array(stem_axis,dtype=float,copy=True)
+    if (d.shape!=(3,) or axis.shape!=(3,) or not np.isfinite(np.r_[d,axis]).all()
+            or min(np.linalg.norm(d),np.linalg.norm(axis))<1e-9
+            or not np.isfinite(tilt_degrees) or abs(tilt_degrees)>10):
+        raise ValueError('Finite transverse axes and blade tilt within +/-10 degrees required')
+    d/=np.linalg.norm(d);axis/=np.linalg.norm(axis)
+    if abs(np.dot(d,axis))>1e-6: raise ValueError('Blade stroke must remain transverse to the actual stem')
+    angle=np.radians(tilt_degrees)
+    return axis*np.cos(angle)+np.cross(d,axis)*np.sin(angle)
+
+
 class KnifeGeometry:
     """Read actual source transforms once; no stage walks in the physics tick."""
     def __init__(self,stage,robot_root):
@@ -98,10 +115,17 @@ class KnifeGeometry:
         local=(np.asarray(point)-frame[:3,3])@frame[:3,:3]
         return bool(np.isfinite(local).all() and np.all(np.abs(local)<=self.size/2+.0006))
 
-    def wrist_for_edge(self,centre,direction,stem_axis,wing=0.):
-        direction=np.asarray(direction,dtype=float);direction/=np.linalg.norm(direction)
-        normal=np.asarray(stem_axis,dtype=float);normal/=np.linalg.norm(normal)
-        if abs(np.dot(direction,normal))>1e-6: raise ValueError('Cut must be transverse')
+    def wrist_for_edge(self,centre,direction,plane_normal,wing=0.):
+        # Blade-plane normal can differ slightly from the anatomical stem axis.
+        # ShearGate always receives the actual measured stem axis separately.
+        centre=np.array(centre,dtype=float,copy=True)
+        direction=np.array(direction,dtype=float,copy=True);normal=np.array(plane_normal,dtype=float,copy=True)
+        if (any(v.shape!=(3,) for v in (centre,direction,normal))
+                or not np.isfinite(np.r_[centre,direction,normal]).all()
+                or min(np.linalg.norm(direction),np.linalg.norm(normal))<1e-9):
+            raise ValueError('Invalid blade pose vectors')
+        direction/=np.linalg.norm(direction);normal/=np.linalg.norm(normal)
+        if abs(np.dot(direction,normal))>1e-6: raise ValueError('Stroke must lie in the blade plane')
         edge=np.eye(4);edge[:3,:3]=np.column_stack([-direction,np.cross(normal,-direction),normal])
         if not np.isfinite(wing) or abs(wing)>self.size[1]/2-.005:
             raise ValueError('Contact must leave at least 5 mm from the knife end')

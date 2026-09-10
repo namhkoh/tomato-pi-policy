@@ -25,6 +25,20 @@ run reaches left grasp but rejects the right cutting approach. Thus the core
 proof-of-life blocker remains a **collision-clear, physically verified complete
 sequence**. Unit-test coverage or a reachable endpoint is not that evidence.
 
+Further September 11 native checks isolate an attached-stem hold instability:
+with the right arm parked, rigid fingers lose the grasp at 4.65 s. Opt-in
+native compliant finger material (uncalibrated 1000 N/m engineering prior)
+holds the same fixture for 20 s, maximum slip 0.1132 mm, repeated in
+`bimanual_hold_control_20260911_02`, `_03`, `_04`. These are deterministic
+repeats of one fixture, not general grasp reliability or post-cut retention.
+The corresponding moving-right trial `bimanual_cut_20260911_09` stops on a
+right camera / left finger collision before cutting. Full-tool bounding-shape
+screening now catches conflicts missed by arm capsules. A revised station and
+small oblique blade plane can pass offline sampled geometry, but native
+`bimanual_cut_20260911_10` fails opposing left contact before right motion.
+**No successful current-environment cut/retain/deposit is claimed.**
+See `dev.md` for commands, unchanged guards, provenance and regression results.
+
 ## What the current evidence supports
 
 - Supplied greenhouse + full native RB-Y1 A v1.2 articulation. The left arm

@@ -91,3 +91,53 @@ def test_known_bad_torso_station_rejected_before_native_physics(native):
     with pytest.raises(RuntimeError,match='Pregrasp self-collision screen'):
         BimanualRobot(stage,rig,sparse_contacts=True,approach_tilt=10,grasp_roll=180,
             station_offset=(.16,.22),torso_degrees=[0,0,0,0,0,20],ground_height=lambda x,y:.101)
+
+
+def test_transit_detour_checks_entire_path_and_never_changes_contact_margin():
+    from types import SimpleNamespace
+    from sim_physics.bimanual import BimanualRobot
+    robot=object.__new__(BimanualRobot);robot.right=np.array([0.,-5,0,-120,0,70,0]);robot.base=np.eye(4)
+    # A strip blocks the direct transition in q0; the shoulder must open first.
+    def clearance(left,right,base):
+        blocked=5<right[0]<15 and right[1]>-20
+        return SimpleNamespace(clearance_m=.009 if blocked else .011)
+    robot.kin=SimpleNamespace(arm_limits_degrees=lambda side:(np.full(7,-179.),np.full(7,179.)),
+        inter_arm_clearance=clearance)
+    robot.check_self=lambda *args:dict(passed=True)
+    goal=robot.right.copy();goal[0]=20;goal[1]=-25
+    result=robot.right_transit(np.zeros(7),goal)
+    assert result is not None
+    path,minimum,evidence=result
+    assert evidence['method']=='outward_shoulder_waypoint' and minimum==pytest.approx(.011)
+    np.testing.assert_array_equal(path[0],robot.right);np.testing.assert_array_equal(path[-1],goal)
+    assert np.max(np.abs(np.diff(path,axis=0)))<=1+1e-10
+    assert all(clearance(None,q,None).clearance_m>=.01 for q in path)
+    robot.check_self=lambda *args:dict(passed=False)
+    assert robot.right_transit(np.zeros(7),goal) is None
+    with pytest.raises(ValueError): robot.right_transit(np.zeros(7),np.full(7,float('nan')))
+
+
+@pytest.mark.parametrize('tilt',[-10.,0.,10.])
+def test_oblique_plane_preserves_anatomical_axis_and_existing_angular_gates(tilt):
+    from sim_physics.knife import cut_plane_normal
+    d=np.array([-2.,0,0]);axis=np.array([0.,0.,3.])
+    before_d=d.copy();before_axis=axis.copy()
+    normal=cut_plane_normal(d,axis,tilt)
+    knife=object.__new__(KnifeGeometry);knife.local=np.eye(4);knife.size=np.array([.002,.07148,.013])
+    frame=knife.wrist_for_edge(np.zeros(3),d,normal)
+    np.testing.assert_allclose(frame[:3,:3].T@frame[:3,:3],np.eye(3),atol=1e-10)
+    np.testing.assert_array_equal(d,before_d);np.testing.assert_array_equal(axis,before_axis)
+    unit_axis=axis/np.linalg.norm(axis)
+    assert abs(np.dot(frame[:3,1],unit_axis))<.3
+    assert abs(np.dot(-frame[:3,0],unit_axis))<.3
+    assert frame[2,2]>0 and np.linalg.det(frame[:3,:3])==pytest.approx(1)
+    assert np.dot(frame[:3,2],unit_axis)==pytest.approx(np.cos(np.radians(tilt)))
+
+
+@pytest.mark.parametrize('direction,axis,tilt',[
+    ([0,0,0],[0,0,1],0),([-1,0,0],[0,0,0],0),
+    ([-1,0,0],[1,0,0],0),([-1,0,0],[0,0,1],11),
+    ([-1,0,0],[0,0,1],float('nan')),([-1,0,float('nan')],[0,0,1],0)])
+def test_invalid_oblique_proposals_fail_closed(direction,axis,tilt):
+    from sim_physics.knife import cut_plane_normal
+    with pytest.raises(ValueError): cut_plane_normal(direction,axis,tilt)

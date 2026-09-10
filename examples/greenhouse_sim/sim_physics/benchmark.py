@@ -40,12 +40,17 @@ def parser():
     p.add_argument('--diagnostic-detach',action='store_true')
     p.add_argument('--full-robot-probe',action='store_true',help='Full dynamic v1.2 robot with an IK-driven left arm')
     p.add_argument('--bimanual-cut',action='store_true',help='Guarded native left grasp and original right knife seam-release qualification')
+    p.add_argument('--bimanual-hold-control',action='store_true',
+        help='Negative control: hold left grasp with right arm parked; never qualifies as cutting')
     p.add_argument('--robot-interactive',action='store_true',help='Keep the full-robot test window open with replay controls')
     p.add_argument('--sparse-contacts',action='store_true',help='Native event accounting including all greenhouse/neighbor contacts')
     p.add_argument('--finger-gravity',action='store_true',help='Compensate native finger weight inside the original 0.5 N total effort budget')
+    p.add_argument('--compliant-fingers',action='store_true',help='Experimental native force-based finger-pad compliance; unchanged masses/effort/guard limits')
     p.add_argument('--approach-tilt',type=float,default=0.,help='Bounded diagnostic wrist tilt around the shaft, in degrees')
     p.add_argument('--station-offset',type=float,nargs=2,metavar=('FORWARD_M','LEFT_M'),
         help='Initial fixed-base station offset only (norm <=0.3 m); never moves a running robot')
+    p.add_argument('--station-yaw',type=float,default=0.,
+        help='Initial station heading relative to palm approach, within +/-90 degrees; no live base motion')
     p.add_argument('--grasp-roll',type=int,choices=(0,180),default=0,
         help='Initial equivalent finger orientation about palm approach axis; native grasp must be requalified')
     p.add_argument('--torso-yaw',type=float,default=0.,
@@ -66,6 +71,10 @@ def parser():
 
 def main(argv=None):
     args=parser().parse_args(argv)
+    if not math.isfinite(args.station_yaw) or abs(args.station_yaw)>90 or (args.station_yaw and not args.full_robot_probe):
+        raise ValueError('Station yaw requires a full robot and finite +/-90 degrees')
+    if args.bimanual_hold_control and not args.bimanual_cut:
+        raise ValueError('Bimanual hold control requires the guarded bimanual harness')
     if args.station_offset is not None and (not args.full_robot_probe
             or not all(math.isfinite(x) for x in args.station_offset)
             or math.hypot(*args.station_offset)>.3):
@@ -88,7 +97,7 @@ def main(argv=None):
             or args.diagnostic_detach or not -30<=args.approach_tilt<=30
             or not 0<=args.finger_friction<=1 or not .04<=args.grasp_arc_m<=.25):
         raise ValueError('Full robot probe requires implicit articulation, PGS 240 Hz, gravity, >=7 s, bounded grasp/friction, no diagnostic detach and sparse contacts for package scenes')
-    if (args.sparse_contacts or args.finger_gravity or args.approach_tilt) and not args.full_robot_probe:
+    if (args.sparse_contacts or args.finger_gravity or args.approach_tilt or args.compliant_fingers) and not args.full_robot_probe:
         raise ValueError('Robot contact/gravity/approach options require the full robot probe')
     if args.local_wire_physics and not (args.full_robot_probe and args.scene=='package'):
         raise ValueError('Local wire physics requires the fixed full robot in the supplied package')
@@ -153,7 +162,8 @@ def main(argv=None):
         for component in audit['components'].values():
             path=manifest.parent/component['file'];source_hashes[path]=component['asset_sha256']
         robot_options=dict(sparse_contacts=args.sparse_contacts,finger_gravity=args.finger_gravity,
-            approach_tilt=args.approach_tilt,grasp_roll=args.grasp_roll,approach_distance=args.approach_distance)
+            approach_tilt=args.approach_tilt,grasp_roll=args.grasp_roll,approach_distance=args.approach_distance,
+            compliant_fingers=args.compliant_fingers,station_yaw=args.station_yaw)
         if args.station_offset is not None: robot_options['station_offset']=args.station_offset
         if args.scene=='package' and args.full_robot_probe:
             from .greenhouse_scene import prepare
