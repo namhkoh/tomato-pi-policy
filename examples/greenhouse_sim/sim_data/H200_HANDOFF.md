@@ -1,5 +1,12 @@
 # Qwen3-VL-8B dataset handoff
 
+**Latest executable server instructions:** [H200_RUNBOOK.md](H200_RUNBOOK.md).
+The normal 14,259-row visible/occluded release has now passed validation.
+The runbook adds a Qwen-native normalized-coordinate adapter and an explicit
+server-only LoRA recipe. Real processor/model/DDP checks remain to be run on
+H200; no Qwen model files or training jobs are started on the simulator PC.
+Historical checkpoints below are retained for provenance, not current totals.
+
 2026-09-11, `koh-dev/sim-vlm`. The user will transfer the completed dataset to
 the H200 servers; training follows that transfer. Do not start local training,
 request server credentials, or treat an engineering export as ready.

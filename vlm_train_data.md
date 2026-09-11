@@ -968,3 +968,38 @@ QA strata. Expected baseline: 14,259 images (11,520 train / 1,358 validation /
 original labels; these are not a claim that the final ZIP exists. All medium
 and ambiguous held rows remain excluded, frozen families unchanged. This is
 static target-conditioned localization/abstention data, not bimanual episodes.
+
+## Completed narrowed release and Qwen server handoff (2026-09-11)
+
+Normal source rebuild, image/native-depth/label validation and archive-member
+verification have now completed. **14,259** records:11,520 train /1,358 validation
+/1,381 test;11,237 easy/clear localized and3,022 hard/occluded abstain.24 frozen
+source families and246 targets,136 exact representative assistant QA accepts.
+Medium/partial and dynamic trajectories are not included; the balanced release
+remains a separate unfinished task. Existing source images, native depth,
+human/assistant decisions and split assignments are unchanged.
+
+Transfer `data/sim_data/training_archives/visible_occluded_20260911_v1.zip`
+(23,453,235,122 bytes) and its `.sha256`. SHA256:
+`23e180dcb74f6daf0437414513b023d41d76f29e755aa1e2fb1638f6b268db74`.
+All71,306 members were independently reverified after a post-publication
+receipt-writing error; see the immutable `baseline_archive_receipt.json` and
+preserved logs under `dataset_audits/release_20260911_agents`.
+
+The executable server instructions are
+[H200_RUNBOOK.md](examples/greenhouse_sim/sim_data/H200_RUNBOOK.md).
+Qwen's upstream container differs from our canonical chat files. Use the
+role-preserving adapter, which now explicitly supports Qwen's recommended
+normalized0..1000 grounding coordinates for BOTH the query and answer.
+The release itself remains original848x408 pixels. The complete conversion
+audit passes with max pixel roundtrip error1.14e-13; abstention remains null.
+Never treat normalized coordinates as pixels or feed sidecar depth/masks/XYZ
+to this RGB-only task. Preserve the adapter convention with each checkpoint.
+
+`h200_train.py` is an explicit local-snapshot-only H200 recipe: real processor
+checks, one-GPU smoke,32-example train-only overfit, then4-GPU language-attention
+LoRA. It has not been run with actual Qwen weights. Server processor/mask,
+finite forward/backward, checkpoint reload, memory, speed and held-out generation
+must still be verified. The user requested model setup only on H200; no Qwen
+model files were downloaded here and no training/server job was started.
+This is a perception-training handoff, not evidence of VLM-controlled cutting.

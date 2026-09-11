@@ -16,7 +16,7 @@ from .training_export import read_jsonl,validate
 MODEL_ID='Qwen/Qwen3-VL-8B-Instruct'
 
 
-def model_messages(row,root,*,include_answer=False):
+def model_messages(row,root,*,include_answer=False,coordinates='pixels'):
     """The same prompt/RGB conversion for supervised training and inference."""
     turns=row.get('messages',[])
     require(len(turns)==3 and [t.get('role') for t in turns]==['system','user','assistant'],
@@ -39,10 +39,14 @@ def model_messages(row,root,*,include_answer=False):
     validate_answer(json.loads(turns[2]['content']))
     if include_answer:
         messages.append(dict(role='assistant',content=[dict(type='text',text=turns[2]['content'])]))
+    if coordinates=='normalized_1000':
+        from .qwen_coordinates import adapt_messages
+        return adapt_messages(messages)
+    require(coordinates=='pixels','Unknown model coordinate convention')
     return messages
 
 
-def encode_supervised(row,root,processor,*,maximum_tokens=2048):
+def encode_supervised(row,root,processor,*,maximum_tokens=2048,coordinates='pixels'):
     """Mask every prompt/image token using a verified generation-prefix match.
 
     Two processor calls intentionally favor an auditable boundary over guessed
@@ -51,7 +55,7 @@ def encode_supervised(row,root,processor,*,maximum_tokens=2048):
     """
     import torch
     require(type(maximum_tokens) is int and maximum_tokens>0,'Invalid token budget')
-    messages=model_messages(row,root,include_answer=True)
+    messages=model_messages(row,root,include_answer=True,coordinates=coordinates)
     full=processor.apply_chat_template(messages,tokenize=True,return_dict=True,return_tensors='pt')
     prefix=processor.apply_chat_template(messages[:-1],tokenize=True,return_dict=True,
         return_tensors='pt',add_generation_prompt=True)

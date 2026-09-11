@@ -4453,3 +4453,78 @@ No hardware, collection, tuning, review, split or training-export changes.
   friction (two fingers; not a per-finger force). Peak unwanted bound0.04346 N,
   no blade contacts or release. Headless control only; no GUI FPS or cutting
   success is inferred. Updated physics regression: **281 passed** (64.82 s).
+
+### 2026-09-11: Normal VLM baseline packaged; Qwen3-VL H200 handoff
+
+- Normal rebuild and portable validation complete: **14,259** records,
+  train11,520 / validation1,358 / test1,381; easy11,237 / hard3,022;
+  24 frozen source families16/4/4, **246** distinct target IDs168/39/39.
+  136 exact representative assistant accepts support QA; not every image was
+  individually reviewed. Medium/partial, ambiguous holds and dynamic episodes
+  remain excluded. Existing review decisions, source images/depth and splits
+  were not rewritten.
+- Published `training_archives/visible_occluded_20260911_v1.zip`:
+  **23,453,235,122 bytes**, SHA256
+  `23e180dcb74f6daf0437414513b023d41d76f29e755aa1e2fb1638f6b268db74`.
+  Normal archive validation, embedded-member SHA/CRC and publication completed.
+  The external finalization driver then failed writing its receipt because
+  `training_started` was specified twice; no ZIP/source bytes were lost.
+  Fixed that driver and independently re-read **71,306** published members
+  plus the complete ZIP checksum before writing `baseline_archive_receipt.json`.
+  Original failure and recovery logs remain under
+  `dataset_audits/release_20260911_agents`; no rebuild or validation waiver.
+- Verified the adapter against Qwen's official fine-tuning source and grounding
+  guidance. Release `images/messages` is **not a drop-in** upstream
+  `image/conversations` file; the role-preserving adapter avoids converting
+  system instructions into assistant supervision.
+- Added explicit `qwen3_grounding_normalized_1000.v1`: both query and cut
+  answer are converted to Qwen-relative coordinates, preserving continuous
+  values and original RGB. Canonical dataset pixels/labels remain immutable.
+  Strict inverse conversion precedes canonical evaluation. No clipping,
+  coordinate-scale guessing, hidden XYZ or non-null occluded answers.
+- Read-only `qwen_format_audit_v3.json` checks all14,259 frozen chat records:
+  both input/output frames, train/inference prompt equality, preserved roles
+  and abstention semantics; max pixel roundtrip error1.14e-13. This supplements,
+  not replaces, the normal image/depth/QA validator and is not model accuracy.
+- Added `sim_data/H200_RUNBOOK.md` and explicit `h200_train.py` server recipe:
+  local dense8B snapshot only; actual processor/mask smoke; train-only2-step
+  smoke and32-example/100-step overfit; initial4-GPU BF16 language-attention
+  LoRA; original frozen validation and no test reads. One-image microbatches,
+  SDPA, finite loss/gradient guards, no silent truncation or output overwrite.
+  Hyperparameters and DDP behavior await real H200 verification; no throughput,
+  checkpoint-reload, trained-model or simulator-action result is asserted.
+- User explicitly requested no local Qwen download. An isolated dependency
+  environment had been prepared, but **no Qwen model files/weights were
+  downloaded and no training was started**. CLI/help and helper/adapter tests
+  run without loading a processor or model. Focused data regressions53 passed.
+  Independent review caught mixed pixel/normalized wording and a decoder that
+  accepted an array of pairs; both now fail the corresponding regressions.
+
+### 2026-09-11: Cutter blockage and local loading follow-up
+
+- Native `bimanual_cut_20260911_30` re-verifies opposing left grasp, then
+  rejects756 complete rigid-tool strokes before IK:556 hand/tool and200
+  tool/scene conflicts, **zero IK calls**, planning1.941793 s. No right-arm
+  movement, contact or cut. This is proposal-screen latency, not GUI FPS.
+- Offline actual71.126 mm grasp:756 rejected (594 scene/162 intertool), no IK.
+  At left tilt30 degrees, the original10 mm seam and explicit20 mm diagnostic
+  seam also return zero complete corridors across756 proposals each. Both
+  pass their left-only screens; this does not certify native grasp or access.
+- One independently checked right-camera/left-finger pair has genuine
+  2.823875 mm clearance, below the unchanged3 mm screen margin. Right bracket
+  and MainStem26/27 use native convex decomposition but conservative boxes in
+  the planner; their precise occupancy remains a separate geometry question.
+- Native coupon `blade_loading_20260911_10` repeats k250/cap0.45/damping450
+  at960 Hz with full contact/friction reports. Last valid loaded advance is
+  **0.165609 mm**; at4.0375 s the full bound reaches0.500383 N and stops the
+  run. Edge-normal0.303623 N, friction-magnitude0.192213 N, deepest contact
+  overlap0.464915 mm. Source hashes unchanged; no seam release or grasp claim.
+  This is a force-budget stop, not eligibility resets or reaching the1 mm
+  overlap limit. A higher step rate alone does not solve the unchanged0.3 mm
+  loading criterion against the current elastic, intact material interface.
+- The existing contact/spring model has no local crack-growth law. A future
+  localized deformable/cohesive interface needs actual deformation/contact,
+  balanced reactions, energy/area accounting and negative controls; increasing
+  force or replacing measured evidence with a timer is not a valid fix.
+  Tissue coefficients remain uncalibrated. Full grasp-cut-retain-deposit and
+  observation-driven VLM actions remain unqualified.
