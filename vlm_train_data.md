@@ -930,3 +930,23 @@ hashes across audits. No source images/depth, human records, splits or gates
 were altered. A narrower visible/occluded baseline is an explicit user choice,
 not an automatic gate waiver. No final archive, actual-model training or H200
 job is claimed yet.
+
+## User-authorized first baseline: visible/occluded only (2026-09-11)
+
+The first handoff now targets the explicit `visible_occluded_v1` profile:
+easy/clear localization and hard/occluded abstention, no medium/partial rows.
+The balanced release's requirements remain unchanged. Normal validation still
+requires the established row counts, 16/4/4 frozen families, target diversity,
+localization spread and representative visual QA. A separate completion state
+prevents conflating this narrower experiment with the balanced release.
+
+Legacy task-version negative RGB decisions are preserved through bound
+`negative_review_history.json`; changing a query does not quietly override an
+older hold. The original labels/review decisions/splits are not edited.
+An independent snapshot check found 115 exact current representative accepts
+and 11 missing inspections, plus one legacy held image to exclude. The final
+normal source rebuild and fresh QA are in progress; a ZIP is only published
+after normal portable validation and every archived member's hash check.
+This remains static target-conditioned RGB perception, not dynamic action
+supervision. Four-H200 training remains a user-side step after handoff and
+real-processor/loss-mask/forward-backward validation.

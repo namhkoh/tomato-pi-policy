@@ -35,6 +35,37 @@ LEGACY_ENGINEERING_GATES=dict(RELEASE_GATES)
 RELEASE_GATES={**RELEASE_GATES,'minimum_localized_rows':{'train':5000,'validation':250,'test':250},
                'minimum_occluded_rows':{'train':1000,'validation':50,'test':50}}
 
+# An explicitly narrower experiment, NOT a relaxation of the balanced release.
+# Keep counts, split diversity, localization spread and visual QA unchanged.
+BASELINE_GATES={**RELEASE_GATES,'minimum_difficulty_rows_per_split':{'easy':20,'hard':20}}
+PROFILES={
+    'balanced_v1':dict(gates=RELEASE_GATES,difficulties=('easy','medium','hard'),
+        state='complete_synthetic_grounding_release'),
+    'visible_occluded_v1':dict(gates=BASELINE_GATES,difficulties=('easy','hard'),
+        state='complete_visible_occluded_baseline_release'),
+}
+
+
+def release_profile(name):
+    require(name in PROFILES,'Unsupported release profile')
+    return PROFILES[name]
+
+
+def select_profile(rows,name):
+    profile=release_profile(name); selected=[]; excluded=[]
+    for row in rows:
+        validate_answer(row['answer'])
+        expected={'easy':('localized','clear'),'medium':('localized','partial'),
+                  'hard':('abstain','occluded')}
+        require(row['difficulty'] in expected and
+                (row['answer']['status'],row['answer']['visibility'])==expected[row['difficulty']],
+                'Difficulty/answer mismatch')
+        if row['difficulty'] in profile['difficulties']: selected.append(row)
+        else: excluded.append(dict(id=row['id'],source_sample=str(row.get('directory','')),
+            family=row['source_plant_family'],reason='outside_explicit_release_profile:'+name,
+            original_difficulty=row['difficulty']))
+    return selected,excluded
+
 
 def review_directory_snapshot(directory):
     return {str(p.resolve()):sha256(p) for p in sorted(Path(directory).glob('*.json'))}
@@ -72,7 +103,7 @@ def view_signature(metadata,family,lighting=None):
 
 def check_release_rows(rows,*,gates=None):
     gates=RELEASE_GATES if gates is None else gates
-    require(gates in (RELEASE_GATES,LEGACY_ENGINEERING_GATES),'Unsupported release gate version')
+    require(gates in (RELEASE_GATES,LEGACY_ENGINEERING_GATES,BASELINE_GATES),'Unsupported release gate version')
     counts=Counter(r['split'] for r in rows)
     families=defaultdict(set); targets=defaultdict(set); difficulty=defaultdict(Counter)
     ancestry={}; images={}; views={}; bins=set(); errors=[]; unique_images=set()
@@ -113,12 +144,13 @@ def check_release_rows(rows,*,gates=None):
         target_source_family_assignments=ancestry,thresholds=gates)
 
 
-def gather(audit_paths, *, output=None):
+def gather(audit_paths, *, output=None,progress=None):
     """Validate immutable sources and derive deduplicated labels without writing."""
     output=Path(output).resolve() if output is not None else None
     require(bool(audit_paths),'No audited captures')
     bindings={}; audits=[]; families={}; reports={}; source_plans={}; review_directories={}
     for name in audit_paths:
+        if progress: progress(dict(stage='source_audit',audit=str(name),audits_loaded=len(audits)))
         path=Path(name).resolve(); audit_hash=sha256(path); audit=read_json(path)
         require(audit.get('schema_version')==SCHEMA and audit.get('state')=='complete_engineering_audit_not_approval', 'Incomplete audit')
         require(audit.get('training_dataset_approved') is False,'Source pilot approval changed')
@@ -171,8 +203,12 @@ def gather(audit_paths, *, output=None):
                 require(sid in {r['sample_id'] for r in audit['samples']},'Unknown held source sample')
                 held_images.add(read_json(capture/sid/'sample.json')['files']['inputs/rgb.png']['sha256'])
     candidates=[]; exclusions=[]; duplicate=set(); duplicate_views=set()
+    processed=0
     for path,audit,capture,family,split,lighting,reviews,audit_hash,profile in audits:
         for checked in audit['samples']:
+            processed+=1
+            if progress and processed%200==0:
+                progress(dict(stage='derive_labels',processed=processed,eligible=len(candidates)))
             require(checked.get('integrity_and_recomputed_annotations_passed') is True
                     and checked['camera'].get('mounted_robot_pov_verified') is True,'Unaudited observation')
             sid=checked['sample_id']; directory=capture/sid; meta=read_json(directory/'sample.json')
@@ -199,23 +235,48 @@ def gather(audit_paths, *, output=None):
         review_directories=review_directories)
 
 
-def build(audit_paths,output,*,allow_incomplete=False,visual_reviews=None,reconcile_reviews=False):
+def build(audit_paths,output,*,allow_incomplete=False,visual_reviews=None,reconcile_reviews=False,
+          profile='balanced_v1',progress=None,historical_reviews=None,historical_inventory=None):
     output=Path(output).resolve()
     require(not output.exists(),'Choose a new release output; never overwrite')
-    gathered=gather(audit_paths,output=output)
+    specification=release_profile(profile)
+    from .training_review_history import negative_history,exclude_negatives,pinned_history
+    if profile=='visible_occluded_v1' and not allow_incomplete:
+        pinned=pinned_history(historical_inventory,historical_reviews or [])
+    else:
+        pinned=negative_history(historical_reviews or [])
+    gathered=gather(audit_paths,output=output,progress=progress)
     candidates,exclusions,bindings,source_plans=(gathered[k] for k in ('candidates','exclusions','bindings','source_plans'))
-    gates=check_release_rows(candidates)
+    # New, task-specific reviews may complete during a long read-only source
+    # scan. They cannot erase the earlier pinned inventory or its negatives.
+    if pinned['source_evidence_sha256']: verify_bindings(pinned['source_evidence_sha256'])
+    verify_review_directories(pinned['review_directory_snapshots'])
+    current=negative_history(visual_reviews or [])
+    history={**pinned,'records':pinned['records']+current['records'],
+        'source_evidence_sha256':{**pinned['source_evidence_sha256'],**current['source_evidence_sha256']},
+        'review_directory_snapshots':{**pinned['review_directory_snapshots'],**current['review_directory_snapshots']}}
+    candidates,negative_exclusions=exclude_negatives(candidates,history)
+    bindings={**bindings,**history['source_evidence_sha256']}
+    candidates,profile_exclusions=select_profile(candidates,profile)
+    exclusions=exclusions+negative_exclusions+profile_exclusions
+    gates=check_release_rows(candidates,gates=specification['gates'])
+    if progress: progress(dict(stage='coverage',release_profile=profile,acceptance=gates))
     if not allow_incomplete:
         require(gates['passed'],'Release coverage gates failed: '+', '.join(gates['failures']))
     from .training_release_review import verify_reviews
     review_evidence=verify_reviews(visual_reviews or [],candidates,require_complete=not allow_incomplete,
         reconcile=reconcile_reviews)
-    review_directories={**gathered['review_directories'],**review_evidence['review_directory_snapshots']}
+    if progress: progress(dict(stage='visual_qa',passed=review_evidence['passed'],
+        inspected_unique_samples=review_evidence['inspected_unique_samples']))
+    review_directories={**gathered['review_directories'],**history['review_directory_snapshots'],
+        **review_evidence['review_directory_snapshots']}
     complete=bool(gates['passed'] and review_evidence['passed'])
     output.mkdir(parents=True)
     for folder in ('images','depth','labels','splits'): (output/folder).mkdir()
     files={}; index=[]; chats=defaultdict(list)
     for r in candidates:
+        if progress and len(index)%200==0: progress(dict(stage='copy',copied=len(index),total=len(candidates)))
+        r=dict(r)  # Do not mutate gathered evidence while packaging it.
         sid=r['id']; directory=r.pop('directory'); meta=r.pop('metadata'); label=r.pop('label')
         paths={'rgb':f'images/{sid}.png','depth':f'depth/{sid}.npy','validity':f'depth/{sid}_valid.png',
                'label':f'labels/{sid}.json','target_mask':f'labels/{sid}_target.png'}
@@ -240,41 +301,58 @@ def build(audit_paths,output,*,allow_incomplete=False,visual_reviews=None,reconc
     write_json(output/'contract.json',dict(contract=CONTRACT,system_prompt=SYSTEM_PROMPT,contract_sha256=contract_hash()))
     write_json(output/'exclusions.json',exclusions)
     write_json(output/'visual_review.json',review_evidence)
-    files.update({p:sha256(output/p) for p in ('index.jsonl','contract.json','exclusions.json','visual_review.json')})
-    result=dict(schema_version=SCHEMA_RELEASE,state='complete_synthetic_grounding_release' if complete else 'incomplete_engineering_export_do_not_claim_release',
+    write_json(output/'negative_review_history.json',history)
+    files.update({p:sha256(output/p) for p in ('index.jsonl','contract.json','exclusions.json',
+        'visual_review.json','negative_review_history.json')})
+    for name in ('DATASET_CARD.md','H200_HANDOFF.md'):
+        source=Path(__file__).with_name(name)
+        shutil.copyfile(source,output/name);files[name]=sha256(output/name)
+    result=dict(schema_version=SCHEMA_RELEASE,state=specification['state'] if complete else 'incomplete_engineering_export_do_not_claim_release',
+        release_profile=profile,
         created_utc=datetime.now(timezone.utc).isoformat(),packaging='portable_self_contained_images_chats_native_depth_labels',
         contract_sha256=contract_hash(),acceptance=gates,files_sha256=files,source_plans_sha256=source_plans,
         source_bindings_sha256=bindings,excluded_counts=dict(Counter(x['reason'] for x in exclusions)),
         synthetic_training_task_only=True,physical_execution_approved=False,human_approved_count=0,
         split_scope='target_source_families_only_shared_greenhouse_backdrop_context',
         implementation_sha256={p:sha256(Path(__file__).with_name(p)) for p in
-            ('training_export.py','training_contract.py','query_visibility.py','training_release_review.py')})
+            ('training_export.py','training_contract.py','query_visibility.py','training_release_review.py',
+             'training_review_history.py')})
     verify_bindings(bindings)
     if review_evidence['source_evidence_sha256']:
         verify_bindings(review_evidence['source_evidence_sha256'])
     verify_review_directories(review_directories)
     write_json(output/'manifest.json',result)
-    validate(output,allow_incomplete=allow_incomplete)
+    validate(output,allow_incomplete=allow_incomplete,progress=progress)
     return result
 
 
-def validate(root,*,allow_incomplete=False):
+def validate(root,*,allow_incomplete=False,progress=None):
     """Offline loader check uses only portable artifacts, never original source paths."""
     root=Path(root); manifest=read_json(root/'manifest.json')
     require(manifest.get('schema_version')==SCHEMA_RELEASE,'Wrong release schema')
-    require(manifest.get('state')=='complete_synthetic_grounding_release' or
+    profile=manifest.get('release_profile','balanced_v1');specification=release_profile(profile)
+    require(manifest.get('state')==specification['state'] or
             (allow_incomplete and manifest.get('state')=='incomplete_engineering_export_do_not_claim_release'), 'Incomplete release')
     require(manifest['contract_sha256']==contract_hash(),'Unsupported contract')
     for path,h in manifest['files_sha256'].items(): require(sha256(safe_file(root,path))==h,'Changed release artifact: '+path)
     contract=read_json(safe_file(root,'contract.json'))
     require(contract['contract']==CONTRACT and contract['system_prompt']==SYSTEM_PROMPT,'Changed task/prompt')
     rows=list(read_jsonl(safe_file(root,'index.jsonl')))
+    selected,excluded=select_profile(rows,profile)
+    require(not excluded and len(selected)==len(rows),'Rows outside declared release profile')
+    if 'negative_review_history.json' in manifest['files_sha256']:
+        from .training_review_history import exclude_negatives
+        _,held=exclude_negatives(rows,read_json(safe_file(root,'negative_review_history.json')))
+        require(not held,'Historical held RGB entered release')
+    elif profile=='visible_occluded_v1':
+        require(False,'Baseline requires explicit historical review evidence')
     require(len({r['id'] for r in rows})==len(rows),'Duplicate sample ids')
     indexed={r['id']:r for r in rows}; seen=set()
     for split in ('train','validation','test'):
         for chat in read_jsonl(safe_file(root,f'splits/{split}.jsonl')):
             require(chat['id'] in indexed and chat['id'] not in seen,'Unknown or duplicated chat row')
             seen.add(chat['id']); r=indexed[chat['id']]
+            if progress and len(seen)%200==0: progress(dict(stage='portable_validate',checked=len(seen),total=len(rows)))
             require(r['split']==split,'Chat split mismatch')
             label=read_json(safe_file(root,r['files']['label']))
             require(chat==chat_row(r['id'],r['files']['rgb'],label),'Prompt, answer or image mismatch')
@@ -296,13 +374,13 @@ def validate(root,*,allow_incomplete=False):
     gates=check_release_rows(rows,gates=manifest['acceptance']['thresholds'])
     require(gates==manifest['acceptance'],'Release acceptance summary mismatch')
     if not allow_incomplete:
-        require(gates['passed'] and gates['thresholds']==RELEASE_GATES,'Coverage/balance gates failed')
+        require(gates['passed'] and gates['thresholds']==specification['gates'],'Coverage/profile gates failed')
         from .training_release_review import check_evidence
         require('visual_review.json' in manifest['files_sha256'],'Missing visual QA evidence')
         evidence=read_json(safe_file(root,'visual_review.json'))
         recomputed=check_evidence(evidence,rows,require_complete=True)
         require(all(evidence.get(k)==v for k,v in recomputed.items()),'Visual QA summary mismatch')
-    return dict(state=manifest['state'],rows=len(rows),portable_loader_verified=True,acceptance=gates)
+    return dict(state=manifest['state'],release_profile=profile,rows=len(rows),portable_loader_verified=True,acceptance=gates)
 
 
 def main(argv=None):
@@ -312,11 +390,18 @@ def main(argv=None):
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--allow-incomplete',action='store_true')
     p.add_argument('--visual-review',type=Path,action='append')
+    p.add_argument('--profile',choices=tuple(PROFILES),default='balanced_v1')
+    p.add_argument('--historical-review',type=Path,action='append',
+        help='Carry negative RGB decisions across task versions without granting any old approval')
+    p.add_argument('--historical-inventory',type=Path,
+        help='Previously pinned complete review inventory, required for a complete visible/occluded baseline')
     p.add_argument('--reconcile-reviews',action='store_true',
         help='Retain full review provenance; count only exact current labels, never override a retained-image hold')
     a=p.parse_args(argv)
     r=build(a.audit,a.output,allow_incomplete=a.allow_incomplete,visual_reviews=a.visual_review,
-        reconcile_reviews=a.reconcile_reviews) if a.command=='build' else validate(a.output,allow_incomplete=a.allow_incomplete)
+        reconcile_reviews=a.reconcile_reviews,profile=a.profile,historical_reviews=a.historical_review,
+        historical_inventory=a.historical_inventory,
+        progress=lambda value:print(json.dumps(value),flush=True)) if a.command=='build' else validate(a.output,allow_incomplete=a.allow_incomplete)
     print(json.dumps({k:v for k,v in r.items() if k in ('state','acceptance','rows','portable_loader_verified')},indent=2),flush=True)
 
 

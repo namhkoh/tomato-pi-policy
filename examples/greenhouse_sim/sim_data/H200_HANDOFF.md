@@ -1,8 +1,48 @@
-# Qwen3-VL-8B dataset handoff (not yet a training release)
+# Qwen3-VL-8B dataset handoff
 
 2026-09-11, `koh-dev/sim-vlm`. The user will transfer the completed dataset to
 the H200 servers; training follows that transfer. Do not start local training,
-request server credentials, or treat the current engineering export as ready.
+request server credentials, or treat an engineering export as ready.
+
+## Current handoff scope: explicitly narrowed baseline
+
+The user authorized an **easy/clear + hard/occluded-only** release on
+2026-09-11. Check the transferred package's `manifest.json`, not earlier
+checkpoint counts below. Only `release_profile: visible_occluded_v1` with
+`state: complete_visible_occluded_baseline_release` passing the normal
+validator is the narrowed baseline. The balanced release remains a separate
+unfinished goal; its medium quotas have not been reduced. The baseline has
+no medium/partial training or evaluation examples and cannot establish
+performance on that class.
+
+Transfer the complete checksum-verified ZIP and its `.sha256` file. Extract
+the `grounding_release` folder and use the matching repository revision:
+
+```bash
+sha256sum -c visible_occluded_20260911_v1.zip.sha256
+unzip visible_occluded_20260911_v1.zip -d /path/to/dataset
+cd /path/to/tomato-pi-policy/examples/greenhouse_sim
+python -m sim_data.training_export validate --output /path/to/dataset/grounding_release
+```
+
+The ZIP contains original RGB, frozen split chats, native depth/calibration
+and hidden-label sidecars, QA/provenance, and these consumer instructions.
+Never pass depth, masks or hidden cut XYZ as RGB model inputs. The Qwen
+adapter is `sim_data.qwen_adapter.GroundingDataset`; it requires normal
+validation. Before using four H200s, validate the actual Qwen3-VL-8B
+processor, assistant-only loss mask, finite forward/backward loss, checkpoint
+reload and one small overfit run. LoRA is the intended first experiment;
+multi-GPU speed, memory and accuracy have not been measured. No training
+job is launched by the dataset exporter.
+
+The checkpoints below are historical provenance, not claims about the
+contents or readiness of a newer validated baseline package.
+
+Complete baseline builds require a separately pinned historical review
+inventory before source scanning. This preserves old task-version image
+holds even when a newer query differs. Missing bundles or decision files
+cannot silently remove negative decisions. Fresh reviews are attributed to
+assistants, not to the user or independent horticultural experts.
 
 The exact consumer task, annotation convention, file layout and limitations
 are explained in [DATASET_CARD.md](DATASET_CARD.md).

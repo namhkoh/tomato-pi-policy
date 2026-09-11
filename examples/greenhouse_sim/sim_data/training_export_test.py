@@ -173,3 +173,69 @@ def test_review_snapshot_detects_new_file_and_preserves_existing_record(tmp_path
     snapshots={str(folder):export.review_directory_snapshot(folder)}
     p.write_text('{"decision":"hold"}')
     with pytest.raises(ValueError,match='Review history changed'): export.verify_review_directories(snapshots)
+
+
+def test_baseline_selection_does_not_relabel_or_relax_balanced_gates():
+    rows=[row(key='visible'),row(key='hidden',status='abstain'),row(key='partial')]
+    rows[-1]['difficulty']='medium';rows[-1]['answer']['visibility']='partial'
+    before=deepcopy(rows)
+    selected,excluded=export.select_profile(rows,'visible_occluded_v1')
+    assert [r['id'] for r in selected]==['visible','hidden']
+    assert excluded[0]['original_difficulty']=='medium'
+    assert rows==before
+    assert export.RELEASE_GATES['minimum_difficulty_rows_per_split']=={'easy':20,'medium':20,'hard':20}
+    assert export.BASELINE_GATES=={**export.RELEASE_GATES,
+        'minimum_difficulty_rows_per_split':{'easy':20,'hard':20}}
+    assert export.select_profile(rows,'balanced_v1')==(rows,[])
+
+
+@pytest.mark.parametrize('kind',['difficulty','status','visibility'])
+def test_profile_rejects_misclassified_answers(kind):
+    r=row()
+    if kind=='difficulty': r['difficulty']='hard'
+    elif kind=='status': r['answer']['status']='abstain'
+    else: r['answer']['visibility']='partial'
+    with pytest.raises(ValueError): export.select_profile([r],'visible_occluded_v1')
+
+
+def test_baseline_keeps_small_export_incomplete(source_audit):
+    audit,output=source_audit
+    result=export.build([audit],output,profile='visible_occluded_v1',allow_incomplete=True)
+    assert result['release_profile']=='visible_occluded_v1'
+    assert result['state']=='incomplete_engineering_export_do_not_claim_release'
+    assert result['acceptance']['thresholds']==export.BASELINE_GATES
+    assert export.validate(output,allow_incomplete=True)['rows']==1
+    with pytest.raises(ValueError,match='Incomplete release'): export.validate(output)
+    assert 'DATASET_CARD.md' in result['files_sha256']
+    assert 'H200_HANDOFF.md' in result['files_sha256']
+
+
+def test_profile_name_and_complete_state_cannot_be_swapped(source_audit):
+    audit,output=source_audit
+    export.build([audit],output,profile='visible_occluded_v1',allow_incomplete=True)
+    path=output/'manifest.json';manifest=json.loads(path.read_text())
+    manifest['state']='complete_synthetic_grounding_release'
+    path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError,match='Incomplete release'): export.validate(output)
+    manifest['release_profile']='custom_relaxed';path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError,match='Unsupported release profile'): export.validate(output)
+
+
+def test_medium_cannot_enter_baseline_even_in_engineering_mode(source_audit,monkeypatch):
+    audit,output=source_audit
+    result=export.build([audit],output,allow_incomplete=True)
+    # A valid balanced medium row, rehashed, is still forbidden in this profile.
+    index=list(export.read_jsonl(output/'index.jsonl'))
+    index[0]['difficulty']='medium';index[0]['answer']['visibility']='partial'
+    (output/'index.jsonl').write_text(json.dumps(index[0])+'\n')
+    result['release_profile']='visible_occluded_v1'
+    result['files_sha256']['index.jsonl']=sha256(output/'index.jsonl')
+    (output/'manifest.json').write_text(json.dumps(result))
+    with pytest.raises(ValueError,match='Rows outside declared release profile'):
+        export.validate(output,allow_incomplete=True)
+
+
+def test_arbitrary_reduced_gate_set_is_rejected():
+    gates=deepcopy(export.BASELINE_GATES);gates['minimum_rows']['train']=1
+    with pytest.raises(ValueError,match='Unsupported release gate'):
+        export.check_release_rows([row()],gates=gates)

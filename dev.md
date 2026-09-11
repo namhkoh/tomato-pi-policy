@@ -4301,3 +4301,44 @@ No hardware, collection, tuning, review, split or training-export changes.
   the straight stroke clear. Remaining ten variants and native cooked hulls
   were not measured. Refine conservativeness without shrinking hardware or
   claiming a source triangle test certifies the native decomposed collider.
+
+## Explicit visible/occluded VLM baseline preparation, 2026-09-11
+
+- User authorized the narrower `visible_occluded_v1` release before returning
+  to cutting development. `balanced_v1` and its medium quotas remain unchanged.
+  The new profile selects easy/clear and hard/occluded only; medium is excluded,
+  never relabeled. Minimum counts, frozen families, target diversity, cut-pixel
+  spread, query-copy check and representative visual QA remain required.
+- Export/portable loader bind the profile to a distinct completion state and
+  reject out-of-profile rows, mismatched difficulty/answers, arbitrary gates
+  and incomplete previews. Consumer instructions are hash-bound package files.
+- Independent review preflight found 115 exact current easy/hard representative
+  accepts, 11 missing stratified inspections, and one retained legacy-v1 held
+  RGB (`seed17_full_0f2fc164d4bdb3a8509e`). A newer connected-query accept does
+  not silently erase that hold. New `training_review_history.py` preserves
+  negative RGB identity across task versions and exports the historical
+  evidence without changing original decisions or granting legacy approvals.
+- Fresh normal source rebuild started from all 63 authoritative audit paths,
+  including the recovered seed17 path. Diagnostic scope before the legacy
+  exclusion: 14,273 easy/hard candidates; this is NOT a final release count.
+  Fresh selected-card review is separate from source verification. Packaging
+  cannot complete before normal coverage, representative QA and portable
+  validation pass. No collection, training, hardware command or gate waiver.
+- Focused exporter/review/history/archive/Qwen-adapter regression: **60 passed**
+  in 4.48 s using Isaac Python, no SimulationApp. Existing simulator cutting
+  status is unchanged: stable hold control, no qualified full cutting sequence.
+
+- Follow-up independent code review closed a fail-open history omission: a
+  complete baseline now requires a separately pinned, nonempty historical
+  bundle/decision inventory *before* source gathering. Bundle omission,
+  deleted decisions, changed negative cards and newly appended records fail
+  checks. Twelve historical bundles / 20 negative records / 328 bound files
+  are pinned for this build. Fresh task reviews may finish during source
+  gathering but cannot erase those earlier negatives. No prior reviews edited.
+- Expanded focused tests: **62 passed** (5.48 s). Combined simulator/kinematics/
+  clock/data regression: **876 tests + 47 subtests passed** (110.58 s).
+  The first portable-Python source rebuild stopped before export on missing
+  `psutil` in the capture-exit validator; the checked restart uses Isaac Python.
+  One own exporter was deliberately stopped before writing a release to add
+  the inventory safeguard. Neither interruption affected the review GUI,
+  simulation assets, source labels, splits, or any training job.

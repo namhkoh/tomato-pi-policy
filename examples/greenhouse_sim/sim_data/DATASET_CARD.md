@@ -6,6 +6,22 @@ Only an export whose normal validator passes is the substantive training
 release. Directory names, assistant recommendations and successful file
 copying are not release approval. See `H200_HANDOFF.md` for current readiness.
 
+## Explicit release profiles
+
+The user authorized `visible_occluded_v1` on 2026-09-11 as the first, narrower
+fine-tuning baseline. It includes **easy/clear localization and hard/occluded
+abstention only**. All medium/partial examples are excluded, never relabeled.
+The task-v3 prompt and coordinate convention remain unchanged. Performance on
+partial occlusion is unvalidated; this is not the balanced easy/medium/hard
+release. `balanced_v1` retains its original medium-coverage requirements.
+
+A valid baseline manifest has `release_profile: visible_occluded_v1` and
+`state: complete_visible_occluded_baseline_release`. Its normal validator must
+pass the same split-family, target-diversity, minimum total/localized/occluded
+counts, localization-spread and representative visual-QA checks. The profile
+is not a way to accept an incomplete preview. Actual counts and exclusions
+are in that package's manifest. No training run or model quality is implied.
+
 ## One training example
 
 Input: one unaltered, full-scene **848 x 408 RGB** frame from the simulated
@@ -101,6 +117,7 @@ release/
   contract.json           exact task definition and system prompt
   exclusions.json         excluded samples and reasons
   visual_review.json      bound representative review evidence
+  negative_review_history.json  historical image holds across task versions
   manifest.json           release state, gate results, hashes and provenance
 ```
 
