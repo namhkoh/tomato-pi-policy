@@ -950,3 +950,12 @@ after normal portable validation and every archived member's hash check.
 This remains static target-conditioned RGB perception, not dynamic action
 supervision. Four-H200 training remains a user-side step after handoff and
 real-processor/loss-mask/forward-backward validation.
+
+The first new baseline QA wave inspected 24 original/card pairs and recorded
+18 attributed assistant accepts plus six holds. One seed37/hard representative
+gap remains at this checkpoint; the remaining unheld candidates are prepared
+in a second immutable bundle for actual inspection. No medium requirement or
+existing hold was relaxed. Final export now accepts a hash-bound explicit list
+of completed review bundles at finalization, retaining the earlier pinned
+history. Parallel source hashing is bounded to four workers/256-future batches
+and does not replace or cache away any source-byte verification.

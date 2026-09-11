@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import json
+from itertools import islice
 from pathlib import Path
 import shutil
 
@@ -76,6 +78,30 @@ def verify_review_directories(snapshots):
     for directory,expected in snapshots.items():
         require(review_directory_snapshot(directory)==expected,
             'Review history changed during export; recount required: '+directory)
+
+
+def verify_source_bindings(bindings,*,progress=None,workers=4):
+    """Bounded parallel byte hashing, never cached or skipped verification."""
+    require(bindings and type(workers) is int and 1<=workers<=4,'Invalid source hash verification')
+    def check(item):
+        path,expected=item
+        require(sha256(path)==expected,'Stale audit/review: '+path)
+    checked=0;items=iter(bindings.items())
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        while batch:=list(islice(items,256)):
+            # Small batches bound outstanding file handles/futures and fail
+            # before advancing to later batches if any source differs.
+            list(pool.map(check,batch));checked+=len(batch)
+            if progress: progress(dict(stage='source_hashes',checked=checked,total=len(bindings)))
+
+
+def read_review_list(path):
+    path=Path(path).resolve();values=read_json(path)
+    require(isinstance(values,list) and values and all(isinstance(v,str) and v for v in values),
+        'Expected a nonempty visual review path list')
+    values=[str(Path(v).resolve()) for v in values]
+    require(len(values)==len(set(values)),'Duplicate visual review bundle in list')
+    return values,{str(path):sha256(path)}
 
 
 def read_jsonl(path):
@@ -193,7 +219,7 @@ def gather(audit_paths, *, output=None,progress=None):
             records.append(read_json(record_path))
         reviews=active_reviews(records,audit,audit_hash)
         audits.append((path,audit,capture,family,split,manifest.get('lighting'),reviews,audit_hash,manifest.get('render_budget_profile','established')))
-    verify_bindings(bindings)
+    verify_source_bindings(bindings,progress=progress)
     # A duplicate capture must not resurrect the RGB of an explicitly held
     # source sample merely because its own audit has no review yet.
     held_images=set()
@@ -236,10 +262,12 @@ def gather(audit_paths, *, output=None,progress=None):
 
 
 def build(audit_paths,output,*,allow_incomplete=False,visual_reviews=None,reconcile_reviews=False,
-          profile='balanced_v1',progress=None,historical_reviews=None,historical_inventory=None):
+          profile='balanced_v1',progress=None,historical_reviews=None,historical_inventory=None,
+          visual_review_list=None):
     output=Path(output).resolve()
     require(not output.exists(),'Choose a new release output; never overwrite')
     specification=release_profile(profile)
+    require(not (visual_reviews and visual_review_list),'Use visual bundles or a review-list file, not both')
     from .training_review_history import negative_history,exclude_negatives,pinned_history
     if profile=='visible_occluded_v1' and not allow_incomplete:
         pinned=pinned_history(historical_inventory,historical_reviews or [])
@@ -247,6 +275,11 @@ def build(audit_paths,output,*,allow_incomplete=False,visual_reviews=None,reconc
         pinned=negative_history(historical_reviews or [])
     gathered=gather(audit_paths,output=output,progress=progress)
     candidates,exclusions,bindings,source_plans=(gathered[k] for k in ('candidates','exclusions','bindings','source_plans'))
+    if visual_review_list is not None:
+        # Bind the explicit completed review set at finalization. A new review
+        # bundle never requires editing an already-inspected immutable bundle.
+        visual_reviews,list_binding=read_review_list(visual_review_list)
+        bindings={**bindings,**list_binding}
     # New, task-specific reviews may complete during a long read-only source
     # scan. They cannot erase the earlier pinned inventory or its negatives.
     if pinned['source_evidence_sha256']: verify_bindings(pinned['source_evidence_sha256'])
@@ -317,7 +350,7 @@ def build(audit_paths,output,*,allow_incomplete=False,visual_reviews=None,reconc
         implementation_sha256={p:sha256(Path(__file__).with_name(p)) for p in
             ('training_export.py','training_contract.py','query_visibility.py','training_release_review.py',
              'training_review_history.py')})
-    verify_bindings(bindings)
+    verify_source_bindings(bindings,progress=progress)
     if review_evidence['source_evidence_sha256']:
         verify_bindings(review_evidence['source_evidence_sha256'])
     verify_review_directories(review_directories)
@@ -390,6 +423,8 @@ def main(argv=None):
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--allow-incomplete',action='store_true')
     p.add_argument('--visual-review',type=Path,action='append')
+    p.add_argument('--visual-review-list',type=Path,
+        help='Explicit JSON list of completed immutable QA bundles, read/hash-bound after source derivation')
     p.add_argument('--profile',choices=tuple(PROFILES),default='balanced_v1')
     p.add_argument('--historical-review',type=Path,action='append',
         help='Carry negative RGB decisions across task versions without granting any old approval')
@@ -400,7 +435,7 @@ def main(argv=None):
     a=p.parse_args(argv)
     r=build(a.audit,a.output,allow_incomplete=a.allow_incomplete,visual_reviews=a.visual_review,
         reconcile_reviews=a.reconcile_reviews,profile=a.profile,historical_reviews=a.historical_review,
-        historical_inventory=a.historical_inventory,
+        historical_inventory=a.historical_inventory,visual_review_list=a.visual_review_list,
         progress=lambda value:print(json.dumps(value),flush=True)) if a.command=='build' else validate(a.output,allow_incomplete=a.allow_incomplete)
     print(json.dumps({k:v for k,v in r.items() if k in ('state','acceptance','rows','portable_loader_verified')},indent=2),flush=True)
 

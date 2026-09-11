@@ -4342,3 +4342,17 @@ No hardware, collection, tuning, review, split or training-export changes.
   One own exporter was deliberately stopped before writing a release to add
   the inventory safeguard. Neither interruption affected the review GUI,
   simulation assets, source labels, splits, or any training job.
+
+- The first new baseline review bundle has 24 individually inspected
+  original/card pairs: **18 assistant accepts / 6 holds**, with no human
+  confirmation. The remaining seed37/hard QA gap requires another immutable
+  bundle; no old held row or bundle is overwritten to fill that gap.
+- Added an explicit JSON review-list input, read and hash-bound after source
+  derivation, so completed additional review bundles can join finalization
+  without editing existing evidence. Original pinned history remains checked
+  before and after the source scan. The list itself is also rehashed before
+  publishing the manifest. Source byte hashing now uses at most four workers
+  and batches of 256 futures; every file is still checked on both passes and
+  progress counts are emitted. Focused regression: **64 passed** (9.83 s).
+  Tests cover the final file in a multi-batch verification being modified,
+  explicit unique/nonempty review lists and all previous profile/history gates.

@@ -239,3 +239,23 @@ def test_arbitrary_reduced_gate_set_is_rejected():
     gates=deepcopy(export.BASELINE_GATES);gates['minimum_rows']['train']=1
     with pytest.raises(ValueError,match='Unsupported release gate'):
         export.check_release_rows([row()],gates=gates)
+
+
+def test_bounded_parallel_hash_checks_every_file_and_detects_changed_source(tmp_path):
+    bindings={}
+    for index in range(270):
+        path=tmp_path/f'{index}.bin';path.write_bytes(str(index).encode());bindings[str(path)]=sha256(path)
+    events=[];export.verify_source_bindings(bindings,progress=events.append)
+    assert events[-1]['checked']==events[-1]['total']==270
+    (tmp_path/'269.bin').write_bytes(b'changed')
+    with pytest.raises(ValueError,match='Stale audit'): export.verify_source_bindings(bindings)
+
+
+def test_review_list_is_explicit_nonempty_unique_and_hash_bound(tmp_path):
+    path=tmp_path/'reviews.json';bundle=tmp_path/'bundle.json'
+    path.write_text(json.dumps([str(bundle)]))
+    values,bindings=export.read_review_list(path)
+    assert values==[str(bundle.resolve())] and bindings=={str(path.resolve()):sha256(path)}
+    for bad in ([],{},[None],[str(bundle),str(bundle)]):
+        path.write_text(json.dumps(bad))
+        with pytest.raises(ValueError): export.read_review_list(path)
