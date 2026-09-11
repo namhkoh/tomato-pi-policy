@@ -4793,3 +4793,76 @@ No hardware, collection, tuning, review, split or training-export changes.
   `data/sim_physics/regression_20260911_incremental_cut_planning.log`.
   No current-greenhouse cut/retention/deposit success; no training records,
   reviews, splits, model downloads or physical robot commands changed.
+
+### 2026-09-11: Native right-stroke clearance and explicit engineering-model correction
+
+- Native47 uses the same approved knife mount, farther left grasp and station,
+  with an explicit -12 degree blade-plane proposal and right joint1=-1.5 degrees.
+  The proposal-only tilt envelope is now +/-15 degrees; the default grid remains
+  0,+/-10. This remains inside the unchanged measured transverse-direction gate
+  (sin15=0.259 <0.3). No physical force, joint-limit or collision margin changes.
+  Grasp verifies, but the near-final stroke pose is rejected against the coarse
+  MainStem27 box by right forearm link5; this is not proof of native contact.
+- Added conservative native refinement for the exact restored right-arm capsule
+  paths only. The query box contains the WHOLE capsule, both spherical ends,
+  and the existing >=1 mm margin. Only a native miss can clear a coarse static
+  box rejection; dynamic foliage, source triangles and unsupported robot
+  shapes keep their original checks. Positive collider coverage and single
+  unchanged-physics epoch/final validation remain mandatory. Independent review
+  agreed with the enclosure argument; 91 focused CPU tests passed in1.29 s.
+- Native48 passes the sampled stroke with this refinement, then exhausts the
+  8 s synchronous planning budget in transit: total planning8.758 s,408 queries,
+  327 coarse rejections cleared,6 capsule queries. No right motion/cut occurs.
+  It correctly reports unavailable queries rather than a fabricated collision.
+  Explicit diagnostic --native-static-planning-seconds now permits up to60 s;
+  default8 s and20,000 query cap remain. Physics must stay frozen in the same
+  audited epoch, including cache/final validation. This is not a latency claim.
+  Budget/configuration/planner/native-bound tests:107 passed in1.41 s.
+- Contact audit found a real release-authorization bug: unsigned blade impulse
+  magnitudes could turn tensile or cancelling contributions into cutting load.
+  Correction preserves raw collider order and separates signed resistance
+  from non-cancelling load upper bounds. A successful cut must use the corrected
+  path; prior tests do not establish signed blade resistance in a native cut.
+- Explicit model decision: the intact FixedJoint has no tissue-opening law.
+  Requiring0.3 mm blade-centre travel while intact is not a constitutive fracture
+  criterion and can reward compliance/penetration instead. Implementing opt-in
+  signed_edge_load_brittle_seam_v1: unchanged >=0.2 N compressive edge resistance
+  for25 ms, verified left grasp, exact admissible seam and all existing guards.
+  Pre-release travel stays measured but is NOT a failure prerequisite in this
+  strength-only approximation. Legacy mode remains separately named/default.
+  This does NOT activate the unqualified cohesive prototypes, calibrate tomato
+  tissue, invent fracture energy, or count joint release as a complete robot task.
+- Mixed-mode toy coupon repeat cohesive_mixed_20260911_02 at1920 Hz completed
+  19,200 steps; applied full damage at3.4390625 s,8 microjoules dissipation,
+  8.010948 microjoules reconstructed drive absorption. Compared with960 Hz:
+  max same-time jump difference0.952 micrometres and damage difference0.006950.
+  Still a zero-gravity four-facet diagnostic, not the loaded plant/knife model.
+- Pending native qualification: signed contact trigger, safe right approach,
+  actual release, measured withdrawal and retained detached branch. Deposit,
+  calibrated tissue cutting and dynamic training examples remain unverified.
+
+- Follow-up native49: full sampled cut stroke and bounded bidirectional transit
+  pass; planning11.0807 s,405 transit collision checks. Physical right approach
+  and blade loading execute while left bilateral contact remains established.
+  At11.8667 s the new explicitly named engineering model releases the10 mm seam:
+  seven qualifying steps/29.1667 ms, signed resistance0.214771..0.309924 N,
+  non-cancelling normal-plus-friction upper0.357566 N; left slip0.03547 mm.
+  Actual pre-release loaded travel0.15142 mm is reported, not treated as tissue
+  work or as a pass of the legacy0.3 mm criterion. No physical tissue-cut claim.
+- Native49 is still a FAILURE overall: stopped at12.9083 s when left slip
+  reaches3.01165 mm. Opposing contact persists, but retention is not qualified.
+  Released leaves also contact right arm2/5 during withdrawal (not reported as
+  zero-contact or safe complete task). Do not use this run as a training success.
+- Removed the unconditional release+1 s left pull. Withdrawal elapsed time is
+  now a diagnostic only, with completion false until measured pose/current
+  clearance is integrated. New pure withdrawal_evidence helper requires
+  <0.5 mm/<0.005 rad and matching episode/step clearance, no elapsed-time credit;
+  68 tests and independent review pass. No path/tissue certification follows.
+- Signed blade pipeline/model focused suite:474 CPU tests passed including68
+  new cases; main cross-check211 passed in12.18 s. Raw collider/normal/impulse
+  rows remain available, with tensile/cancellation/friction/invalid-provenance
+  negative controls. Model identity survives reset and is explicit in reports.
+- Full CPU/USD physics regression after these changes: **1,584 passed in93.36 s**,
+  saved in data/sim_physics/regression_20260911_signed_blade_release.log.
+  Current signed blade release is established only for this privileged test
+  fixture; reliable post-release retention remains the next native blocker.

@@ -77,8 +77,9 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         goal=fixture.start[:3,3]+ramp(t,1,2)*(fixture.goal[:3,3]-fixture.start[:3,3])
         if grasp_verified and reposition:
             goal+=reposition*ramp(t,3.5,4.5)*fixture.goal[:3,2]
-        if cut_time is not None:
-            goal+=.008*ramp(t,cut_time+1,cut_time+2)*fixture.goal[:3,2]
+        # Keep the target held in place until measured knife withdrawal and a
+        # fresh clearance screen authorize a separate transport/reposition.
+        # A release+1 s timer cannot establish a clear blade corridor.
         fixture.target_palm(goal);fixture.close(ramp(t,2,3))
         if t>=3.5 and not grasp_verified:
             if stable<int(.1*args.physics_hz):
@@ -217,13 +218,16 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         left_grasp_verified=grasp_verified,collision_clear_right_plan=planned,blade_contact_release=rig.cut,
         native_retention=bool(retained) and all(r['contact']['bilateral'] and r['slip_m']<.003 for r in retained),
         released_material_separates=bool(retained) and max(r['detached_seam_gap_m'] for r in retained)>.003,
-        right_withdrawal_completed=cut_time is not None and records[-1]['t']>=cut_time+6)
+        right_withdrawal_completed=False)
     result=dict(state='passed_bimanual_mechanism_not_robot_task' if all(gates.values()) else 'failed_bimanual_qualification',
         gates=gates,error=fault,events=events,images=captures,timing=clock.report(),robot=fixture.report(),
         measurements=dict(native_edge_contact_count=fixture.cut_contacts,cut_time_s=cut_time,
             bilateral_contact_fraction_before_cut_plan=float(np.mean([r['contact']['bilateral'] for r in records if 3<=r['t']<=3.5])) if any(3<=r['t']<=3.5 for r in records) else None,
             maximum_slip_m=max((r['slip_m'] for r in records if r['slip_m'] is not None),default=None)),
         physical_cut_verified=False,tissue_fracture_calibrated=False,deposit_verified=False,
+        right_withdrawal_schedule_elapsed=cut_time is not None and records[-1]['t']>=cut_time+6,
+        right_withdrawal_verification='pending_native_endpoint_and_fresh_clearance_not_elapsed_time',
+        full_forward_cut_stroke_verified=False,
         negative_control_no_right_motion=hold_control,
         requested_pre_cut_reposition_m=reposition,
         target_source='privileged_test_fixture_not_perception_verified',training_eligible=False)

@@ -223,8 +223,8 @@ class HeldPlantScreen:
                              or triangles_intersect_box(local,-half-margin,half+margin))
                 if hit:
                     # Optional, same-tick native static-actor refinement. Keep
-                    # the entire proposed tool box and margin; dynamic target,
-                    # capsules, source triangles and all unverified paths keep
+                    # the entire proposed tool/arm bound and margin; dynamic target,
+                    # source triangles and all unverified paths keep
                     # their original checks. A query error can never clear one.
                     native=getattr(self,'native_static_query',None)
                     fitted_tool=(self.arm=='right' and link=='ee_right' and body.endswith('/ee_right')
@@ -232,6 +232,13 @@ class HeldPlantScreen:
                             for name in ('RightWristCamera','DeleafKnife'))))
                     if (fitted_tool and kind=='box' and okind=='box' and native is not None
                             and native.clear_box_checked(other,centre,axes,half,margin)):
+                        continue
+                    restored_arm_capsule=(self.arm=='right' and kind=='capsule'
+                        and link in tuple(f'link_right_arm_{i}' for i in range(7))
+                        and body.endswith('/'+link)
+                        and path.startswith(body+'/restored_collisions/capsule_'))
+                    if (restored_arm_capsule and okind=='box' and native is not None
+                            and native.clear_capsule_checked(other,a,b,radius,margin)):
                         continue
                     self.last_failure=dict(robot_collider=path,plant_collider=other,margin_m=margin,
                         phase='grasp' if grasp else 'stroke' if stroke else 'transit',conservative_overlap=True)

@@ -1,15 +1,18 @@
 import numpy as np
 import pytest
 
-from sim_physics.knife import ShearGate,KnifeGeometry
+from sim_physics.knife import ShearGate,KnifeGeometry,KNIFE_IMPULSE_CONTRACT
 from sim_physics.plant_test import native
 
 
 def sample(gate,x,**extra):
     edge=np.eye(4);edge[0,3]=-x
     data=dict(dt=.005,edge=edge,centre=np.zeros(3),axis=np.array([0.,0.,1.]),
-        points=[[-x,0,0]],impulses=[[.00125,0,0]],held=True,slip=.001)
+        points=[[-x,0,0]],impulses=[[.00125,0,0]],held=True,slip=.001,
+        impulse_contract=KNIFE_IMPULSE_CONTRACT,edge_contact_verified=True,
+        tool_contact_upper_bound_n=.25)
     data.update(extra)
+    data.setdefault('normals',[[1.,0,0] for _ in data['impulses']])
     return gate.observe(**data)
 
 
@@ -235,7 +238,7 @@ def test_transit_detour_checks_entire_path_and_never_changes_contact_margin():
     with pytest.raises(ValueError): robot.right_transit(np.zeros(7),np.full(7,float('nan')))
 
 
-@pytest.mark.parametrize('tilt',[-10.,0.,10.])
+@pytest.mark.parametrize('tilt',[-15.,-12.,-10.,0.,10.,12.,15.])
 def test_oblique_plane_preserves_anatomical_axis_and_existing_angular_gates(tilt):
     from sim_physics.knife import cut_plane_normal
     d=np.array([-2.,0,0]);axis=np.array([0.,0.,3.])
@@ -254,7 +257,7 @@ def test_oblique_plane_preserves_anatomical_axis_and_existing_angular_gates(tilt
 
 @pytest.mark.parametrize('direction,axis,tilt',[
     ([0,0,0],[0,0,1],0),([-1,0,0],[0,0,0],0),
-    ([-1,0,0],[1,0,0],0),([-1,0,0],[0,0,1],11),
+    ([-1,0,0],[1,0,0],0),([-1,0,0],[0,0,1],15.001),
     ([-1,0,0],[0,0,1],float('nan')),([-1,0,float('nan')],[0,0,1],0)])
 def test_invalid_oblique_proposals_fail_closed(direction,axis,tilt):
     from sim_physics.knife import cut_plane_normal

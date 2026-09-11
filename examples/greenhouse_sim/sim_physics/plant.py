@@ -90,20 +90,52 @@ class PlantRig:
 
     def release_from_blade(self,evidence):
         """Internal mechanism API: validate evidence before changing topology."""
-        from .knife import ShearParameters
-        p=ShearParameters()
+        from .knife import ShearParameters,CUT_MODELS,LEGACY_CUT_MODEL,KNIFE_IMPULSE_CONTRACT
+        if not isinstance(evidence,dict) or evidence.get('model') not in CUT_MODELS:
+            raise ValueError('Unknown explicit blade release model')
+        p=ShearParameters(model=evidence['model'])
+        travel_required=p.model==LEGACY_CUT_MODEL
         if (evidence.get('target')!=self.source_target
-                or evidence.get('model')!='force_qualified_pre_authored_seam_release'
+                or evidence.get('force_contract')!=KNIFE_IMPULSE_CONTRACT
+                or evidence.get('signed_resistance_definition')!='minus_sum_impulse_on_knife_dot_stroke_direction_over_dt'
                 or evidence.get('stable_left_grasp') is not True
                 or evidence.get('flat_edge_contact_verified') is not True
-                or evidence.get('commanded_motion_used_as_evidence') is not False):
+                or evidence.get('commanded_motion_used_as_evidence') is not False
+                or evidence.get('tissue_fracture_calibrated') is not False
+                or evidence.get('measured_travel_is_tissue_work') is not False
+                or evidence.get('fracture_energy_used_as_evidence') is not False
+                or evidence.get('engineering_approximation') is not True
+                or evidence.get('loading_travel_required') is not travel_required
+                or evidence.get('travel_definition')!='net_advance_since_first_consecutive_qualified_contact'
+                or not {'minimum_loading_travel_m','loading_travel_requirement_met'}<=evidence.keys()
+                or type(evidence.get('contact_steps')) is not int or evidence['contact_steps']<1):
             raise ValueError('Missing blade/grasp evidence for seam release')
-        values=[evidence.get(k,float('nan')) for k in ('peak_force_n','contact_dwell_s',
-            'measured_relative_loading_travel_m','grasp_slip_m')]
-        if (not np.isfinite(values).all() or not p.force_n<=values[0]<=p.maximum_force_n
-                or values[1]<p.dwell_s or values[2]<p.minimum_loading_travel_m
-                or not 0<=values[3]<p.maximum_grasp_slip_m):
+        keys=('force_threshold_n','peak_force_n','contact_dwell_s','measured_relative_loading_travel_m',
+            'grasp_slip_m','minimum_signed_resistance_n','peak_signed_resistance_n',
+            'peak_tool_contact_upper_bound_n','maximum_axial_contact_distance_m',
+            'maximum_edge_axis_dot_stem','maximum_stroke_axis_dot_stem','minimum_relative_step_m',
+            'minimum_leading_normal_cosine')
+        v={k:evidence.get(k,float('nan')) for k in keys}
+        if (any(isinstance(x,(bool,np.bool_)) or not isinstance(x,(int,float,np.integer,np.floating)) for x in v.values())
+                or not np.isfinite(list(v.values())).all()
+                or v['force_threshold_n']!=p.force_n
+                or not p.force_n<=v['minimum_signed_resistance_n']<=v['peak_signed_resistance_n']<=v['peak_force_n']<=v['peak_tool_contact_upper_bound_n']<=p.maximum_force_n
+                or v['contact_dwell_s']<p.dwell_s or v['measured_relative_loading_travel_m']<0
+                or not 0<=v['grasp_slip_m']<p.maximum_grasp_slip_m
+                or not 0<=v['maximum_axial_contact_distance_m']<=p.axial_tolerance_m
+                or not 0<=v['maximum_edge_axis_dot_stem']<.3
+                or not 0<=v['maximum_stroke_axis_dot_stem']<.3
+                or not -1e-6<=v['minimum_relative_step_m']<=0
+                or not np.cos(np.pi/6)<=v['minimum_leading_normal_cosine']<=1):
             raise ValueError('Blade evidence outside bounded shear parameters')
+        if travel_required:
+            if (evidence['minimum_loading_travel_m']!=p.minimum_loading_travel_m
+                    or evidence['loading_travel_requirement_met'] is not True
+                    or v['measured_relative_loading_travel_m']<p.minimum_loading_travel_m):
+                raise ValueError('Legacy blade loading travel requirement unmet')
+        elif (evidence['minimum_loading_travel_m'] is not None
+                or evidence['loading_travel_requirement_met'] is not None):
+            raise ValueError('Brittle strength-only model must mark loading travel not applicable')
         if self.constraint_mode=='fixed_articulation' or self.cut:
             raise ValueError('Seam cannot be released in current state')
         with Usd.EditContext(self.stage,self.stage.GetSessionLayer()):

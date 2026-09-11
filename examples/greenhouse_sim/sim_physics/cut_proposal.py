@@ -19,8 +19,9 @@ The input proposal's own byte hash is recorded. Coordinates inside provenance
 are never interpreted as targets or runtime transforms.
 
 Units: world_direction and stem_axis_world are unit vectors in the same world
-frame; wing_m is metres; plane_tilt_degrees is limited to the existing +/-10
-degrees. The current blade's half edge width minus the existing 5 mm end reserve
+frame; wing_m is metres; plane_tilt_degrees is limited to +/-15 degrees,
+inside the unchanged measured shear angular gates. The default orientation
+grid remains 0,+/-10 degrees. The current blade's half edge width minus the existing 5 mm end reserve
 bounds wing_m. Only roundoff-sized unit-vector normalization is allowed.
 """
 
@@ -34,7 +35,7 @@ import re
 
 import numpy as np
 
-from .knife import cut_plane_normal
+from .knife import cut_plane_normal, MAXIMUM_PLANE_TILT_DEGREES
 
 
 SCHEMA = "single_world_cut_proposal_v1"
@@ -129,8 +130,8 @@ class CutProposal:
             raise ValueError("normal_sign must be integer -1 or 1, not bool")
         object.__setattr__(self, "wing_m", _number(self.wing_m, "wing_m"))
         tilt = _number(self.plane_tilt_degrees, "plane_tilt_degrees")
-        if abs(tilt) > 10.:
-            raise ValueError("Plane tilt must preserve the existing +/-10 degree gate")
+        if abs(tilt) > MAXIMUM_PLANE_TILT_DEGREES:
+            raise ValueError("Plane tilt proposal must stay within +/-15 degrees")
         object.__setattr__(self, "plane_tilt_degrees", tilt)
         object.__setattr__(self, "maximum_projection_degrees", _limit(self.maximum_projection_degrees))
         if not isinstance(self.provenance_json, str):

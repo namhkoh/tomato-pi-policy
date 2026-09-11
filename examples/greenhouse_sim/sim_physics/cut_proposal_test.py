@@ -86,7 +86,7 @@ def test_projection_limit_is_required_not_a_hidden_default(document):
     ("world_direction", [1., 0.]), ("world_direction", [float("nan"), 0., 0.]),
     ("normal_sign", True), ("normal_sign", 1.), ("normal_sign", 0),
     ("wing_m", float("inf")), ("wing_m", True),
-    ("plane_tilt_degrees", 10.001), ("plane_tilt_degrees", -10.001),
+    ("plane_tilt_degrees", 15.001), ("plane_tilt_degrees", -15.001),
     ("plane_tilt_degrees", float("nan")), ("plane_tilt_degrees", True),
     ("maximum_projection_degrees", 0.), ("maximum_projection_degrees", -1.),
     ("maximum_projection_degrees", 1.00001), ("maximum_projection_degrees", True),
@@ -154,7 +154,7 @@ def test_invalid_fresh_axis_is_not_normalized_or_repaired(document, axis):
 
 
 @pytest.mark.parametrize("sign", [-1, 1])
-@pytest.mark.parametrize("tilt", [-10., 0., 10.])
+@pytest.mark.parametrize("tilt", [-15., -12., -10., 0., 10., 12., 15.])
 def test_normal_sign_and_plane_tilt_match_existing_knife_law(document, sign, tilt):
     document.update(normal_sign=sign, plane_tilt_degrees=tilt)
     result = resolve(parse_cut_proposal(document, source_target=TARGET))

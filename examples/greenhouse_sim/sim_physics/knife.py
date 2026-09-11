@@ -5,8 +5,44 @@ breaks one preauthored admissible seam (10 mm default); mesh penetration is not 
 No timer, commanded velocity, broad blade face or U-support can trigger release.
 """
 from dataclasses import dataclass
+import math
 
 import numpy as np
+
+# Proposal envelope only. sin(15 degrees)=0.259 < the UNCHANGED measured
+# abs(edge-axis dot stem-axis)<0.3 gate. Default search remains 0,+/-10.
+MAXIMUM_PLANE_TILT_DEGREES = 15.
+
+LEGACY_CUT_MODEL='force_qualified_pre_authored_seam_release'
+BRITTLE_CUT_MODEL='signed_edge_load_brittle_seam_v1'
+CUT_MODELS=(LEGACY_CUT_MODEL,BRITTLE_CUT_MODEL)
+KNIFE_IMPULSE_CONTRACT='world_normal_impulses_on_knife_v1'
+
+
+def knife_normal_impulse(normal,impulse):
+    """Validate a normal-only row without clipping its signed scalar.
+
+    Same unit-normal/collinearity tolerances as the shaft normal-contact
+    contract. A negative compliant impulse is retained, not positive evidence.
+    """
+    n=np.asarray(normal,float);j=np.asarray(impulse,float)
+    if n.shape!=(3,) or j.shape!=(3,) or not np.isfinite(np.r_[n,j]).all():
+        raise ValueError('Finite blade normal and impulse vectors required')
+    length=math.hypot(*n)
+    if abs(length-1.)>1e-4: raise ValueError('Unit blade contact normal required')
+    n=n/length
+    scalar=float(np.dot(j,n))
+    if not math.isfinite(scalar) or math.hypot(*(j-scalar*n))>1e-12+1e-5*math.hypot(*j):
+        raise ValueError('Blade impulse must be normal-only and collinear; no friction')
+    return n,scalar
+
+
+def resisting_face_normal(normal_on_knife,direction):
+    """Oriented leading face; unlike leading_face_normal, sign is known."""
+    n=np.asarray(normal_on_knife,float);d=np.asarray(direction,float)
+    if n.shape!=(3,) or d.shape!=(3,) or not np.isfinite(np.r_[n,d]).all(): return False
+    lengths=math.hypot(*n)*math.hypot(*d)
+    return bool(lengths>1e-9 and np.dot(n,-d)/lengths>=np.cos(np.pi/6))
 
 
 def leading_face_normal(normal,direction):
@@ -65,9 +101,11 @@ class ShearParameters:
     minimum_loading_travel_m: float = .0003
     maximum_grasp_slip_m: float = .003
     axial_tolerance_m: float = .003
+    model: str = LEGACY_CUT_MODEL
 
     def __post_init__(self):
-        values=list(vars(self).values())
+        if self.model not in CUT_MODELS: raise ValueError('Unknown explicit cut model')
+        values=[v for k,v in vars(self).items() if k!='model']
         if not np.isfinite(values).all() or not all(v>0 for v in values):
             raise ValueError('Shear parameters must be finite and positive')
         if self.force_n>self.maximum_force_n:
@@ -77,14 +115,14 @@ class ShearParameters:
 def cut_plane_normal(direction,stem_axis,tilt_degrees):
     """Small blade roll about a transverse stroke, not a changed stem axis.
 
-    +/-10 degrees stays inside the existing measured shear angular gates.
+    +/-15 degrees stays inside the existing measured shear angular gates.
     This only proposes geometry; it does not authorize contact or release.
     """
     d=np.array(direction,dtype=float,copy=True);axis=np.array(stem_axis,dtype=float,copy=True)
     if (d.shape!=(3,) or axis.shape!=(3,) or not np.isfinite(np.r_[d,axis]).all()
             or min(np.linalg.norm(d),np.linalg.norm(axis))<1e-9
-            or not np.isfinite(tilt_degrees) or abs(tilt_degrees)>10):
-        raise ValueError('Finite transverse axes and blade tilt within +/-10 degrees required')
+            or not np.isfinite(tilt_degrees) or abs(tilt_degrees)>MAXIMUM_PLANE_TILT_DEGREES):
+        raise ValueError('Finite transverse axes and blade tilt within +/-15 degrees required')
     d/=np.linalg.norm(d);axis/=np.linalg.norm(axis)
     if abs(np.dot(d,axis))>1e-6: raise ValueError('Blade stroke must remain transverse to the actual stem')
     angle=np.radians(tilt_degrees)
@@ -186,22 +224,61 @@ class ShearGate:
     def reset_window(self):
         self.dwell=0.;self.travel=0.;self.peak=0.;self.steps=0
         self.previous=None;self.loading_origin=None;self.loading_direction=None
+        self.minimum_resistance=None;self.peak_resistance=0.;self.peak_tool_upper=0.
+        self.maximum_axial=0.;self.maximum_edge_dot=0.;self.maximum_direction_dot=0.
+        self.minimum_step=0.;self.minimum_normal_cosine=1.
+        self.signed_resistance_n=0.;self.unsigned_projection_n=0.
 
-    def observe(self,*,dt,edge,centre,axis,points,impulses,held,slip):
+    def observe(self,*,dt,edge,centre,axis,points,impulses,held,slip,
+                normals=None,impulse_contract=None,edge_contact_verified=False,
+                tool_contact_upper_bound_n=None):
+        """Signed resistance qualifies; noncancelling magnitudes only cap load.
+
+        The caller must establish exact edge/collider provenance. An unsigned
+        legacy vector list is NOT upgraded by guessing its collider order.
+        The opt-in brittle model is a strength-only engineering approximation,
+        not a displacement law, fracture energy or calibrated tissue cutting.
+        """
         p=self.parameters
-        values=np.r_[dt,edge.flatten(),centre,axis,np.asarray(points).flatten(),np.asarray(impulses).flatten()]
-        if not np.isfinite(values).all() or dt<=0: raise ValueError('Invalid native shear sample')
+        if impulse_contract!=KNIFE_IMPULSE_CONTRACT or normals is None or tool_contact_upper_bound_n is None:
+            self.reset_window()
+            raise ValueError('Explicit on-knife normal impulse contract and full tool load bound required')
+        edge=np.asarray(edge,float);centre=np.asarray(centre,float);axis=np.asarray(axis,float)
+        points=np.asarray(points,float);impulses=np.asarray(impulses,float);normals=np.asarray(normals,float)
+        if (edge.shape!=(4,4) or centre.shape!=(3,) or axis.shape!=(3,)
+                or any(a.ndim not in (1,2) or a.shape not in ((0,),(len(a),3)) for a in (points,impulses,normals))
+                or not len(points)==len(impulses)==len(normals)):
+            self.reset_window();raise ValueError('Invalid native shear sample shapes')
+        values=np.r_[dt,tool_contact_upper_bound_n,edge.flatten(),centre,axis,points.flatten(),impulses.flatten(),normals.flatten()]
+        if (not np.isfinite(values).all() or dt<=0 or tool_contact_upper_bound_n<0
+                or not np.allclose(edge[3],[0,0,0,1],rtol=0,atol=1e-8)
+                or not np.allclose(edge[:3,:3].T@edge[:3,:3],np.eye(3),rtol=0,atol=1e-5)
+                or np.linalg.det(edge[:3,:3])<=0 or abs(math.hypot(*axis)-1)>1e-4):
+            self.reset_window();raise ValueError('Invalid native shear sample')
         relative=edge[:3,3]-centre;direction=-edge[:3,0]
         step=0. if self.previous is None else float(np.dot(relative-self.previous,direction))
-        force=sum(abs(float(np.dot(v,direction))) for v in impulses)/dt
+        try:
+            unit_normals=[knife_normal_impulse(n,j)[0] for n,j in zip(normals,impulses,strict=True)]
+            projections=[float(np.dot(v,direction)) for v in impulses]
+            resistance=-math.fsum(projections)/dt
+            force=math.fsum(abs(v) for v in projections)/dt
+            upper=max(float(tool_contact_upper_bound_n),force,math.fsum(math.hypot(*v) for v in impulses)/dt)
+            if not np.isfinite([resistance,force,upper]).all(): raise ValueError('Overflowing native shear force')
+        except (ValueError,OverflowError):
+            self.reset_window();raise
+        axial=max((abs(float(np.dot(point-centre,axis))) for point in points),default=0.)
+        edge_dot=abs(float(np.dot(edge[:3,1],axis)));direction_dot=abs(float(np.dot(direction,axis)))
+        normal_cosine=min((float(np.dot(n,-direction)/math.hypot(*direction)) for n in unit_normals),default=-1.)
         valid=bool(not self.completed and held and slip is not None and np.isfinite(slip)
-            and slip<p.maximum_grasp_slip_m and len(points)>0
-            and len(points)==len(impulses) and p.force_n<=force<=p.maximum_force_n
-            and abs(float(np.dot(edge[:3,1],axis)))<.3
-            and abs(float(np.dot(direction,axis)))<.3 and step>=-1e-6
-            and all(abs(float(np.dot(np.asarray(point)-centre,axis)))<=p.axial_tolerance_m for point in points))
+            and 0<=slip<p.maximum_grasp_slip_m and len(points)>0 and edge_contact_verified is True
+            and resistance>=p.force_n and force<=p.maximum_force_n and upper<=p.maximum_force_n
+            and normal_cosine>=np.cos(np.pi/6) and edge_dot<.3 and direction_dot<.3
+            and step>=-1e-6 and axial<=p.axial_tolerance_m)
         if not valid:
-            self.reset_window();return None
+            self.reset_window()
+            self.signed_resistance_n=resistance;self.unsigned_projection_n=force
+            return None
+        self.signed_resistance_n=resistance;self.unsigned_projection_n=force
         if self.loading_origin is None:
             # No approach displacement is credited to the first qualifying
             # contact sample. Both ends of measured advance need a valid load.
@@ -211,11 +288,29 @@ class ShearGate:
         # steps must subtract from travel instead of ratcheting a false cut.
         self.travel=max(0.,float(np.dot(relative-self.loading_origin,self.loading_direction)))
         self.dwell+=dt;self.peak=max(self.peak,force);self.steps+=1
-        if self.dwell<p.dwell_s or self.travel<p.minimum_loading_travel_m: return None
+        self.minimum_resistance=resistance if self.minimum_resistance is None else min(self.minimum_resistance,resistance)
+        self.peak_resistance=max(self.peak_resistance,resistance);self.peak_tool_upper=max(self.peak_tool_upper,upper)
+        self.maximum_axial=max(self.maximum_axial,axial);self.maximum_edge_dot=max(self.maximum_edge_dot,edge_dot)
+        self.maximum_direction_dot=max(self.maximum_direction_dot,direction_dot);self.minimum_step=min(self.minimum_step,step)
+        self.minimum_normal_cosine=min(self.minimum_normal_cosine,normal_cosine)
+        travel_required=p.model==LEGACY_CUT_MODEL
+        if self.dwell<p.dwell_s or (travel_required and self.travel<p.minimum_loading_travel_m): return None
         self.completed=True
-        return dict(target=self.target,model='force_qualified_pre_authored_seam_release',
+        return dict(target=self.target,model=p.model,
             force_threshold_n=p.force_n,peak_force_n=self.peak,contact_dwell_s=self.dwell,
+            force_contract=KNIFE_IMPULSE_CONTRACT,
+            signed_resistance_definition='minus_sum_impulse_on_knife_dot_stroke_direction_over_dt',
+            minimum_signed_resistance_n=self.minimum_resistance,peak_signed_resistance_n=self.peak_resistance,
+            peak_tool_contact_upper_bound_n=self.peak_tool_upper,
+            maximum_axial_contact_distance_m=self.maximum_axial,maximum_edge_axis_dot_stem=self.maximum_edge_dot,
+            maximum_stroke_axis_dot_stem=self.maximum_direction_dot,minimum_relative_step_m=self.minimum_step,
+            minimum_leading_normal_cosine=self.minimum_normal_cosine,
             measured_relative_loading_travel_m=self.travel,contact_steps=self.steps,
             travel_definition='net_advance_since_first_consecutive_qualified_contact',
+            loading_travel_required=travel_required,
+            minimum_loading_travel_m=p.minimum_loading_travel_m if travel_required else None,
+            loading_travel_requirement_met=True if travel_required else None,
+            measured_travel_is_tissue_work=False,fracture_energy_used_as_evidence=False,
+            engineering_approximation=True,
             stable_left_grasp=True,grasp_slip_m=float(slip),flat_edge_contact_verified=True,
             commanded_motion_used_as_evidence=False,tissue_fracture_calibrated=False)

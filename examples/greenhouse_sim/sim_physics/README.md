@@ -756,3 +756,29 @@ moment under that toy strength. The32-cell native rest diagnostic also remains
 unqualified on force balance despite tiny displacements. Neither prototype is
 the production cutting backend. Detailed failed/passing evidence and limitations
 are recorded in `dev.md`; no full cut/retain/deposit pass is established yet.
+
+### Explicit brittle-seam engineering mode (2026-09-11)
+
+`--cut-model signed_edge_load_brittle_seam_v1` is an opt-in strength-only
+approximation for the rigid admissible seam. It requires actual leading-edge
+normal resistance >=0.2 N for25 ms, verified left shaft contact, correct
+direction/location, and unchanged force/slip/penetration guards. Original
+collider order determines impulse sign; tensile contributions subtract.
+Non-cancelling normal PLUS friction loads still enforce the0.5 N tool cap.
+Travel is recorded, not claimed as tissue work or a prerequisite in this mode.
+Legacy `force_qualified_pre_authored_seam_release` remains the default with
+its0.3 mm post-qualified-contact travel criterion (now also signed-load gated).
+Neither model is calibrated tissue fracture; the cohesive prototypes remain
+inactive. No mesh, pose, velocity, mass or collision-filter change creates a cut.
+
+Native49 establishes the first current-greenhouse signed blade-contact release
+with left grasp: at11.8667 s,0.21477..0.30992 N signed resistance for29.17 ms,
+upper load0.35757 N; designated seam at10 mm. Its full61-sample cut path and
+405-check transit search pass, planning11.081 s with an explicit60 s budget.
+The trial then FAILS at12.9083 s because slip reaches3.01165 mm. Bilateral contact
+persists, but that is not reliable retention; incidental post-release leaf/arm
+contacts are also recorded. No complete cut/retain/deposit success is claimed.
+The left goal no longer pulls on a timer after release. Time-based withdrawal
+has been demoted to schedule diagnostics; verified completion requires current
+native endpoint and clearance evidence. `withdrawal_evidence.py` supplies a
+pure same-sample helper, not yet runtime-integrated at this checkpoint.

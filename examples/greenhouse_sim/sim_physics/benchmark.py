@@ -51,6 +51,11 @@ def parser():
     p.add_argument('--full-robot-probe',action='store_true',help='Full dynamic v1.2 robot with an IK-driven left arm')
     p.add_argument('--bimanual-cut',action='store_true',help='Guarded native left grasp and original right knife seam-release qualification')
     p.add_argument('--native-static-clearance',action='store_true',help='Opt-in live native static-box refinement during the single synchronous bimanual plan')
+    p.add_argument('--native-static-planning-seconds',type=float,default=8.,
+        help='Bounded synchronous diagnostic planning budget, up to 60 seconds; default 8; no physics/collision guard changes')
+    p.add_argument('--cut-model',choices=('force_qualified_pre_authored_seam_release','signed_edge_load_brittle_seam_v1'),
+        default='force_qualified_pre_authored_seam_release',
+        help='Opt-in engineering brittle seam strength model; neither mode is calibrated tissue fracture')
     p.add_argument('--cut-proposal-json',type=Path,help='One source-bound world-direction diagnostic instead of the default orientation grid; all safety/IK checks remain')
     p.add_argument('--right-ik-fixed-joint',type=float,nargs=2,metavar=('INDEX','DEGREES'),
         help='Opt-in exact-URDF redundancy constraint through endpoint and entire stroke; all transit/scene/contact guards remain')
@@ -129,6 +134,13 @@ def main(argv=None):
         raise ValueError('Raw grasp contact diagnostic requires right-parked bimanual hold control')
     if getattr(args,'native_static_clearance',False) and not args.bimanual_cut:
         raise ValueError('Native static clearance requires the bimanual harness')
+    budget=getattr(args,'native_static_planning_seconds',8.)
+    if (not math.isfinite(budget) or not 0<budget<=60
+            or (budget!=8 and not getattr(args,'native_static_clearance',False))):
+        raise ValueError('Non-default native planning budget requires native clearance and (0,60] seconds')
+    if (getattr(args,'cut_model','force_qualified_pre_authored_seam_release')!='force_qualified_pre_authored_seam_release'
+            and not args.bimanual_cut):
+        raise ValueError('Engineering brittle seam model requires guarded bimanual qualification')
     if getattr(args,'cut_proposal_json',None) is not None and not args.bimanual_cut:
         raise ValueError('Single cut proposal requires the bimanual harness')
     fixed=getattr(args,'right_ik_fixed_joint',None)
@@ -286,6 +298,8 @@ def main(argv=None):
                 robot_options['cut_standoff']=args.cut_standoff_m
                 robot_options['grasp_compression']=args.grasp_compression_m
                 robot_options['native_static_clearance']=getattr(args,'native_static_clearance',False)
+                robot_options['native_static_planning_seconds']=getattr(args,'native_static_planning_seconds',8.)
+                robot_options['cut_model']=getattr(args,'cut_model','force_qualified_pre_authored_seam_release')
                 robot_options['cut_proposal_json']=getattr(args,'cut_proposal_json',None)
                 robot_options['right_ik_fixed_joint']=getattr(args,'right_ik_fixed_joint',None)
                 robot_options['diagnostic_grasp_contacts']=getattr(args,'diagnostic_grasp_contacts',False)

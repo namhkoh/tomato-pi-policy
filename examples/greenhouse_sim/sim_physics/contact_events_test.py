@@ -343,7 +343,7 @@ def test_measurements_remain_numeric_for_existing_full_robot_finite_guard(native
 
 def test_friction_cannot_lift_subthreshold_normal_force_into_shear_gate():
     import numpy as np
-    from sim_physics.knife import ShearGate
+    from sim_physics.knife import ShearGate,KNIFE_IMPULSE_CONTRACT
     m=monitor();gate=ShearGate('petiole');normal_points=[];normal_impulses=[]
     def accept(robot,other,point,impulse,normal,separation):
         normal_points.append(point);normal_impulses.append(impulse)
@@ -357,7 +357,9 @@ def test_friction_cannot_lift_subthreshold_normal_force_into_shear_gate():
             friction_impulses=[(0,.002,0)],friction_points=[point])
         assert m.measurements(.01)['allowed_tool_contact_n']==pytest.approx(.3)
         assert gate.observe(dt=.01,edge=edge,centre=np.zeros(3),axis=np.array([0.,0.,1.]),
-            points=normal_points,impulses=normal_impulses,held=True,slip=.001) is None
+            points=normal_points,impulses=normal_impulses,held=True,slip=.001,
+            normals=[(1,0,0)],impulse_contract=KNIFE_IMPULSE_CONTRACT,edge_contact_verified=True,
+            tool_contact_upper_bound_n=m.measurements(.01)['allowed_tool_contact_n']) is None
     assert not gate.completed and gate.dwell==0.
 
 

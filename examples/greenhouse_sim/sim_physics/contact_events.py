@@ -1,6 +1,44 @@
 """Native normal + friction impulse upper bounds, never cancelling contacts."""
 import math
 import operator
+from dataclasses import dataclass
+
+
+NATIVE_NORMAL_ROW_CONTRACT='physx_contact_data_original_order_v1'
+
+
+@dataclass(frozen=True)
+class NativeNormalContact:
+    """Copied NORMAL row: n and J act on collider0; n points 1 -> 0.
+
+    J may have a negative projection on n. Neither this container nor the
+    legacy load classifier changes that sign or turns friction into normal J.
+    """
+    collider0: str
+    collider1: str
+    point: tuple
+    normal: tuple
+    impulse: tuple
+    separation: float
+
+    def __post_init__(self):
+        if not all(isinstance(p,str) and p.startswith('/') for p in (self.collider0,self.collider1)):
+            raise ValueError('Exact original collider paths required')
+        for name in ('point','normal','impulse'):
+            value=_vectors([getattr(self,name)],name)[0]
+            object.__setattr__(self,name,tuple(float(v) for v in value))
+        if not math.isfinite(self.separation): raise ValueError('Nonfinite native contact separation')
+        object.__setattr__(self,'separation',float(self.separation))
+
+
+def original_order_tool_contact(callback):
+    """Explicit opt-in to one immutable raw row, NEVER signature inference.
+
+    Unmarked six-argument callbacks retain legacy load classification only:
+    their sorted names do not establish the frame/sign of their raw vectors.
+    """
+    callback.normal_row_contract=NATIVE_NORMAL_ROW_CONTRACT
+    return callback
 
 
 def _sum(values):
@@ -122,10 +160,19 @@ class ContactEvents:
             state['normal'][kind]=_sum([state['normal'][kind],*magnitudes])
         else:
             evidence=points is not None and normals is not None and separations is not None and self.tool_contact is not None
+            contract=getattr(self.tool_contact,'normal_row_contract',None)
+            if contract not in (None,NATIVE_NORMAL_ROW_CONTRACT):
+                raise ValueError('Unknown tool normal-row contract')
             for i,impulse in enumerate(impulses):
                 # Even a rejected zero-impulse normal prevents friction from
                 # borrowing eligibility from another contact on this pair.
-                accepted=bool(evidence and self.tool_contact(robot,other,points[i],impulse,normals[i],separations[i]))
+                accepted=False
+                if evidence:
+                    if contract==NATIVE_NORMAL_ROW_CONTRACT:
+                        accepted=bool(self.tool_contact(NativeNormalContact(first,second,
+                            points[i],normals[i],impulse,separations[i])))
+                    else:
+                        accepted=bool(self.tool_contact(robot,other,points[i],impulse,normals[i],separations[i]))
                 state['normal_count']+=1
                 state['all_tool_normals'] &= accepted
                 bucket='allowed_tool' if accepted else 'unwanted'

@@ -6,18 +6,45 @@ convex, source visual mesh, new collider, dynamic-body assumption or force
 filter substitutes for the live native overlap query. Close after ONE plan.
 """
 import time
+import math
 import numpy as np
+
+
+def capsule_enclosing_box(start,end,radius):
+    """Contain the WHOLE capsule, including both spherical ends, in an OBB.
+
+    This box is deliberately larger than the capsule. A native miss proves
+    clearance; a hit does not prove a capsule collision and remains rejected.
+    Expanding every half-extent by margin also contains its spherical margin.
+    """
+    a,b=np.asarray(start,float),np.asarray(end,float)
+    if (a.shape!=(3,) or b.shape!=(3,) or not np.isfinite([a,b]).all()
+            or isinstance(radius,(bool,np.bool_)) or not np.isscalar(radius)
+            or not np.isfinite(radius) or radius<=0):
+        raise ValueError('Finite capsule endpoints and positive radius required')
+    delta=b-a;length=math.hypot(*delta)
+    if not math.isfinite(length):raise ValueError('Unrepresentable capsule length')
+    axes=np.eye(3)
+    if length:
+        z=delta/length;helper=np.eye(3)[int(np.argmin(np.abs(z)))]
+        x=np.cross(helper,z);x/=np.linalg.norm(x)
+        axes=np.column_stack((x,np.cross(z,x),z))
+    centre=a+delta/2;half=np.array([radius,radius,radius+length/2])
+    if not np.isfinite([centre,half]).all():raise ValueError('Unrepresentable capsule box')
+    return centre,axes,half
 
 
 class NativeStaticClearance:
     def __init__(self, query, records, *, guard=lambda:None, max_queries=20000, wall_limit_s=8.,
                  close_guard=None, epoch_report=None):
         if (type(max_queries) is not int or not 0 < max_queries <= 20000
-                or not np.isfinite(wall_limit_s) or not 0 < wall_limit_s <= 8.):
+                or isinstance(wall_limit_s,(bool,np.bool_))
+                or not np.isfinite(wall_limit_s) or not 0 < wall_limit_s <= 60.):
             raise ValueError('Bounded native query budget required')
         self.query=query;self.guard=guard;self.max_queries=max_queries
         self.started=time.perf_counter();self.wall_limit_s=wall_limit_s
         self.active=True;self.calls=0;self.clearances=0;self.blocked=0
+        self.capsule_box_attempts=0
         self.covered=set();self.coverage_failed=[];self.errors=[]
         self.used_paths=set();self.coverage_boxes={};self.final_coverage=[]
         self.validation_passed=False;self.closed=False
@@ -102,6 +129,11 @@ class NativeStaticClearance:
         check()
         return clear
 
+    def clear_capsule_checked(self,path,start,end,radius,margin):
+        centre,axes,half=capsule_enclosing_box(start,end,radius)
+        self.capsule_box_attempts+=1
+        return self.clear_box_checked(path,centre,axes,half,margin)
+
     def validate(self):
         """Acceptance gate: invalidate earlier clearances on ANY epoch failure."""
         self.validation_passed=False;self.final_coverage=[]
@@ -134,8 +166,10 @@ class NativeStaticClearance:
             raise
 
     def report(self):
-        return dict(method='live_native_static_overlap_expanded_conservative_tool_box',
+        return dict(method='live_native_static_overlap_expanded_conservative_robot_box',
                     query_count=self.calls,coarse_rejections_cleared=self.clearances,
+                    capsule_enclosing_box_attempts=self.capsule_box_attempts,
+                    capsule_query='whole_capsule_plus_margin_contained_not_tessellated_samples',
                     retained_rejections=self.blocked,covered_static_colliders=sorted(self.covered),
                     coverage_failed=self.coverage_failed,errors=self.errors,
                     used_static_colliders=sorted(self.used_paths),
@@ -222,7 +256,7 @@ class _SceneQueryEpoch:
                     physics_pre_step_subscribed=True)
 
 
-def current_scene_query(stage, records):
+def current_scene_query(stage, records, *, wall_limit_s=8.):
     """Create only during native planning after fetched physics; never load/step."""
     import omni.usd
     import omni.timeline
@@ -261,7 +295,7 @@ def current_scene_query(stage, records):
         epoch.check()
         native=get_physx_scene_query_interface()
         result=NativeStaticClearance(query,eligible,guard=epoch.check,
-            close_guard=epoch.close,epoch_report=epoch.report)
+            close_guard=epoch.close,epoch_report=epoch.report,wall_limit_s=wall_limit_s)
         epoch.check()
         return result
     except BaseException as exc:
