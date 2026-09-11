@@ -9,6 +9,15 @@ from .knife import KnifeGeometry,ShearGate,mount_forward,cut_plane_normal,transv
 class BimanualRobot(FullRobotGripper):
     def __init__(self,*args,**kwargs):
         proposal_path=kwargs.pop('cut_proposal_json',None)
+        fixed=kwargs.pop('right_ik_fixed_joint',None)
+        if fixed is not None:
+            values=np.asarray(fixed)
+            if (values.shape!=(2,) or values.dtype.kind not in 'iuf'
+                    or not np.isfinite(values).all() or float(values[0])!=int(values[0])
+                    or not 0<=int(values[0])<7):
+                raise ValueError('Right IK fixed-joint proposal requires joint index 0..6 and finite degrees')
+            fixed=(int(values[0]),float(values[1]))
+        self.right_ik_fixed_joint=fixed
         self.native_static_clearance=kwargs.pop('native_static_clearance',False)
         self.diagnostic_grasp_contacts=kwargs.pop('diagnostic_grasp_contacts',False)
         if type(self.diagnostic_grasp_contacts) is not bool: raise ValueError('Explicit contact diagnostic flag required')
@@ -20,6 +29,10 @@ class BimanualRobot(FullRobotGripper):
         kwargs.setdefault('station_offset',(0.,0.))
         kwargs.setdefault('approach_side',1)
         super().__init__(*args,**kwargs)
+        if fixed is not None:
+            low,high=self.kin.arm_limits_degrees('right')
+            if not low[fixed[0]]<fixed[1]<high[fixed[0]]:
+                raise ValueError('Right IK fixed-joint proposal is outside exact URDF limits')
         from .cut_proposal import load_cut_proposal
         self.cut_proposal=load_cut_proposal(proposal_path,source_target=self.rig.source_target)
         if not self.sparse_contacts: raise ValueError('Bimanual test requires sparse native contacts')
@@ -78,6 +91,20 @@ class BimanualRobot(FullRobotGripper):
     def check_held_plant(self,left,right,*,stroke=False):
         return (not hasattr(self,'held_plant_screen') or
             self.held_plant_screen.check(self.body_world(left,right),stroke=stroke))
+
+    def solve_right_pose(self,desired,seed):
+        """Optional redundancy constraint; never bypass pose/path validation.
+
+        Keep the selected joint fixed for the WHOLE tool stroke, not just the
+        endpoint. Transit from the unchanged parked arm is separately checked.
+        This proposes joint-drive targets; it never sets native body poses.
+        """
+        fixed=getattr(self,'right_ik_fixed_joint',None)
+        if fixed is None:
+            return self.kin.solve_pose('right',desired,seed,self.base,maximum_evaluations=250)
+        from .redundant_ik import solve_fixed_joint
+        return solve_fixed_joint(self.kin,'right',desired,seed,self.base,
+            joint_index=fixed[0],joint_degrees=fixed[1],maximum_evaluations=250)
 
     def screen_grasp_scene(self,frames):
         """Conservative left approach/closure screen; never certifies a grasp.
@@ -376,7 +403,6 @@ class BimanualRobot(FullRobotGripper):
         # with the proposed blade normal when evaluating native contact.
         clear_endpoints=0
         for tilt in ((single['plane_tilt_degrees'],) if single is not None else (0.,-10.,10.)):
-            candidates=[]
             usable_wing=float(self.knife.size[1]/2-.005)
             proposals=([(single_angle,single['normal_sign'],single['wing_m'])] if single is not None else
                 [(a,s,w) for w in (0.,-usable_wing/2,usable_wing/2,-.9*usable_wing,.9*usable_wing,-usable_wing,usable_wing) for s in (1,-1)
@@ -404,7 +430,7 @@ class BimanualRobot(FullRobotGripper):
                 attempt['rigid_tool_corridor']=subset
                 if not subset['passed']:
                     attempt['rejection']='rigid_tool_corridor';continue
-                solution=self.kin.solve_pose('right',desired,self.right,self.base,maximum_evaluations=250)
+                solution=self.solve_right_pose(desired,self.right)
                 attempt.update(ik_attempted=True,
                     position_error_m=solution.position_error_m,orientation_error_rad=solution.orientation_error_rad,
                     evaluations=solution.evaluations,ik_succeeded=solution.succeeded)
@@ -421,50 +447,55 @@ class BimanualRobot(FullRobotGripper):
                         attempt['rejection']='endpoint_held_plant'
                         attempt['plant_screen']=self.held_plant_screen.last_failure
                         continue
-                    candidates.append((np.linalg.norm(q-self.right),degrees,d,q,normal_sign,wing,normal))
                     clear_endpoints+=1
+                    candidate=(np.linalg.norm(q-self.right),degrees,d,q,normal_sign,wing,normal)
+                    # Check the useful path NOW. Enumerating the rest of the
+                    # grid first spent the native epoch budget after finding a
+                    # usable endpoint (native45). This is first fully checked
+                    # feasibility, not an optimal/shortest-path search.
+                    if self._try_cut_candidate(left_q,centre,axis,candidate,tilt,failures):return
                 else: attempt['rejection']='endpoint_self_collision'
-            for _,angle,d,q,normal_sign,wing,normal in sorted(candidates,key=lambda v:v[0]):
-                failure=dict(angle=angle,plane_tilt_degrees=tilt,normal_sign=normal_sign,wing_m=wing)
-                minimum=float('inf')
-                stroke=[];seed=q
-                for offset in self.stroke_offsets:
-                    desired=self.knife.wrist_for_edge(centre+offset*d,d,normal,wing)
-                    solution=self.kin.solve_pose('right',desired,seed,self.base,maximum_evaluations=250)
-                    failure.update(offset_m=float(offset),rejection='stroke_IK')
-                    if not solution.succeeded: break
-                    seed=np.asarray(solution.joint_degrees)
-                    clearance=self.kin.inter_arm_clearance(left_q,seed,self.base).clearance_m
-                    minimum=min(minimum,clearance)
-                    failure.update(rejection='stroke_arm_clearance',interarm_clearance_m=clearance)
-                    if clearance<.01: break
-                    check=self.check_self(left_q,seed)
-                    failure.update(rejection='stroke_self_collision',self_screen=check)
-                    if not check['passed']: break
-                    if not self.check_held_plant(left_q,seed,stroke=True):
-                        failure.update(rejection='stroke_held_plant',plant_screen=self.held_plant_screen.last_failure)
-                        break
-                    stroke.append(seed)
-                if len(stroke)!=len(self.stroke_offsets):
-                    failures.append(failure);continue
-                # Reject unusable stroke endpoints before spending the bounded
-                # joint-space transit budget. Both use the same native snapshot.
-                transit=self.right_transit(left_q,q)
-                if transit is None:
-                    failures.append(dict(failure,rejection='bounded_transit_arm_self_or_plant_clearance'));continue
-                approach,transit_minimum,transit_evidence=transit
-                minimum=min(minimum,transit_minimum)
-                self.plan=dict(approach=approach,stroke=np.asarray(stroke),direction=d,
-                    centre=centre.copy(),axis=axis.copy(),angle=angle,normal_sign=normal_sign,wing_m=wing,
-                    blade_plane_normal=normal.copy(),plane_tilt_degrees=tilt,
-                    stroke_offset_range_m=[float(self.stroke_offsets[0]),float(self.stroke_offsets[-1])],
-                    stroke_samples=len(self.stroke_offsets),stroke_end_basis='shaft_radius_plus_half_edge_strip_plus_1mm',
-                    minimum_interarm_m=minimum,transit=transit_evidence)
-                return
         ik=sum(a['ik_succeeded'] for a in attempts)
         raise RuntimeError(f'No bimanual arm-clearance path: endpoints={len(attempts)}, '
             f'IK_attempted={sum(a["ik_attempted"] for a in attempts)}, IK_converged={ik}, '
             f'arm_clear_endpoints={clear_endpoints}, path_failures={failures}')
+
+    def _try_cut_candidate(self,left_q,centre,axis,candidate,tilt,failures):
+        """Full sampled stroke, then bounded transit; no endpoint-only success."""
+        _,angle,d,q,normal_sign,wing,normal=candidate
+        failure=dict(angle=angle,plane_tilt_degrees=tilt,normal_sign=normal_sign,wing_m=wing)
+        minimum=float('inf');stroke=[];seed=q
+        for offset in self.stroke_offsets:
+            desired=self.knife.wrist_for_edge(centre+offset*d,d,normal,wing)
+            solution=self.solve_right_pose(desired,seed)
+            failure.update(offset_m=float(offset),rejection='stroke_IK')
+            if not solution.succeeded:break
+            seed=np.asarray(solution.joint_degrees)
+            clearance=self.kin.inter_arm_clearance(left_q,seed,self.base).clearance_m
+            minimum=min(minimum,clearance)
+            failure.update(rejection='stroke_arm_clearance',interarm_clearance_m=clearance)
+            if clearance<.01:break
+            check=self.check_self(left_q,seed)
+            failure.update(rejection='stroke_self_collision',self_screen=check)
+            if not check['passed']:break
+            if not self.check_held_plant(left_q,seed,stroke=True):
+                failure.update(rejection='stroke_held_plant',plant_screen=self.held_plant_screen.last_failure)
+                break
+            stroke.append(seed)
+        if len(stroke)!=len(self.stroke_offsets):
+            failures.append(failure);return False
+        transit=self.right_transit(left_q,q)
+        if transit is None:
+            failures.append(dict(failure,rejection='bounded_transit_arm_self_or_plant_clearance'));return False
+        approach,transit_minimum,transit_evidence=transit
+        minimum=min(minimum,transit_minimum)
+        self.plan=dict(approach=approach,stroke=np.asarray(stroke),direction=d,
+            centre=centre.copy(),axis=axis.copy(),angle=angle,normal_sign=normal_sign,wing_m=wing,
+            blade_plane_normal=normal.copy(),plane_tilt_degrees=tilt,
+            stroke_offset_range_m=[float(self.stroke_offsets[0]),float(self.stroke_offsets[-1])],
+            stroke_samples=len(self.stroke_offsets),stroke_end_basis='shaft_radius_plus_half_edge_strip_plus_1mm',
+            minimum_interarm_m=minimum,transit=transit_evidence)
+        return True
 
     def command_right(self,phase,fraction):
         if phase=='park': q=self.right
@@ -528,6 +559,8 @@ class BimanualRobot(FullRobotGripper):
             arc_contact_geometry=self.arc_contacts,
             planning_wall_seconds=getattr(self,'planning_wall_seconds',None),
             cut_plan_diagnostics=self.plan_diagnostics,
+            right_ik_fixed_joint=getattr(self,'right_ik_fixed_joint',None),
+            right_ik_policy='first_fully_screened_path_not_shortest_path',
             cut_model='measured_contact_seam_failure_not_calibrated_tissue_cutting')
         if self.plan is not None:
             result['cut_plan']={k:(v.tolist() if isinstance(v,np.ndarray) else v)

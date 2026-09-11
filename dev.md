@@ -4729,3 +4729,67 @@ No hardware, collection, tuning, review, split or training-export changes.
   `data/sim_physics/regression_20260911_grasp_measurements.log`.
   Independent new band-probe tests:24 passed. Native band rest/elastic/contact
   controls are the next stage; no production material change or training data.
+
+### 2026-09-11: Cutting planner and material-feasibility checkpoint
+
+- Native43 stopped on an invalid diagnostic proposal JSON provenance shape,
+  before the physical trial. Corrected that input for native44; no guard or
+  simulator implementation was changed to accept it. Native44 verifies the
+  farther 71.126 mm centre grasp (75 mm requested), but the native expanded
+  camera-body query overlaps protected MainStem26 at the first tool pose.
+- Native45 tests the full bounded orientation grid at the same grasp. One
+  endpoint converges (45 degrees, normal +1, wing0, plane tilt -10), but the
+  native query epoch expires during the remaining search. Its later reported
+  MainStem27 overlap is a conservative fallback, NOT proof of native collision.
+- Native46 isolates that endpoint in a source-bound proposal. Planning takes
+  2.024 s, 293 native queries, 213 coarse rejections cleared, no query errors.
+  The full tool corridor and endpoint pass; the arm stroke stops at -6.506 mm
+  because right upper-arm link1 approaches the held branch's Leaf_004 within
+  the unchanged 1 mm margin. No right motion, blade release or cut is claimed.
+- Fixed planner ordering: immediately validate each feasible endpoint's full
+  sampled stroke and transit before searching more orientations. This is first
+  fully screened feasibility, not shortest-path optimization. All scene, self,
+  tool, inter-arm, IK and final native-epoch checks remain mandatory. Native
+  query invalidation now raises "unavailable; collision not determined" instead
+  of continuing to report timeout fallbacks as ordinary collision failures.
+- Added opt-in `--right-ik-fixed-joint INDEX DEGREES`: exact-URDF redundant IK
+  through the endpoint AND whole stroke, with unchanged parked start and
+  separately checked transit. The initial +0.5 degree joint1 proposal is
+  rejected offline: it clears the leaf but reaches wrist joint5's limit at
+  sample26. This option is not evidence that another posture is feasible.
+- Native `cohesive_mixed_20260911_01` completes9,600 steps at960 Hz with
+  shear/opening ratio1, no guard fault; dissipation8 microjoules and reconstructed
+  drive absorption8.021885 microjoules. This remains the original four-facet,
+  zero-gravity toy coupon, not a blade, full-section, unilateral mixed-mode,
+  calibrated material, current plant cut or dynamic training episode.
+- The separate32-cell `material_band_native_probe` remains UNQUALIFIED.
+  `material_band_rest_20260911_01` stops after one step on force-balance limits:
+  max cell residual0.691 mN, global axial residual1.105 mN. Motion is small
+  (0.855 nm max displacement) but does not establish correct internal forces.
+  A read-only float32-storage uncertainty analysis cannot account for the whole
+  global residual; no baseline subtraction, broad collision filtering or
+  tolerance relaxation was applied. The native D6 force readback remains absent.
+- Added inactive-only `seam_interface.py`:24 area/moment-weighted connections
+  between existing bodies, with no new cells or body/source modifications.
+  It requires pre-start authoring, explicit material, active bodies and unloaded
+  initial states; checks float32-rounded anchor moments. Existing welds are
+  inventoried but NOT removed; caller must audit all load paths before activation.
+  This is an alternative reduced-order prescribed fracture plane, not a sharp
+  knife continuum model or production integration.
+- Crucial feasibility result: native44 distal mass is8.875602 g including six
+  0.5 g leaf priors. Gravity plus reconstructed body-local COMs gives14.007 mN.m
+  bending about the seam. A3 mm circular10 kPa toy interface reaches first
+  tensile damage at only0.212 mN.m (roughly66 times below this demand). This is
+  gravity loading, NOT measured seam reaction; gripper, contact and inertia are
+  excluded. Native COMs were not logged; reconstruction matches native mass and
+  inertia. `seam_loads.py` makes this explicit advisory calculation testable,
+  without granting activation/constitutive-success permission.
+- Do NOT port toy strength into the loaded plant, or weaken the seam only when
+  a knife touches. Strength, stiffness, fracture work and actual blade bevel
+  need a consistent physical basis. Published tomato-petiole bending data also
+  concern specific cultivars/growth stages and cannot directly calibrate this
+  fixture: [Fukushima et al., 2020](https://www.jstage.jst.go.jp/article/jsamfe/82/4/82_347/_pdf/-char/ja).
+- Full CPU/USD regression: **1,412 passed in89.80 s**, logged in
+  `data/sim_physics/regression_20260911_incremental_cut_planning.log`.
+  No current-greenhouse cut/retention/deposit success; no training records,
+  reviews, splits, model downloads or physical robot commands changed.

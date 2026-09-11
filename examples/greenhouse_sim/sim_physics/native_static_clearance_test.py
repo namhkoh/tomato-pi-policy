@@ -73,7 +73,7 @@ def test_integration_refines_only_static_box_against_tool_box():
     screen.static=[static];screen.snapshot(frames)
     assert not screen.check(world)
     requested=[]
-    screen.native_static_query=S(clear_box=lambda *args:requested.append(args) or True)
+    screen.native_static_query=S(clear_box_checked=lambda *args:requested.append(args) or True)
     assert screen.check(world)
     assert requested[0][0]=='/World/Static' and requested[0][-1]==.001
     # A dynamic target leaf remains an obstruction, regardless of query result.
@@ -99,8 +99,33 @@ def test_refinement_never_expands_to_arm_or_unfitted_boxes(path,link):
                     np.array([.07,-.03,-.03]),np.array([.13,.03,.03]))]
     screen.snapshot(frames)
     def forbidden(*args):raise AssertionError('Non-tool box reached native refinement')
-    screen.native_static_query=S(clear_box=forbidden)
+    screen.native_static_query=S(clear_box_checked=forbidden)
     assert not screen.check({link:np.eye(4)})
+
+
+def test_checked_query_distinguishes_timeout_from_real_overlap(monkeypatch):
+    import sim_physics.native_static_clearance as module
+    clock=[0.]
+    monkeypatch.setattr(module.time,'perf_counter',lambda:clock[0])
+    native=NativeStaticClearance(lambda *args:True,records())
+    assert not native.clear_box_checked('/World/Stem',np.zeros(3),np.eye(3),np.ones(3),.001)
+    clock[0]=9.
+    calls=native.calls
+    with pytest.raises(RuntimeError,match='unavailable; collision not determined'):
+        native.clear_box_checked('/World/Stem',np.zeros(3),np.eye(3),np.ones(3),.001)
+    assert native.calls==calls and not native.active
+
+
+def test_checked_query_rejects_invalidation_during_native_call():
+    calls=[]
+    def query(*args):
+        calls.append(args)
+        if len(calls)>1:raise RuntimeError('native callback failed')
+        return True
+    native=NativeStaticClearance(query,records())
+    with pytest.raises(RuntimeError,match='collision not determined'):
+        native.clear_box_checked('/World/Stem',np.zeros(3),np.eye(3),np.ones(3),.001)
+    assert not native.validation_passed
 
 
 def test_post_call_deadline_discards_negative_result_and_prior_clearances(monkeypatch):

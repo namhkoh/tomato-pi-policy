@@ -231,7 +231,7 @@ class HeldPlantScreen:
                         and path.startswith(tuple(body+'/attachments/'+name+'/'
                             for name in ('RightWristCamera','DeleafKnife'))))
                     if (fitted_tool and kind=='box' and okind=='box' and native is not None
-                            and native.clear_box(other,centre,axes,half,margin)):
+                            and native.clear_box_checked(other,centre,axes,half,margin)):
                         continue
                     self.last_failure=dict(robot_collider=path,plant_collider=other,margin_m=margin,
                         phase='grasp' if grasp else 'stroke' if stroke else 'transit',conservative_overlap=True)

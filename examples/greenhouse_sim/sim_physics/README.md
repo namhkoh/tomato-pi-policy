@@ -729,3 +729,30 @@ rejects the first proposed tool frame for left-palm/right-camera interference.
 Safety margins and force limits remain unchanged. Raw fault reproduction uses
 `--diagnostic-grasp-contacts --bimanual-hold-control`; it always stops at the
 captured fault and cannot enable cutting or signed-mode execution.
+
+### Current cut-path and material limitations
+
+Native44 verifies the farther selected-shaft grasp but rejects camera/main-stem
+overlap. Native45 finds one endpoint before its query budget expires. Native46
+isolates it: the whole tool corridor passes, then upper-arm/leaf clearance stops
+the sampled stroke before execution. A timeout fallback is not a native hit.
+
+The planner now tries the complete stroke/transit immediately after a feasible
+endpoint. Invalid native queries stop with an explicit unavailable-query error.
+`--right-ik-fixed-joint INDEX DEGREES` optionally selects exact-URDF redundancy
+for the entire stroke; it does not move the parked robot, authorize a pose or
+relax any check. Joint1=+0.5 is NOT a working preset: offline wrist-limit failure.
+
+`seam_interface.py` is a PRE-START, inactive-only alternative to the many-cell
+band:24 quadrature connections between existing bodies, no source/body edits,
+explicit material, checked rounded geometry and unloaded initial states. It
+does not remove existing welds, activate physics or certify a blade channel.
+`seam_loads.py` reports explicit gravity-only load and a circular-section first
+tensile-damage estimate; it cannot measure actual seam/gripper reaction.
+
+Do not integrate the small coupon's10 kPa strength into this plant. Its estimated
+gravity bending demand is about66 times the circular3 mm section's first-damage
+moment under that toy strength. The32-cell native rest diagnostic also remains
+unqualified on force balance despite tiny displacements. Neither prototype is
+the production cutting backend. Detailed failed/passing evidence and limitations
+are recorded in `dev.md`; no full cut/retain/deposit pass is established yet.

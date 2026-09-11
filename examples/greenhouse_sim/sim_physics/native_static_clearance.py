@@ -85,6 +85,23 @@ class NativeStaticClearance:
         if clear:self.used_paths.add(path)
         return clear
 
+    def clear_box_checked(self,path,centre,axes,half,margin):
+        """Planner API: an invalid query is unavailable, NOT a collision hit.
+
+        The conservative boolean API above remains useful to diagnostic
+        callers. Execution planning must stop on invalidation instead of
+        spending the remaining grid budget and mislabelling fallback bounds.
+        """
+        def check():
+            try:self._check()
+            except Exception as exc:
+                self._invalidate(type(exc).__name__+': '+str(exc))
+                raise RuntimeError('Native static query unavailable; collision not determined: '+str(exc)) from exc
+        check()
+        clear=self.clear_box(path,centre,axes,half,margin)
+        check()
+        return clear
+
     def validate(self):
         """Acceptance gate: invalidate earlier clearances on ANY epoch failure."""
         self.validation_passed=False;self.final_coverage=[]

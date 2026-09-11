@@ -52,6 +52,8 @@ def parser():
     p.add_argument('--bimanual-cut',action='store_true',help='Guarded native left grasp and original right knife seam-release qualification')
     p.add_argument('--native-static-clearance',action='store_true',help='Opt-in live native static-box refinement during the single synchronous bimanual plan')
     p.add_argument('--cut-proposal-json',type=Path,help='One source-bound world-direction diagnostic instead of the default orientation grid; all safety/IK checks remain')
+    p.add_argument('--right-ik-fixed-joint',type=float,nargs=2,metavar=('INDEX','DEGREES'),
+        help='Opt-in exact-URDF redundancy constraint through endpoint and entire stroke; all transit/scene/contact guards remain')
     p.add_argument('--cut-standoff-m',type=float,default=.025,
         help='Collision-screened precontact offset (8..25 mm), also checked against actual shaft size; bimanual only')
     p.add_argument('--bimanual-reposition-m',type=float,default=0.,
@@ -129,6 +131,11 @@ def main(argv=None):
         raise ValueError('Native static clearance requires the bimanual harness')
     if getattr(args,'cut_proposal_json',None) is not None and not args.bimanual_cut:
         raise ValueError('Single cut proposal requires the bimanual harness')
+    fixed=getattr(args,'right_ik_fixed_joint',None)
+    if fixed is not None and (not args.bimanual_cut or len(fixed)!=2
+            or not all(math.isfinite(v) for v in fixed)
+            or fixed[0]!=int(fixed[0]) or not 0<=int(fixed[0])<7):
+        raise ValueError('Fixed right IK joint requires bimanual, index 0..6 and finite degrees')
     if args.station_offset is not None and (not args.full_robot_probe
             or not all(math.isfinite(x) for x in args.station_offset)
             or math.hypot(*args.station_offset)>.3):
@@ -280,6 +287,7 @@ def main(argv=None):
                 robot_options['grasp_compression']=args.grasp_compression_m
                 robot_options['native_static_clearance']=getattr(args,'native_static_clearance',False)
                 robot_options['cut_proposal_json']=getattr(args,'cut_proposal_json',None)
+                robot_options['right_ik_fixed_joint']=getattr(args,'right_ik_fixed_joint',None)
                 robot_options['diagnostic_grasp_contacts']=getattr(args,'diagnostic_grasp_contacts',False)
             fixture=robot_class(stage,rig,arc=args.grasp_arc_m,friction=args.finger_friction,**robot_options)
             source_hashes[fixture.asset]=hashlib.sha256(fixture.asset.read_bytes()).hexdigest()
