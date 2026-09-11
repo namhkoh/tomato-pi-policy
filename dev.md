@@ -4866,3 +4866,61 @@ No hardware, collection, tuning, review, split or training-export changes.
   saved in data/sim_physics/regression_20260911_signed_blade_release.log.
   Current signed blade release is established only for this privileged test
   fixture; reliable post-release retention remains the next native blocker.
+
+### 2026-09-11: Retention telemetry exposes a spring/contact coupling blocker
+
+- Dataset handoff remains `data/sim_data/training_archives/visible_occluded_20260911_v1.zip`
+  (23,453,235,122 bytes, 14,259 RGB grounding/visibility-abstention examples).
+  Paired code archive: `visible_occluded_20260911_v1_code_v2.zip`. These are
+  static image supervision, NOT manipulation trajectories. No records, review
+  decisions, splits, collection jobs or H200 training were changed here.
+- Native50 rejects tighter1 mm jaw compression before approach: finger2 would
+  overlap Leaf000. The0.75 mm closure remains; no margin was relaxed.
+- Added opt-in `--diagnostic-grasp-dynamics`: same-step native body/finger poses,
+  signed shaft contacts and body-local coordinates, q/qdot, commanded targets,
+  gravity compensation and remaining drive caps. Reconstructed PD demand is
+  explicitly NOT measured actuator effort. Local contact coordinates are NOT
+  tracked material anchors. Diagnostic data never grant training approval.
+- Native51 repeats49 exactly: release11.8667 s and slip failure12.9083 s.
+  The selected segment rotates23.12 degrees, contact points migrate toward
+  opposite shaft ends, and the lower finger's reconstructed demand exceeds
+  its0.18624 N residual drive cap after gravity compensation. This establishes
+  a capacity hypothesis, not measured hardware saturation or calibrated force.
+- Explicit0.8 N left-actuator engineering prior added (default0.5 remains).
+  Gravity stays INSIDE the total budget; right fingers remain0.5 N. BOTH sparse
+  modes now independently reject >=0.5 N total normal-plus-friction contact
+  upper bound at EACH left finger, counting ALL objects without cancellation.
+  Missing native patch-friction reporting fails closed before cutting. This
+  is a post-step guard, not proof of zero overshoot or a tissue-damage threshold.
+- Native52 uses0.8 N, otherwise the same physical closure/path. Release remains
+ 11.8667 s; held branch persists longer, but the trial FAILS at14.3625 s:
+  finger2 contact jumps0.3621 to0.5935 N (normal alone0.5262 N), slip1.589 mm.
+  Reconstructed PD is below its residual0.48624 N limit at this failure.
+  Right-arm leaf contacts persist. Retention gate true over the observed tail
+  does NOT make the full sequence successful or contact-free.
+- Independent native-frame reconstruction confirms the deeper deformation:
+  nominal elastic-energy proxy0.00689 J at release rises to~2.50 J just before
+  failure; Joint003 crosses the shortest rotation-vector boundary near pi.
+  The resulting coordinate wrap changes the linear spring term sharply.
+  These are NOT measured cutting work or a verified total work balance.
+  Root-world-roll contamination and joint-order errors were checked and do
+  not explain the recorded angles. Whole-body frame readback agrees.
+- `ImplicitJointSprings` omits unknown contacts in its coupled prediction.
+  Under sustained contact this can substantially reduce effective elastic
+  response; the previously qualified no-contact test does not qualify this
+  regime. Lagged measured contact forces alone can recover stiffness very
+  slowly and are not being presented as an adequate fix. Next: qualify native
+  contact-coupled spring behavior in a small held/free-root diagnostic before
+  choosing another full-robot controller change. No artificial grasp weld.
+- `withdrawal_native_check.py` now integrates final post-fetch measured park
+  pose and current full robot/plant bounds with a fresh validated native static
+  epoch. It is an ENDPOINT check, not swept-path certification. Native52 never
+  reaches it. Fixed a separate post-fetch timestamp error: reversal now latches
+  the last sent stroke fraction, avoiding one extra forward command increment.
+  It still does not guarantee instantaneous braking or a measured-start path.
+- Focused pre52 regression273 passed; diagnostics and guard received independent
+  review. Full CPU/USD regression: **1,797 passed in94.98 s**, recorded in
+  `data/sim_physics/regression_20260911_retention_guards.log`. Small native
+  spring/contact qualification follows; CPU tests do not qualify those physics.
+  Reliable cut-retain-withdraw, deposit and calibrated tissue cutting remain
+  incomplete. Existing failed evidence is preserved, not relabeled successful.

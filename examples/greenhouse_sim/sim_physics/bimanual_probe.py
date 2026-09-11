@@ -13,6 +13,16 @@ from .gripper_probe import ramp,setup_probe_camera
 from .runtime import pose_matrices
 
 
+def released_stroke_fraction(last_command):
+    """Latch the sent command, never infer a later command from fetch time."""
+    phase,fraction=last_command
+    if (phase!='stroke' or isinstance(fraction,(bool,np.bool_))
+            or not isinstance(fraction,(int,float,np.integer,np.floating))
+            or not np.isfinite(fraction) or not 0<=fraction<=1):
+        raise RuntimeError('Blade release without an actually commanded stroke')
+    return float(fraction)
+
+
 def sequence_times(reposition):
     """Keep legacy times unchanged; allow one second pull +0.5 second settle.
 
@@ -34,6 +44,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     clock=PhysicsClock(sim,physics_hz=args.physics_hz,render_hz=args.render_hz)
     records=[];events=[];captures={};fault=None;stable=0;lost=0
     grasp_local=None;goal_set=False;planned=False;grasp_verified=False;cut_time=None;cut_fraction=0.
+    last_right_command=('park',0.)
     hold_control=bool(getattr(args,'bimanual_hold_control',False))
     reposition=float(getattr(args,'bimanual_reposition_m',0.))
     times=sequence_times(reposition);delay=times['delay']
@@ -64,7 +75,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         captures[name]=name+'.png'
 
     def before(stamp,dt):
-        nonlocal goal_set,grasp_local,planned,cut_fraction,grasp_verified
+        nonlocal goal_set,grasp_local,planned,cut_fraction,grasp_verified,last_right_command
         t=stamp.simulation_time_s
         if t>=.9 and not goal_set:
             fixture.goal[:3,3]=runtime.frames[fixture.body_index,:3,3]+fixture.grasp_depth*fixture.goal[:3,2]
@@ -130,6 +141,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 raise RuntimeError('Cut stroke ended without qualified blade contact; no timed release')
         fixture.cut_authorized=phase=='stroke'
         fixture.command_right(phase,fraction)
+        last_right_command=(phase,fraction)
         fixture.prepare_step(runtime.frames)
         springs.step(dt,root_constrained=not rig.cut)
 
@@ -159,6 +171,21 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             joint_velocities_rad_s=plant_v.tolist(),elastic_energy_j=.5*float(np.dot(springs.k*plant_q,plant_q)),
             fastest_body=rig.body_paths[int(np.argmax(np.linalg.norm(velocity[:,:3],axis=1)))])
         records.append(record)
+        if getattr(args,'diagnostic_grasp_dynamics',False):
+            from .grasp_dynamics_evidence import grasp_dynamics_evidence
+            positions=fixture.robot.get_dof_positions()[0]
+            joint_velocity=fixture.robot.get_dof_velocities()[0]
+            fingers=pose_matrices(fixture.fingers.get_transforms())[fixture.order]
+            record['grasp_dynamics']=grasp_dynamics_evidence(
+                frames,rig.body_paths,fingers,fixture.paths[1:],fixture.grasp_observer.core.rows,
+                qf=positions[fixture.finger_indices],qdotf=joint_velocity[fixture.finger_indices],
+                targetf=fixture.targets[0,fixture.finger_indices],gravityf=fixture.finger_compensation,
+                drivecapsf=fixture.force_limits[0,fixture.finger_indices],dt=dt,step_id=stamp.step)
+            record['grasp_dynamics']['right_wrist_world_m']=pose_matrices(fixture.right_palm.get_transforms())[0].tolist()
+            record['grasp_dynamics']['robot_joint_names']=fixture.names
+            record['grasp_dynamics']['robot_joint_velocities']=joint_velocity.tolist()
+            record['grasp_dynamics']['robot_joint_velocity_units']=[
+                'm/s' if name.startswith('gripper_finger') else 'rad/s' for name in fixture.names]
         if not c['adapter_valid']:
             raise RuntimeError('Native shaft grasp callback/tensor force reconciliation failed')
         fixture.check_plant_window(frames)
@@ -171,8 +198,17 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         record['knife']=fixture.inspect_cut(dt,frames,stable>=int(.025*args.physics_hz),slip)
         record['cut']=rig.cut
         if rig.cut and cut_time is None:
-            cut_time=stamp.simulation_time_s;cut_fraction=ramp(cut_time,stroke_start,stroke_end)
+            cut_time=stamp.simulation_time_s
+            # The release timestamp is AFTER fetch; it is one step later than
+            # the command that loaded the blade. Re-evaluating the ramp here
+            # would add an unrequested forward increment after release.
+            cut_fraction=released_stroke_fraction(last_right_command)
             events.append(dict(t=cut_time,**fixture.cut_event))
+        if rig.cut and stamp.step==int(args.seconds*args.physics_hz):
+            from .withdrawal_native_check import check as check_withdrawal
+            record['withdrawal']=check_withdrawal(fixture,frames,stamp.step)
+            events.append(dict(t=stamp.simulation_time_s,event='final_native_withdrawal_endpoint',
+                evidence=record['withdrawal']))
         record['phase']='Left hold negative control' if hold_control else 'Retain / withdraw' if rig.cut else 'Blade stroke' if stamp.simulation_time_s>=stroke_start else 'Right approach' if stamp.simulation_time_s>=approach_start else 'Held target reposition / reobserve' if grasp_verified and reposition else 'Left grasp'
         fixture.on_sample(record)
 
@@ -218,7 +254,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         left_grasp_verified=grasp_verified,collision_clear_right_plan=planned,blade_contact_release=rig.cut,
         native_retention=bool(retained) and all(r['contact']['bilateral'] and r['slip_m']<.003 for r in retained),
         released_material_separates=bool(retained) and max(r['detached_seam_gap_m'] for r in retained)>.003,
-        right_withdrawal_completed=False)
+        right_withdrawal_completed=bool(records and records[-1].get('withdrawal',{}).get('right_withdrawal_completed') is True))
     result=dict(state='passed_bimanual_mechanism_not_robot_task' if all(gates.values()) else 'failed_bimanual_qualification',
         gates=gates,error=fault,events=events,images=captures,timing=clock.report(),robot=fixture.report(),
         measurements=dict(native_edge_contact_count=fixture.cut_contacts,cut_time_s=cut_time,
@@ -226,7 +262,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             maximum_slip_m=max((r['slip_m'] for r in records if r['slip_m'] is not None),default=None)),
         physical_cut_verified=False,tissue_fracture_calibrated=False,deposit_verified=False,
         right_withdrawal_schedule_elapsed=cut_time is not None and records[-1]['t']>=cut_time+6,
-        right_withdrawal_verification='pending_native_endpoint_and_fresh_clearance_not_elapsed_time',
+        right_withdrawal_verification='final_post_fetch_native_endpoint_and_fresh_clearance_not_elapsed_time',
         full_forward_cut_stroke_verified=False,
         negative_control_no_right_motion=hold_control,
         requested_pre_cut_reposition_m=reposition,

@@ -5,6 +5,7 @@ not observation-driven execution, general plant manipulation, tissue cutting
 or a training-data collector.
 """
 import json
+import math
 import time
 import xml.etree.ElementTree as ET
 
@@ -13,12 +14,59 @@ import numpy as np
 from .gripper_probe import GripperFixture
 
 
-def finger_force_budget(gravity):
-    """Reserve native gravity effort inside, not in addition to, the 0.5 N cap."""
+def _finger_actuator_limit(value):
+    if (isinstance(value,(bool,np.bool_))
+            or not isinstance(value,(int,float,np.integer,np.floating))
+            or not np.isfinite(value) or float(value) not in (.5,.8)):
+        raise ValueError('Finger actuator limit must be exactly 0.5 or 0.8 N')
+    return float(value)
+
+
+def finger_force_budget(gravity,total_limit_n=.5):
+    """Reserve gravity inside the engineering TOTAL actuator cap, not above it."""
+    total_limit_n=_finger_actuator_limit(total_limit_n)
     gravity=np.asarray(gravity,dtype=float)
     if gravity.shape!=(2,) or not np.isfinite(gravity).all() or np.any(np.abs(gravity)>.4):
         raise ValueError('Finger gravity leaves insufficient bounded grasp effort')
-    return .5-np.abs(gravity)
+    return total_limit_n-np.abs(gravity)
+
+
+def finger_contact_forces(pairs,dt,*,fingers):
+    """Per-finger sum of native pair normal+friction upper bounds, in newtons.
+
+    Inputs are ContactEvents.pairs scalar impulse sums, NEVER net vectors or
+    signed grasp evidence. Include ALL other objects, not just target/plant
+    contacts. A pair is counted once per participating finger, including self
+    pairs; matching uses exact bodies/descendants, never prefix lookalikes.
+    """
+    def valid_path(path):
+        return (isinstance(path,str) and path.startswith('/') and path!='/'
+                and all(part not in ('','.','..') for part in path[1:].split('/')))
+    if (isinstance(dt,(bool,np.bool_))
+            or not isinstance(dt,(int,float,np.integer,np.floating))
+            or not np.isfinite(dt) or dt<=0):
+        raise ValueError('Positive finite contact timestep required')
+    fingers=tuple(fingers)
+    if (len(fingers)!=2 or not all(valid_path(p) for p in fingers)
+            or fingers[0]==fingers[1]):
+        raise ValueError('Two exact finger body paths required')
+    within=lambda path,root:path==root or path.startswith(root+'/')
+    values=[[],[]]
+    for pair,impulse in pairs.items():
+        if (not isinstance(pair,tuple) or len(pair)!=2 or not all(valid_path(p) for p in pair)
+                or isinstance(impulse,(bool,np.bool_))
+                or not isinstance(impulse,(int,float,np.integer,np.floating))
+                or not np.isfinite(impulse) or impulse<0):
+            raise ValueError('Finite nonnegative native pair impulse and exact paths required')
+        for i,finger in enumerate(fingers):
+            if any(within(path,finger) for path in pair):
+                values[i].append(float(impulse))
+    try:
+        forces=[math.fsum(v)/float(dt) for v in values]
+    except OverflowError as exc:
+        raise ValueError('Overflowing finger contact load') from exc
+    if not np.isfinite(forces).all(): raise ValueError('Overflowing finger contact load')
+    return dict(zip(fingers,forces))
 
 
 def skew_jaw_frame(rotation,degrees):
@@ -49,8 +97,14 @@ def finger_compliance(finger_masses,stem_mass):
 
 
 class FullRobotGripper(GripperFixture):
+    finger_actuator_limit_n=.5
+
     def __init__(self,stage,rig,*,arc=.08,friction=.5,ground_height=None,
-                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None,grasp_skew=0.):
+                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None,grasp_skew=0.,finger_actuator_limit_n=.5):
+        self.finger_actuator_limit_n=_finger_actuator_limit(finger_actuator_limit_n)
+        if self.finger_actuator_limit_n==.8 and not all(
+                flag is True for flag in (sparse_contacts,finger_gravity,compliant_fingers)):
+            raise ValueError('0.8 N finger protocol requires sparse_contacts, finger_gravity and compliant_fingers')
         from pxr import Gf,Sdf,Usd,UsdGeom,UsdPhysics,UsdShade
         from greenhouse_sim.robot_model import DEFAULT_ASSET,DEFAULT_URDF
         from greenhouse_sim.robot_kinematics import Rby1Kinematics,base_transform
@@ -242,6 +296,10 @@ class FullRobotGripper(GripperFixture):
             rig.chain_world[rig.cut_index],rig.rest_frames[rig.cut_index,:3,2])
         self.plan_approach()
 
+    def _finger_drive_limit(self,name):
+        # The opt-in concerns the LEFT gripper only, not unloaded right DOFs.
+        return self.finger_actuator_limit_n if name in ('gripper_finger_l1','gripper_finger_l2') else .5
+
     def _author_initial_joints(self):
         from pxr import Sdf,UsdPhysics
         from .plant import physics_schema
@@ -254,7 +312,7 @@ class FullRobotGripper(GripperFixture):
             linear=axis=='linear'
             drive.CreateStiffnessAttr(200. if linear else 6000.*np.pi/180)
             drive.CreateDampingAttr(5. if linear else 160.*np.pi/180)
-            drive.CreateMaxForceAttr(.5 if linear else .7*self.effort[name])
+            drive.CreateMaxForceAttr(self._finger_drive_limit(name) if linear else .7*self.effort[name])
             physics_schema(prim,'PhysxJointStateAPI:'+axis,[
                 (f'state:{axis}:physics:position',Sdf.ValueTypeNames.Float,float(value)),
                 (f'state:{axis}:physics:velocity',Sdf.ValueTypeNames.Float,0.)])
@@ -292,11 +350,27 @@ class FullRobotGripper(GripperFixture):
             initial_station_forward_left_offset_m=self.station_offset.tolist(),
             initial_station_yaw_adjustment_degrees=self.station_yaw,
             explicit_initial_station_xy_yaw=self.explicit_station_pose,
-            source_colliders_retained=len(self.collider_paths),finger_max_drive_force_n=.5,
+            source_colliders_retained=len(self.collider_paths),finger_max_drive_force_n=self.finger_actuator_limit_n,
             mounting_proxy_exclusions=self.mount_exclusions,self_collision_enabled=True,
             contact_monitor='sparse_native_events' if self.sparse_contacts else 'dense_pair_matrices',
             finger_contact_compliance=self.finger_contact_compliance,
-            finger_gravity_compensation=self.finger_gravity,total_finger_effort_limit_n=.5,
+            finger_gravity_compensation=self.finger_gravity,total_finger_effort_limit_n=self.finger_actuator_limit_n,
+            left_finger_total_actuator_limit_n=self.finger_actuator_limit_n,
+            right_finger_legacy_drive_limit_n=.5,
+            finger_actuator_protocol=dict(
+                name=('engineering_0p8_with_all_finger_contact_guard_v1' if self.finger_actuator_limit_n==.8
+                    else 'engineering_0p5_with_all_finger_contact_guard_v1' if self.sparse_contacts else 'legacy_engineering_0p5'),
+                changed_protocol=self.sparse_contacts,actuator_prior_changed=self.finger_actuator_limit_n==.8,
+                engineering_only=True,calibrated=False,hardware_limit_claim=False,
+                total_includes_gravity_feedforward=True,
+                per_finger_contact_limit_n=.5 if self.sparse_contacts else None,
+                contact_rejection_comparison='greater_than_or_equal' if self.sparse_contacts else None,
+                normal_friction_contact_guard_enabled=self.sparse_contacts,
+                contact_accounting='sum_native_pair_normal_and_friction_norms',
+                contact_scope='all_contacts_involving_each_exact_left_finger_body',
+                contact_guard_is_plant_only=False,
+                guard_timing='post_step_before_cut_decision',overshoot_prevention_claim=False,
+                legacy_mode_available=True),
             torso_degrees=self.kin.default_torso_degrees().tolist(),floor_root=self.floor_root,
             joint_state_names=getattr(self,'names',None),
             approach_tilt_degrees=self.approach_tilt,
@@ -340,7 +414,7 @@ class FullRobotGripper(GripperFixture):
             k[0,i]=200 if is_finger else (25000 if name.startswith('torso') else 6000)
             d[0,i]=5 if is_finger else (500 if name.startswith('torso') else 160)
             limit=self.effort.get(name,100)
-            force[0,i]=.5 if is_finger else .7*limit
+            force[0,i]=self._finger_drive_limit(name) if is_finger else .7*limit
             self.feedforward_limit[0,i]=0 if is_finger else .3*limit
         self.targets=targets
         self.force_limits=force
@@ -380,7 +454,8 @@ class FullRobotGripper(GripperFixture):
         compensation=np.clip(gravity,-self.feedforward_limit,self.feedforward_limit)
         if self.finger_gravity:
             self.finger_compensation=np.array(gravity[0,self.finger_indices])
-            self.force_limits[0,self.finger_indices]=finger_force_budget(self.finger_compensation)
+            self.force_limits[0,self.finger_indices]=finger_force_budget(
+                self.finger_compensation,self.finger_actuator_limit_n)
             self.robot.set_dof_max_forces(self.force_limits,self.index)
             compensation[0,self.finger_indices]=self.finger_compensation
         self.robot.set_dof_actuation_forces(compensation.astype(np.float32),self.index)
@@ -391,6 +466,24 @@ class FullRobotGripper(GripperFixture):
         self.robot.set_dof_position_targets(self.targets,self.index)
 
     def check(self,dt,palm):
+        finger_metrics={}
+        if self.sparse_contacts or self.finger_actuator_limit_n==.8:
+            monitor=self.event_monitor
+            if (monitor is None or getattr(monitor,'native_full_contact_reporting',False) is not True
+                    or getattr(monitor,'native_friction_type',None)!='patch'):
+                raise RuntimeError('Sparse finger guard requires full native patch-friction contact reporting')
+            # Validate callback errors before using its per-step pair buffer.
+            monitor.measurements(dt)
+            loads=finger_contact_forces(monitor.pairs,dt,fingers=self.paths[1:])
+            finger_metrics=dict(per_finger_contact_upper_bound_n=loads,
+                max_finger_contact_upper_bound_n=max(loads.values()),
+                per_finger_contact_limit_n=.5,finger_full_contact_reporting=True,
+                finger_contact_guard_is_plant_only=False)
+            if max(loads.values())>=.5:
+                self.last_fault=dict(reason='per_finger_contact_limit',**finger_metrics,
+                    pairs=[[a,b,v/dt] for (a,b),v in monitor.pairs.items()])
+                print('FULL_ROBOT_GUARD '+json.dumps(self.last_fault),flush=True)
+                raise RuntimeError('Per-finger all-contact upper bound reached 0.5 N')
         error=float(np.linalg.norm(palm[:3,3]-self.expected_palm[:3,3]))
         speed=float(np.linalg.norm(self.robot_bodies.get_velocities()[:,:3],axis=1).max())
         if self.window is not None:
@@ -410,7 +503,7 @@ class FullRobotGripper(GripperFixture):
                     pairs=[[a,b,v/dt] for (a,b),v in self.event_monitor.pairs.items()])
                 print('FULL_ROBOT_GUARD '+json.dumps(self.last_fault),flush=True)
                 raise RuntimeError('Full robot contact/tracking guard: '+json.dumps(self.last_fault))
-            return dict(palm_tracking_error_m=error,max_body_speed_m_s=speed,**metrics,
+            return dict(palm_tracking_error_m=error,max_body_speed_m_s=speed,**metrics,**finger_metrics,
                 finger_gravity_effort_n=self.finger_compensation.tolist(),
                 joint_positions_rad=self.robot.get_dof_positions()[0].tolist())
         # get_net_contact_forces includes all contacts regardless of filters;

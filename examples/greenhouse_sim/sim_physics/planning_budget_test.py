@@ -9,6 +9,8 @@ def test_default_budget_and_model_remain_legacy():
     args=parser().parse_args(['--output','unused'])
     assert args.native_static_planning_seconds==8.
     assert args.cut_model=='force_qualified_pre_authored_seam_release'
+    assert not args.diagnostic_grasp_dynamics
+    assert args.finger_actuator_limit_n==.5
 
 
 @pytest.mark.parametrize('budget',[0.,-1.,60.001,float('nan'),float('inf'),True])
@@ -43,7 +45,10 @@ def test_longer_budget_does_not_allow_epoch_change():
 @pytest.mark.parametrize('args,match',[
     (['--native-static-planning-seconds','30'],'planning budget'),
     (['--bimanual-cut','--native-static-clearance','--native-static-planning-seconds','61'],'planning budget'),
-    (['--cut-model','signed_edge_load_brittle_seam_v1'],'brittle seam model')])
+    (['--cut-model','signed_edge_load_brittle_seam_v1'],'brittle seam model'),
+    (['--diagnostic-grasp-dynamics'],'Grasp dynamics telemetry'),
+    (['--finger-actuator-limit-n','0.8'],'Experimental finger actuator budget'),
+    (['--bimanual-cut','--finger-actuator-limit-n','0.8'],'Experimental finger actuator budget')])
 def test_cli_rejects_before_simulator_or_output_creation(tmp_path,args,match):
     output=tmp_path/'uncreated'
     with pytest.raises(ValueError,match=match):main(['--output',str(output),*args])

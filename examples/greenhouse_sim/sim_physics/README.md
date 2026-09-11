@@ -781,4 +781,18 @@ contacts are also recorded. No complete cut/retain/deposit success is claimed.
 The left goal no longer pulls on a timer after release. Time-based withdrawal
 has been demoted to schedule diagnostics; verified completion requires current
 native endpoint and clearance evidence. `withdrawal_evidence.py` supplies a
-pure same-sample helper, not yet runtime-integrated at this checkpoint.
+pure same-sample helper. `withdrawal_native_check.py` now integrates final
+post-fetch endpoint and current bounds checks; this is not swept-path evidence.
+
+Native51 repeats49 with opt-in `--diagnostic-grasp-dynamics`. Native52 tests an
+explicit `--finger-actuator-limit-n .8` engineering prior (legacy default .5),
+with an independent >=.5 N ALL-contact rejection at each left finger in both
+sparse modes. It cuts and retains longer, but fails at14.3625 s on.5935 N finger2
+load. Do not call this a successful sequence or calibrated hardware setting.
+
+The diagnostics expose excessive post-release internal rotations in the
+contact-uncoupled implicit spring predictor; its no-contact qualification does
+not establish correct held-branch mechanics. The nominal energy proxy reaches
+~2.50 J and a spherical rotation-vector wraps near pi. Contact-coupled spring
+qualification is required before reporting reliable cutting/retention. Detailed
+evidence and the distinct command-timestamp correction are logged in `dev.md`.
