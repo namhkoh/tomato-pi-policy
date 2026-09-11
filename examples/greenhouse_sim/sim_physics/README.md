@@ -710,3 +710,22 @@ episode. The original6 mm-thick blade still needs a physically opened channel.
 `material_band.py` authors a continuous-volume discrete rigid-cell/spring
 prototype with checked mass/inertia and area-weighted fracture anchors; native
 bulk mechanics, spatial refinement and blade passage are not yet qualified.
+
+### Connected-shaft grasp evidence
+
+The bimanual probe uses exact inner-pad and connected detached-shaft collider
+identities. Physical support comes from signed native callback impulses; any
+tensile contribution subtracts from grip. Each pad must show >=20 mN net
+compressive reaction, with the existing opposition, geometry, dwell and slip
+checks. Selected tensor rows are matched independently for sensor integrity;
+their observed magnitude-only scalars are not signed force evidence.
+
+Native `bimanual_hold_control_20260911_40` completes20 s with verified grasp,
+no guard fault and maximum slip0.005253 mm. This is a right-parked control, NOT
+cut/retention/deposit success. Its whole-cut state intentionally remains failed
+because there is no blade sequence; the hold gates are individually true.
+Trials41/42 investigate a different held posture. Trial42 verifies grasp but
+rejects the first proposed tool frame for left-palm/right-camera interference.
+Safety margins and force limits remain unchanged. Raw fault reproduction uses
+`--diagnostic-grasp-contacts --bimanual-hold-control`; it always stops at the
+captured fault and cannot enable cutting or signed-mode execution.

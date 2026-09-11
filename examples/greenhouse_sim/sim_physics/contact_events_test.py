@@ -46,6 +46,11 @@ def test_grasp_step_failure_latches_in_main_safety_monitor():
     with pytest.raises(RuntimeError,match='wrong step'): m.measurements(.01)
 
 
+def test_empty_exception_message_is_still_a_latched_fault():
+    m=monitor();m.error='';m.begin_step()
+    with pytest.raises(RuntimeError): m.measurements(.01)
+
+
 def test_contact_accounting_does_not_cancel_opposing_forces():
     m=monitor();m.consume('/World/R/arm/shape','/World/Gutter',[(.001,0,0),(-.001,0,0)])
     assert m.measurements(.01)['unwanted_contact_n']==pytest.approx(.2)

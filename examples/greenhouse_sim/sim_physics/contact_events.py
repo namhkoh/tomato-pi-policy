@@ -200,7 +200,7 @@ class ContactEvents:
 
     def measurements(self,dt):
         if dt<=0 or not math.isfinite(dt): raise ValueError('Invalid contact timestep')
-        if self.error: raise RuntimeError(self.error)
+        if self.error is not None: raise RuntimeError(self.error)
         result={kind+'_contact_n':getattr(self,kind+'_impulse')/dt for kind in self._buckets}
         result.update({kind+'_friction_n':getattr(self,kind+'_friction_impulse')/dt for kind in self._buckets})
         result.update(normal_contact_n=self.normal_impulse/dt,friction_contact_n=self.friction_impulse/dt,

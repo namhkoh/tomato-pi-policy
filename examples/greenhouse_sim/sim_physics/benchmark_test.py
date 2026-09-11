@@ -19,6 +19,14 @@ def test_default_probe_includes_release_and_does_not_use_gpu():
     assert not args.attached_only and not args.gui and args.render_hz==0
 
 
+@pytest.mark.parametrize('extra',[[],['--bimanual-cut']])
+def test_raw_grasp_diagnostic_restricted_to_right_parked_control(tmp_path,extra):
+    output=tmp_path/'must_not_create'
+    with pytest.raises(ValueError,match='right-parked'):
+        main(['--output',str(output),'--diagnostic-grasp-contacts',*extra])
+    assert not output.exists()
+
+
 @pytest.mark.parametrize('proposal', [None, 'review inputs/single_proposal.json'])
 def test_report_configuration_serializes_optional_cut_proposal(proposal):
     # Exercise the real CLI types and the actual report configuration helper.

@@ -10,6 +10,8 @@ class BimanualRobot(FullRobotGripper):
     def __init__(self,*args,**kwargs):
         proposal_path=kwargs.pop('cut_proposal_json',None)
         self.native_static_clearance=kwargs.pop('native_static_clearance',False)
+        self.diagnostic_grasp_contacts=kwargs.pop('diagnostic_grasp_contacts',False)
+        if type(self.diagnostic_grasp_contacts) is not bool: raise ValueError('Explicit contact diagnostic flag required')
         if type(self.native_static_clearance) is not bool:raise ValueError('Explicit native clearance flag required')
         standoff=kwargs.pop('cut_standoff',.025)
         self.grasp_compression=kwargs.pop('grasp_compression',.0005)
@@ -121,11 +123,48 @@ class BimanualRobot(FullRobotGripper):
             self.grasp_scene_screen=result
 
     def bind(self,simulation_view):
+        self.release_grasp_observer()
         super().bind(simulation_view)
         self.right_indices=[self.names.index(f'right_arm_{i}') for i in range(7)]
         self.right_palm=simulation_view.create_rigid_body_view(self.knife.wrist_path)
         if self.right_palm.count!=1: raise RuntimeError('Missing native right wrist')
         self.event_monitor.tool_contact=self._tool_contact
+        from .shaft_grasp_native import ShaftGraspNative,NATIVE37_SENSOR_CONTRACT
+        # Physical support uses signed callbacks, not unsigned tensor magnitudes.
+        # Keep the historical strict fault-capture mode separately reproducible.
+        evidence_options=(dict(diagnostic_noncompressive_report=True)
+            if getattr(self,'diagnostic_grasp_contacts',False) else
+            dict(allow_signed_native_normals=True,sensor_contract=NATIVE37_SENSOR_CONTRACT))
+        self.grasp_observer=ShaftGraspNative(self.stage,self.rig,
+            selected_index=self.body_index,finger_paths=self.paths[1:],
+            contact_views=self.contact_views,**evidence_options)
+        self.event_monitor.normal_contact_observer=self.grasp_observer
+
+    def release_grasp_observer(self):
+        observer=getattr(self,'grasp_observer',None)
+        if observer is not None:
+            monitor=getattr(self,'event_monitor',None)
+            if monitor is not None and monitor.normal_contact_observer is observer:
+                monitor.normal_contact_observer=None
+            observer.close()
+            self.grasp_observer=None
+
+    def contact_with_frames(self,dt,frames,*,step_id):
+        """Same-step exact shaft/pad contacts, reconciled with selected tensors.
+
+        No motion command, FK pose or friction impulse is grasp evidence.
+        Existing controller dwell/slip windows remain in bimanual_probe.
+        """
+        from .runtime import pose_matrices
+        if getattr(self,'diagnostic_grasp_contacts',False):
+            self.grasp_observer.raise_pending_fault(dt,step_id=step_id)
+        if self.event_monitor.error is not None: raise RuntimeError(self.event_monitor.error)
+        if not self.event_monitor.native_full_contact_reporting:
+            raise RuntimeError('Missing full native contact stream for shaft grasp')
+        fingers=pose_matrices(self.fingers.get_transforms())[self.order]
+        result=self.grasp_observer.evaluate(dt,frames,fingers,frames_step_id=step_id)
+        self.latest_finger_bilateral=result['bilateral']
+        return result
 
     def close(self,fraction):
         # Geometry-bounded closure for this privileged shaft fixture. Driving
@@ -453,6 +492,7 @@ class BimanualRobot(FullRobotGripper):
             gate_dwell_s=self.cut_gate.dwell,gate_travel_m=self.cut_gate.travel,cut_event=self.cut_event)
 
     def restore_authored_state(self):
+        self.release_grasp_observer()
         super().restore_authored_state()
         self.cut_gate=ShearGate(self.rig.source_target);self.cut_authorized=False
         self.cut_event=None;self.plan=None;self.plan_diagnostics=None;self.cut_contacts=0
@@ -480,6 +520,8 @@ class BimanualRobot(FullRobotGripper):
             grasp_closure=dict(mode='ground_truth_shaft_width_stop_with_native_contact_verification',
                 commanded_half_aperture_m=max(0.,self.radius-self.grasp_compression),
                 nominal_pad_compression_m=self.grasp_compression,material_calibrated=False),
+            grasp_evidence_model='exact_connected_detached_shaft_inner_pad_normal_contacts_with_selected_tensor_crosscheck',
+            diagnostic_grasp_contacts=getattr(self,'diagnostic_grasp_contacts',False),
             minimum_grasp_self_capsule_clearance_m=self.minimum_grasp_self_clearance,
             knife_mount=self.knife_mount,
             blade_contact_geometry=self.blade_contacts,

@@ -27,6 +27,9 @@ def sequence_times(reposition):
 
 def run(app,sim,rig,runtime,springs,fixture,args,output):
     from greenhouse_sim.physics_clock import PhysicsClock
+    if (getattr(fixture,'diagnostic_grasp_contacts',False)
+            and not getattr(args,'bimanual_hold_control',False)):
+        raise ValueError('Raw contact diagnostic is restricted to a right-parked hold control')
     fixture.bind(sim.physics_sim_view)
     clock=PhysicsClock(sim,physics_hz=args.physics_hz,render_hz=args.render_hz)
     records=[];events=[];captures={};fault=None;stable=0;lost=0
@@ -132,7 +135,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     def after(stamp,dt):
         nonlocal stable,lost,cut_time,cut_fraction
         frames,velocity=runtime.sample();frame=frames[fixture.body_index]
-        c=fixture.contact(dt,frame);stable=stable+1 if c['bilateral'] else 0
+        c=fixture.contact_with_frames(dt,frames,step_id=stamp.step)
+        stable=stable+1 if c['bilateral'] else 0
         lost=0 if c['bilateral'] else lost+1
         palm=pose_matrices(fixture.palm.get_transforms())[0]
         slip=None if grasp_local is None else float(np.linalg.norm((frame[:3,3]-palm[:3,3])@palm[:3,:3]-grasp_local))
@@ -154,6 +158,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             joint_velocities_rad_s=plant_v.tolist(),elastic_energy_j=.5*float(np.dot(springs.k*plant_q,plant_q)),
             fastest_body=rig.body_paths[int(np.argmax(np.linalg.norm(velocity[:,:3],axis=1)))])
         records.append(record)
+        if not c['adapter_valid']:
+            raise RuntimeError('Native shaft grasp callback/tensor force reconciliation failed')
         fixture.check_plant_window(frames)
         record['robot']=fixture.check(dt,palm)
         if (speed>20 or total>3 or support>1e-5 or c['min_separation']<-.001
@@ -222,5 +228,6 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         requested_pre_cut_reposition_m=reposition,
         target_source='privileged_test_fixture_not_perception_verified',training_eligible=False)
     (output/'bimanual_trajectory.json').write_text(json.dumps(records,allow_nan=False),encoding='utf-8')
+    fixture.release_grasp_observer()
     sim.stop()
     return result

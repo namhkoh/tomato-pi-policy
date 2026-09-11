@@ -60,6 +60,8 @@ def parser():
         help='Diagnostic 0.25..1 mm shaft-width closure bias; no change to effort, slip or penetration guards')
     p.add_argument('--bimanual-hold-control',action='store_true',
         help='Negative control: hold left grasp with right arm parked; never qualifies as cutting')
+    p.add_argument('--diagnostic-grasp-contacts',action='store_true',
+        help='Hold-control only: finish capturing a faulted contact step, reconcile raw signed tensors, then stop before any next command')
     p.add_argument('--robot-interactive',action='store_true',help='Keep the full-robot test window open with replay controls')
     p.add_argument('--robot-auto-run',action=argparse.BooleanOptionalAction,default=True,
         help='In robot interactive mode, run immediately; disable to inspect the mounting/target before Run')
@@ -121,6 +123,8 @@ def main(argv=None):
         raise ValueError('Station yaw requires a full robot and finite +/-90 degrees')
     if args.bimanual_hold_control and not args.bimanual_cut:
         raise ValueError('Bimanual hold control requires the guarded bimanual harness')
+    if getattr(args,'diagnostic_grasp_contacts',False) and not args.bimanual_hold_control:
+        raise ValueError('Raw grasp contact diagnostic requires right-parked bimanual hold control')
     if getattr(args,'native_static_clearance',False) and not args.bimanual_cut:
         raise ValueError('Native static clearance requires the bimanual harness')
     if getattr(args,'cut_proposal_json',None) is not None and not args.bimanual_cut:
@@ -276,6 +280,7 @@ def main(argv=None):
                 robot_options['grasp_compression']=args.grasp_compression_m
                 robot_options['native_static_clearance']=getattr(args,'native_static_clearance',False)
                 robot_options['cut_proposal_json']=getattr(args,'cut_proposal_json',None)
+                robot_options['diagnostic_grasp_contacts']=getattr(args,'diagnostic_grasp_contacts',False)
             fixture=robot_class(stage,rig,arc=args.grasp_arc_m,friction=args.finger_friction,**robot_options)
             source_hashes[fixture.asset]=hashlib.sha256(fixture.asset.read_bytes()).hexdigest()
             report['robot_probe']=fixture.report()

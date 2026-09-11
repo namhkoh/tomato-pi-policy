@@ -14,6 +14,7 @@ import numpy as np
 
 
 _EPS_M = 1e-6  # Floating-point geometry roundoff, not a fitted shaft radius.
+_NORMAL_SIGNED_ZERO_NS = 1e-15  # Fixed absolute impulse floor; never a runtime knob.
 
 
 def _array(value, shape):
@@ -100,8 +101,18 @@ class ShaftGraspEvidence:
     ordered finger1, finger2. Only selected +/- one, on the detachable side,
     linked to selected through supplied live connected_pairs, can qualify.
     Callbacks must propagate errors; faults stay latched until the next step.
+
+    allow_signed_native_normals is a constructor-only diagnostic opt-in for
+    native compliant-contact rows. Their signed normal projection is retained,
+    including negative values; unsigned tensor magnitudes are NOT evidence.
+    Strict default keeps its fixed signed-zero handling. Signed mode additionally
+    requires each resultant's reaction into its measured pad to reach 20 mN.
     """
-    def __init__(self, chain, pads, *, selected_index, cut_index, source_target, max_rows=256):
+    def __init__(self, chain, pads, *, selected_index, cut_index, source_target, max_rows=256,
+                 allow_signed_native_normals=False):
+        if type(allow_signed_native_normals) is not bool:
+            raise ValueError('Explicit boolean signed-native normal opt-in required')
+        self._allow_signed_native_normals = allow_signed_native_normals
         self.chain = tuple(chain); self.pads = tuple(pads)
         self.selected_index = _index(selected_index); self.cut_index = _index(cut_index)
         self.max_rows = _index(max_rows)
@@ -122,12 +133,20 @@ class ShaftGraspEvidence:
         self.by_collider = {s.collider: s for s in self.candidates}
         self.links = {frozenset((a.body, b.body)) for a, b in zip(self.chain[self.cut_index:], self.chain[self.cut_index + 1:])}
         self.step_id = None; self.rows = []; self.error = None; self.evaluated = False
+        self.roundoff_normal_impulses = []
+        self.negative_normal_impulses = []
+
+    @property
+    def allow_signed_native_normals(self):
+        return self._allow_signed_native_normals
 
     def begin_step(self, step_id):
         step_id = _index(step_id)
         if self.step_id is not None and step_id <= self.step_id:
             raise ValueError('Strictly newer step required; recreate after native reset')
         self.step_id = step_id; self.rows = []; self.error = None; self.evaluated = False
+        self.roundoff_normal_impulses = []
+        self.negative_normal_impulses = []
 
     def add_contact(self, collider0, collider1, point, normal, impulse, separation):
         """One raw normal ContactData row; preserve original header collider order."""
@@ -146,11 +165,28 @@ class ShaftGraspEvidence:
             length = float(np.linalg.norm(n))
             if not np.isclose(length, 1., atol=1e-4, rtol=0):
                 raise ValueError('Unit native normal required')
+            raw_normal = n
             n = n / length; scalar = float(np.dot(j, n)); magnitude = float(np.linalg.norm(j))
-            if (not np.isfinite([scalar, magnitude]).all() or scalar < 0
+            # Check ORIGINAL j and its signed projection, before signed-zero handling.
+            if (not np.isfinite([scalar, magnitude]).all()
+                    or (not self.allow_signed_native_normals and scalar < -_NORMAL_SIGNED_ZERO_NS)
                     or np.linalg.norm(j - scalar * n) > 1e-12 + 1e-5 * magnitude):
-                raise ValueError('Normal impulse must be compressive and collinear; no friction')
+                condition = 'finite and collinear' if self.allow_signed_native_normals else 'compressive and collinear'
+                raise ValueError('Normal impulse must be ' + condition + '; no friction')
             separation = _number(separation, -1., 1.)
+            if scalar < 0:
+                audit = dict(step_id=self.step_id, row=len(self.rows),
+                    collider0=collider0, collider1=collider1, point=p.tolist(),
+                    normal=raw_normal.tolist(), impulse=j.tolist(), separation=separation,
+                    signed_scalar_ns=scalar, grasp_scalar_ns=scalar if self.allow_signed_native_normals else 0.)
+                if self.allow_signed_native_normals:
+                    audit.update(finger=self.pads[i].body, other_collider=other,
+                        impulse_on_finger_ns=(sign * scalar * n).tolist(),
+                        within_signed_zero_floor=scalar >= -_NORMAL_SIGNED_ZERO_NS)
+                    self.negative_normal_impulses.append(audit)
+                else:
+                    self.roundoff_normal_impulses.append(audit)
+                    scalar = 0.  # Strict default only; never abs() or a positive contribution.
             self.rows.append((i, other, p, sign * n, sign * scalar * n, separation))
         except (ValueError, TypeError, OverflowError) as exc:
             self.error = str(exc)
@@ -218,8 +254,11 @@ class ShaftGraspEvidence:
         if not np.isfinite(forces).all() or not np.isfinite(loads).all():
             raise ValueError('Overflowing native force totals')
         norms = np.linalg.norm(forces, axis=1)
-        if not np.isfinite(norms).all():
+        reaction_axes = np.array([-p.face_sign * world[p.collider][:3, p.face_axis] for p in self.pads])
+        support = np.einsum('ij,ij->i', forces, reaction_axes)
+        if not np.isfinite(norms).all() or not np.isfinite(support).all():
             raise ValueError('Overflowing native resultant')
+        support_passed = bool(np.all(support >= .02))
         cosine = float(np.dot(forces[0] / norms[0], forces[1] / norms[1])) if np.all(norms > 0) else None
         for pair in pairs.values():
             pair['force_n'] = pair['force_n'].tolist()
@@ -227,7 +266,14 @@ class ShaftGraspEvidence:
             selected_body=selected, eligible_colliders=sorted(eligible), forces=forces.tolist(),
             counts=counts, points=points, min_separation=min(separations, default=0.),
             normal_load_upper_n=loads.tolist(), pairs=list(pairs.values()), rejected=rejected,
+            roundoff_normal_impulses=list(self.roundoff_normal_impulses),
+            negative_normal_impulses=list(self.negative_normal_impulses),
+            allow_signed_native_normals=self.allow_signed_native_normals,
+            compressive_support_n=support.tolist(), pad_reaction_axes_world=reaction_axes.tolist(),
+            compressive_support_gate_applied=self.allow_signed_native_normals,
+            compressive_support_passed=support_passed,
             forces_scope='eligible_identity_normal_rows_including_geometry_rejections',
             stem_only=not rejected, opposition_cosine=cosine,
-            bilateral=bool(not rejected and np.all(norms >= .02) and cosine is not None and cosine < -.5),
+            bilateral=bool(not rejected and np.all(norms >= .02) and cosine is not None and cosine < -.5
+                and (not self.allow_signed_native_normals or support_passed)),
             normal_only=True, friction_used_for_grasp=False, training_eligible=False)

@@ -4691,3 +4691,41 @@ No hardware, collection, tuning, review, split or training-export changes.
   Complete separation occurs at2.693750/2.692188 s respectively; both dissipate
   the specified8 microjoules. These measured refinement differences do not
   constitute continuum calibration or actual-knife cutting evidence.
+
+### 2026-09-11: Signed grasp evidence verified in the supplied greenhouse
+
+- Corrected the callback/tensor contract explicitly, not by widening force
+  tolerances or fitting signs. `ShaftGraspEvidence` has an opt-in signed-normal
+  mode; signed contributions sum before qualification. Each current native pad
+  must support >=20 mN compressively, in addition to existing opposition,
+  geometry, topology, dwell and slip checks. Negative-only loads cannot grasp.
+- `ShaftGraspNative` independently matches every selected callback/tensor row
+  by exact collider identities, point, normal, separation and magnitude.
+  Unsigned magnitudes only verify sensor integrity; they never supply physical
+  grip force. Missing, duplicate/ambiguous or mismatched rows fail closed.
+  The measured contract is explicit and hash-bound; it is not a universal API
+  claim. The strict diagnostic mode remains separately reproducible.
+- Trials38/39 exposed float32 norm underflow, not mechanical overload:
+  one8.77e-38 N.s vector became zero, and a9.44e-21 N.s nonzero norm lost
+  relative accuracy because its squared components were subnormal. Added
+  bounded zero-only/component and positive squared-subnormal arithmetic checks,
+  preserving the signed physical input. Boundary, counterfeit-zero, negative
+  grasp and nonfinite-diagnostic regressions cover these paths.
+- Native `bimanual_hold_control_20260911_40` completes4,800 steps /20 s with
+  `error=null`, bounded/completed/left_grasp_verified all true, unchanged source
+  assets, and maximum measured slip5.252520e-6 m (0.005253 mm). Right-arm
+  commands stay parked; zero blade contacts/cuts. Its generic whole-cut state
+  remains failed because the deliberately omitted cutting gates are false;
+  inspect the individual hold gates, not that state, for this negative control.
+- Native41 changes left tilt10 to30 with0.5 mm commanded pad compression;
+  correct row matching passes, but one pad has only6.4 mN support. It stops
+  before right motion. Native42 uses the existing0.75 mm closure setting and
+  verifies the left grasp. The single historical world-direction proposal then
+  fails rigid clearance at its first sample: left palm versus right camera
+  bracket, required margin3 mm, measured conservative clearance approximately
+  zero. No IK execution, blade contact, release or full-cut success is claimed.
+- Full physics regression excluding the still-isolated new native-band probe:
+  **1,235 passed in88.90 s**, saved in
+  `data/sim_physics/regression_20260911_grasp_measurements.log`.
+  Independent new band-probe tests:24 passed. Native band rest/elastic/contact
+  controls are the next stage; no production material change or training data.
