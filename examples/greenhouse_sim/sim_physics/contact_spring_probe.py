@@ -371,7 +371,7 @@ def settings_readback(stage, coupon, *, actual_dt, model='native'):
         limitation='Installed tensor/property-query APIs expose no exact iteration getter')
 
 
-def bind(articulation, coupon, *, model='native', stage=None, contact_law=None):
+def bind(articulation, coupon, *, model='native', stage=None, contact_law=None, patch_friction=False):
     """Check unstepped native initial strain and coefficients before any writes.
 
     Call after parsing/reset, BEFORE the first physics step. Initial USD state
@@ -380,10 +380,14 @@ def bind(articulation, coupon, *, model='native', stage=None, contact_law=None):
     """
     model = _model(model)
     coupled = model == 'coupled_contact_prediction'
+    if type(patch_friction) is not bool or (patch_friction and not coupled):
+        raise ValueError('Boolean patch friction only valid for coupled diagnostic')
     if coupled:
         from .contact_coupled_prediction import MaterialLaw
         if not isinstance(contact_law, MaterialLaw):
             raise ValueError('Explicit contact material law required for coupled diagnostic')
+        if patch_friction and contact_law.response != 'unilateral_kv_v1':
+            raise ValueError('Patch friction requires unilateral_kv_v1')
     elif contact_law is not None:
         raise ValueError('Contact material prediction law only valid for coupled diagnostic')
     if model in MAXIMAL_MODELS:
@@ -421,7 +425,7 @@ def bind(articulation, coupon, *, model='native', stage=None, contact_law=None):
     if split: prediction = NativeDampingExplicitStiffness(a, coupon)
     if coupled:
         from .contact_coupled_native import ContactCoupledCouponSpring
-        prediction = ContactCoupledCouponSpring(a, coupon, law=contact_law)
+        prediction = ContactCoupledCouponSpring(a, coupon, law=contact_law, patch_friction=patch_friction)
     return dict(model=model, source_sha256=coupon.source_sha256, contact_model=coupon.contact_model,
         initial_native_q_rad=initial_q.tolist(), expected_initial_q_rad=[INITIAL_JOINT_ANGLE_RAD]*2,
         initial_native_q_verified=True, initial_q_tolerance_rad=INITIAL_Q_TOLERANCE_RAD,
@@ -433,7 +437,8 @@ def bind(articulation, coupon, *, model='native', stage=None, contact_law=None):
         disabled_drive_scope='angular stiffness only; native damping retained' if split else 'central articulation angular drives only',
         native_angular_drives_zero_verified=model == 'section_springs',
         section_springs=sections, external_d6_native_coefficients_verified=False,
-        contact_prediction=('finite normal feature implicit prediction; spring effort only' if coupled else
+        contact_prediction=('finite normal and circular patch friction prediction; spring effort only' if patch_friction else
+                            'finite normal feature implicit prediction; spring effort only' if coupled else
                             'none; explicit stiffness with native damping/contacts' if split else
                             'omitted_legacy_control' if model == 'implicit_effort' else 'native_solver_coupled'),
         split_scheme=prediction.report() if split else None,

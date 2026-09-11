@@ -5133,3 +5133,54 @@ No hardware, collection, tuning, review, split or training-export changes.
   Full CPU/USD checkpoint:2095 passed in94.88 s, recorded in
   `regression_20260911_contact_prediction_checkpoint.log`. A separate measured-
   start withdrawal helper is next; no runtime pose/state overrides are allowed.
+
+### 2026-09-11: Friction-aware spring diagnostic and measured withdrawal
+
+- Native28 tests original native springs at1920 Hz with128/32 iterations,
+  unchanged materials/masses, for1 s. It still fails:0.224984 mN.m static
+  moment residual,0.0120112 rad/s joint-velocity RMS and global torque balance.
+  More iterations alone are not established as the full-greenhouse fix.
+- Added coupon-only `contact_patch_prediction.py`: two geometry-bound native
+  friction anchors per patch, circular Coulomb disks sharing compressive normal
+  support, all six free-root coordinates and original M/K/C/friction. Native
+  contact rows provide geometry ONLY; measured normal/friction forces never
+  enter this predictor. Bounded semismooth/trust-step numerical solve requires
+  momentum, contact-law, friction-cone and dissipativity residuals. Its internal
+  trust steps do not alter physical material coefficients. This deliberately
+  omits PhysX strong-friction positional bias and its scalar friction bounds;
+  native-law parity, tissue mechanics and full-plant qualification are false.
+- `--contact-patch-friction` is an explicit opt-in ONLY for the standalone
+  `coupled_contact_prediction` coupon and `unilateral_kv_v1` law. The native
+  wrapper persists exact anchor identities and submits only the two spring
+  efforts within unchanged native caps. Missing/changed geometry or unresolved
+  algebra stops before submission. No root wrench, contact replay, pose/velocity
+  override, production spring change or greenhouse visual simplification.
+- Native29 FREE240 Hz,720 steps passes all recovery/whole-run energy gates:
+  initial7.97146 microjoules, maximum recorded6.01001 microjoules; no growth
+  above the unchanged energy allowance. This is the required unloaded control,
+  not held grasp/cut evidence. Median prediction1.856 ms, diagnostic tick4.769 ms.
+- Native30 HELD1920 Hz,1920 steps restores stiffness equilibrium:maximum
+  static moment residual2.34327 microN.m (native27 normal-only361.75 microN.m).
+  All tail gates EXCEPT joint velocity pass; native velocity RMS0.0169005 rad/s
+  exceeds0.01 rad/s. Therefore it remains FAILED. Median predictor48.534 ms,
+  p95 63.051 ms; total diagnostic ticks107.498 wall seconds for1 simulated
+  second. It is far too slow for interactive production. Native31 compares
+ 128/32 iterations without changing this model or physical parameters.
+- Focused pure geometry/patch/submission/runner/coupon regression:275 passed
+  in2.34 s. Standalone timing explicitly excludes startup, export and console
+  progress; it does not claim full-greenhouse performance. Dataset releases,
+  reviews/splits, training and hardware commands are unchanged.
+- Native31 HELD1920 Hz/PGS128/32 completes1920 steps. Stiffness residual
+  7.82931 microN.m and velocity RMS0.00108002 rad/s pass; global net torque
+  still fails. Tail spikes include step1042:-15.44 microN.m and1885:-13.52
+  microN.m, despite near-zero values between them. Do not average these away
+  or declare full equilibrium. Native32 uses TGS with the same coupon/patch
+  predictor; step2 prediction fails its unchanged line-search gate, so only
+  one physical sample executes. Native33 original native TGS drives also fail
+  at1920 Hz/128/32:1.02552 mN.m moment residual,0.104306 rad/s velocity RMS.
+- Full working-tree CPU/USD regression (including measured-withdrawal helper
+  and adapter tests):2299 passed in103.06 s, logged at
+  `data/sim_physics/regression_20260911_patch_withdrawal.log`. It overlaps
+  native32 diagnostics in wall time; these timings are not isolated machine
+  performance measurements. No coupon result yet establishes reliable
+  full-greenhouse cut-retain-withdraw; all failed native traces are preserved.

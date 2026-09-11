@@ -54,6 +54,15 @@ def test_existing_output_never_reused(tmp_path):
         main(['--output',str(tmp_path),'--source-report','missing'])
 
 
+@pytest.mark.parametrize('options',[[],['--model','coupled_contact_prediction',
+    '--contact-law','signed_overlap_kv_v1']])
+def test_patch_friction_requires_explicit_compatible_coupon_before_app(tmp_path,options):
+    out=tmp_path/'unused'
+    with pytest.raises(ValueError,match='Patch friction'):
+        main(['--output',str(out),'--source-report','missing','--contact-patch-friction',*options])
+    assert not out.exists()
+
+
 @pytest.mark.parametrize('value',[[[float('nan'),0]],[[float('inf'),0]],[0,0]])
 def test_nonfinite_or_wrong_shape_native_diagnostics_rejected(value):
     with pytest.raises(RuntimeError,match='Invalid native'):

@@ -121,6 +121,8 @@ def main(argv=None):
         help='Record before/after native mass, Jacobian and manifold separation; no changed dynamics')
     p.add_argument('--contact-law',choices=('unilateral_kv_v1','signed_overlap_kv_v1'),
         help='Required explicit mathematical law only for coupled_contact_prediction; native parity unqualified')
+    p.add_argument('--contact-patch-friction',action='store_true',
+        help='Coupled coupon only: geometry-bound circular Coulomb prediction, no measured-force replay')
     p.add_argument('--solve-articulation-contact-last',action='store_true',
         help='Explicit pre-parse native solver-order diagnostic; no material or iteration changes')
     args=p.parse_args(argv)
@@ -128,6 +130,8 @@ def main(argv=None):
     coupled=args.model=='coupled_contact_prediction'
     if coupled != (args.contact_law is not None):
         raise ValueError('Contact law must be explicit and only supplied for coupled diagnostic')
+    if args.contact_patch_friction and (not coupled or args.contact_law!='unilateral_kv_v1'):
+        raise ValueError('Patch friction requires coupled diagnostic with unilateral_kv_v1')
     if maximal and args.zero_joint_friction:
         raise ValueError('Articulation joint-friction setter unavailable for maximal model')
     if maximal and args.diagnostic_contact_geometry:
@@ -221,7 +225,8 @@ def main(argv=None):
         else:
             from .contact_coupled_prediction import MaterialLaw
             result['binding'],predictor=bind(view,coupon,model=args.model,stage=stage,
-                contact_law=MaterialLaw(args.contact_law) if coupled else None)
+                contact_law=MaterialLaw(args.contact_law) if coupled else None,
+                patch_friction=args.contact_patch_friction)
             before_friction=finite_native(view.get_dof_friction_coefficients(),(1,2),'joint friction before')
             if args.zero_joint_friction:
                 view.set_dof_friction_coefficients(np.zeros_like(before_friction),np.array([0],dtype=np.uint32))
@@ -237,12 +242,14 @@ def main(argv=None):
         reference_frames=data['frames'].copy(); reference_step=0
         previous_contact_rows=[dict(r) for r in monitor.rows]
         for step in range(1,int(args.seconds*args.physics_hz)+1):
+            tick_started=time.perf_counter()
             if not app.is_running():raise RuntimeError('App closed before diagnostic completion')
             if args.diagnostic_contact_geometry or coupled:
                 before_geometry=read_prediction_state(view,velocity,qdot)
                 before_geometry['frames_world_m']=frames.tolist()
             monitor.begin_step();errors.check('before_step')
             commanded_effort=None; coupled_record=None
+            prediction_started=time.perf_counter()
             if coupled:
                 commanded_effort,coupled_record=predictor.step(coupon.dt,state=before_geometry,
                     frames=frames,velocities=velocity,native_rows=previous_contact_rows,
@@ -250,7 +257,10 @@ def main(argv=None):
                 reference_frames=frames.copy(); reference_step=step
             elif predictor is not None:
                 commanded_effort=predictor.step(coupon.dt,root_constrained=False)
+            prediction_seconds=time.perf_counter()-prediction_started
+            native_started=time.perf_counter()
             sim.simulate(coupon.dt,bootstrap_dt+(step-1)*coupon.dt);sim.fetch_results()
+            native_seconds=time.perf_counter()-native_started
             errors.check('after_step');monitor.measurements(coupon.dt)
             frames,velocity,q,qdot=read_state(view,maximal=maximal)
             row=sample(coupon,step_id=step,frames=frames,velocities=velocity,q=q,qdot=qdot,
@@ -272,6 +282,8 @@ def main(argv=None):
                 view.get_dof_projected_joint_forces(),(1,2),'projected incoming force')[0].tolist())
             row['explicit_predictor_effort_nm']=(None if commanded_effort is None else
                 finite_native(commanded_effort,(2,),'predictor effort').tolist())
+            row['wall_timing_s']=dict(prediction=prediction_seconds,native_simulate_fetch=native_seconds,
+                tick_with_diagnostic_reads=time.perf_counter()-tick_started)
             if (np.max(np.abs(row['q_rad']))>=.05
                     or max(row['per_body_contact_upper_bound_n'])>1.
                     or np.max(np.linalg.norm(np.array(row['body_velocities_world'])[:,:3],axis=1))>1.):
@@ -300,6 +312,13 @@ def main(argv=None):
             result['error']='\n'.join([result['error'] or '',*cleanup['failures']])
             result['state']='failed_small_contact_spring_coupon'
         result['sample_count']=len(rows)
+        timed=[r['wall_timing_s'] for r in rows if 'wall_timing_s' in r]
+        result['timing']=dict(basis='coupon only; excludes startup, trace export and console progress',
+            sample_count=len(timed),
+            seconds={key:dict(total=float(np.sum([r[key] for r in timed])),
+                p50=float(np.median([r[key] for r in timed])),
+                p95=float(np.percentile([r[key] for r in timed],95)))
+                for key in ('prediction','native_simulate_fetch','tick_with_diagnostic_reads')} if timed else {})
         result['whole_run_max_abs_q_rad']=float(max((max(map(abs,r['q_rad'])) for r in rows),default=0.))
         (out/'trace.json').write_text(json.dumps(rows,allow_nan=False),encoding='utf-8')
         (out/'report.json').write_text(json.dumps(result,indent=2,allow_nan=False),encoding='utf-8')

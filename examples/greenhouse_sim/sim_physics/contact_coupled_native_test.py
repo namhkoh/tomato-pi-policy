@@ -17,9 +17,10 @@ class Fake(SplitFake):
     def get_dof_velocities(self): return self.joint_v.copy()
 
 
-def setup():
+def setup(*, patch_friction=False):
     c = coupon(held_contacts=False); a = Fake(c)
-    report, p = bind(a,c,model='coupled_contact_prediction',contact_law=MaterialLaw('unilateral_kv_v1'))
+    report, p = bind(a,c,model='coupled_contact_prediction',contact_law=MaterialLaw('unilateral_kv_v1'),
+                     patch_friction=patch_friction)
     frames = layout(c)['frames']
     state = dict(native_coordinate_convention_verified=True, contact_force_included=False,
         generalized_velocity=np.zeros(8), mass_matrix=np.eye(8)*.001,
@@ -74,3 +75,40 @@ def test_law_is_never_silently_chosen_or_applied_to_other_models():
     with pytest.raises(ValueError,match='only valid'):
         bind(a,c,model='native',contact_law=MaterialLaw('unilateral_kv_v1'))
     assert a.writes == [] and a.commands == []
+
+
+def test_patch_free_control_submits_only_spring_effort_and_retains_binding():
+    a,p,report,args = setup(patch_friction=True)
+    command, evidence = p.step(**args)
+    assert evidence['geometry']['native_impulses_read'] is False
+    assert evidence['prediction']['measured_friction_used'] is False
+    assert evidence['prediction']['friction_forces_n'] == []
+    assert report['coupled_prediction']['friction_in_prediction'] is True
+    assert report['coupled_prediction']['friction_force_applied'] is False
+    assert p.anchor_binding == evidence['geometry']['anchor_binding']
+    binding = deepcopy(p.anchor_binding)
+    args.update(step_id=2, reference_step_id=1)
+    p.step(**args)
+    assert p.anchor_binding == binding and len(a.commands) == 2
+    np.testing.assert_array_equal(command, a.commands[0][0])
+
+
+@pytest.mark.parametrize('patch,model,law',[
+    (True,'native',None), (1,'coupled_contact_prediction','unilateral_kv_v1'),
+    (True,'coupled_contact_prediction','signed_overlap_kv_v1')])
+def test_invalid_patch_mode_rejected_before_native_writes(patch,model,law):
+    c = coupon(); a = Fake(c)
+    with pytest.raises(ValueError,match='[Pp]atch'):
+        bind(a,c,model=model,contact_law=None if law is None else MaterialLaw(law),
+             patch_friction=patch)
+    assert a.writes == [] and a.commands == []
+
+
+def test_unresolved_patch_never_submits_or_changes_anchor_epoch(monkeypatch):
+    from sim_physics import contact_patch_prediction
+    a,p,_,args = setup(patch_friction=True)
+    monkeypatch.setattr(contact_patch_prediction,'solve',lambda *a,**k:
+                        dict(status='unresolved',reason='injected_nonconvergence'))
+    with pytest.raises(ValueError,match='Unresolved'):
+        p.step(**args)
+    assert a.commands == [] and p.last_step == 0 and p.anchor_binding is None
