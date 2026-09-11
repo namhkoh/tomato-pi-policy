@@ -60,7 +60,11 @@ def test_original_knife_and_blade_release_preserve_source(native):
         ground_height=lambda x,y:.101)
     k=robot.knife
     assert robot.knife_mount['changed']
+    assert robot.knife_mount['rotation_wrist_axis']=='Z'
+    assert robot.knife_mount['flat_edge_faces']=='wrist_minus_y'
     assert k.local[2,3]<0
+    assert (-k.local[:3,0])[1]<-.99
+    assert k.local[0,2]>.99
     from sim_physics.knife import mount_forward
     assert not mount_forward(stage,robot.root)['changed']
     assert k.size[0]==pytest.approx(.002) and .045<k.size[1]<.055
@@ -82,6 +86,30 @@ def test_original_knife_and_blade_release_preserve_source(native):
     assert stage.GetRootLayer().ExportToString()==original
 
 
+def test_knife_roll_corrects_old_mount_without_moving_flange_or_camera():
+    from pxr import Usd,UsdGeom
+    from greenhouse_sim.robot_model import DEFAULT_ASSET,ROBOT_ROOT
+    from sim_physics.plant import matrix_attr
+    from sim_physics.knife import mount_forward
+    stage=Usd.Stage.Open(str(DEFAULT_ASSET));stage.SetEditTarget(stage.GetSessionLayer())
+    root=stage.GetPrimAtPath(ROBOT_ROOT+'/ee_right/attachments/DeleafKnife')
+    camera=stage.GetPrimAtPath(ROBOT_ROOT+'/ee_right/attachments/RightWristCamera')
+    cache=UsdGeom.XformCache();camera_before=np.asarray(cache.GetLocalToWorldTransform(camera)).copy()
+    original=stage.GetRootLayer().ExportToString()
+    old=np.eye(4);old[:3,:3]=[[0,0,-1],[-1,0,0],[0,1,0]]
+    old[:3,3]=[.001,.002,.003]
+    matrix_attr(root,old)
+    result=mount_forward(stage,ROBOT_ROOT)
+    after=np.asarray(UsdGeom.Xformable(root).GetLocalTransformation()).T
+    np.testing.assert_allclose(after[:3,3],old[:3,3],atol=1e-10)
+    np.testing.assert_allclose(after[:3,:3],np.diag([-1,-1,1])@old[:3,:3],atol=1e-10)
+    assert result['changed'] and not mount_forward(stage,ROBOT_ROOT)['changed']
+    cache.Clear();np.testing.assert_array_equal(np.asarray(cache.GetLocalToWorldTransform(camera)),camera_before)
+    assert stage.GetRootLayer().ExportToString()==original
+    matrix_attr(root,np.eye(4))
+    with pytest.raises(ValueError,match='Unknown knife mounting'): mount_forward(stage,ROBOT_ROOT)
+
+
 def test_bimanual_replan_cannot_skip_self_screen(monkeypatch):
     from sim_physics.bimanual import BimanualRobot
     from sim_physics.full_robot import FullRobotGripper
@@ -99,6 +127,18 @@ def test_failed_planning_time_is_reported(monkeypatch):
     monkeypatch.setattr(robot,'_plan_cut',fail)
     with pytest.raises(RuntimeError,match='blocked geometry'): robot.plan_cut(None,None)
     assert robot.planning_wall_seconds>=0
+
+
+def test_bimanual_grasp_stops_at_shaft_width_without_relaxing_force_limit(monkeypatch):
+    from sim_physics.bimanual import BimanualRobot
+    from sim_physics.full_robot import FullRobotGripper
+    robot=object.__new__(BimanualRobot);robot.radius=.003
+    fractions=[]
+    monkeypatch.setattr(FullRobotGripper,'close',lambda self,f:fractions.append(f))
+    robot.close(0.);robot.close(.5);robot.close(1.)
+    np.testing.assert_allclose(fractions,[0.,.45,.9])
+    for f in (float('nan'),-.1,1.1):
+        with pytest.raises(ValueError): robot.close(f)
 
 
 def test_reset_invalidates_scene_snapshot_and_planning_time(monkeypatch):

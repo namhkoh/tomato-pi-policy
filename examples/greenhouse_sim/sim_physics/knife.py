@@ -10,12 +10,13 @@ import numpy as np
 
 
 def mount_forward(stage,robot_root):
-    """Correct the inherited backward knife around the retained flange origin.
+    """Distal knife with the corrected 180-degree wrist roll, session-only.
 
-    EE -Z is distal (the original left fingers extend in -Z). The inherited
-    knife occupies EE Z=0..124 mm, back into link_right_arm_6 (Z=0..46.5 mm).
-    A 180-degree rotation about EE Y preserves the +Y flat cutting direction
-    and puts the unchanged knife on the distal side. Session opinions only.
+    EE -Z remains distal. Relative to the previous forward mount, rotate
+    about EE Z, NOT Y again (which would put the tool back inside the wrist).
+    Apply to the common parent so visuals, support, contacts and semantic edge
+    stay together. Recognize explicit source/old/new frames: repeat is a no-op,
+    and an unknown mounting fails closed rather than accumulating rotations.
     """
     from pxr import Usd,UsdGeom
     from .plant import matrix_attr
@@ -26,14 +27,22 @@ def mount_forward(stage,robot_root):
     inverse=np.linalg.inv(np.asarray(cache.GetLocalToWorldTransform(wrist)).T)
     relative=inverse@np.asarray(cache.GetLocalToWorldTransform(root)).T
     parent=inverse@np.asarray(cache.GetLocalToWorldTransform(root.GetParent())).T
-    if relative[2,1]>.99: return dict(changed=False,knife_extends_along='wrist_minus_z')
-    if relative[2,1]>-.99: raise ValueError('Unknown knife mounting; do not guess a correction')
-    rotation=np.diag([-1.,1.,-1.,1.])
-    with Usd.EditContext(stage,stage.GetSessionLayer()):
-        matrix_attr(root,np.linalg.inv(parent)@rotation@relative)
-    return dict(changed=True,rotation_wrist_axis='Y',rotation_degrees=180,
-        knife_extends_along='wrist_minus_z',source_asset_edited=False,
+    source=np.array([[0.,0.,1.],[-1.,0.,0.],[0.,-1.,0.]])
+    previous=np.diag([-1.,1.,-1.])@source
+    desired=np.diag([-1.,-1.,1.])@previous
+    result=dict(changed=False,rotation_wrist_axis='Z',rotation_degrees=180,
+        rotation_reference='previous_distal_mount',knife_extends_along='wrist_minus_z',
+        flat_edge_faces='wrist_minus_y',curved_support_side='wrist_plus_x',
+        source_asset_edited=False,
         hardware_fit='geometric_flange_alignment_not_CAD_fastener_certification')
+    if np.allclose(relative[:3,:3],desired,atol=1e-6): return result
+    if not any(np.allclose(relative[:3,:3],r,atol=1e-6) for r in (source,previous)):
+        raise ValueError('Unknown knife mounting; do not guess a correction')
+    corrected=relative.copy();corrected[:3,:3]=desired
+    with Usd.EditContext(stage,stage.GetSessionLayer()):
+        matrix_attr(root,np.linalg.inv(parent)@corrected)
+    result['changed']=True
+    return result
 
 
 @dataclass(frozen=True)

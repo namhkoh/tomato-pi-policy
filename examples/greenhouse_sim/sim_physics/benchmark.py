@@ -45,6 +45,8 @@ def parser():
     p.add_argument('--bimanual-hold-control',action='store_true',
         help='Negative control: hold left grasp with right arm parked; never qualifies as cutting')
     p.add_argument('--robot-interactive',action='store_true',help='Keep the full-robot test window open with replay controls')
+    p.add_argument('--robot-auto-run',action=argparse.BooleanOptionalAction,default=True,
+        help='In robot interactive mode, run immediately; disable to inspect the mounting/target before Run')
     p.add_argument('--sparse-contacts',action='store_true',help='Native event accounting including all greenhouse/neighbor contacts')
     p.add_argument('--finger-gravity',action='store_true',help='Compensate native finger weight inside the original 0.5 N total effort budget')
     p.add_argument('--compliant-fingers',action='store_true',help='Experimental native force-based finger-pad compliance; unchanged masses/effort/guard limits')
@@ -99,6 +101,8 @@ def main(argv=None):
         raise ValueError('Torso yaw requires a package full robot and finite +/-45 degrees')
     if args.bimanual_cut and (not args.full_robot_probe or not args.sparse_contacts or not args.finger_gravity or args.seconds<20):
         raise ValueError('Bimanual cutting requires full robot, sparse contacts, finger gravity and >=20 seconds')
+    if not args.robot_auto_run and not args.robot_interactive:
+        raise ValueError('Disabling robot auto-run requires robot interactive mode')
     if args.robot_interactive and (not args.full_robot_probe or not args.gui or not args.render_hz):
         raise ValueError('Robot interactive requires full-robot probe, GUI and rendering')
     if args.full_robot_probe and (args.gripper_probe or args.interactive or (args.scene=='package' and not args.sparse_contacts)

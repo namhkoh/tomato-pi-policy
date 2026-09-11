@@ -25,9 +25,12 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         from pxr import UsdLux
         from omni.kit.viewport.utility import get_active_viewport
         viewport=get_active_viewport()
+        previous_view=str(viewport.camera_path)
         if args.scene=='isolated': UsdLux.DomeLight.Define(rig.stage,'/World/ProbeLight').CreateIntensityAttr(1400.)
         viewport.set_active_camera(setup_probe_camera(rig.stage,rig.rest_frames[fixture.body_index,:3,3]))
         fixture.setup_views(viewport)
+        if getattr(args,'robot_interactive',False) and previous_view in fixture.views.values():
+            viewport.set_active_camera(previous_view)
 
     def capture(name):
         from omni.kit.viewport.utility import capture_viewport_to_file
@@ -137,6 +140,10 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         record['phase']='Left hold negative control' if hold_control else 'Retain / withdraw' if rig.cut else 'Blade stroke' if stamp.simulation_time_s>=8 else 'Right approach' if stamp.simulation_time_s>=4 else 'Left grasp'
         fixture.on_sample(record)
 
+    def render_state(_):
+        runtime.sync_visuals()
+        if hasattr(fixture,'target_markers'): fixture.target_markers.update(runtime.frames)
+
     print('BIMANUAL_PROBE_READY '+json.dumps(fixture.report()),flush=True)
     try:
         if viewport and args.capture_milestones:
@@ -147,7 +154,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         for _ in range(int(args.seconds*args.physics_hz)):
             tick=time.monotonic()
             if not app.is_running() or fixture.stop_requested: raise RuntimeError('Stopped; reset required')
-            clock.tick(before=before,after=after,before_render=lambda _:runtime.sync_visuals())
+            clock.tick(before=before,after=after,before_render=render_state)
             if clock.stamp.step%args.physics_hz==0 and records:
                 latest=records[-1]
                 print('BIMANUAL_SECOND '+json.dumps(dict(t=latest['t'],phase=latest['phase'],

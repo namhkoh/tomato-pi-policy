@@ -4040,3 +4040,64 @@ Next required work is joint grasp/cutter configuration selection against the
 complete scene (including refinement of conservative tool bounds where
 warranted), followed by actual native blade load/release/withdraw/retain tests.
 Do not promote these diagnostic records into a VLM action dataset.
+
+## 2026-09-11: user-requested knife roll and nearer ground-truth grasp
+
+Branch `koh-dev/sim-vlm`, following `4415ecb`. User asked for a 180-degree knife
+rotation, testing cutting, and grasp aligned with the ground-truth junction.
+The protected attachment is NOT the grasp/cut itself: retain the 10 mm nominal
+cut and grasp on detachable material with physical finger/tool clearance.
+
+Implementation:
+
+- Corrected `knife.mount_forward` with a 180-degree **wrist-Z roll relative to
+  the previous distal mount**. Distal -Z is retained; another Y flip would put
+  the knife back into the wrist. Flat cutting direction is now wrist -Y,
+  curved support on +X. Recognizes explicit source/previous/corrected frames,
+  preserves flange translation/camera pose, is idempotent, rejects unknown
+  frames. Common-parent transform rotates mesh, arc, contacts and edge together.
+  Source CAD/USDs and camera mounting assets are unchanged.
+- Replaced the full-robot grasp's arbitrary minimum segment-start rule with
+  actual complete finger collider bounds projected onto the cut-plane axis:
+  all bounds must lie on the detachable side, at least 10 mm from the plane.
+  It remains only a placement screen; full-tool/path/native guards stay active.
+  Added explicit ground-truth target identity, attachment, cut, grasp, requested
+  arc and selected physical body centre to reports. This is privileged truth,
+  not perception-verified execution or an annotation/dataset change.
+- Requested 50 mm selects Segment002 at **46.675573 mm** attachment arc, rather
+  than the previous 71.125955 mm grasp. Original 32 mm-wide pad bounds leave
+  **20.675572 mm** from the 10 mm cut plane. Station offset `.04 .2285`, yaw60,
+  roll180, depth125 mm, approach20 mm keeps the base within about 0.48 mm of
+  the previous station; changing grasp must not cause a spawn collision.
+- Bimanual closure stops at known shaft radius minus 0.5 mm, not zero aperture.
+  Nominal compression is an engineering setting, not measured tissue behavior.
+  No force limit, collision exclusion, penetration limit, material stiffness,
+  grasp verification or native blade gate was relaxed.
+- Added optional session-only yellow attachment / white cut / cyan grasp
+  visual markers, without collision or mass. Updates use native body frames
+  only at render. Added `--no-robot-auto-run` for inspection before Run; default
+  auto-run unchanged. Selected camera survives replay initialization. These
+  diagnostic views/markers must not be used as clean model training inputs.
+
+Native evidence under `data/sim_physics` (all failed trials retained):
+
+| Run | Result |
+|---|---|
+| `bimanual_cut_20260911_19` | Closer grasp with old station offsets rejected by spawn screen (torso/foliage, forearm/shaft). No motion. |
+| `_20` | Station corrected; zero-aperture closure makes opposing contact but exceeds the existing 1 mm penetration limit at 3.4875 s (1.1464 mm). No right movement. |
+| `_21` | Radius-minus-0.25 mm width stop avoids penetration, but one finger's selected-shaft force is only 0.013 N, below the unchanged 0.02 N minimum. Grasp rejected, not relabelled. |
+| `_22` | Radius-minus-0.5 mm closure verifies stable bilateral contact; all samples at 3..3.5 s bilateral. Right search: 180 endpoints, 99 IK converged, 43 interarm rejects and 56 other self/tool rejects; no all-checks-clear endpoint, no right movement, edge contact or cut. |
+| `bimanual_hold_control_20260911_06` | Same nearer grasp/tool/closure, right parked: **4,800 steps / 20 s**, no guard fault, continuous bilateral contact after verification, maximum slip **0.005615 mm**, maximum penetration **0.032025 mm**, source hashes unchanged. Attached hold only; overall cutting qualification remains false by design. |
+
+Tests: 804 passed + 47 subtests (82.03 s) across physics/robot/sim_data before
+the final closure constant and inspection-first option; focused final-change
+regression then passed 78 tests (16.87 s); the final marker-only check passed
+2 tests (4.43 s). GUI `greenhouse_cut_gui_20260911_02` loaded with the full
+greenhouse/robot and inspection-first controls. Two GUI replays verify the same
+grasp and reject the same 180 blocked right approaches, with no cut. The GUI
+remains open; native plant/robot rendering was inspected. No collection,
+training, hardware command, review
+decision, split or training export changed. Successful cutting/withdrawal/
+post-cut retention/deposit remains **unverified**. Next work is jointly choosing
+a left grasp orientation and right-tool corridor, including mounted camera/arc
+geometry, not bypassing safety gates.

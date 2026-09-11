@@ -40,6 +40,14 @@ def test_interactive_robot_needs_visible_window(tmp_path):
         main(['--output',str(tmp_path/'unused'),'--robot-interactive'])
 
 
+def test_inspection_first_requires_interactive_mode(tmp_path):
+    from sim_physics.benchmark import main,parser
+    assert parser().parse_args(['--output','unused']).robot_auto_run
+    assert not parser().parse_args(['--output','unused','--no-robot-auto-run']).robot_auto_run
+    with pytest.raises(ValueError,match='requires robot interactive'):
+        main(['--output',str(tmp_path/'unused'),'--no-robot-auto-run'])
+
+
 @pytest.mark.parametrize('option',['--sparse-contacts','--finger-gravity','--profile','--local-wire-physics','--batch-gutter-visuals','--scene-profile','--bimanual-hold-control'])
 def test_robot_options_are_not_silently_ignored(tmp_path,option):
     from sim_physics.benchmark import main

@@ -13,8 +13,10 @@ diagnostic replay; a failed plan/guard never forces release.
 
 - `knife.py` corrects the original right knife in the session layer. Its old
   blade occupied EE +Z=0..71.48 mm, overlapping the wrist's +Z=0..46.5 mm.
-  The 180-degree EE-Y correction places the same blade/support along distal
-  -Z, retains the flat +Y cutting direction and leaves source meshes unchanged.
+  The distal correction keeps the same blade/support along -Z. The subsequent
+  user-requested 180-degree roll about wrist Z reverses the previous mounting:
+  flat edge toward wrist -Y, curved support on +X. It does NOT flip back into
+  the wrist. Visuals/colliders/edge rotate together; source meshes are unchanged.
   This is geometric flange alignment, not a new CAD fastener certification.
 - `bimanual.py` caches source knife transforms, reads native right-wrist state
   and contact positions, and searches bounded IK/edge-wing alternatives. Arm
@@ -46,7 +48,7 @@ diagnostic replay; a failed plan/guard never forces release.
   release. Deposit, recovery, synchronized dynamic camera records and VLM/VLA
   execution are not implemented by this probe. No result is training-approved.
 
-Latest native checkpoint: `bimanual_cut_20260911_18` loads the source-derived
+Earlier native checkpoint: `bimanual_cut_20260911_18` loads the source-derived
 knife contacts, verifies opposing left contact, and rejects the blocked right
 approach at 3.5 s. Zero edge contacts/cuts; source assets unchanged. The revised
 station's parked-right control `bimanual_hold_control_20260911_05` completes
@@ -62,11 +64,39 @@ has geometry/unit checks, not a passing native cutting qualification.
 Stroke end is now shaft radius + half leading-strip width + 1 mm, instead of
 fixed 12 mm overtravel. Reaching it cannot authorize a cut.
 
-Example **unqualified** latest diagnostic (choose a new output):
+Latest orientation / nearer-ground-truth grasp checkpoint (September 11):
+`bimanual_cut_20260911_22` verifies the left grasp but rejects all 180 sampled
+right approaches (99 IK converge; 43 interarm and 56 other self/tool failures).
+No right motion or cut occurs. `bimanual_hold_control_20260911_06` completes
+20 seconds / 4,800 steps, opposing shaft contact continuously after verification,
+maximum slip 0.005615 mm and maximum finger penetration 0.032025 mm. One fixture
+only; no severed-material retention, deposit or calibrated tissue cutting.
+
+The requested 50 mm grasp selects the actual shaft body centre at 46.676 mm
+from the protected attachment. Original full finger bounds leave 20.676 mm
+from the nominal 10 mm cut plane (required placement margin 10 mm). The target
+identity, attachment/cut/grasp world points and requested/selected arcs are
+reported separately. The bimanual jaw controller now stops at the known shaft
+radius minus 0.5 mm instead of requesting zero aperture; native opposing
+contact, the original force cap and 1 mm penetration guard still decide pass.
+This is a privileged geometry-based fixture setting, not a calibrated force
+controller or evidence that a VLM can find this point.
+
+Example **unqualified** latest interactive diagnostic (choose a new output):
 
 ```powershell
-examples\greenhouse_sim\run_bimanual_cut_probe.cmd --output D:/research/tomato-pi-policy/data/sim_physics/my_cut_check --station-offset .06 .24 --station-yaw 60 --grasp-arc-m .08 --grasp-roll 180 --grasp-depth-m .125 --approach-distance .02 --compliant-fingers
+examples\greenhouse_sim\run_bimanual_cut_probe.cmd --output D:/research/tomato-pi-policy/data/sim_physics/my_cut_check --station-offset .04 .2285 --station-yaw 60 --grasp-arc-m .05 --grasp-roll 180 --grasp-depth-m .125 --approach-distance .02 --compliant-fingers --gui --robot-interactive --no-robot-auto-run --no-capture-milestones
 ```
+
+Inspect **Right knife mount**, then **Grasp plant-side** and **Show / hide
+ground-truth points**: yellow protected attachment, white cut, cyan distal grasp.
+Markers are optional session-only visual diagnostics without collisions;
+positions update from native target frames on render, not physics ticks.
+They are NOT training images. Head/wrist camera views remain available.
+The Run button preserves the selected diagnostic view. Inspection-first mode
+does not start physics automatically; the existing default still auto-runs.
+The current bounded cutting planner blocks UI updates while searching and
+can still return a no-clear-path result; it does not force a cut.
 
 The remaining task is a compatible, scene-clear grasp/cutter configuration,
 then native blade loading, release, withdrawal and retained-material tests.

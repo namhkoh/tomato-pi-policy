@@ -50,6 +50,18 @@ The revised station's `bimanual_hold_control_20260911_05` holds for 20 s with
 0.0691 mm maximum slip and no fault. This does not establish a successful cut,
 post-cut retention, deposit, dynamic training data or hardware safety.
 
+Later user-requested mounting/grasp correction: the knife receives a 180-degree
+wrist-Z roll relative to the previous distal mount, keeping all physical and
+visual parts aligned. A nearer ground-truth grasp (46.676 mm attachment arc)
+leaves 20.676 mm finger clearance from the 10 mm cut plane. Width-bounded jaw
+closure passes a 20-second native hold (`bimanual_hold_control_20260911_06`):
+maximum slip 0.005615 mm, penetration 0.032025 mm, no guard fault. Its right arm
+is parked; cutting gates intentionally remain false. Cutting trial `_22`
+verifies that grasp but rejects the right-arm/tool approaches before movement.
+The current complete-sequence blocker remains; neither result is VLM action
+training data. Interactive ground-truth markers and inspection-first launching
+now make the separate attachment, cut and grasp locations inspectable.
+
 ## What the current evidence supports
 
 - Supplied greenhouse + full native RB-Y1 A v1.2 articulation. The left arm

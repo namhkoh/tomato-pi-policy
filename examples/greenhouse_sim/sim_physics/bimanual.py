@@ -71,6 +71,15 @@ class BimanualRobot(FullRobotGripper):
         if self.right_palm.count!=1: raise RuntimeError('Missing native right wrist')
         self.event_monitor.tool_contact=self._tool_contact
 
+    def close(self,fraction):
+        # Geometry-bounded closure for this privileged shaft fixture. Driving
+        # to a zero-width aperture keeps compressing a ~6 mm stem after grasp.
+        # Stop 0.5 mm inside its radius instead; force and penetration guards
+        # remain unchanged and actual opposing contact still verifies grasp.
+        if not np.isfinite(fraction) or not 0<=fraction<=1: raise ValueError('Invalid finger closure')
+        aperture=max(0.,self.radius-.0005)
+        super().close(fraction*(1-aperture/.025))
+
     def seam(self,frames):
         i=self.rig.cut_index
         half=np.linalg.norm(self.rig.chain_world[i+1]-self.rig.chain_world[i])/2
@@ -308,6 +317,9 @@ class BimanualRobot(FullRobotGripper):
     def report(self):
         result=super().report()
         result.update(right_arm='original_fitted_knife_guarded_native_joint_drives',
+            grasp_closure=dict(mode='ground_truth_shaft_width_stop_with_native_contact_verification',
+                commanded_half_aperture_m=max(0.,self.radius-.0005),
+                nominal_pad_compression_m=.0005,material_calibrated=False),
             minimum_grasp_self_capsule_clearance_m=self.minimum_grasp_self_clearance,
             knife_mount=self.knife_mount,
             blade_contact_geometry=self.blade_contacts,

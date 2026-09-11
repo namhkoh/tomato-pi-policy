@@ -53,8 +53,9 @@ class FullRobotGripper(GripperFixture):
         self.finger_gravity=finger_gravity;self.finger_compensation=np.zeros(2)
         self.window=None
         self.body_index=int(np.argmin(np.abs((rig.arcs[:-1]+rig.arcs[1:])/2-arc)))
-        if self.body_index<rig.cut_index or rig.arcs[self.body_index]<.035:
+        if not np.isfinite(arc) or self.body_index<rig.cut_index:
             raise ValueError('Grasp must leave clearance from the diagnostic seam')
+        self.requested_grasp_arc=float(arc)
         self.arc=float((rig.arcs[self.body_index]+rig.arcs[self.body_index+1])/2)
         self.grasp_path=rig.body_paths[self.body_index]
         self.half_length=float(np.linalg.norm(rig.chain_world[self.body_index+1]-rig.chain_world[self.body_index])/2)
@@ -200,6 +201,9 @@ class FullRobotGripper(GripperFixture):
             self.plant_filter_paths=list(rig.body_paths)+[
                 str(p.GetPath()) for p in Usd.PrimRange(stage.GetPrimAtPath('/World/Plant'))
                 if p.HasAPI(UsdPhysics.CollisionAPI) and UsdPhysics.CollisionAPI(p).GetCollisionEnabledAttr().Get()]
+        from .grasp_target import finger_seam_clearance
+        self.grasp_clearance=finger_seam_clearance(stage,self.root,self.goal,
+            rig.chain_world[rig.cut_index],rig.rest_frames[rig.cut_index,:3,2])
         self.plan_approach()
 
     def _author_initial_joints(self):
@@ -240,6 +244,14 @@ class FullRobotGripper(GripperFixture):
         return dict(asset=str(self.asset),scope='full_dynamic_robot_native_joint_drives',
             arm_ik_solved=True,grasp_weld=False,plant_pose_override=False,base_fixed=True,
             robot_base_world=self.base.tolist(),grasp_body=self.grasp_path,grasp_arc_m=self.arc,
+            ground_truth_grasp=dict(target_petiole=self.rig.source_target,
+                attachment_world_m=self.rig.chain_world[0].tolist(),
+                cut_world_m=self.rig.chain_world[self.rig.cut_index].tolist(),
+                cut_arc_m=float(self.rig.arcs[self.rig.cut_index]),
+                grasp_world_m=self.rig.rest_frames[self.body_index,:3,3].tolist(),
+                requested_arc_m=self.requested_grasp_arc,selected_body_centre_arc_m=self.arc,
+                detachable_side=True,placement_screen=self.grasp_clearance,
+                frame='authored_rest_world_not_live_observation'),
             initial_station_forward_left_offset_m=self.station_offset.tolist(),
             initial_station_yaw_adjustment_degrees=self.station_yaw,
             source_colliders_retained=len(self.collider_paths),finger_max_drive_force_n=.5,
@@ -443,17 +455,22 @@ def interactive(app,sim,rig,fixture,args,output):
     if args.scene=='isolated':
         UsdLux.DomeLight.Define(rig.stage,'/World/RobotProbeLight').CreateIntensityAttr(1400.)
     fixture.setup_views(get_active_viewport())
-    request={'run':True,'reset':False};runs=[]
+    from .grasp_target import TargetMarkers
+    markers=TargetMarkers(rig.stage,rig,fixture.body_index)
+    fixture.target_markers=markers
+    request={'run':bool(getattr(args,'robot_auto_run',True)),'reset':False};runs=[]
     def command(name): request[name]=True
-    window=ui.Window('Full RB-Y1 - physical '+('grasp + cut' if cutting else 'grasp test'),width=390,height=610)
+    window=ui.Window('Full RB-Y1 - physical '+('grasp + cut' if cutting else 'grasp test'),width=410,height=740)
     with window.frame:
         with ui.VStack(spacing=6):
             ui.Label('FULL DYNAMIC RBY1-A v1.2',height=25)
             ui.Label('IK-driven left arm, force-limited fingers. Original plant; only the target petiole is compliant. No grasp weld.',word_wrap=True,height=52)
-            status=ui.Label('Ready. Run approach / grasp / 10 mm motion.',word_wrap=True,height=65)
+            status=ui.Label('Ready. Inspect the knife and target, then press Run.' if cutting else 'Ready. Run approach / grasp / 10 mm motion.',word_wrap=True,height=65)
             ui.Button('Run left grasp + right knife' if cutting else 'Run grasp + 10 mm movement',height=30,clicked_fn=lambda:command('run'))
             ui.Button('Stop test',height=26,clicked_fn=lambda:setattr(fixture,'stop_requested',True))
             ui.Button('Reset',height=26,clicked_fn=lambda:command('reset'))
+            ui.Button('Show / hide ground-truth points',height=26,clicked_fn=markers.toggle)
+            ui.Label('Yellow: protected junction | White: cut | Cyan: distal grasp. Guide markers are not training images.',word_wrap=True,height=40)
             with ui.HStack(height=23):
                 captures=ui.CheckBox()
                 captures.model.set_value(bool(getattr(args,'capture_milestones',True)))
@@ -478,6 +495,7 @@ def interactive(app,sim,rig,fixture,args,output):
         springs=ImplicitJointSprings(runtime.articulation)
         fixture.bind(sim.physics_sim_view)
         runtime.sync_visuals()
+        markers.update(runtime.frames)
         return runtime,springs
     runtime,springs=reset()
     print('FULL_ROBOT_DEMO_READY '+str(output),flush=True)
