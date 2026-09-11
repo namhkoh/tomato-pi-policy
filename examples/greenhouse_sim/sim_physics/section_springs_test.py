@@ -428,3 +428,52 @@ def test_free_energy_does_not_accumulate_roundoff_or_ignore_native_kinetic_growt
     assert not result['passed']
     rows[1]['body_velocities_world'][0][0] = float('nan')
     with pytest.raises(ValueError): assess_free_energy(rows, c, model=model)
+
+
+def test_angular_maximal_generic_D6_preserves_physics_and_has_no_fibers():
+    from pxr import Usd, UsdPhysics
+    c = coupon(iterations=(128,32)); stage = Usd.Stage.CreateInMemory()
+    data = author(stage, c, model='angular_d6_maximal')
+    baseline, _, _ = maximal_stage(c)
+    for prim in stage.Traverse():
+        if prim.IsA(UsdPhysics.Joint): continue
+        original = baseline.GetPrimAtPath(prim.GetPath())
+        assert prim.GetMetadata('apiSchemas') == original.GetMetadata('apiSchemas')
+        for attr in prim.GetAttributes(): assert attr.Get() == original.GetAttribute(attr.GetName()).Get()
+    assert 'section_springs' not in data and data['native_view_kind'] == 'rigid_body'
+    assert [str(p.GetPath()) for p in stage.Traverse() if p.IsA(UsdPhysics.Joint)] == data['joint_paths']
+    assert all(stage.GetPrimAtPath(p).GetTypeName() == 'PhysicsJoint' for p in data['joint_paths'])
+    report, unused = bind_rigid(FakeRigid(c), c, stage=stage, model='angular_d6_maximal')
+    assert unused is None and report['angular_d6_authored_verified']
+    assert not report['central_angular_drives_authored_zero'] and report['section_springs'] == []
+    assert not report['native_articulation_readbacks_used'] and not report['external_d6_native_coefficients_verified']
+    for i, drive in enumerate(report['angular_d6_usd_drives']):
+        assert drive['stiffness_usd'] == pytest.approx(c.stiffness[i]*math.pi/180, rel=1e-7)
+        assert drive['damping_usd'] == pytest.approx(c.damping[i]*math.pi/180, rel=1e-7)
+    read = settings_readback(stage, c, actual_dt=c.dt, model='angular_d6_maximal')
+    assert len(read['authored_iteration_readback']) == 3
+    with pytest.raises(ValueError): bind_rigid(FakeRigid(c), c, stage=stage)
+    free = replace(c, held_contacts=False)
+    row = sample(free, **equilibrium(free, q=(0,0)), model='angular_d6_maximal')
+    assert not row['independent_articulation_readback'] and 'section_springs' not in row
+    assert not assess_tail(tail(free,row),free)['passed']
+    assert assess_tail(tail(free,row),free,whole_run_samples=tail(free,row))['passed']
+
+
+@pytest.mark.parametrize('bad', ['gain57', 'damping', 'lock', 'extra_drive', 'nan_frame',
+    'body', 'external', 'target', 'extra_joint', 'root'])
+def test_angular_D6_binding_rejects_changed_contract(bad):
+    from pxr import Gf, Usd, UsdPhysics
+    c = coupon(); stage = Usd.Stage.CreateInMemory(); data = author(stage,c,model='angular_d6_maximal')
+    prim = stage.GetPrimAtPath(data['joint_paths'][0]); drive = UsdPhysics.DriveAPI(prim,'rotY')
+    if bad == 'gain57': drive.CreateStiffnessAttr(c.stiffness[0])
+    elif bad == 'damping': drive.CreateDampingAttr(0.)
+    elif bad == 'lock': UsdPhysics.LimitAPI(prim,'rotX').CreateLowAttr(-1.)
+    elif bad == 'extra_drive': UsdPhysics.DriveAPI.Apply(prim,'rotZ')
+    elif bad == 'nan_frame': UsdPhysics.Joint(prim).CreateLocalRot0Attr(Gf.Quatf(float('nan')))
+    elif bad == 'body': UsdPhysics.Joint(prim).CreateBody1Rel().SetTargets([data['body_paths'][2]])
+    elif bad == 'external': UsdPhysics.Joint(prim).CreateExcludeFromArticulationAttr(False)
+    elif bad == 'target': drive.CreateTargetPositionAttr(.005)
+    elif bad == 'extra_joint': UsdPhysics.Joint.Define(stage,c.root+'/Extra')
+    else: UsdPhysics.ArticulationRootAPI.Apply(stage.GetPrimAtPath(data['body_paths'][0]))
+    with pytest.raises(ValueError): bind_rigid(FakeRigid(c),c,stage=stage,model='angular_d6_maximal')

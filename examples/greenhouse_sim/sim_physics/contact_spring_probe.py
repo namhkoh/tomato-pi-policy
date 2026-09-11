@@ -1,6 +1,9 @@
 """Preparations for a SMALL contact-coupled spring experiment; no app/step owner.
 
-Three free-root links, two Y revolute joints and six static compliant pads.
+Three free-root links, two Y revolute joints and six static pads.
+contact_model='compliant' preserves source contact K/C. 'rigid_control' is an
+explicit diagnostic override: retain those coefficients in reports, omit their
+material authoring. Geometry, friction, joint K/C and all gates are unchanged.
 Only contact loads the links: no world joint, root pin, injected body wrench,
 gravity compensation, or contact-force replay. Outer pad pairs are tilted in
 opposite directions. Actual net contact wrench must balance; symmetry is NOT
@@ -22,6 +25,9 @@ geometric angles, projected relative native angular velocities, and hinge-axis
 misalignment. These are NOT articulation readbacks. Pass model to author,
 settings_readback and sample. Free-mode assess_tail additionally requires
 whole_run_samples from step 1; a settled tail cannot hide earlier energy growth.
+angular_d6_maximal instead uses two generic D6s (only rotY free/driven), no
+fibers. Pass its model explicitly to bind_rigid; K/C use the same pi/180 USD
+conversion. Energy/K*q are small-angle references, not native drive readbacks.
 
 Caller workflow (in a NEW, stopped diagnostic stage, never production):
     coupon = from_report(path_to_original_native52_report)
@@ -34,7 +40,7 @@ Caller workflow (in a NEW, stopped diagnostic stage, never production):
     # After fetch: sample(...), then assess_tail(last_half_second, coupon).
 
 Use IDENTICAL coupon parameters for native and implicit_effort comparisons.
-Only iterations (16/4 vs 32/0), timestep and whole-coupon orientation may vary
+Only iterations (16/4, 32/0, 128/32), timestep and whole-coupon orientation may vary
 as labelled numerical comparisons. No mass/gain/friction tuning is provided.
 The probe does not launch Kit, create tensor views, subscribe, step, or write
 artifacts. Native execution and same-step sensor provenance remain caller-owned.
@@ -65,8 +71,12 @@ INITIAL_JOINT_ANGLE_RAD = .005
 INITIAL_Q_TOLERANCE_RAD = 1e-6
 PAD_SIZE_M = (.008, .016, .016)
 MAX_CONTACT_ROWS = 256
-MODELS = ('native', 'implicit_effort', 'section_springs', 'section_springs_maximal')
+MODELS = ('native', 'implicit_effort', 'section_springs', 'section_springs_maximal', 'angular_d6_maximal',
+          'native_damping_explicit_stiffness', 'coupled_contact_prediction')
 SECTION_MODELS = ('section_springs', 'section_springs_maximal')
+MAXIMAL_MODELS = ('section_springs_maximal', 'angular_d6_maximal')
+D6_LOCKED_AXES = ('transX', 'transY', 'transZ', 'rotX', 'rotZ')
+CONTACT_MODELS = ('compliant', 'rigid_control')
 INITIAL_FRAME_POSITION_TOLERANCE_M = 1e-6
 INITIAL_FRAME_ANGLE_TOLERANCE_RAD = 1e-6
 # Predeclared diagnostic numerical allowance, NOT an inferred native error bound.
@@ -134,6 +144,7 @@ class Coupon:
     dt: float = 1/240
     solver: str = 'PGS'
     held_contacts: bool = True
+    contact_model: str = 'compliant'
 
     def __post_init__(self):
         if (not isinstance(self.source_path, str) or not self.source_path
@@ -158,11 +169,13 @@ class Coupon:
         object.__setattr__(self, 'rotation', tuple(tuple(row) for row in _rotation(self.rotation)))
         if len(self.iterations) != 2: raise ValueError('Position/velocity iteration pair required')
         iterations = tuple(_integer(v, 'iterations') for v in self.iterations)
-        if iterations not in ((16, 4), (32, 0)):
-            raise ValueError('Only explicit 16/4 and 32/0 numerical comparisons supported')
+        if iterations not in ((16, 4), (32, 0), (128, 32)):
+            raise ValueError('Only explicit 16/4, 32/0 and 128/32 numerical comparisons supported')
         object.__setattr__(self, 'iterations', iterations)
         if self.solver not in ('PGS', 'TGS'): raise ValueError('Explicit native solver required')
         if type(self.held_contacts) is not bool: raise ValueError('Explicit held/free contact control required')
+        if not isinstance(self.contact_model, str) or self.contact_model not in CONTACT_MODELS:
+            raise ValueError('Explicit compliant or rigid_control contact model required')
         for v in (self.dt, self.contact_stiffness, self.contact_damping, self.friction):
             if isinstance(v, (bool, np.bool_)) or not np.isscalar(v) or not np.isfinite(v) or v <= 0:
                 raise ValueError('Positive finite timestep/material values required')
@@ -175,8 +188,18 @@ class Coupon:
             inertia_source='native report bodies Segment_001..003; no mass/inertia inflation',
             geometry='synthetic straight capsules/pads, NOT original plant geometry',
             gravity_m_s2=0., applied_body_wrenches='none', root_weld=False,
-            expected_root=('floating; held only by native compliant contact' if self.held_contacts
+            expected_root=('floating; held only by native '+self.contact_model+' contact' if self.held_contacts
                            else 'floating; contact-free recovery control'),
+            source_contact_model='compliant', contact_model_override=self.contact_model != 'compliant',
+            source_compliant_contact_coefficients=dict(stiffness_n_m=self.contact_stiffness,
+                damping_n_s_m=self.contact_damping, force_based=True),
+            compliant_contact_coefficients_authored=self.contact_model == 'compliant',
+            contact_model_scope='new diagnostic coupon only; not production contact qualification',
+            nominal_pad_inner_gap_m=2*(RADIUS_M-PAD_COMPRESSION_M),
+            nominal_shaft_diameter_m=2*RADIUS_M,
+            nominal_rigid_pinch_interference_m=2*PAD_COMPRESSION_M,
+            rigid_held_control_ineligible=self.held_contacts and self.contact_model == 'rigid_control',
+            rigid_held_control_limitation='Centered rigid pinch cannot fit the authored gap; escape is not held qualification',
             initial_joint_angle_rad=INITIAL_JOINT_ANGLE_RAD,
             training_eligible=False, native_qualified=False)
         return json.loads(json.dumps(result, allow_nan=False))
@@ -184,7 +207,7 @@ class Coupon:
 
 def from_report(path, **numerical_options):
     """Copy coefficients, not fitted values; hash the exact bytes first."""
-    if set(numerical_options) - {'root', 'rotation', 'iterations', 'dt', 'solver', 'held_contacts'}:
+    if set(numerical_options) - {'root', 'rotation', 'iterations', 'dt', 'solver', 'held_contacts', 'contact_model'}:
         raise ValueError('Only explicitly labelled numerical/placement variants allowed')
     path = Path(path).resolve(); raw = path.read_bytes(); report = json.loads(raw)
     native = report['native_drive_parameters']; names = native['names']
@@ -230,7 +253,8 @@ def author(stage, coupon, *, model='native'):
     Mutation is non-atomic; discard this NEW stage if authoring raises.
     """
     model = _model(model)
-    maximal = model == 'section_springs_maximal'
+    maximal = model in MAXIMAL_MODELS
+    angular_d6 = model == 'angular_d6_maximal'
     from pxr import Gf, Sdf, UsdGeom, UsdPhysics, UsdShade
     from .plant import _body, _collision, matrix_attr, physics_schema
     if any(str(p.GetPath()) != '/World' for p in stage.Traverse()):
@@ -249,11 +273,13 @@ def author(stage, coupon, *, model='native'):
     api = UsdPhysics.MaterialAPI.Apply(material.GetPrim())
     api.CreateStaticFrictionAttr(coupon.friction); api.CreateDynamicFrictionAttr(coupon.friction)
     api.CreateRestitutionAttr(0.)
-    physics_schema(material.GetPrim(), 'PhysxMaterialAPI', [
+    material_attrs = [
         ('physxMaterial:compliantContactStiffness', Sdf.ValueTypeNames.Float, coupon.contact_stiffness),
         ('physxMaterial:compliantContactDamping', Sdf.ValueTypeNames.Float, coupon.contact_damping),
-        ('physxMaterial:compliantContactAccelerationSpring', Sdf.ValueTypeNames.Bool, False),
-        ('physxMaterial:frictionCombineMode', Sdf.ValueTypeNames.Token, 'min')])
+        ('physxMaterial:compliantContactAccelerationSpring', Sdf.ValueTypeNames.Bool, False)
+    ] if coupon.contact_model == 'compliant' else []
+    material_attrs.append(('physxMaterial:frictionCombineMode', Sdf.ValueTypeNames.Token, 'min'))
+    physics_schema(material.GetPrim(), 'PhysxMaterialAPI', material_attrs)
     for i, path in enumerate(data['body_paths']):
         m = np.array(coupon.inertias[i]); eigen, axes = np.linalg.eigh((m+m.T)/2)
         if np.linalg.det(axes) < 0: axes[:, 0] *= -1
@@ -275,10 +301,15 @@ def author(stage, coupon, *, model='native'):
         shape.CreateHeightAttr(CAPSULE_LENGTH_M-2*RADIUS_M); _collision(shape.GetPrim())
         UsdShade.MaterialBindingAPI.Apply(shape.GetPrim()).Bind(material, materialPurpose='physics')
     for i, path in enumerate(data['joint_paths']):
-        joint = UsdPhysics.RevoluteJoint.Define(stage, path)
+        joint = (UsdPhysics.Joint if angular_d6 else UsdPhysics.RevoluteJoint).Define(stage, path)
         joint.CreateBody0Rel().SetTargets([data['body_paths'][i]])
         joint.CreateBody1Rel().SetTargets([data['body_paths'][i+1]])
-        joint.CreateAxisAttr('Y'); joint.CreateJointEnabledAttr(True)
+        if not angular_d6: joint.CreateAxisAttr('Y')
+        joint.CreateJointEnabledAttr(True)
+        if angular_d6:
+            for axis in D6_LOCKED_AXES:
+                limit = UsdPhysics.LimitAPI.Apply(joint.GetPrim(), axis)
+                limit.CreateLowAttr(1.); limit.CreateHighAttr(-1.)
         joint.CreateExcludeFromArticulationAttr(maximal); joint.CreateCollisionEnabledAttr(True)
         joint.CreateLocalPos0Attr(Gf.Vec3f(0, 0, SPACING_M/2))
         joint.CreateLocalPos1Attr(Gf.Vec3f(0, 0, -SPACING_M/2))
@@ -287,7 +318,7 @@ def author(stage, coupon, *, model='native'):
             physics_schema(joint.GetPrim(), 'PhysicsJointStateAPI:angular', [
                 ('state:angular:physics:position', Sdf.ValueTypeNames.Float, math.degrees(INITIAL_JOINT_ANGLE_RAD)),
                 ('state:angular:physics:velocity', Sdf.ValueTypeNames.Float, 0.)])
-        drive = UsdPhysics.DriveAPI.Apply(joint.GetPrim(), 'angular')
+        drive = UsdPhysics.DriveAPI.Apply(joint.GetPrim(), 'rotY' if angular_d6 else 'angular')
         drive.CreateTypeAttr('force'); drive.CreateTargetPositionAttr(0.); drive.CreateTargetVelocityAttr(0.)
         # Section mode has NO parallel angular spring, including bootstrap.
         drive.CreateStiffnessAttr(0. if model in SECTION_MODELS else coupon.stiffness[i]*math.pi/180)
@@ -304,6 +335,7 @@ def author(stage, coupon, *, model='native'):
         _collision(cube.GetPrim())
         UsdShade.MaterialBindingAPI.Apply(cube.GetPrim()).Bind(material, materialPurpose='physics')
     data['comparison_model'] = model
+    data['contact_model'] = coupon.contact_model
     data['native_view_kind'] = 'rigid_body' if maximal else 'articulation'
     return data
 
@@ -323,7 +355,7 @@ def settings_readback(stage, coupon, *, actual_dt, model='native'):
         raise ValueError('Context changed the requested diagnostic configuration')
     pairs = []
     checked = [(p, 'physxRigidBody') for p in data['body_paths']]
-    if model == 'section_springs_maximal':
+    if model in MAXIMAL_MODELS:
         if any(p.HasAPI(UsdPhysics.ArticulationRootAPI) for p in stage.Traverse()):
             raise ValueError('Maximal coupon must have no articulation root')
     else:
@@ -339,7 +371,7 @@ def settings_readback(stage, coupon, *, actual_dt, model='native'):
         limitation='Installed tensor/property-query APIs expose no exact iteration getter')
 
 
-def bind(articulation, coupon, *, model='native', stage=None):
+def bind(articulation, coupon, *, model='native', stage=None, contact_law=None):
     """Check unstepped native initial strain and coefficients before any writes.
 
     Call after parsing/reset, BEFORE the first physics step. Initial USD state
@@ -347,7 +379,14 @@ def bind(articulation, coupon, *, model='native', stage=None):
     native state here or silently accept an already-stepped, relaxed coupon.
     """
     model = _model(model)
-    if model == 'section_springs_maximal':
+    coupled = model == 'coupled_contact_prediction'
+    if coupled:
+        from .contact_coupled_prediction import MaterialLaw
+        if not isinstance(contact_law, MaterialLaw):
+            raise ValueError('Explicit contact material law required for coupled diagnostic')
+    elif contact_law is not None:
+        raise ValueError('Contact material prediction law only valid for coupled diagnostic')
+    if model in MAXIMAL_MODELS:
         raise ValueError('Maximal model requires bind_rigid, not articulation readbacks')
     sections = None
     if model == 'section_springs':
@@ -378,18 +417,91 @@ def bind(articulation, coupon, *, model='native', stage=None):
     if model == 'implicit_effort':
         from .implicit_springs import ImplicitJointSprings
         prediction = ImplicitJointSprings(a)
-    return dict(model=model, source_sha256=coupon.source_sha256,
+    split = model == 'native_damping_explicit_stiffness'
+    if split: prediction = NativeDampingExplicitStiffness(a, coupon)
+    if coupled:
+        from .contact_coupled_native import ContactCoupledCouponSpring
+        prediction = ContactCoupledCouponSpring(a, coupon, law=contact_law)
+    return dict(model=model, source_sha256=coupon.source_sha256, contact_model=coupon.contact_model,
         initial_native_q_rad=initial_q.tolist(), expected_initial_q_rad=[INITIAL_JOINT_ANGLE_RAD]*2,
         initial_native_q_verified=True, initial_q_tolerance_rad=INITIAL_Q_TOLERANCE_RAD,
-        native_fixed_base=False, native_si_coefficients_verified=model != 'section_springs',
-        native_drives_disabled=model == 'implicit_effort', root_constraint=False,
-        native_angular_drives_disabled=model != 'native',
+        native_fixed_base=False, native_si_coefficients_verified=model != 'section_springs' and not split and not coupled,
+        initial_native_si_coefficients_verified=model != 'section_springs',
+        native_drives_disabled=model == 'implicit_effort' or coupled, root_constraint=False,
+        native_angular_drives_disabled=model not in ('native', 'native_damping_explicit_stiffness'),
         external_section_drives_authored=model == 'section_springs',
-        disabled_drive_scope='central articulation angular drives only',
+        disabled_drive_scope='angular stiffness only; native damping retained' if split else 'central articulation angular drives only',
         native_angular_drives_zero_verified=model == 'section_springs',
         section_springs=sections, external_d6_native_coefficients_verified=False,
-        contact_prediction='omitted_legacy_control' if model == 'implicit_effort' else 'native_solver_coupled',
+        contact_prediction=('finite normal feature implicit prediction; spring effort only' if coupled else
+                            'none; explicit stiffness with native damping/contacts' if split else
+                            'omitted_legacy_control' if model == 'implicit_effort' else 'native_solver_coupled'),
+        split_scheme=prediction.report() if split else None,
+        coupled_prediction=prediction.report() if coupled else None,
         native_iteration_readback=None, native_qualified=False), prediction
+
+
+class NativeDampingExplicitStiffness:
+    """Coupon-only split integrator: exact -K*q command, ONLY native C active.
+
+    Construct through bind(), after original native K/C/initial-q verification.
+    Original angular K remains during the runner's disclosed insertion bootstrap.
+    No mass matrix, contact replay, root effort, state override or gain fitting.
+    Constant-M theory assumes q_new=q+h*v_new; native realization is unqualified.
+    """
+    def __init__(self, articulation, coupon):
+        self.articulation = articulation; self.dt = coupon.dt
+        self.indices = np.array([0], dtype=np.uint32)
+        self.k = _array(articulation.get_dof_stiffnesses(), (1,2), 'initial native K')[0]
+        self.c = _array(articulation.get_dof_dampings(), (1,2), 'initial native C')[0]
+        self.caps = _array(articulation.get_dof_max_forces(), (1,2), 'native drive caps')[0]
+        # Installed tensors api.py get_drive_types: 0=None, 1=Force, 2=Acceleration.
+        self.drive_types = _array(articulation.get_drive_types(), (1,2), 'native drive types')[0]
+        if np.any(self.drive_types != 1): raise ValueError('Native Force drive type 1 required')
+        self.paths = list(articulation.link_paths[0])
+        self.names = list(articulation.shared_metatype.dof_names)
+        if (np.any(self.k <= 0) or np.any(self.c <= 0) or np.any(self.caps <= 0)
+                or np.any(self.c-self.dt*self.k/2 < 0)
+                or np.any(_array(articulation.get_dof_velocity_targets(), (1,2), 'native velocity targets') != 0)):
+            raise ValueError('Positive K/C/caps, zero velocity target and C >= h*K/2 required')
+        articulation.set_dof_stiffnesses(np.zeros((1,2), dtype=np.float32), self.indices)
+        self._check()  # A failed readback aborts this diagnostic, never runs it.
+
+    def _check(self):
+        a = self.articulation
+        if (a.count != 1 or a.shared_metatype.fixed_base or list(a.link_paths[0]) != self.paths
+                or list(a.shared_metatype.dof_names) != self.names
+                or np.any(_array(a.get_dof_stiffnesses(), (1,2), 'native K') != 0)
+                or not np.array_equal(_array(a.get_dof_dampings(), (1,2), 'native C')[0], self.c)
+                or not np.array_equal(_array(a.get_dof_max_forces(), (1,2), 'native drive caps')[0], self.caps)
+                or np.any(_array(a.get_drive_types(), (1,2), 'native drive types') != 1)
+                or np.any(_array(a.get_dof_velocity_targets(), (1,2), 'native velocity targets') != 0)):
+            raise ValueError('Split stiffness/damping native contract changed')
+
+    def step(self, dt, *, root_constrained=False):
+        if (isinstance(dt, (bool,np.bool_)) or not np.isscalar(dt) or not np.isfinite(dt)
+                or abs(dt-self.dt) > 1e-12 or root_constrained is not False):
+            raise ValueError('Exact coupon timestep and unconstrained root required')
+        self._check()
+        q = _array(self.articulation.get_dof_positions(), (1,2), 'native joint position')[0]
+        effort = -self.k*q
+        if np.any(abs(q) >= .05) or not np.isfinite(effort).all() or np.any(abs(effort) > self.caps):
+            raise ValueError('Split coupon angle/effort bound exceeded; no clipping')
+        command = effort.astype(np.float32)
+        self.articulation.set_dof_actuation_forces(command[None,:], self.indices)
+        return command.astype(float)  # Exact values submitted, not measured force.
+
+    def report(self):
+        return dict(original_native_k=self.k.tolist(), retained_native_c=self.c.tolist(),
+            retained_native_drive_caps=self.caps.tolist(), native_stiffness_zero_verified=True,
+            native_drive_types=self.drive_types.astype(int).tolist(), native_force_drive_type=1,
+            stiffness_zeroing_timing='after original native K/C and initial-state checks; runner bootstrap retains original native K',
+            explicit_effort_caps_enforced_by_helper=True,
+            native_drive_caps_assumed_to_limit_explicit_effort=False,
+            native_damping_and_caps_unchanged=True, effort='-original_native_K * pre-step_native_q',
+            root_actuated=False, contact_force_injected=False, native_coupling_verified=False,
+            damping_minus_half_dt_stiffness=(self.c-self.dt*self.k/2).tolist(),
+            passivity_basis='constant-M consistent implicit-C update only; not native qualification')
 
 
 def _rigid_joint_state(frames, velocities):
@@ -456,8 +568,38 @@ def modeled_energy(coupon, frames, velocities, *, model):
     return json.loads(json.dumps(result, allow_nan=False))
 
 
-def bind_rigid(view, coupon, *, stage):
-    """Bind the maximal section coupon to EXACT native RigidBodyView rows.
+def _inspect_angular_d6(stage, path, bodies, k, c):
+    """Exact coupon USD binding, NOT a native drive-coefficient getter."""
+    from pxr import UsdPhysics
+    prim = stage.GetPrimAtPath(path); joint = UsdPhysics.Joint(prim)
+    expected = {'PhysicsDriveAPI:rotY'} | {'PhysicsLimitAPI:'+a for a in D6_LOCKED_AXES}
+    if (not prim or prim.GetTypeName() != 'PhysicsJoint' or set(prim.GetAppliedSchemas()) != expected
+            or not joint.GetJointEnabledAttr().Get() or not joint.GetExcludeFromArticulationAttr().Get()
+            or not joint.GetCollisionEnabledAttr().Get()):
+        raise ValueError('Exact enabled external angular D6 topology required')
+    for axis in D6_LOCKED_AXES:
+        limit = UsdPhysics.LimitAPI(prim, axis)
+        if (limit.GetLowAttr().Get(), limit.GetHighAttr().Get()) != (1., -1.):
+            raise ValueError('D6 coupon lock changed')
+    for side in (0, 1):
+        pos = getattr(joint, 'GetLocalPos'+str(side)+'Attr')().Get()
+        quat = getattr(joint, 'GetLocalRot'+str(side)+'Attr')().Get()
+        if (list(map(str, getattr(joint, 'GetBody'+str(side)+'Rel')().GetTargets())) != [bodies[side]]
+                or not np.allclose(pos, [0, 0, (1-2*side)*float(np.float32(SPACING_M/2))], atol=1e-10, rtol=0)
+                or not np.isfinite([quat.GetReal(), *quat.GetImaginary()]).all()
+                or abs(abs(quat.GetReal())-1) > 1e-7 or np.linalg.norm(quat.GetImaginary()) > 1e-7):
+            raise ValueError('D6 coupon rest frame/body binding changed')
+    drive = UsdPhysics.DriveAPI(prim, 'rotY')
+    if (drive.GetTypeAttr().Get() != 'force' or drive.GetTargetPositionAttr().Get() != 0
+            or drive.GetTargetVelocityAttr().Get() != 0 or drive.GetMaxForceAttr().Get() != float(np.finfo(np.float32).max)
+            or not np.allclose([drive.GetStiffnessAttr().Get(), drive.GetDampingAttr().Get()],
+                              np.array([k, c])*math.pi/180, rtol=2e-7, atol=0)):
+        raise ValueError('D6 coupon angular drive changed; exact SI-to-USD conversion required')
+    return dict(path=path, stiffness_usd=drive.GetStiffnessAttr().Get(), damping_usd=drive.GetDampingAttr().Get())
+
+
+def bind_rigid(view, coupon, *, stage, model='section_springs_maximal'):
+    """Bind an explicit maximal coupon to EXACT native RigidBodyView rows.
 
     Returns (report, None), with no setters, predictors or fake DOF readbacks.
     Caller uses world subspace '/', owns fresh-stage parsing/bootstrap and must
@@ -467,6 +609,7 @@ def bind_rigid(view, coupon, *, stage):
     from pxr import UsdPhysics
     from .runtime import pose_matrices
     from .section_springs import inspect_pair, local_anchors
+    if model not in MAXIMAL_MODELS: raise ValueError('Explicit maximal binding model required')
     if stage is None: raise ValueError('Maximal binding requires authored stage')
     data = layout(coupon)
     if view.count != 3 or list(view.prim_paths) != data['body_paths']:
@@ -474,11 +617,18 @@ def bind_rigid(view, coupon, *, stage):
     bodies = [str(p.GetPath()) for p in stage.Traverse() if p.HasAPI(UsdPhysics.RigidBodyAPI)]
     if set(bodies) != set(data['body_paths']):
         raise ValueError('Exact three authored dynamic bodies required')
-    sections = []
+    if (any(p.HasAPI(UsdPhysics.ArticulationRootAPI) for p in stage.Traverse())
+            or any(UsdPhysics.RigidBodyAPI(stage.GetPrimAtPath(p)).GetKinematicEnabledAttr().Get() for p in bodies)):
+        raise ValueError('Maximal coupon requires dynamic bodies and no articulation root')
+    sections = []; angular_drives = []
     local0 = np.eye(4); local0[2, 3] = float(np.float32(SPACING_M/2))
     local1 = np.eye(4); local1[2, 3] = -local0[2, 3]
     expected_anchors = local_anchors(local0, local1, RADIUS_M)
     for i, path in enumerate(data['joint_paths']):
+        if model == 'angular_d6_maximal':
+            angular_drives.append(_inspect_angular_d6(stage, path, data['body_paths'][i:i+2],
+                coupon.stiffness[i], coupon.damping[i]))
+            continue
         section = inspect_pair(stage, path, stiffness=coupon.stiffness[i], damping=coupon.damping[i],
                                radius=RADIUS_M, topology='maximal')
         central = UsdPhysics.RevoluteJoint(stage.GetPrimAtPath(path))
@@ -493,7 +643,7 @@ def bind_rigid(view, coupon, *, stage):
         sections.append(section)
     expected_joints = set(data['joint_paths']) | {p for s in sections for p in s['joint_paths']}
     if {str(p.GetPath()) for p in stage.Traverse() if p.IsA(UsdPhysics.Joint)} != expected_joints:
-        raise ValueError('Only two external revolutes and four section D6 joints allowed')
+        raise ValueError('Unexpected extra/missing maximal coupon joint')
     masses = _array(view.get_masses(), (3, 1), 'native rigid masses')[:, 0]
     if not np.allclose(masses, coupon.masses, rtol=2e-6, atol=1e-12):
         raise ValueError('Native rigid masses differ')
@@ -522,7 +672,7 @@ def bind_rigid(view, coupon, *, stage):
             or max(rotation_error) > INITIAL_FRAME_ANGLE_TOLERANCE_RAD
             or np.any(abs(q-INITIAL_JOINT_ANGLE_RAD) > INITIAL_Q_TOLERANCE_RAD)):
         raise ValueError('Initial native rigid frames/strain differ; actual_geometric_q_rad='+repr(q.tolist()))
-    return dict(model='section_springs_maximal', source_sha256=coupon.source_sha256,
+    return dict(model=model, source_sha256=coupon.source_sha256, contact_model=coupon.contact_model,
         native_view_kind='rigid_body', native_body_paths=list(view.prim_paths),
         native_masses=masses.tolist(), native_inertias_body_frame=inertia.tolist(),
         native_local_com_poses=com.tolist(), initial_native_frames=frames.tolist(),
@@ -535,7 +685,8 @@ def bind_rigid(view, coupon, *, stage):
         initial_q_tolerance_rad=INITIAL_Q_TOLERANCE_RAD,
         native_masses_inertias_com_verified=True, native_articulation_readbacks_used=False,
         authored_articulation_roots_absent=True, native_actor_topology_independently_verified=False,
-        central_angular_drives_authored_zero=True, native_angular_drives_zero_verified=False,
+        central_angular_drives_authored_zero=model in SECTION_MODELS, native_angular_drives_zero_verified=False,
+        angular_d6_usd_drives=angular_drives, angular_d6_authored_verified=model == 'angular_d6_maximal',
         native_drives_disabled=False, root_constraint=False, predictor=None,
         section_springs=sections, external_d6_native_coefficients_verified=False,
         native_qualified=False), None
@@ -557,7 +708,7 @@ def sample(coupon, *, step_id, frames, velocities, q, qdot, contact_rows,
     frames = _poses(frames); velocity = _array(velocities, (3, 6), 'native body velocities')
     q = _array(q, (2,), 'native joint positions'); qdot = _array(qdot, (2,), 'native joint velocities')
     geometric_q, projected_qdot, axis_errors = _rigid_joint_state(frames, velocity)
-    if model == 'section_springs_maximal':
+    if model in MAXIMAL_MODELS:
         if (np.max(abs(q-geometric_q)) > 1e-6 or np.max(abs(qdot-projected_qdot)) > 1e-6):
             raise ValueError('Maximal q/qdot must match geometric angle/projected native angular velocity')
     rows = list(contact_rows)
@@ -587,6 +738,8 @@ def sample(coupon, *, step_id, frames, velocities, q, qdot, contact_rows,
                 raise ValueError('Normal impulse contains non-normal load')
             for pad in {first, second} & set(data['pads']): pad_normals[pad] += scalar
             item['normal_on_0'] = normal.tolist()
+            if row.get('separation_m') is not None:
+                item['separation_m'] = float(_array(row['separation_m'], (), 'native signed separation'))
         copied.append(item)
     moments = []; measured_q = []; anchor_error = []
     for i in range(2):
@@ -603,12 +756,12 @@ def sample(coupon, *, step_id, frames, velocities, q, qdot, contact_rows,
     total_torque = sum((wrench[i, 3:] + np.cross(frames[i, :3, 3]-origin, wrench[i, :3])
                         for i in range(3)), start=np.zeros(3))
     result = dict(step_id=step, dt_s=coupon.dt, source_sha256=coupon.source_sha256,
-        comparison_model=model,
-        joint_position_basis=('derived_relative_native_body_pose' if model == 'section_springs_maximal'
+        comparison_model=model, contact_model=coupon.contact_model,
+        joint_position_basis=('derived_relative_native_body_pose' if model in MAXIMAL_MODELS
                               else 'native_articulation_dof_position'),
-        joint_velocity_basis=('projected_relative_native_body_angular_velocity' if model == 'section_springs_maximal'
+        joint_velocity_basis=('projected_relative_native_body_angular_velocity' if model in MAXIMAL_MODELS
                               else 'native_articulation_dof_velocity'),
-        independent_articulation_readback=model != 'section_springs_maximal',
+        independent_articulation_readback=model not in MAXIMAL_MODELS,
         hinge_axis_error_rad=axis_errors.tolist(),
         frames_world_m=frames.tolist(), body_velocities_world=velocity.tolist(),
         q_rad=q.tolist(), qdot_rad_s=qdot.tolist(), measured_relative_angle_rad=measured_q,
@@ -674,6 +827,7 @@ def assess_tail(samples, coupon, *, model=None, whole_run_samples=None):
         _integer(row['step_id'], 'tail step', 1)
         if (row['source_sha256'] != coupon.source_sha256 or row['dt_s'] != coupon.dt
                 or row.get('comparison_model', 'native') != model
+                or row.get('contact_model', 'compliant') != coupon.contact_model
                 or row.get('complete_stream_caller_asserted') is not True
                 or (i and row['step_id'] != rows[i-1]['step_id']+1)):
             raise ValueError('Stale, incomplete or differently bound tail')
@@ -700,7 +854,12 @@ def assess_tail(samples, coupon, *, model=None, whole_run_samples=None):
         global_force_balance=bool(np.max(np.linalg.norm(force, axis=1)) < 1e-4),
         global_torque_balance=bool(np.max(np.linalg.norm(moment, axis=1)) < 1e-6),
         all_pads_observed=all(set(r['active_normal_pads']) == set(layout(coupon)['pads']) for r in rows))
-    if model == 'section_springs_maximal':
+    if coupon.held_contacts and coupon.contact_model == 'rigid_control':
+        # This unchanged fixture intentionally preloads compliant pads. A hard
+        # 5.50 mm gap cannot admit its 5.60 mm centered shaft; never qualify it
+        # through solver penetration or escape from the finite pads.
+        gates['rigid_control_pinch_feasible'] = False
+    if model in MAXIMAL_MODELS:
         # No independent DOF sensor exists in maximal coordinates. Do not turn
         # geometry compared with itself into an articulation agreement claim.
         gates['derived_state_consistency'] = gates.pop('native_pose_agrees')
@@ -716,7 +875,7 @@ def assess_tail(samples, coupon, *, model=None, whole_run_samples=None):
         gates['whole_run_free_energy'] = energy is not None and energy['passed']
     return dict(passed=all(gates.values()), gates=gates,
         whole_run_free_energy=energy,
-        comparison_model=model,
+        comparison_model=model, contact_model=coupon.contact_model,
         elastic_law='K*sin(theta)*cos(theta)' if model in SECTION_MODELS else 'K*theta',
         max_static_moment_residual_nm=float(np.max(residual)),
         joint_velocity_rms_rad_s=float(np.sqrt(np.mean(v*v))),
@@ -744,6 +903,7 @@ def assess_free_energy(samples, coupon, *, model):
         if (_integer(row['step_id'], 'energy step', 1) != i+1
                 or row['source_sha256'] != coupon.source_sha256 or row['dt_s'] != coupon.dt
                 or row.get('comparison_model', 'native') != model
+                or row.get('contact_model', 'compliant') != coupon.contact_model
                 or row.get('complete_stream_caller_asserted') is not True):
             raise ValueError('Whole free run must be source/model bound and contiguous from step 1')
         no_contacts = no_contacts and not row['contact_rows']
@@ -759,5 +919,5 @@ def assess_free_energy(samples, coupon, *, model):
         max_total_modeled_energy_j=float(np.max(energy)), max_rise_above_prior_minimum_j=max_rise,
         roundoff_allowance_j=tolerance, roundoff_atol_j=ENERGY_ROUNDOFF_ATOL_J,
         roundoff_initial_energy_rtol=ENERGY_ROUNDOFF_RTOL, steps=len(rows),
-        source_sha256=coupon.source_sha256, comparison_model=model,
+        source_sha256=coupon.source_sha256, comparison_model=model, contact_model=coupon.contact_model,
         native_energy_readback=False, native_qualified=False)

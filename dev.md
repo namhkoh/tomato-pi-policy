@@ -5020,3 +5020,116 @@ No hardware, collection, tuning, review, split or training-export changes.
 - Checkpoint regression: **1,955 CPU/USD tests passed in 100.75 s**, logged in
   `data/sim_physics/regression_20260911_contact_spring_coupons.log`. This code
   regression is separate from, and cannot override, native physical failures.
+- Native16 raises only the maximal section numerical iterations to128/32 on
+  all rigid bodies. Error improves but still fails (2.4245 mN.m residual,
+  0.0960 rad/s velocity RMS, anchor gate false). No unlimited iteration sweep.
+- Added a direct angular-D6 maximal control: two generic joints, rotY driven,
+  other axes locked, original SI-to-USD conversion, no fibers/predictor.
+  Native17 FREE passes720 steps including whole-run modeled energy. Native18
+  HELD fails again: 2.8574 mN.m residual and0.19646 rad/s velocity RMS.
+  No maximal-coordinate replacement is qualified for production contacts.
+- A rigid-contact diagnostic option was added to the helper but NOT run:
+  fixed5.50 mm pad clearance cannot admit the5.60 mm shaft without deformation.
+  Its held qualification is explicitly ineligible; it cannot become a pass
+  through penetration or escape. Production compliant contacts are unchanged.
+- Independent full52 trace audit finds elastic-coordinate energy growth BEFORE
+  right-arm contact:6.89 mJ at release,20.30 mJ at+50 ms,31.71 mJ at+70.8 ms;
+  first unintended arm contact is+75 ms. Right-arm withdrawal needs fresh-path
+  validation, but is not supported as the initial cause of that growth. These
+  energies remain proxies, not a complete measured work/energy balance.
+- User fidelity requirement: preserve supplied greenhouse surroundings, plant
+  meshes/materials, robot and camera views. Simplified coupons are diagnostic
+  only, never demonstration/training replacements. Existing full-scene trials
+  retain all75 gutter structures and the package preview's3 planted rows
+  (144 plant positions including the detailed target). Visual gutter batching
+  references original geometry/materials and preserves collision proxies.
+  Nearby context plants are currently static colliders, not deformable tissue;
+  only the selected petiole has compliant dynamics. Do not hide that limitation
+  or remove nearby context to obtain a grasp/cut success.
+
+### 2026-09-11: Contact-aware spring prediction qualification (diagnostic only)
+
+- Native19 splits explicit original `-K*q` stiffness from unchanged native
+  damping. FREE720 steps pass energy/recovery. HELD native20 instead reaches
+  |q|=0.06761 rad and 1.839 N body contact upper bound at step3; the unchanged
+  guard stops it. This split is NOT integrated in the greenhouse. A purely
+  mathematical passivity condition does not qualify its native realization.
+- Native21 records pre/post-step floating mass matrices, world COM Jacobians,
+  velocities and signed contact separations. Native `J*v` agrees with body
+  velocities, COM origins are checked and mass is SPD without regularization.
+  The original HELD failure is reproduced over240 steps: 3.4604 mN.m moment
+  residual and0.32247 rad/s velocity RMS. No native error is reported. These
+  snapshots distinguish contact-generation geometry from post-fetch poses.
+- Added `contact_coupled_prediction.py` pure frozen-M/J backward-Euler solve
+  including finite pad contact stiffness/damping in the prediction. It retains
+  all six free-root coordinates, but proposes ONLY the original plant spring
+  effort. Native contacts/friction remain authoritative; their predicted
+  forces are never replayed. Finite-face manifold matching, bounded active-set
+  convergence, explicit material-law choice and contact-epoch checks fail closed.
+  Normal-only prediction omits friction and is not declared native-law parity.
+- `contact_coupled_native.py` and the standalone runner enforce original K/C,
+  zero native angular drives after the disclosed bootstrap, unchanged drive
+  caps, contiguous fresh snapshots and only two joint-effort submissions. No
+  root actuation, pose/velocity writes, gain fitting or clipping. All changes
+  remain in the small diagnostic: no production spring replacement yet.
+- Native22 FREE coupled prediction passes720 steps and whole-run energy:
+  initial modeled7.97146 microjoules, maximum recorded6.01001 microjoules,
+  no positive rise above a prior minimum; velocity RMS6.75e-15 rad/s. This is
+  not a held-grasp or tissue-cut result. The matching HELD native23 test follows.
+- Focused helper/predictor/submission/runner regression:201 tests passed in
+  1.88 s. No dataset, split, review, training or hardware command was changed.
+  Reliable full-greenhouse cut-retain-withdraw and deposit remain incomplete.
+- Native23 HELD completes720 steps but fails equilibrium/velocity gates:
+  2.6624 mN.m static residual,0.16933 rad/s velocity RMS. Native finite-contact
+  geometry matching is now corrected to source-seeded persistent capsule
+  segment anchors rather than freshly re-clipped pad edges. Native21 matches
+  240/240 frames and2880 normal rows: maximum point19.43 nm, separation11.08 nm,
+  normal-vector error1.2211e-6; original tolerances unchanged. This correction
+  does not fix the mismatched native force response. Focused tests203 passed.
+- Independent native23 audit: predicted versus reported normal force differs
+  by up to42.87 mN in the tail; using actual native final velocities in the
+  assumed contact law still leaves53.69 mN discrepancy. Generalized joint
+  momentum balance using actual impulses and submitted spring effort agrees
+  within4.91 nN.m. Therefore no native-law equivalence is claimed.
+- Native24 halves the ORIGINAL native control timestep to480 Hz for1 s.
+  It still fails:3.3932 mN.m residual and0.14590 rad/s velocity RMS. This is
+  a timestep sensitivity result, not convergence or a coupled-model pass.
+- Native25 opts into NVIDIA's documented `solveArticulationContactLast` scene
+  ordering. USD is read back true (previous false); the static-pad result is
+  identical to21. A shared stopped-scene `solver_configuration.py` helper adds
+  the same opt-in to the full-robot benchmark, with after-reset USD checks.
+  Defaults, material values, collision checks and force/slip limits are unchanged.
+  Full53 compares52 with only this ordering option: dynamic robot-finger
+  contacts differ from the static-pad coupon. Effective native flag readback
+  is not independently available; authored USD is labelled accordingly.
+- CPU/USD physics regression before the full-benchmark option:2089 passed in
+  96.32 s (`regression_20260911_contact_prediction.log`). Option/refactor tests:
+  36 passed. Added1920 Hz as a bounded diagnostic timestep choice, within the
+  helper's existing dt range, for a convergence check if needed. No production
+  timestep is changed. Finite contact iteration convergence and differing
+  native integration/writeback phases remain hypotheses under investigation.
+- Full53 retains all source assets (verified hashes unchanged). It again
+  releases the seam at11.8667 s while left contact is bilateral, then stops
+  at14.4333 s: per-finger all-contact upper bound0.61401 N exceeds0.5 N.
+  Maximum slip1.7014 mm. Contact-last is NOT a fix and stays opt-in. Raw
+  `native_retention` subset gate being true does not override failed bounded,
+  completed and withdrawal gates. No full cut-retain-withdraw success.
+- Native26 ORIGINAL native drives at1920 Hz still fail:2.4943 mN.m moment
+  residual,0.03812 rad/s velocity RMS. Native27 contact-aware normal prediction
+  at1920 Hz improves to0.36175 mN.m and0.004252 rad/s; all existing tail gates
+  EXCEPT stiffness equilibrium pass. Maximum |q|0.005034 rad. Friction is still
+  absent from this predictor, and native27 is explicitly failed/unqualified.
+  No1920 Hz greenhouse default or production predictor integration follows.
+- Public PhysX5.9 source review (commit517a0073715120e114ee055b63b26c95e00d9039)
+  identifies different preparation, iterative impulse and final writeback
+  states. An observed positive-gap normal impulse is not explained by merely
+  switching clamped/signed Kelvin-Voigt modes. The isolated row impulse factor
+  alone is NOT a coupled convergence-rate bound. Frozen native23 normal-only
+  matrix analysis motivates timestep refinement; it omits friction, drives
+  and native phase ordering and is not measured solver equivalence.
+- Review found cleanup exceptions could prevent evidence export. The runner
+  now attempts every owned cleanup, records failures, marks the run failed
+  and still exports its trace/receipt. Five injected failure cases cover it.
+  Full CPU/USD checkpoint:2095 passed in94.88 s, recorded in
+  `regression_20260911_contact_prediction_checkpoint.log`. A separate measured-
+  start withdrawal helper is next; no runtime pose/state overrides are allowed.

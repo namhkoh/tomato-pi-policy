@@ -30,6 +30,8 @@ def parser():
     p.add_argument('--target',default='SubStem_41')
     p.add_argument('--physics-hz',type=int,choices=(120,240,480,1920),default=240)
     p.add_argument('--solver',choices=('TGS','PGS'),default='TGS')
+    p.add_argument('--solve-articulation-contact-last',action='store_true',
+        help='Opt-in pre-parse solver-order comparison; physical properties and guards unchanged')
     p.add_argument('--gravity',type=float,choices=(0.,9.81),default=9.81)
     p.add_argument('--constraint-mode',choices=('articulation','maximal','fixed_articulation'),default='articulation')
     p.add_argument('--attached-only',action='store_true')
@@ -342,6 +344,9 @@ def main(argv=None):
         settings.CreateSolverTypeAttr(args.solver);settings.CreateEnableGPUDynamicsAttr(False)
         settings.CreateBroadphaseTypeAttr('MBP')
         settings.CreateFrictionTypeAttr('patch')  # Required for native friction-anchor reports.
+        from .solver_configuration import author_contact_order
+        report['contact_solver_order']=author_contact_order(physics.GetPrim(),
+            enabled=getattr(args,'solve_articulation_contact_last',False))
         # One explicit scene, fixed dt. Rendering is independently scheduled.
         sim=SimulationContext(physics_dt=1/args.physics_hz,rendering_dt=1/60,
                               stage_units_in_meters=1,physics_prim_path='/World/QualificationPhysics',
@@ -360,6 +365,10 @@ def main(argv=None):
             gpu_dynamics=settings.GetEnableGPUDynamicsAttr().Get(),
             update_to_usd=process_settings.get('/physics/updateToUsd'),
             physics_threads=process_settings.get(thread_setting))
+        order_after=physics.GetPrim().GetAttribute('physxScene:solveArticulationContactLast').Get()
+        report['contact_solver_order']['usd_value_after_reset']=order_after
+        if getattr(args,'solve_articulation_contact_last',False) and order_after is not True:
+            raise RuntimeError('Physics reset changed requested contact solver order')
         report['native_diagnostics_settings']={k:process_settings.get(k) for k in (
             '/physics/enableSynchronousKernelLaunches','/physics/exposeProfilerData',
             '/persistent/physics/pvdEnabled','/physics/omniPvdOutputEnabled','/physics/omniPvdIsRecording',

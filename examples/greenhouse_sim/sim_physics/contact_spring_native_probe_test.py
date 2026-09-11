@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from .contact_spring_native_probe import ContactRows,main,finite_native,read_state
+from .contact_spring_native_probe import ContactRows,main,finite_native,read_state,read_prediction_state
 
 
 def monitor():
@@ -18,6 +18,8 @@ def test_signed_original_order_and_one_copy_per_friction_anchor():
     assert all(r['collider0']=='/World/Coupon/B' for r in m.rows)
     assert m.rows[0]['impulse_on_0_ns']==[0,0,-.01]
     assert m.rows[0]['normal_on_0']==[0,0,1]
+    assert m.rows[0]['separation_m']==-.001
+    assert m.rows[1]['separation_m']==0
     assert m.rows[-1]['point_world_m']==[1.5,0,0]
     m.begin_step()
     assert m.rows==[] and m.pairs=={}
@@ -83,3 +85,67 @@ def test_maximal_cannot_use_articulation_friction_setter(tmp_path):
     with pytest.raises(ValueError,match='unavailable for maximal'):
         main(['--output',str(tmp_path/'unused'),'--source-report','missing',
               '--model','section_springs_maximal','--zero-joint-friction'])
+
+
+@pytest.mark.parametrize('separations',[[float('nan')],[],[0,0]])
+def test_bad_separations_cannot_become_prediction_evidence(separations):
+    m=monitor()
+    with pytest.raises(ValueError,match='separation'):
+        m.consume('/World/Coupon/A','/World/Coupon/B',[(.1,0,0)],[(0,0,0)],
+                  [(1,0,0)],separations)
+
+
+def prediction_view():
+    from types import SimpleNamespace
+    return SimpleNamespace(get_root_velocities=lambda:np.zeros((1,6)),
+        get_jacobians=lambda:np.zeros((1,3,6,8)),
+        get_generalized_mass_matrices=lambda:np.eye(8)[None],
+        get_coms=lambda:np.tile([0,0,0,0,0,0,1],(1,3,1)),
+        get_gravity_compensation_forces=lambda:np.zeros((1,8)),
+        get_coriolis_and_centrifugal_compensation_forces=lambda:np.zeros((1,8)))
+
+
+def test_prediction_state_is_read_only_and_checks_native_mapping():
+    v=prediction_view()
+    result=read_prediction_state(v,np.zeros((3,6)),np.zeros(2))
+    assert result['point_velocity_max_error']==0
+    assert result['contact_force_included'] is False
+    with pytest.raises(RuntimeError,match='convention check failed'):
+        read_prediction_state(v,np.ones((3,6)),np.zeros(2))
+
+
+def test_prediction_state_rejects_singular_mass_without_regularizing():
+    v=prediction_view();v.get_generalized_mass_matrices=lambda:np.zeros((1,8,8))
+    with pytest.raises(RuntimeError,match='convention check failed'):
+        read_prediction_state(v,np.zeros((3,6)),np.zeros(2))
+
+
+def test_contact_order_control_is_explicit_preparse_usd_only():
+    from pxr import Usd
+    from sim_physics.contact_spring_native_probe import author_contact_order
+    stage=Usd.Stage.CreateInMemory();scene=stage.DefinePrim('/World/Physics','PhysicsScene')
+    before=stage.GetRootLayer().ExportToString()
+    report=author_contact_order(scene,enabled=False)
+    assert stage.GetRootLayer().ExportToString()==before and not report['authored']
+    report=author_contact_order(scene,enabled=True)
+    assert report['observed_usd_value'] is True and report['previous_usd_value'] is None
+    assert not report['native_effective_value_verified']
+    with pytest.raises(ValueError):author_contact_order(scene,enabled=1)
+
+
+@pytest.mark.parametrize('fault',['close','detach','exit','receipt',None])
+def test_cleanup_fault_does_not_prevent_other_cleanup_or_failure_evidence(fault):
+    from types import SimpleNamespace
+    from sim_physics.contact_spring_native_probe import cleanup_native
+    calls=[]
+    def call(name):
+        calls.append(name)
+        if name==fault:raise RuntimeError('injected '+name)
+        return {'faulted':False}
+    result=cleanup_native(SimpleNamespace(close=lambda:call('close')),
+        SimpleNamespace(detach_stage=lambda:call('detach')),
+        SimpleNamespace(__exit__=lambda *args:call('exit'),report=lambda:call('receipt')))
+    assert calls==['close','detach','exit','receipt']
+    assert len(result['failures'])==int(fault is not None)
+    if fault:assert 'injected '+fault in result['failures'][0]
+    assert (result['native_errors'] is None)==(fault=='receipt')

@@ -17,6 +17,15 @@ def test_default_probe_includes_release_and_does_not_use_gpu():
     args=parser().parse_args(['--output','unused'])
     assert args.constraint_mode=='articulation'
     assert not args.attached_only and not args.gui and args.render_hz==0
+    assert not args.solve_articulation_contact_last
+
+
+def test_contact_solver_order_is_explicit_and_recorded_without_changing_other_defaults():
+    baseline=parser().parse_args(['--output','unused'])
+    enabled=parser().parse_args(['--output','unused','--solve-articulation-contact-last'])
+    differences={k for k in vars(baseline) if getattr(baseline,k)!=getattr(enabled,k)}
+    assert differences=={'solve_articulation_contact_last'}
+    assert report_configuration(enabled,enabled.output)['solve_articulation_contact_last'] is True
 
 
 @pytest.mark.parametrize('extra',[[],['--bimanual-cut']])

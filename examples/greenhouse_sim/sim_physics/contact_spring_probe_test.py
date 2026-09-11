@@ -80,6 +80,8 @@ def test_report_coefficients_and_hash_are_exact_not_fitted(tmp_path):
     assert c.stiffness == (.3,.2) and c.damping == (.009,.008)
     assert c.masses == (.001,.002,.003)
     assert c.source_sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
+    control = from_report(path, contact_model='rigid_control')
+    assert control == replace(c, contact_model='rigid_control')
     with pytest.raises(ValueError, match='Only explicitly'): from_report(path, stiffness=(1,1))
     report['robot_probe']['finger_contact_compliance']['force_based'] = False
     path.write_text(json.dumps(report), encoding='utf-8')
@@ -88,7 +90,7 @@ def test_report_coefficients_and_hash_are_exact_not_fitted(tmp_path):
 
 @pytest.mark.parametrize('change', [dict(stiffness=(0,1)), dict(damping=(-1,1)),
     dict(masses=(1,2)), dict(masses=(1,float('nan'),1)), dict(dt=True), dict(dt=0),
-    dict(dt=1/2000), dict(iterations=(32,4)), dict(iterations=(True,4)),
+    dict(dt=1/2000), dict(iterations=(32,4)), dict(iterations=(True,4)), dict(iterations=(128,4)),
     dict(held_contacts=1), dict(solver='bad'), dict(rotation=np.diag([-1,1,1])),
     dict(rotation=np.diag([2,1,1])), dict(source_sha256='bad'), dict(root='/World/../bad'),
     dict(inertias=tuple(np.diag([1,1,3]) for _ in range(3)))])
@@ -109,7 +111,7 @@ def test_geometry_and_initial_strain_match_both_boundary_conditions(held):
     np.testing.assert_array_equal(frames, layout(replace(c,held_contacts=not held))['frames'])
 
 
-@pytest.mark.parametrize('iterations',[(16,4),(32,0)])
+@pytest.mark.parametrize('iterations',[(16,4),(32,0),(128,32)])
 @pytest.mark.parametrize('held',[False,True])
 def test_usd_has_no_weld_and_uniform_authored_iterations(iterations,held):
     from pxr import Usd, UsdGeom, UsdPhysics
@@ -193,7 +195,7 @@ def test_binding_fails_before_disabling_any_drive(bad):
     assert a.writes == []
 
 
-@pytest.mark.parametrize('model',['native','implicit_effort'])
+@pytest.mark.parametrize('model',['native','implicit_effort','native_damping_explicit_stiffness'])
 @pytest.mark.parametrize('q',[[[0.,0.]], [[.005,0.]], [[-.005,.005]],
     [[.005,.005+1.01*INITIAL_Q_TOLERANCE_RAD]], [[float('nan'),.005]],
     [[float('inf'),.005]], [.005,.005]])
@@ -302,3 +304,181 @@ def test_unknown_contact_predictor_loses_static_stiffness_but_full_coupling_does
     assert coupled == pytest.approx(-k*q)
     assert alpha < .0003
     assert h/(-math.log1p(-alpha)) > 15
+
+
+@pytest.mark.parametrize('invalid', [None, True, 'rigid', '', 0])
+def test_contact_model_requires_explicit_known_option(invalid):
+    with pytest.raises(ValueError, match='contact model'):
+        coupon(contact_model=invalid)
+
+
+@pytest.mark.parametrize('model', ['native', 'section_springs', 'section_springs_maximal'])
+def test_rigid_contact_control_only_omits_compliant_material_authoring(model):
+    from pxr import Usd
+    source = coupon(); control = replace(source, contact_model='rigid_control')
+    default_stage = Usd.Stage.CreateInMemory(); rigid_stage = Usd.Stage.CreateInMemory()
+    author(default_stage, source, model=model)
+    data = author(rigid_stage, control, model=model)
+    assert data['contact_model'] == 'rigid_control'
+    assert [str(p.GetPath()) for p in rigid_stage.Traverse()] == [str(p.GetPath()) for p in default_stage.Traverse()]
+    omitted = {'physxMaterial:compliantContactStiffness', 'physxMaterial:compliantContactDamping',
+               'physxMaterial:compliantContactAccelerationSpring'}
+    for prim in default_stage.Traverse():
+        other = rigid_stage.GetPrimAtPath(prim.GetPath())
+        assert prim.GetMetadata('apiSchemas') == other.GetMetadata('apiSchemas')
+        for attr in prim.GetAuthoredAttributes():
+            target = other.GetAttribute(attr.GetName())
+            if attr.GetName() in omitted:
+                assert not target or not target.HasAuthoredValueOpinion()
+            else:
+                assert target and target.Get() == attr.Get()
+        assert {str(r.GetName()): list(r.GetTargets()) for r in prim.GetRelationships()} == {
+            str(r.GetName()): list(r.GetTargets()) for r in other.GetRelationships()}
+    before = rigid_stage.GetRootLayer().ExportToString()
+    with pytest.raises(ValueError, match='Empty standalone'): author(rigid_stage, source, model=model)
+    assert rigid_stage.GetRootLayer().ExportToString() == before
+    report = control.report()
+    assert report['contact_model_override'] and report['source_contact_model'] == 'compliant'
+    assert not report['compliant_contact_coefficients_authored']
+    assert report['source_compliant_contact_coefficients'] == dict(stiffness_n_m=source.contact_stiffness,
+        damping_n_s_m=source.contact_damping, force_based=True)
+    for key in ('stiffness', 'damping', 'masses', 'inertias', 'friction', 'source_sha256'):
+        assert report[key] == source.report()[key]
+    assert not report['native_qualified'] and not report['training_eligible']
+    assert report['nominal_pad_inner_gap_m'] == pytest.approx(.0055)
+    assert report['nominal_shaft_diameter_m'] == pytest.approx(.0056)
+    assert report['nominal_rigid_pinch_interference_m'] == pytest.approx(.0001)
+    assert report['rigid_held_control_ineligible']
+    assert source.report()['compliant_contact_coefficients_authored']
+    assert not source.report()['contact_model_override']
+
+
+def test_contact_control_preserves_gates_and_rejects_mixed_contact_provenance():
+    source = coupon(); control = replace(source, contact_model='rigid_control')
+    row = sample(control, **equilibrium(control))
+    assert row['contact_model'] == 'rigid_control'
+    result = assess_tail(tail(control, row), control)
+    assert not result['passed'] and result['gates'].pop('rigid_control_pinch_feasible') is False
+    assert result['gates'] == assess_tail(tail(source, sample(source, **equilibrium(source))), source)['gates']
+    with pytest.raises(ValueError, match='differently bound'):
+        assess_tail(tail(control, row), source)
+    row['contact_model'] = 'compliant'
+    with pytest.raises(ValueError, match='differently bound'):
+        assess_tail(tail(control, row), control)
+
+
+@pytest.mark.parametrize('model', ['native', 'section_springs', 'section_springs_maximal'])
+def test_128_32_comparison_changes_only_uniform_authored_iterations(model):
+    from pxr import Usd
+    source = coupon(); high = replace(source, iterations=(128,32))
+    original = Usd.Stage.CreateInMemory(); stage = Usd.Stage.CreateInMemory()
+    author(original, source, model=model); author(stage, high, model=model)
+    for prim in original.Traverse():
+        other = stage.GetPrimAtPath(prim.GetPath())
+        for attr in prim.GetAuthoredAttributes():
+            expected = (128 if attr.GetName().endswith(':solverPositionIterationCount') else
+                        32 if attr.GetName().endswith(':solverVelocityIterationCount') else attr.Get())
+            assert other.GetAttribute(attr.GetName()).Get() == expected
+    read = settings_readback(stage, high, actual_dt=high.dt, model=model)
+    assert len(read['authored_iteration_readback']) == (3 if model == 'section_springs_maximal' else 4)
+    assert all(r['iterations'] == [128,32] for r in read['authored_iteration_readback'])
+    assert read['native_iteration_readback'] is None and not read['effective_native_iterations_verified']
+    assert high.contact_model == 'compliant'
+    assert high.stiffness == source.stiffness and high.damping == source.damping
+    assert high.masses == source.masses and high.inertias == source.inertias
+
+
+class SplitFake(FakeArticulation):
+    def __init__(self,c):
+        super().__init__(c)
+        self.caps = np.full((1,2), np.finfo(np.float32).max)
+        self.drive_types = np.ones((1,2), dtype=np.uint8)
+        self.velocity_targets = np.zeros((1,2)); self.commands = []
+    def get_dof_max_forces(self): return self.caps.copy()
+    def get_drive_types(self): return self.drive_types.copy()
+    def get_dof_velocity_targets(self): return self.velocity_targets.copy()
+    def set_dof_actuation_forces(self, value, indices):
+        assert value.shape == (1,2) and value.dtype == np.float32
+        np.testing.assert_array_equal(indices, [0])
+        self.commands.append(value.copy())
+
+
+def test_split_authors_original_bootstrap_then_zeros_only_K_and_sends_exact_effort():
+    from pxr import Usd
+    c = coupon(); stage = Usd.Stage.CreateInMemory(); original = Usd.Stage.CreateInMemory()
+    author(stage,c,model='native_damping_explicit_stiffness'); author(original,c,model='native')
+    assert stage.GetRootLayer().ExportToString() == original.GetRootLayer().ExportToString()
+    a = SplitFake(c); report, split = bind(a,c,model='native_damping_explicit_stiffness')
+    assert a.writes == ['stiffness'] and np.all(a.k == 0)
+    np.testing.assert_array_equal(a.c, [c.damping])
+    assert not report['native_drives_disabled'] and not report['native_angular_drives_disabled']
+    assert report['initial_native_si_coefficients_verified'] and not report['native_si_coefficients_verified']
+    assert report['split_scheme']['native_stiffness_zero_verified']
+    assert report['split_scheme']['native_drive_types'] == [1,1]
+    assert report['split_scheme']['explicit_effort_caps_enforced_by_helper']
+    assert not report['split_scheme']['native_drive_caps_assumed_to_limit_explicit_effort']
+    assert not report['split_scheme']['native_coupling_verified']
+    a.q = np.array([[.004,-.003]])
+    submitted = split.step(c.dt,root_constrained=False)
+    expected = (-np.array(c.stiffness)*a.q[0]).astype(np.float32)
+    np.testing.assert_array_equal(submitted, expected)
+    np.testing.assert_array_equal(a.commands[0][0], expected)
+    assert a.writes == ['stiffness']  # No damping/cap/state setters, mass solve or contact injection.
+
+
+@pytest.mark.parametrize('bad', ['K', 'C', 'cap', 'drive_type', 'target', 'paths', 'fixed', 'q_nan', 'q_bound', 'dt', 'root'])
+def test_split_faults_before_submitting_changed_or_invalid_contract(bad):
+    c = coupon(); a = SplitFake(c); _, split = bind(a,c,model='native_damping_explicit_stiffness')
+    dt = c.dt; root = False
+    if bad == 'K': a.k[0,0] = 1e-6
+    elif bad == 'C': a.c[0,0] *= 2
+    elif bad == 'cap': a.caps[0,0] = .1
+    elif bad == 'drive_type': a.drive_types[0,0] = 2
+    elif bad == 'target': a.velocity_targets[0,0] = .1
+    elif bad == 'paths': a.link_paths[0].reverse()
+    elif bad == 'fixed': a.shared_metatype.fixed_base = True
+    elif bad == 'q_nan': a.q[0,0] = np.nan
+    elif bad == 'q_bound': a.q[0,0] = .05
+    elif bad == 'dt': dt *= 2
+    else: root = True
+    with pytest.raises(ValueError): split.step(dt,root_constrained=root)
+    assert a.commands == []
+
+
+def test_split_rejects_insufficient_damping_before_any_write():
+    c = replace(coupon(), damping=(1e-6,1e-6)); a = SplitFake(c)
+    with pytest.raises(ValueError,match='C >= h'):
+        bind(a,c,model='native_damping_explicit_stiffness')
+    assert a.writes == [] and a.commands == []
+
+
+@pytest.mark.parametrize('kind', [0,2,255,float('nan')])
+def test_split_requires_native_force_drive_before_any_write(kind):
+    c = coupon(); a = SplitFake(c); a.drive_types = np.array([[kind,1]])
+    with pytest.raises(ValueError): bind(a,c,model='native_damping_explicit_stiffness')
+    assert a.writes == [] and a.commands == []
+
+
+def test_split_coupled_constant_mass_energy_identity_and_static_force():
+    # Pure mathematical oracle. Includes an unactuated free-root coordinate;
+    # it does NOT assert that native contact/position iterations implement it.
+    c = coupon(); h = c.dt; K = np.diag([0.,*c.stiffness]); C = np.diag([0.,*c.damping])
+    assert np.linalg.eigvalsh(C-h*K/2).min() >= 0
+    rng = np.random.default_rng(17)
+    for _ in range(30):
+        a = rng.normal(size=(3,3)); M = (a.T@a+np.eye(3))*1e-8
+        q = rng.normal(size=3)*.005; v = rng.normal(size=3)
+        w = np.linalg.solve(M+h*C,M@v-h*K@q); p = q+h*w
+        change = .5*(w@M@w+p@K@p-v@M@v-q@K@q)
+        identity = -h*w@(C-h*K/2)@w-.5*(w-v)@M@(w-v)
+        assert change == pytest.approx(identity,abs=1e-18) and change <= 0
+        # Static externally balanced state has full K*q, independent of M.
+        balanced = np.linalg.solve(M+h*C,-h*K@q+h*(K@q))
+        np.testing.assert_allclose(balanced, 0., atol=1e-15, rtol=0)
+
+
+def test_scalar_stability_condition_alone_is_not_energy_passivity():
+    m,k,c,h = 1.,1.,.1,1.
+    assert h*h*k < 4*m+2*h*c
+    q,v = 0.,1.; w = (m*v-h*k*q)/(m+h*c); p = q+h*w
+    assert .5*(m*w*w+k*p*p) > .5*(m*v*v+k*q*q)

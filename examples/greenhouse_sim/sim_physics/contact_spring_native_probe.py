@@ -8,9 +8,10 @@ import time
 import numpy as np
 
 from .contact_events import ContactEvents
-from .contact_spring_probe import (MAX_CONTACT_ROWS,MODELS,SECTION_MODELS,from_report,author,bind,bind_rigid,
+from .contact_spring_probe import (MAX_CONTACT_ROWS,MODELS,SECTION_MODELS,MAXIMAL_MODELS,from_report,author,bind,bind_rigid,
                                   settings_readback,sample,assess_tail)
 from .runtime import pose_matrices
+from .solver_configuration import author_contact_order
 
 
 def finite_native(value,shape,label):
@@ -38,6 +39,28 @@ def read_state(view,*,maximal):
     return frames,velocity,q,qdot
 
 
+def read_prediction_state(view,body_velocity,qdot):
+    """Read-only floating-coupon data; verify native point-velocity convention."""
+    root=finite_native(view.get_root_velocities(),(1,6),'root velocity')[0]
+    velocity=np.r_[root,finite_native(qdot,(2,),'joint velocity')]
+    jac=finite_native(view.get_jacobians(),(1,3,6,8),'world Jacobian')[0]
+    mass=finite_native(view.get_generalized_mass_matrices(),(1,8,8),'generalized mass')[0]
+    com=finite_native(view.get_coms(),(1,3,7),'local COM poses')[0]
+    observed=finite_native(body_velocity,(3,6),'body velocity')
+    mapped=np.einsum('lij,j->li',jac,velocity)
+    error=float(np.max(abs(mapped-observed)))
+    if (np.max(abs(com[:,:3]))>1e-9 or error>1e-6+1e-5*np.max(abs(observed))
+            or not np.allclose(mass,mass.T,rtol=1e-5,atol=1e-12)
+            or np.min(np.linalg.eigvalsh((mass+mass.T)/2))<=0):
+        raise RuntimeError('Native floating mass/COM/Jacobian convention check failed')
+    external=-(finite_native(view.get_gravity_compensation_forces(),(1,8),'gravity compensation')[0]
+        +finite_native(view.get_coriolis_and_centrifugal_compensation_forces(),(1,8),'Coriolis compensation')[0])
+    return dict(mass_matrix=mass.tolist(),body_world_com_jacobians=jac.tolist(),
+        generalized_velocity=velocity.tolist(),native_known_external_force=external.tolist(),
+        point_velocity_max_error=error,local_com_zero_verified=True,
+        native_coordinate_convention_verified=True,contact_force_included=False)
+
+
 class ContactRows(ContactEvents):
     """Copy full signed original-order rows, including each friction anchor once."""
     def begin_step(self):
@@ -59,8 +82,26 @@ class ContactRows(ContactEvents):
                 if len(self.rows)>=MAX_CONTACT_ROWS:raise RuntimeError('Contact row overflow')
                 row=dict(collider0=first,collider1=second,kind=kind,
                     point_world_m=list(point),impulse_on_0_ns=list(impulse))
-                if kind=='normal':row['normal_on_0']=list(normals[i])
+                if kind=='normal':
+                    row['normal_on_0']=list(normals[i])
+                    row['separation_m']=None if separations is None else float(separations[i])
                 self.rows.append(row)
+
+
+def cleanup_native(monitor,sim,errors):
+    """Attempt every owned cleanup and retain failures for the run receipt."""
+    failures=[]; native_report=None
+    def attempt(label,action):
+        try:return action()
+        except Exception:
+            failures.append(label+'\n'+traceback.format_exc())
+            return None
+    if monitor is not None:attempt('contact_monitor_close',monitor.close)
+    if sim is not None:attempt('owned_native_stage_detach',sim.detach_stage)
+    if errors is not None:
+        attempt('native_error_observer_exit',lambda:errors.__exit__(None,None,None))
+        native_report=attempt('native_error_receipt',errors.report)
+    return dict(failures=failures,native_errors=native_report)
 
 
 def main(argv=None):
@@ -69,17 +110,28 @@ def main(argv=None):
     p.add_argument('--source-report',type=Path,required=True)
     p.add_argument('--model',choices=MODELS,default='native')
     p.add_argument('--solver',choices=('PGS','TGS'),default='PGS')
-    p.add_argument('--physics-hz',type=int,choices=(240,480),default=240)
-    p.add_argument('--iterations',choices=('16/4','32/0'),default='16/4')
+    p.add_argument('--physics-hz',type=int,choices=(240,480,1920),default=240)
+    p.add_argument('--iterations',choices=('16/4','32/0','128/32'),default='16/4')
     p.add_argument('--rotation-degrees',type=int,choices=(0,45),default=0)
     p.add_argument('--seconds',type=float,default=3.)
     p.add_argument('--free-control',action='store_true',help='No pads: separately labelled unloaded control')
     p.add_argument('--zero-joint-friction',action='store_true',
         help='Explicit bearing-friction diagnostic via legacy native coefficient setter; contact friction unchanged')
+    p.add_argument('--diagnostic-contact-geometry',action='store_true',
+        help='Record before/after native mass, Jacobian and manifold separation; no changed dynamics')
+    p.add_argument('--contact-law',choices=('unilateral_kv_v1','signed_overlap_kv_v1'),
+        help='Required explicit mathematical law only for coupled_contact_prediction; native parity unqualified')
+    p.add_argument('--solve-articulation-contact-last',action='store_true',
+        help='Explicit pre-parse native solver-order diagnostic; no material or iteration changes')
     args=p.parse_args(argv)
-    maximal=args.model=='section_springs_maximal'
+    maximal=args.model in MAXIMAL_MODELS
+    coupled=args.model=='coupled_contact_prediction'
+    if coupled != (args.contact_law is not None):
+        raise ValueError('Contact law must be explicit and only supplied for coupled diagnostic')
     if maximal and args.zero_joint_friction:
         raise ValueError('Articulation joint-friction setter unavailable for maximal model')
+    if maximal and args.diagnostic_contact_geometry:
+        raise ValueError('Contact geometry diagnostic requires native articulation matrices')
     if not np.isfinite(args.seconds) or not 1<=args.seconds<=10:
         raise ValueError('Bounded 1..10 second coupon required')
     out=args.output.resolve()
@@ -123,6 +175,7 @@ def main(argv=None):
         UsdPhysics.Scene(scene).CreateGravityMagnitudeAttr(0.)
         api.CreateSolverTypeAttr(coupon.solver);api.CreateEnableGPUDynamicsAttr(False)
         api.CreateBroadphaseTypeAttr('MBP');api.CreateFrictionTypeAttr('patch')
+        result['contact_solver_order']=author_contact_order(scene,enabled=args.solve_articulation_contact_last)
         # SimulationManager.initialize_physics() advances two warm-up steps.
         # This standalone probe owns the raw interface instead: parse only,
         # bind/verify the initial state, then explicitly simulate/fetch each dt.
@@ -162,11 +215,13 @@ def main(argv=None):
             native_body_velocities=velocity.tolist(),
             coordinate_source='derived_from_native_bodies' if maximal else 'native_articulation_dofs')
         if maximal:
-            result['binding'],predictor=bind_rigid(view,coupon,stage=stage)
+            result['binding'],predictor=bind_rigid(view,coupon,stage=stage,model=args.model)
             result['joint_friction']=dict(native_readback=None,setter=None,
                 reason='No articulation DOFs in maximal model',contact_friction_unchanged=True)
         else:
-            result['binding'],predictor=bind(view,coupon,model=args.model,stage=stage)
+            from .contact_coupled_prediction import MaterialLaw
+            result['binding'],predictor=bind(view,coupon,model=args.model,stage=stage,
+                contact_law=MaterialLaw(args.contact_law) if coupled else None)
             before_friction=finite_native(view.get_dof_friction_coefficients(),(1,2),'joint friction before')
             if args.zero_joint_friction:
                 view.set_dof_friction_coefficients(np.zeros_like(before_friction),np.array([0],dtype=np.uint32))
@@ -179,11 +234,22 @@ def main(argv=None):
                 setter_timing='after_shared_explicit_bootstrap_before_recorded_steps')
             if args.zero_joint_friction and np.any(after_friction!=0):
                 raise RuntimeError('Native joint friction readback mismatch')
+        reference_frames=data['frames'].copy(); reference_step=0
+        previous_contact_rows=[dict(r) for r in monitor.rows]
         for step in range(1,int(args.seconds*args.physics_hz)+1):
             if not app.is_running():raise RuntimeError('App closed before diagnostic completion')
+            if args.diagnostic_contact_geometry or coupled:
+                before_geometry=read_prediction_state(view,velocity,qdot)
+                before_geometry['frames_world_m']=frames.tolist()
             monitor.begin_step();errors.check('before_step')
-            commanded_effort=None
-            if predictor is not None:commanded_effort=predictor.step(coupon.dt,root_constrained=False)
+            commanded_effort=None; coupled_record=None
+            if coupled:
+                commanded_effort,coupled_record=predictor.step(coupon.dt,state=before_geometry,
+                    frames=frames,velocities=velocity,native_rows=previous_contact_rows,
+                    reference_frames=reference_frames,step_id=step,reference_step_id=reference_step)
+                reference_frames=frames.copy(); reference_step=step
+            elif predictor is not None:
+                commanded_effort=predictor.step(coupon.dt,root_constrained=False)
             sim.simulate(coupon.dt,bootstrap_dt+(step-1)*coupon.dt);sim.fetch_results()
             errors.check('after_step');monitor.measurements(coupon.dt)
             frames,velocity,q,qdot=read_state(view,maximal=maximal)
@@ -191,6 +257,15 @@ def main(argv=None):
                 contact_rows=monitor.rows,full_normal_friction_stream=monitor.native_full_contact_reporting,
                 model=args.model)
             rows.append(row)
+            if args.diagnostic_contact_geometry or coupled:
+                row['native_prediction_before_step']=before_geometry
+                row['native_prediction_after_step']=read_prediction_state(view,velocity,qdot)
+            if coupled:
+                row['coupled_prediction']=coupled_record
+                row['coupled_velocity_prediction_max_error']=float(np.max(abs(
+                    np.array(coupled_record['prediction']['v_pred'])
+                    -np.array(row['native_prediction_after_step']['generalized_velocity']))))
+                previous_contact_rows=[dict(r) for r in monitor.rows]
             # Projected incoming reaction includes more than drive torque;
             # do not report it as independently measured elastic effort.
             row['native_projected_incoming_joint_force_nm']=(None if maximal else finite_native(
@@ -218,14 +293,12 @@ def main(argv=None):
     except Exception:
         result['error']=traceback.format_exc()
     finally:
-        if monitor is not None:monitor.close()
-        if sim is not None:sim.detach_stage()
-        if errors is not None:
-            try:errors.__exit__(None,None,None)
-            except Exception:
-                result['error']=(result['error'] or '')+'\n'+traceback.format_exc()
-                result['state']='failed_small_contact_spring_coupon'
-            finally:result['native_errors']=errors.report()
+        cleanup=cleanup_native(monitor,sim,errors)
+        result['cleanup_failures']=cleanup['failures']
+        result['native_errors']=cleanup['native_errors']
+        if cleanup['failures']:
+            result['error']='\n'.join([result['error'] or '',*cleanup['failures']])
+            result['state']='failed_small_contact_spring_coupon'
         result['sample_count']=len(rows)
         result['whole_run_max_abs_q_rad']=float(max((max(map(abs,r['q_rad'])) for r in rows),default=0.))
         (out/'trace.json').write_text(json.dumps(rows,allow_nan=False),encoding='utf-8')
