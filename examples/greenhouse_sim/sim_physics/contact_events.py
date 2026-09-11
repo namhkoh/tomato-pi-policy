@@ -84,20 +84,35 @@ def _span(offset,count,size,label):
 class ContactEvents:
     _buckets=('allowed_target','allowed_tool','allowed_floor','unwanted','self')
 
-    def __init__(self,*,robot_root,target_root,fingers,floor_root):
+    def __init__(self,*,robot_root,target_root,fingers,floor_root,full_contact_observer=None):
         self.robot_root=robot_root;self.target_root=target_root
         self.fingers=set(fingers);self.floor_root=floor_root
         self.subscription=None;self.paths={};self.total_events=0;self.error=None
         self.native_full_contact_reporting=False;self.native_friction_type=None
         self.tool_contact=None
         self.normal_contact_observer=None
+        self.full_contact_observer=full_contact_observer
         self.begin_step()
 
+    def _full_contact_fault(self,exc):
+        if self.error is None:self.error=str(exc) or type(exc).__name__
+        # Even validation failures before row delivery invalidate a partial stream.
+        try:self.full_contact_observer.invalidate(exc)
+        except Exception:pass  # The monitor fault remains authoritative and latched.
+
     def begin_step(self):
+        if self.full_contact_observer is not None:
+            try:
+                if self.error is not None:raise RuntimeError(self.error)
+                self.full_contact_observer.begin_step()
+            except Exception as exc:
+                self._full_contact_fault(exc)
+                raise
         if self.normal_contact_observer is not None:
             try: self.normal_contact_observer.begin_step()
             except Exception as exc:
                 self.error=str(exc)
+                if self.full_contact_observer is not None:self._full_contact_fault(exc)
                 raise
         self.pairs={};self.normal_pairs={};self.friction_pairs={};self._pair_states={}
         self.normal_impulse=0.;self.friction_impulse=0.
@@ -122,6 +137,17 @@ class ContactEvents:
     def consume(self,first,second,impulses,points=None,normals=None,separations=None,
                 *,friction_impulses=(),friction_points=None):
         """Pure accounting; friction is NEVER passed to the normal-edge callback."""
+        try:
+            if self.full_contact_observer is not None and self.error is not None:
+                raise RuntimeError(self.error)
+            return self._consume(first,second,impulses,points,normals,separations,
+                friction_impulses=friction_impulses,friction_points=friction_points)
+        except Exception as exc:
+            if self.full_contact_observer is not None:self._full_contact_fault(exc)
+            raise
+
+    def _consume(self,first,second,impulses,points,normals,separations,
+                 *,friction_impulses,friction_points):
         impulses=_vectors(impulses,'contact impulse')
         friction_impulses=_vectors(friction_impulses,'friction impulse')
         for values,count,label in ((points,len(impulses),'contact position'),
@@ -135,6 +161,22 @@ class ContactEvents:
                 raise ValueError('Native separation/impulse count mismatch')
             if not all(math.isfinite(v) for v in separations):
                 raise ValueError('Nonfinite native contact separation')
+        if self.full_contact_observer is not None:
+            if impulses and (points is None or normals is None or separations is None):
+                raise ValueError('Full contact observer requires complete normal geometry')
+            if friction_impulses and friction_points is None:
+                raise ValueError('Full contact observer requires friction anchor positions')
+            # Separate COPIED original-order rows, before robot-only classification.
+            # Never infer anchor normals, flip vectors, or borrow normal eligibility.
+            for i,impulse in enumerate(impulses):
+                self.full_contact_observer.add_contact(dict(collider0=first,collider1=second,
+                    kind='normal',point_world_m=tuple(points[i]),
+                    normal_on_0=tuple(normals[i]),separation_m=separations[i],
+                    impulse_on_0_ns=tuple(impulse)))
+            for i,impulse in enumerate(friction_impulses):
+                self.full_contact_observer.add_contact(dict(collider0=first,collider1=second,
+                    kind='friction',point_world_m=tuple(friction_points[i]),
+                    impulse_on_0_ns=tuple(impulse)))
         # Preserve original collider order and pass NORMAL rows only. This
         # evidence observer cannot reclassify loads or authorize a tool cut.
         if self.normal_contact_observer is not None and impulses:
@@ -203,7 +245,9 @@ class ContactEvents:
         _sum((self.normal_impulse,self.friction_impulse))
 
     def subscribe(self):
+        observer=self.full_contact_observer
         self.close()
+        self.full_contact_observer=observer
         try:
             from omni.physx import get_physx_simulation_interface
             from omni.usd import get_context
@@ -243,6 +287,9 @@ class ContactEvents:
                     friction_points=[vector(c.position) for c in anchors])
         except Exception as exc:
             # Callback exceptions must propagate to the explicit control guard.
+            if self.full_contact_observer is not None:
+                self._full_contact_fault(exc)
+                raise
             self.error=str(exc)
 
     def measurements(self,dt):
@@ -262,4 +309,5 @@ class ContactEvents:
     def close(self):
         self.subscription=None
         self.normal_contact_observer=None
+        self.full_contact_observer=None
         self.native_full_contact_reporting=False;self.native_friction_type=None

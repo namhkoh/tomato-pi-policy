@@ -169,8 +169,8 @@ class Coupon:
         object.__setattr__(self, 'rotation', tuple(tuple(row) for row in _rotation(self.rotation)))
         if len(self.iterations) != 2: raise ValueError('Position/velocity iteration pair required')
         iterations = tuple(_integer(v, 'iterations') for v in self.iterations)
-        if iterations not in ((16, 4), (32, 0), (128, 32)):
-            raise ValueError('Only explicit 16/4, 32/0 and 128/32 numerical comparisons supported')
+        if iterations not in ((16, 4), (32, 0), (128, 32), (128, 0)):
+            raise ValueError('Only explicit 16/4, 32/0, 128/32 and 128/0 numerical comparisons supported')
         object.__setattr__(self, 'iterations', iterations)
         if self.solver not in ('PGS', 'TGS'): raise ValueError('Explicit native solver required')
         if type(self.held_contacts) is not bool: raise ValueError('Explicit held/free contact control required')

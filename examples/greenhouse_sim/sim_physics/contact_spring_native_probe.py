@@ -111,7 +111,7 @@ def main(argv=None):
     p.add_argument('--model',choices=MODELS,default='native')
     p.add_argument('--solver',choices=('PGS','TGS'),default='PGS')
     p.add_argument('--physics-hz',type=int,choices=(240,480,1920),default=240)
-    p.add_argument('--iterations',choices=('16/4','32/0','128/32'),default='16/4')
+    p.add_argument('--iterations',choices=('16/4','32/0','128/32','128/0'),default='16/4')
     p.add_argument('--rotation-degrees',type=int,choices=(0,45),default=0)
     p.add_argument('--seconds',type=float,default=3.)
     p.add_argument('--free-control',action='store_true',help='No pads: separately labelled unloaded control')

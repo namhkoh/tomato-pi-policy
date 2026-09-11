@@ -35,6 +35,19 @@ def sequence_times(reposition):
     return dict(delay=delay,plan=3.5+delay,approach=4.+delay,stroke=8.+delay,end=14.+delay)
 
 
+def experimental_spring_phase(enabled,grasp_verified,started):
+    """Matched hold experiment starts from the existing verified grasp.
+
+    Initialization is explicitly legacy physics, NOT fresh-model qualification.
+    Once experimental actuation starts it cannot fall back on loss of a grasp.
+    """
+    if any(type(v) is not bool for v in (enabled,grasp_verified,started)):
+        raise ValueError('Explicit spring experiment phase booleans required')
+    if started and (not enabled or not grasp_verified):
+        raise RuntimeError('Experimental springs cannot fall back after activation')
+    return 'contact' if enabled and grasp_verified else 'initialize' if enabled else 'legacy'
+
+
 def run(app,sim,rig,runtime,springs,fixture,args,output):
     from greenhouse_sim.physics_clock import PhysicsClock
     if (getattr(fixture,'diagnostic_grasp_contacts',False)
@@ -46,6 +59,33 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     grasp_local=None;goal_set=False;planned=False;grasp_verified=False;cut_time=None;cut_fraction=0.
     last_right_command=('park',0.)
     spring_snapshot=None
+    prediction_before=None;prediction_reader=None;contact_stream=None
+    previous_prediction=None;contact_springs=None;spring_control_record=None
+    contact_springs_started=False
+    if getattr(args,'diagnostic_contact_prediction',False):
+        from .plant_contact_stream import PlantContactStream
+        from .plant_prediction_snapshot import PlantPredictionSnapshot
+        from .plant_contact_binding import capture as capture_contact_binding
+        if fixture.event_monitor.full_contact_observer is not None:
+            raise ValueError('Existing full-contact observer must not be replaced')
+        contact_stream=PlantContactStream(plant_colliders=[v[0] for v in fixture.held_plant_screen.local])
+        prediction_reader=PlantPredictionSnapshot(runtime.articulation,
+            source_target=rig.source_target,expected_body_paths=rig.body_paths[rig.cut_index:])
+        # Once per diagnostic run, copy the actual bound local geometry and
+        # original material contract. No stage traversal in the physics loop.
+        contact_binding=capture_contact_binding(fixture)
+        (output/'plant_contact_binding.json').write_text(
+            json.dumps(contact_binding,allow_nan=False,indent=2),encoding='utf-8')
+        fixture.event_monitor.full_contact_observer=contact_stream
+        if getattr(args,'experimental_contact_springs',False):
+            if not getattr(args,'bimanual_hold_control',False):
+                raise ValueError('Experimental spring actuation is HOLD ONLY')
+            from .plant_contact_binding import deserialize
+            from .contact_spring_actuation import FreshHoldSprings
+            bound=deserialize(contact_binding,source_target=rig.source_target,
+                binding_sha256=fixture.grasp_observer.binding_sha256,sha256=contact_binding['sha256'])
+            contact_springs=FreshHoldSprings(springs,bound,runtime.drive_diagnostics,
+                experimental_hold_only=True)
     measured_withdrawal=bool(getattr(args,'measured_withdrawal',False));withdrawal=None
     hold_control=bool(getattr(args,'bimanual_hold_control',False))
     reposition=float(getattr(args,'bimanual_reposition_m',0.))
@@ -78,7 +118,9 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
 
     def before(stamp,dt):
         nonlocal goal_set,grasp_local,planned,cut_fraction,grasp_verified,last_right_command
-        nonlocal spring_snapshot
+        nonlocal spring_snapshot,prediction_before
+        nonlocal spring_control_record
+        nonlocal contact_springs_started
         t=stamp.simulation_time_s
         if t>=.9 and not goal_set:
             fixture.goal[:3,3]=runtime.frames[fixture.body_index,:3,3]+fixture.grasp_depth*fixture.goal[:3,2]
@@ -150,14 +192,58 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             fixture.command_right(phase,fraction)
             last_right_command=(phase,fraction)
         fixture.prepare_step(runtime.frames)
-        spring_effort=springs.step(dt,root_constrained=not rig.cut)
+        if prediction_reader is not None:
+            prediction_before=prediction_reader.read(step=stamp.step,root_constrained=not rig.cut)
+            # Native body paths and COM velocities, not the desired/FK pose.
+            prediction_before['robot_body_paths']=list(fixture.robot_bodies.prim_paths)
+            prediction_before['robot_body_frames_world']=pose_matrices(
+                fixture.robot_bodies.get_transforms()).tolist()
+            prediction_before['robot_body_velocities_world']=np.array(
+                fixture.robot_bodies.get_velocities(),dtype=float,copy=True).tolist()
+            prediction_before['robot_com_local_poses']=np.array(
+                fixture.robot_bodies.get_coms(),dtype=float,copy=True).tolist()
+        spring_control_record=None
+        spring_phase=experimental_spring_phase(contact_springs is not None,grasp_verified,contact_springs_started)
+        if spring_phase=='contact':
+            if previous_prediction is None:
+                raise RuntimeError('No preceding native contact snapshot; no spring fallback')
+            if not contact_springs_started:
+                events.append(dict(t=t,event='experimental_springs_activate_after_verified_grasp',
+                    initialization_model='legacy_implicit_effort',native_qualified=False))
+            try:
+                spring_effort,spring_control_record=contact_springs.step(previous_prediction,
+                    dict(before=prediction_before,step_id=stamp.step+1,dt_s=dt))
+                contact_springs_started=True
+            except Exception as exc:
+                events.append(dict(t=t,event='experimental_spring_step_rejected',
+                    step_id=stamp.step,error=type(exc).__name__+': '+str(exc)))
+                raise
+        else:
+            spring_effort=springs.step(dt,root_constrained=not rig.cut)
+            if contact_springs is not None:
+                spring_control_record=dict(mode='legacy_initialization_until_verified_grasp',
+                    predicted_effort_applied=False,native_qualified=False,training_eligible=False)
         if getattr(args,'diagnostic_grasp_dynamics',False):
             from .spring_work import capture as spring_capture
             spring_snapshot=spring_capture(runtime.articulation,spring_effort,step=stamp.step)
 
     def after(stamp,dt):
         nonlocal stable,lost,cut_time,cut_fraction,withdrawal
+        nonlocal previous_prediction
         frames,velocity=runtime.sample();frame=frames[fixture.body_index]
+        prediction_record=None
+        if contact_stream is not None:
+            prediction_record=dict(before=prediction_before,contacts=contact_stream.snapshot(),
+                step_id=stamp.step,dt_s=dt,after_body_paths=list(rig.body_paths),
+                after_body_frames_world=frames.tolist(),after_body_velocities_world=velocity.tolist(),
+                after_generalized_velocity=np.r_[runtime.articulation.get_root_velocities()[0],
+                    runtime.articulation.get_dof_velocities()[0]].astype(float).tolist(),
+                contact_generation_basis='caller_bound_pre_solve_frame_not_native_generation_timestamp',
+                contact_impulses_trace_only=True,
+                predicted_effort_applied=bool(spring_control_record is not None
+                    and spring_control_record.get('actual_effort_write_verified',False)),
+                experimental_spring_control=spring_control_record,training_eligible=False)
+            previous_prediction=prediction_record
         spring_work=None
         if getattr(args,'diagnostic_grasp_dynamics',False):
             from .spring_work import finish as spring_finish
@@ -167,7 +253,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             c=fixture.contact_with_frames(dt,frames,step_id=stamp.step)
         except Exception as exc:
             events.append(dict(t=stamp.simulation_time_s,event='post_fetch_contact_fault',
-                error=type(exc).__name__+': '+str(exc),spring_work=spring_work))
+                error=type(exc).__name__+': '+str(exc),spring_work=spring_work,
+                contact_prediction=prediction_record))
             raise
         stable=stable+1 if c['bilateral'] else 0
         lost=0 if c['bilateral'] else lost+1
@@ -191,6 +278,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             joint_velocities_rad_s=plant_v.tolist(),elastic_energy_j=.5*float(np.dot(springs.k*plant_q,plant_q)),
             fastest_body=rig.body_paths[int(np.argmax(np.linalg.norm(velocity[:,:3],axis=1)))])
         records.append(record)
+        if prediction_record is not None:record['contact_prediction']=prediction_record
         if getattr(args,'diagnostic_grasp_dynamics',False):
             record['spring_work']=spring_work
             from .grasp_dynamics_evidence import grasp_dynamics_evidence
@@ -309,6 +397,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         requested_pre_cut_reposition_m=reposition,
         target_source='privileged_test_fixture_not_perception_verified',training_eligible=False)
     (output/'bimanual_trajectory.json').write_text(json.dumps(records,allow_nan=False),encoding='utf-8')
+    if contact_stream is not None:fixture.event_monitor.full_contact_observer=None
     fixture.release_grasp_observer()
     sim.stop()
     return result

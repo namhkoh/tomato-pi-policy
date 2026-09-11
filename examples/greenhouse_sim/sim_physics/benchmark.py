@@ -62,6 +62,10 @@ def parser():
         help='Opt-in engineering brittle seam strength model; neither mode is calibrated tissue fracture')
     p.add_argument('--diagnostic-grasp-dynamics',action='store_true',
         help='Opt-in same-step body/finger/contact/drive telemetry for bimanual retention debugging; not training data')
+    p.add_argument('--diagnostic-contact-prediction',action='store_true',
+        help='Read-only complete plant-contact rows and native floating M/J snapshots; no predicted effort is applied')
+    p.add_argument('--experimental-contact-springs',action='store_true',
+        help='HOLD-ONLY fresh-contact springs activated after legacy grasp verification; native contacts and safety guards remain')
     p.add_argument('--finger-actuator-limit-n',type=float,choices=(.5,.8),default=.5,
         help='Engineering total motor budget including gravity, not contact force; both sparse modes enforce an independent 0.5 N all-contact cap per left finger')
     p.add_argument('--cut-proposal-json',type=Path,help='One source-bound world-direction diagnostic instead of the default orientation grid; all safety/IK checks remain')
@@ -154,6 +158,16 @@ def main(argv=None):
         raise ValueError('Engineering brittle seam model requires guarded bimanual qualification')
     if getattr(args,'diagnostic_grasp_dynamics',False) and not args.bimanual_cut:
         raise ValueError('Grasp dynamics telemetry requires guarded bimanual qualification')
+    if getattr(args,'experimental_contact_springs',False) and not (
+            args.bimanual_hold_control and args.bimanual_cut and args.full_robot_probe
+            and args.diagnostic_contact_prediction and args.diagnostic_grasp_dynamics
+            and args.sparse_contacts and args.finger_gravity and args.compliant_fingers
+            and args.force_newton==0 and not args.bimanual_reposition_m
+            and not args.robot_interactive and not args.measured_withdrawal):
+        raise ValueError('Experimental contact springs require bounded stationary full-robot HOLD ONLY with contact/dynamics diagnostics and native compliant fingers')
+    if getattr(args,'diagnostic_contact_prediction',False) and not (
+            args.bimanual_cut and args.diagnostic_grasp_dynamics):
+        raise ValueError('Contact prediction snapshots require bimanual grasp dynamics diagnostics')
     if (getattr(args,'finger_actuator_limit_n',.5)!=.5
             and not (args.bimanual_cut and args.sparse_contacts and args.finger_gravity and args.compliant_fingers)):
         raise ValueError('Experimental finger actuator budget requires guarded bimanual, sparse contacts, gravity and compliant fingers')

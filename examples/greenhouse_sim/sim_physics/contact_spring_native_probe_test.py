@@ -54,6 +54,40 @@ def test_existing_output_never_reused(tmp_path):
         main(['--output',str(tmp_path),'--source-report','missing'])
 
 
+@pytest.mark.parametrize('options,iterations,solver,hz',[
+    ([],(16,4),'PGS',240),
+    (['--model','native','--iterations','128/0','--solver','TGS',
+      '--physics-hz','1920','--seconds','1','--diagnostic-contact-geometry'],(128,0),'TGS',1920),
+])
+def test_iteration_cli_reaches_preparation_with_defaults_unchanged(
+        tmp_path,monkeypatch,options,iterations,solver,hz):
+    from . import contact_spring_native_probe as runner
+    captured={}
+    class StopBeforeNative(RuntimeError): pass
+    def prepare(path,**kwargs):
+        captured.update(kwargs)
+        raise StopBeforeNative('CPU preparation sentinel')
+    monkeypatch.setattr(runner,'from_report',prepare)
+    out=tmp_path/'unused'
+    with pytest.raises(StopBeforeNative):
+        runner.main(['--output',str(out),'--source-report','missing',*options])
+    assert captured == dict(rotation=((1.,0.,0),(0.,1.,0),(0,0,1)),
+        iterations=iterations,dt=1/hz,solver=solver,held_contacts=True)
+    assert not out.exists()
+
+
+@pytest.mark.parametrize('iterations',['128/1','128/4','128/-1','127/0'])
+def test_other_iteration_choices_remain_rejected_before_preparation(tmp_path,monkeypatch,iterations):
+    from . import contact_spring_native_probe as runner
+    def unexpected(*args,**kwargs):
+        pytest.fail('Invalid CLI must not reach source preparation or native import')
+    monkeypatch.setattr(runner,'from_report',unexpected)
+    out=tmp_path/'unused'
+    with pytest.raises(SystemExit) as error:
+        runner.main(['--output',str(out),'--source-report','missing','--iterations',iterations])
+    assert error.value.code == 2 and not out.exists()
+
+
 @pytest.mark.parametrize('options',[[],['--model','coupled_contact_prediction',
     '--contact-law','signed_overlap_kv_v1']])
 def test_patch_friction_requires_explicit_compatible_coupon_before_app(tmp_path,options):

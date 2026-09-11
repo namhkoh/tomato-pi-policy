@@ -19,6 +19,16 @@ def test_default_probe_includes_release_and_does_not_use_gpu():
     assert not args.attached_only and not args.gui and args.render_hz==0
     assert not args.solve_articulation_contact_last
     assert not args.measured_withdrawal
+    assert not args.experimental_contact_springs
+
+
+@pytest.mark.parametrize('extra',[[],['--bimanual-cut'],['--bimanual-cut','--bimanual-hold-control'],
+    ['--bimanual-cut','--bimanual-hold-control','--full-robot-probe','--diagnostic-contact-prediction','--diagnostic-grasp-dynamics']])
+def test_experimental_contact_springs_cannot_enter_cut_or_uninstrumented_run(tmp_path,extra):
+    output=tmp_path/'must_not_create'
+    with pytest.raises(ValueError,match='Experimental contact springs'):
+        main(['--output',str(output),'--experimental-contact-springs',*extra])
+    assert not output.exists()
 
 
 @pytest.mark.parametrize('extra',[[],['--bimanual-cut'],
@@ -95,3 +105,8 @@ def test_interactive_rejects_unqualified_configuration_before_kit(tmp_path, extr
     with pytest.raises(ValueError,match='Interactive demo requires'):
         main(['--output',str(output),'--interactive',*extra])
     assert not output.exists()
+def test_contact_prediction_snapshot_requires_existing_grasp_diagnostic(tmp_path):
+    from sim_physics.benchmark import main
+    import pytest
+    with pytest.raises(ValueError,match='Contact prediction snapshots'):
+        main(['--output',str(tmp_path/'unused'),'--diagnostic-contact-prediction'])

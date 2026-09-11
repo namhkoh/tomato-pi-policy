@@ -5306,3 +5306,102 @@ No hardware, collection, tuning, review, split or training-export changes.
   not further tiny posture changes to mask a constitutive error. Full57 remains
   FAILED; tissue fracture, retention/withdrawal completion and deposit remain
   unverified. Original greenhouse/plant assets remain hash-unchanged.
+
+### 2026-09-12: Full contact capture and finite-finger geometry qualification
+
+- Full58 records all native target contact rows plus the full45-coordinate
+  plant mass matrix, COM Jacobians, actual robot/plant poses and velocities.
+  The added collector is read-only. Cut release still occurs11.866667 s;
+  withdrawal still fails11.900000 s. This is NOT an end-to-end success.
+- `plant_contact_binding.py` exports the exact cached shaft/finger local
+  geometry, original force-based compliance and complete plant collider list.
+  Native-bound and CPU-authored exports have distinct schemas. Replay checks
+  source shape/joint hashes against recorded grasp bindings and checks material
+  parameters against the source report; a checksum is not native cooking proof.
+- `grasp_contact_shadow.py` adds bounded OFFLINE counterfactual solves. Native
+  impulses are never force inputs, predictions are not actuated, and recorded
+  next velocities cannot certify predictions made with a different effort.
+  Attached-root algebra retains measured initial root-to-joint momentum;
+  detached algebra retains all six unactuated root coordinates. These remain
+  approximations, not verified native support or robot-response models.
+- Strict replay01/02 rejects real held contacts rather than accepting an ideal
+  infinite pad plane. At native58 step811, PCM normals differ from the actual
+  inner-pad plane by7.49524 and3.51940 degrees. Native raw-normal medial features
+  agree with shaft geometry within0.100 micrometres, while ideal-normal
+  substitution introduces9.7--17.5 micrometre errors. Some cached representative
+  points project80.992 micrometres outside the current finite pad footprint.
+  No tolerance enlargement, coordinate clipping, or invented contact is used.
+- `capsule_box_witness.py` separately computes one exact finite capsule/box
+  closest witness, including cap/face, edge and corner geometry. Axis/box
+  intersection is explicitly unsupported because unsigned distance cannot
+  determine penetration normal/depth.44 witness tests pass (125 related).
+  A fresh-pair predictor is being evaluated separately from cached PCM replay;
+  one source-coefficient spring per pair has a different aggregate convention
+  from multiple full-strength springs per native contact point. It is NOT a
+  calibrated/native-equivalent contact law and is not enabled for actuation.
+- Native59b is a20-second right-parked HOLD CONTROL, not a cut trial. It
+  completes bounded, verifies bilateral grasp and records maximum slip
+  0.875076 micrometres, zero blade contacts and no right-arm motion. Source
+  assets remain unchanged. Its overall cut-qualification state correctly
+  remains FAILED: cut/withdrawal/retention/deposit cannot pass a no-cut control.
+  Runs59/59a were CLI rejections before SimulationApp startup (incompatible
+  withdrawal/hold flags, then insufficient duration); neither ran physics.
+- Bound capture was verified natively in59b. Latest focused geometry/binding/
+  shadow tests122 passed; additional source-binding checks bring shadow tests
+  to22 passing. Dynamic knife contact prediction remains unsupported. No
+  training, dataset/review/split edits, hardware commands or source-asset edits.
+
+### 2026-09-12: Contact-aware hold experiment completed, NOT promoted
+
+- `--experimental-contact-springs` is an explicit default-OFF, stationary
+  full-robot HOLD-ONLY diagnostic. `FreshHoldSprings` writes only the39 source
+  intrinsic float32 joint efforts, with exact command readback. It rejects
+  changed source K/C, nonzero native drives, stale q/v, missing contacts,
+  unsupported geometry, unresolved solves and predicted target-finger
+  noncancelling normal-plus-friction totals >=0.5 N. Actual native all-contact,
+  slip, penetration and support guards remain. Native FLT_MAX effort caps are
+  labelled numerical source limits, NOT meaningful mechanical certification.
+- Shadow03 resolves six of seven sampled cases (one is contact-free); the
+  dynamic knife case rejects. Post-release predicted finger totals reach
+  0.5938/0.7143 N: not measured native violations, but not permissible actuation
+  proposals. No cut-phase adoption or custom rigid-knife force replay is made.
+- Native60 applies30 experimental packets, then stops at0.129167 s because a
+  Leaf005/right-forearm4 contact is outside the model. The same contact pair
+  exists in the baseline. No leaf/contact is removed to get past the rejection.
+- Native60a explicitly uses the original controller to establish the verified
+  grasp, then attempts experimental activation at3.5 s. From that point there
+  is no legacy fallback.3960 exact effort packets are verified, steps841--4800.
+  The20-second HOLD control completes bounded with uninterrupted bilateral
+  evidence, source assets unchanged and no native guard failures. Maximum
+  slip is0.945853 mm, final slip0.744439 mm; native per-finger load upper bounds
+  peak0.33674/0.29755 N. This is NOT cut, retention-after-cut, or deposit success.
+- Independent comparison REJECTS60a as a physics improvement: two proximal
+  coordinates end at+1.05254/-1.26771 rad; declared beam-coordinate potential
+  grows from6.202 to346.096 mJ. Since activation, potential change339.894 mJ
+  plus submitted-effort work0.713 mJ gives diagnostic discrepancy340.607 mJ.
+  This is not native-integrator work/conservation proof. Final5-second distal
+  capsule-pole position jitter RMS increases1.049 to6.451 micrometres versus
+  baseline59b. A visibly held, nearly stationary tip can hide severe opposing
+  internal rotations. Full-plant material-domain limits are unspecified;
+  the separate coupon's0.05-rad limit cannot be presented as plant calibration.
+- Instrumented median tick grows15.54 to36.52 ms; real-time factor falls0.253
+  to0.121.60a's solve median is2.079 ms; capture, copies, native step and guard
+  work also contribute. These are diagnostic/headless timings, not GUI FPS.
+  Do not promote this model or claim a latency improvement.
+- Rechecked the native-drive alternative before adding a custom knife solver.
+  Native33's static moment test is NOT an internal drive-law measurement.
+  NVIDIA's implicit-drive derivation describes different position/velocity
+  iteration behavior (source documentation, not installed-phase readback):
+  https://nvidia-omniverse.github.io/PhysX/physx/5.3.0/_downloads/6acf3afb8f69452757e0e766b5a22978/implicitDrives.pdf
+  Added explicit128/0 comparison support without changing defaults or gates.
+  Matched native35 (TGS1920 Hz,128/0) reduces carried joint-velocity RMS from
+  0.104306 to0.007934 rad/s, but static spring residual remains0.99948 mN.m.
+  Native36 (PGS1920 Hz,128/0) gives0.008399 rad/s and0.264405 mN.m. Both still
+  FAIL the unchanged spring/static qualification. Dynamic momentum accounting
+  must stay separate; native constitutive-law failure is not proved by these
+  endpoint measurements. No finite-difference velocity replaces native state.
+- Final CPU/USD regression:3059 passed in124.71 s, recorded in
+  `data/sim_physics/regression_20260912_contact_geometry_v3.log`. Earlier v2:
+  3038 passed; the first run's test-only NameError was corrected and rerun.
+  Full grasp-cut-retain-withdraw still requires a physically qualified spring/
+  contact integration; tissue fracture calibration and deposit remain absent.

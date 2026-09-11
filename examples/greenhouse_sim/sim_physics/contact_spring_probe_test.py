@@ -111,7 +111,7 @@ def test_geometry_and_initial_strain_match_both_boundary_conditions(held):
     np.testing.assert_array_equal(frames, layout(replace(c,held_contacts=not held))['frames'])
 
 
-@pytest.mark.parametrize('iterations',[(16,4),(32,0),(128,32)])
+@pytest.mark.parametrize('iterations',[(16,4),(32,0),(128,32),(128,0)])
 @pytest.mark.parametrize('held',[False,True])
 def test_usd_has_no_weld_and_uniform_authored_iterations(iterations,held):
     from pxr import Usd, UsdGeom, UsdPhysics
@@ -368,24 +368,41 @@ def test_contact_control_preserves_gates_and_rejects_mixed_contact_provenance():
 
 
 @pytest.mark.parametrize('model', ['native', 'section_springs', 'section_springs_maximal'])
-def test_128_32_comparison_changes_only_uniform_authored_iterations(model):
+@pytest.mark.parametrize('iterations', [(128,32), (128,0)])
+def test_high_iteration_comparison_changes_only_uniform_authored_iterations(model, iterations):
     from pxr import Usd
-    source = coupon(); high = replace(source, iterations=(128,32))
+    source = coupon(); high = replace(source, iterations=iterations)
     original = Usd.Stage.CreateInMemory(); stage = Usd.Stage.CreateInMemory()
     author(original, source, model=model); author(stage, high, model=model)
     for prim in original.Traverse():
         other = stage.GetPrimAtPath(prim.GetPath())
         for attr in prim.GetAuthoredAttributes():
             expected = (128 if attr.GetName().endswith(':solverPositionIterationCount') else
-                        32 if attr.GetName().endswith(':solverVelocityIterationCount') else attr.Get())
+                        iterations[1] if attr.GetName().endswith(':solverVelocityIterationCount') else attr.Get())
             assert other.GetAttribute(attr.GetName()).Get() == expected
     read = settings_readback(stage, high, actual_dt=high.dt, model=model)
     assert len(read['authored_iteration_readback']) == (3 if model == 'section_springs_maximal' else 4)
-    assert all(r['iterations'] == [128,32] for r in read['authored_iteration_readback'])
+    assert all(r['iterations'] == list(iterations) for r in read['authored_iteration_readback'])
     assert read['native_iteration_readback'] is None and not read['effective_native_iterations_verified']
     assert high.contact_model == 'compliant'
     assert high.stiffness == source.stiffness and high.damping == source.damping
     assert high.masses == source.masses and high.inertias == source.inertias
+
+
+def test_tgs_128_0_report_matches_128_32_except_explicit_iteration_choice():
+    source = coupon(solver='TGS', dt=1/1920, iterations=(128,32))
+    comparison = replace(source, iterations=(128,0))
+    expected = source.report(); expected['iterations'] = [128,0]
+    assert comparison.report() == expected
+    assert not comparison.report()['native_qualified']
+    assert coupon().iterations == (16,4)
+    # Both choices retain the same failed static-load/velocity gates.
+    for c in (source, comparison):
+        inputs = equilibrium(c); inputs['contact_rows'] = []; inputs['qdot'][:] = .1
+        result = assess_tail(tail(c, sample(c, **inputs), count=961), c)
+        assert not result['gates']['stiffness_equilibrium']
+        assert not result['gates']['joint_velocity']
+        assert not result['passed']
 
 
 class SplitFake(FakeArticulation):

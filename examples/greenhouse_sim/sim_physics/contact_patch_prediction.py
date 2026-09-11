@@ -305,7 +305,7 @@ def _all_stick_candidate(M, q, v, K, C, J, g, s, kc, dc, h, f,
                          T, st, active, centre):
     """One mass-whitened KKT solution, nearest predicted multipliers or zero.
 
-Rank deficiency is allowed: redundant anchor forces are not unique. The eight
+Rank deficiency is allowed: redundant anchor forces are not unique. Input
 velocity coordinates are NEVER reduced/pinned. This computes a proposal only;
 rank truncation, normal-branch changes and cones still face original residuals.
 """
@@ -363,15 +363,140 @@ original cold semismooth initialization/fallback and every gate unchanged.
     return result
 
 
+GENERALIZED_API = 'generalized_contact_patch_algebra_v1'
+GENERALIZED_MODEL = 'one_or_two_anchor_circular_coulomb_v1'
+
+
+def _generalized_patch_arrays(patches, m, n):
+    """New API only: bounded variable normal groups and explicit surface speeds."""
+    required = {'model', 'normal_indices', 'tangent_jacobians',
+                'surface_speeds_m_s', 'mu', 'observed'}
+    if (not isinstance(patches, dict) or set(patches) != required
+            or patches.get('model') not in (MODEL, GENERALIZED_MODEL)):
+        raise ValueError('Explicit generalized patch fields required; no seed/context/force data')
+    groups = patches['normal_indices']
+    if (not isinstance(groups, (list, tuple, np.ndarray))
+            or (isinstance(groups, np.ndarray) and groups.ndim == 0)
+            or not 0 <= len(groups) <= 16):
+        raise ValueError('Zero to sixteen patches required')
+    p = len(groups); indices = []
+    for group in groups:
+        ids = np.asarray(group)
+        if ids.ndim != 1 or not 1 <= len(ids) <= 4 or ids.dtype.kind not in 'iu':
+            raise ValueError('One to four integer normal features per patch required')
+        indices.append(ids.astype(int, copy=True))
+    flat = [int(i) for group in indices for i in group]
+    if sorted(flat) != list(range(m)):
+        raise ValueError('Patch groups must partition all normal features exactly once')
+    # A list of per-patch arrays may be ragged in its ACTUAL anchor count.
+    # Never reshape/pad a missing anchor into an invented observation.
+    tangents = patches['tangent_jacobians']; speeds = patches['surface_speeds_m_s']
+    for value in (tangents, speeds):
+        if (not isinstance(value, (list, tuple, np.ndarray))
+                or (isinstance(value, np.ndarray) and value.ndim == 0)
+                or len(value) != p):
+            raise ValueError('One tangent/surface-speed array per patch required')
+    blocks = []; speed_blocks = []; counts = []
+    for tangent, speed in zip(tangents, speeds):
+        block = np.asarray(tangent); surface = np.asarray(speed)
+        if np.iscomplexobj(block) or np.iscomplexobj(surface):
+            raise ValueError('Real source tangent geometry/speeds required')
+        if block.ndim != 3 or len(block) not in (1, 2):
+            raise ValueError('One or two genuine 2D tangent anchors per patch required')
+        count = len(block)
+        if patches['model'] == MODEL and count != 2:
+            raise ValueError('Legacy two-anchor model requires exactly two anchors')
+        blocks.append(_array(block, (count, 2, n), 'actual tangent anchors').reshape(2*count, n))
+        speed_blocks.append(_array(surface, (count, 2), 'actual anchor surface speeds').reshape(2*count))
+        counts.append(count)
+    T = np.concatenate(blocks) if p else np.zeros((0, n))
+    st = np.concatenate(speed_blocks) if p else np.zeros(0)
+    observed = np.asarray(patches['observed'])
+    if observed.shape != (p,) or (p and observed.dtype != np.bool_):
+        raise ValueError('Explicit patch-observed boolean mask required')
+    mu = patches['mu']
+    if (isinstance(mu, (bool, np.bool_))
+            or not isinstance(mu, (int, float, np.integer, np.floating))
+            or not np.isfinite(mu) or mu < 0):
+        raise ValueError('One explicit finite nonnegative uniform mu required')
+    return indices, T, st, float(mu), observed.astype(bool), counts
+
+
+def solve_generalized(M, q, v, K, C, J, g, s, kc, dc, h, f, *, law,
+                      patches, feature_observed, root_dofs, max_iterations=64):
+    """Cold-only 1..64 coordinate algebra; never binds or applies native forces.
+
+root_dofs must explicitly be 0 (no floating root in these coordinates) or 6.
+K/C root rows AND columns must be exactly zero before matrix symmetrization.
+Normal groups partition every row once, 1..4 features per patch, <=16 patches.
+GENERALIZED_MODEL accepts one or two actual 2D tangent anchors per patch:
+tangent_jacobians[p] shape (a_p, 2, n), surface_speeds_m_s[p] (a_p, 2).
+Lists may be ragged across patches. Per-anchor Coulomb bound is
+mu*sum(compressive patch normals)/a_p; no missing anchors are padded.
+MODEL retains its strict two-anchor contract. Anchor-valued outputs preserve
+the per-patch input counts/order; anchor_counts reports that asserted coverage.
+This uniform-share model is an explicit approximation, NOT native-law parity.
+gdot=J*v-s and tangent relative speed=T*v-surface_speeds_m_s. Nonzero surface
+speeds are SOURCE-PROVIDED, not inferred/fitted from observed contact forces.
+
+A zero-centered all-stick candidate may precede the unchanged cold fallback.
+No seed, prediction context or observed-force parameter is accepted. All
+original equilibrium/fixed-point/cone/relative-power gates remain unchanged.
+Rank-one tangent responses (e.g. one-coordinate mechanisms) are supported
+only here; a wholly zero response still fails closed. Motion directions
+absent from T are never pinned. Only tau_spring is an effort proposal; actual
+force caps, geometry coverage/provenance and native application remain caller
+responsibilities. Algebraic observation masks do not authenticate geometry.
+"""
+    q_raw = np.asarray(q)
+    if q_raw.ndim != 1 or not 1 <= len(q_raw) <= 64:
+        raise ValueError('One to sixty-four generalized coordinates required')
+    n = len(q_raw)
+    root_dofs = _integer(root_dofs, 'root_dofs', 0, n)
+    if root_dofs not in (0, 6):
+        raise ValueError('Explicit root_dofs must be zero or six')
+    for value in (M, q, v, K, C, J, g, s, kc, dc, h, f):
+        if np.iscomplexobj(value):
+            raise ValueError('Real generalized inputs required')
+    for value in (K, C):
+        raw = np.asarray(value, dtype=float)
+        if raw.shape == (n,):
+            nonzero_root = np.any(raw[:root_dofs] != 0)
+        elif raw.shape == (n, n):
+            nonzero_root = np.any(raw[:root_dofs] != 0) or np.any(raw[:, :root_dofs] != 0)
+        else:
+            raise ValueError('Generalized K/C vector or matrix shape required')
+        if nonzero_root:
+            raise ValueError('Exact zero raw K/C root rows and columns required')
+    if feature_observed is None:
+        raise ValueError('Explicit feature-observed mask required')
+    result = _solve(M, q, v, K, C, J, g, s, kc, dc, h, f,
+        law=law, patches=patches, feature_observed=feature_observed,
+        max_iterations=max_iterations, _generalized=True, _root_dofs=root_dofs)
+    counts = [len(block) for block in patches['tangent_jacobians']]
+    result.update(model=patches['model'], anchor_counts=counts,
+        algebra_api=GENERALIZED_API, generalized_coordinates=n, root_dofs=root_dofs,
+        floating_root_present=root_dofs == 6, prediction_initialization='cold_only',
+        native_geometry_authenticated=False, source_surface_speeds_caller_provided=True,
+        previous_predicted_seed_used=False, native_qualified=False,
+        contact_force_applied=False, friction_force_applied=False, measured_friction_used=False)
+    if patches['model'] == GENERALIZED_MODEL:
+        result['normal_support_basis'] = (
+            'uniform mu * sum predicted compressive patch normals / actual anchor count per patch')
+    return result
+
+
 def _solve(M, q, v, K, C, J, g, s, kc, dc, h, f, *, law, patches,
-           feature_observed, max_iterations=64, _seed_center=None, _try_all_stick=True):
-    """Eight-coordinate coupon solve; no actual or lagged friction-force argument.
+           feature_observed, max_iterations=64, _seed_center=None, _try_all_stick=True,
+           _generalized=False, _root_dofs=6):
+    """Shared kernel; default remains the eight-coordinate coupon contract.
 
 Returned normal/tangent forces are algebraic diagnostics ONLY, never additional
 actuation. Emitted effort is -K(q+h*v_pred)-C*v_pred with EXACT zero root rows.
 Unresolved/invalid/overflow gives no effort (invalid input may raise).
 Normal complementarity is the explicit unilateral overlap KV approximation;
-Coulomb complementarity is F=projection_disk(F-rho*relative_speed, mu*N/2).
+Coulomb complementarity is F=projection_disk(F-rho*relative_speed, mu*N/a_p),
+where a_p is the actual anchor count (always two in the coupon).
 rho is numerical inverse response, not a material gain. Semismooth Newton uses
 minimum-norm linear solves for redundant sticking anchors, without modifying
 M/K/C or adding physical compliance. Limits/backtracking are deterministic.
@@ -383,19 +508,24 @@ physical equations. This is not added physical damping or mass regularization.
     if not isinstance(law, MaterialLaw) or law.response != 'unilateral_kv_v1':
         raise ValueError('Patch model explicitly requires unilateral_kv_v1, not native sign inference')
     max_iterations = _integer(max_iterations, 'max_iterations', 1, MAX_ITERATIONS)
-    q = _array(q, (8,), 'coupon q'); v = _array(v, (8,), 'coupon v')
-    f = _array(f, (8,), 'known noncontact generalized force')
-    M = _matrix(M, 8, 'M', positive=True)
-    K = _matrix(K, 8, 'K'); C = _matrix(C, 8, 'C')
+    n = len(q) if _generalized else 8
+    q = _array(q, (n,), 'coupon q'); v = _array(v, (n,), 'coupon v')
+    f = _array(f, (n,), 'known noncontact generalized force')
+    M = _matrix(M, n, 'M', positive=True)
+    K = _matrix(K, n, 'K'); C = _matrix(C, n, 'C')
     g = np.asarray(g, dtype=float)
     if g.ndim != 1:
         raise ValueError('Normal gap vector required')
     m = len(g)
-    indices, T, st, mu, observed_patches = _patch_arrays(patches, m)
+    if _generalized:
+        indices, T, st, mu, observed_patches, anchor_counts = _generalized_patch_arrays(patches, m, n)
+    else:
+        indices, T, st, mu, observed_patches = _patch_arrays(patches, m)
+        anchor_counts = [2]*len(indices)
     # Reuse all normal input/root validation; this also gives a force-free
     # initialization, never a native measured normal/friction warm start.
     initial = normal_solve(M, q, v, K, C, J, g, s, kc, dc, h, f,
-        law=law, feature_observed=feature_observed)
+        law=law, feature_observed=feature_observed, root_dofs=_root_dofs)
     if feature_observed is None:
         raise ValueError('Explicit native normal feature observation mask required')
     if not m:
@@ -404,23 +534,31 @@ physical equations. This is not added physical damping or mass regularization.
             cone_max_violation_n=0., friction_fixed_point_residual_n=0.,
             normal_law_residual_n=0., anchor_relative_power_w=[])
         return initial
-    J = _array(J, (m, 8), 'normal Jacobian')
+    J = _array(J, (m, n), 'normal Jacobian')
     s = _array(s, (m,), 'normal surface speeds')
     kc = _array(kc, (m,), 'normal stiffness')
     dc = _array(dc, (m,), 'normal damping')
     observed_normals = np.asarray(feature_observed, dtype=bool)
-    p = len(indices); nf = 4*p; total = m+nf
+    p = len(indices); anchors = sum(anchor_counts); nf = 2*anchors; total = m+nf
+    anchor_patches = [k for k, count in enumerate(anchor_counts) for _ in range(count)]
+    anchor_shares = [1./anchor_counts[k] for k in anchor_patches]
+    offsets = np.r_[0, np.cumsum(anchor_counts)]
+
+    def grouped(value):
+        # Only reporting shape changes; no synthetic observations/forces.
+        return [value[offsets[k]:offsets[k+1]].tolist() for k in range(p)]
+
     with np.errstate(over='raise', invalid='raise', divide='raise'):
         A = M+h*C+h*h*K
         vfree = np.linalg.solve(A, M@v+h*(f-K@q))
         B = np.vstack((J, T))
         D = h*np.linalg.solve(A, B.T)  # all six root columns retained
         JD = J@D; TD = T@D
-        rho = np.zeros(2*p)
-        for a in range(2*p):
+        rho = np.zeros(anchors)
+        for a in range(anchors):
             block = TD[2*a:2*a+2, m+2*a:m+2*a+2]
             eig = np.linalg.eigvalsh((block+block.T)*.5)
-            if eig[0] <= 0:
+            if (eig[-1] <= 0 if _generalized else eig[0] <= 0):
                 raise ValueError('Degenerate tangent anchor response')
             rho[a] = 1/eig[-1]
         identity = np.eye(total)
@@ -441,13 +579,13 @@ physical equations. This is not added physical damping or mass regularization.
             jacobian = identity.copy() if derivative else None
             if derivative:
                 jacobian[:m] += ((h*kc+dc)*active)[:, None]*JD
-            u = (T@vp-st).reshape(2*p, 2)
-            cap = np.zeros(2*p)
-            for a in range(2*p):
+            u = (T@vp-st).reshape(anchors, 2)
+            cap = np.zeros(anchors)
+            for a in range(anchors):
                 cols = slice(m+2*a, m+2*a+2)
-                ni = indices[a//2]
+                ni = indices[anchor_patches[a]]
                 normal_sum = float(np.sum(z[ni]))
-                cap[a] = mu*.5*max(0., normal_sum)
+                cap[a] = mu*anchor_shares[a]*max(0., normal_sum)
                 trial = z[cols]-rho[a]*u[a]
                 length = float(np.linalg.norm(trial))
                 if length <= cap[a]:
@@ -465,8 +603,8 @@ physical equations. This is not added physical damping or mass regularization.
                 if derivative:
                     jacobian[cols] -= dp@(identity[cols]-rho[a]*TD[2*a:2*a+2])
                     if normal_sum > 0:
-                        jacobian[cols, ni[0]] -= radius_gradient*mu*.5
-                        jacobian[cols, ni[1]] -= radius_gradient*mu*.5
+                        for normal_index in ni:
+                            jacobian[cols, normal_index] -= radius_gradient*mu*anchor_shares[a]
             if not all(np.isfinite(x).all() for x in (vp, residual, N, cap, u)):
                 raise ValueError('Nonfinite patch prediction')
             return residual, jacobian, vp, N, gp, speed, active, cap, u
@@ -480,7 +618,7 @@ physical equations. This is not added physical damping or mass regularization.
                     np.any(active[ids]) and not observed_patches[k]
                     for k, ids in enumerate(indices)):
                 return _failed('unobserved_active_feature', iteration)
-            force = z[m:].reshape(2*p, 2)
+            force = z[m:].reshape(anchors, 2)
             tau = -K@(q+h*vp)-C@vp
             residual = M@(vp-v)-h*(f+tau+J.T@z[:m]+T.T@z[m:])
             denom = max(float(np.linalg.norm(M@vp)), float(np.linalg.norm(M@v)),
@@ -492,7 +630,7 @@ physical equations. This is not added physical damping or mass regularization.
             # Verify algebraic momentum, cone feasibility and dissipativity;
             # never use a native measured contact to decide these gates.
             if (equilibrium > TOLERANCE or violation > TOLERANCE*scale
-                    or np.any(tau[:6] != 0) or not np.isfinite(tau).all()):
+                    or np.any(tau[:_root_dofs] != 0) or not np.isfinite(tau).all()):
                 return _failed('equilibrium_or_cone_residual', iteration)
             # Projection variational inequality with e=F-proj(F-rho*u):
             # F.u <= |e| (|proj|/rho + |u|). Near exact stick u is
@@ -500,14 +638,14 @@ physical equations. This is not added physical damping or mass regularization.
             # rejects signed-zero work. Account for the ACTUAL projection
             # residual plus floating arithmetic, not physical friction gain.
             force_norm = np.linalg.norm(force, axis=1)
-            projection_error = np.linalg.norm(r[m:].reshape(2*p, 2), axis=1)
+            projection_error = np.linalg.norm(r[m:].reshape(anchors, 2), axis=1)
             projection_error += 32*np.finfo(float).eps*np.maximum(force_norm, scale)
             power_allowance = projection_error*((force_norm+projection_error)/rho
                                                +np.linalg.norm(u, axis=1))
             if np.any(power > power_allowance):
                 return _failed('nondissipative_friction_residual', iteration)
             modes = []
-            for a in range(2*p):
+            for a in range(anchors):
                 if cap[a] == 0:
                     modes.append('unsupported')
                 elif rho[a]*np.linalg.norm(u[a]) <= TOLERANCE*scale:
@@ -516,14 +654,14 @@ physical equations. This is not added physical damping or mass regularization.
                     modes.append('slip')
             return dict(status='resolved', model=MODEL, iterations=iteration,
                 backtracks=backtracks, numerical_trust_steps=trust_steps, v_pred=vp.tolist(),
-                tau_spring=tau.tolist(), tau_joint=tau[6:].tolist(),
+                tau_spring=tau.tolist(), tau_joint=tau[_root_dofs:].tolist(),
                 normal_forces_n=z[:m].tolist(), normal_response_n=N.tolist(),
-                friction_forces_n=force.reshape(p, 2, 2).tolist(),
-                anchor_limits_n=cap.reshape(p, 2).tolist(),
-                friction_modes=np.asarray(modes).reshape(p, 2).tolist(),
-                tangent_speeds_m_s=u.reshape(p, 2, 2).tolist(),
-                anchor_relative_power_w=power.reshape(p, 2).tolist(),
-                anchor_power_error_bound_w=power_allowance.reshape(p, 2).tolist(),
+                friction_forces_n=grouped(force),
+                anchor_limits_n=grouped(cap),
+                friction_modes=grouped(np.asarray(modes)),
+                tangent_speeds_m_s=grouped(u),
+                anchor_relative_power_w=grouped(power),
+                anchor_power_error_bound_w=grouped(power_allowance),
                 normal_active=active.tolist(), gap_pred_m=gp.tolist(),
                 normal_relative_speed_m_s=speed.tolist(),
                 normal_law_residual_n=float(np.max(abs(r[:m]))),
