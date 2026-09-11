@@ -563,3 +563,35 @@ endpoint IK iterations. This rejects camera/bracket/plant conflicts early;
 all downstream arm/transit/native checks remain mandatory. Native full-robot
 contact guards also include friction-anchor loads, with no friction used as
 cutting evidence. Neither change claims a successful bimanual cut.
+
+## Native collision-representation diagnostic (2026-09-11)
+
+`cooked_geometry_probe.capture_current_stage(NEW_JSON_PATH)` can be awaited
+in one already-open **stopped diagnostic** Kit stage containing the original
+seed101 plant and full robot. It does not own SimulationApp, play the timeline,
+step physics, change a collider or replace any planner screen. The caller
+must supply an outer wall-time limit; pending native requests are cancelled
+on the probe's own timeout or stage/timeline changes.
+
+The installed PhysX cooking API returns convex vertices, polygon spans and
+planes for exactly the right wrist bracket and MainStem26/27 collision prims.
+The probe copies callback buffers, validates topology, binds source geometry,
+USD transforms/units, physics settings and the native binding binary, and
+checks that these remain unchanged. Returned vertices are collider-local;
+full transforms (including scale) are applied before world-metre reporting.
+No visual mesh or newly authored approximation substitutes for native cooking.
+
+`data/sim_physics/cooked_geometry_20260911_01/{run,convexes}.json` captures
+all three meshes successfully: **16 convex parts each**, four service updates,
+32.547 s including startup/fixture construction and before shutdown. Original
+source hashes/settings remain unchanged; no timeline play or physics steps.
+The reproduction wrapper and full log are preserved alongside the run.
+The isolated headless stage is not a full-greenhouse cut or a performance FPS
+benchmark. Unit regression including this diagnostic: **315 passed**.
+
+Important: the cooking interface supplies a prim's representation; it does
+not expose an attached live actor's shape identity. The report deliberately
+sets `eligible_to_replace_screen=False`. Native transform/scale/query agreement
+and conservative narrow-phase checks are still required before these pieces
+can safely replace enclosing-box rejection in the actual planner. Existing
+hand clearance, protected-plant checks and runtime contact guards stay active.

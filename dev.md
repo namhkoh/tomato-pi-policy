@@ -4528,3 +4528,31 @@ No hardware, collection, tuning, review, split or training-export changes.
   force or replacing measured evidence with a timer is not a valid fix.
   Tissue coefficients remain uncalibrated. Full grasp-cut-retain-deposit and
   observation-driven VLM actions remain unqualified.
+
+### 2026-09-11: Portable code package and native convex extraction
+
+- Matching H200 code package from commit `127b43e`:
+  `training_archives/visible_occluded_20260911_v1_code_v2.zip`,422,426 bytes,
+  SHA256 `82e1e8e5e4b7d4b84a48b10bc9c2ad044ccc511adda1e9d5cb971656f7f8ff8f`.
+  All135 tracked member bytes match that commit. Independently extracted
+  ordinary-Python CLI/help and the full14,259-row format audit pass. This
+  package includes the server recipe; older `_code.zip` lacks that recipe.
+  No actual Qwen processor/model was loaded. Data ZIP and source release stay
+  byte-identical; the server user owns model download and training execution.
+- Added `sim_physics/cooked_geometry_probe.py`: stopped-stage, async native
+  PhysX collision-representation extraction, bounded requests/cancellation,
+  copied/validated convex buffers, source/settings/version/transform hashes,
+  and exclusive advisory report publication. It cannot approve execution,
+  change current planner geometry, or clear a protected-structure collision.
+- Native `cooked_geometry_20260911_01` completes on the original47 mm-class
+  fixture with full robot: right bracket/MainStem26/MainStem27 each return
+  **16 native cooked convex pieces**.4 Kit service updates;32.547 s including
+  startup and authoring, no play, physics step or motion. Source hashes and
+  native exposed physics settings unchanged. Capture payload SHA256
+  `d40c50ae2f081985faec825c5572ff723fd42af608bb813056b8ca1b63858957`.
+  This confirms data extraction, not live actor equivalence or a valid path.
+- The actual primary obstacle remains native-contact cutting. Cooked pieces
+  permit a more precise advisory check of bracket/stem box rejections; native
+  actor/query agreement is still needed before replacing planner bounds.
+  No force, penetration, clearance, dwell or loaded-travel gate was relaxed.
+  Full physics regression **315 passed** (54.41 s); no full-cut claim.
