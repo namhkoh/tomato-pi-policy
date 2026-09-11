@@ -4,6 +4,55 @@
 the H200 servers; training follows that transfer. Do not start local training,
 request server credentials, or treat the current engineering export as ready.
 
+The exact consumer task, annotation convention, file layout and limitations
+are explained in [DATASET_CARD.md](DATASET_CARD.md).
+
+### Agent-review checkpoint (2026-09-11, not a release)
+
+Three explicitly requested agents inspected 51 original RGB/card pairs:
+37 previously pending examples and 14 existing uncertain/negative cases.
+Recommendations were 33 supports, 15 holds and 3 rejects; this is targeted
+representative QA, not a measured error rate across the corpus. The 37 pending
+task records now have 33 attributed assistant accepts and four holds.
+The broader 108-card queue has **91 accepts / 14 holds / 3 rejects / 0 pending**.
+One of those 91 accepts has a new assistant source hold because its RGB query
+fragment remains ambiguous; the earlier human acceptance is preserved as a
+documented disagreement, not overwritten or counted as clean current support.
+
+Evidence: `data/sim_data/dataset_audits/release_20260911_agents/` contains the
+three reports, exact per-image reasoning, source/card hashes and
+`applied_assessments.json`. New source-level holds are enforced independently
+of whether a task review bundle is supplied to the exporter. Three newly held
+examples were medium; do not use their old labels as approved coverage anchors.
+The review-reconciled diagnostic now includes **63 audits / 20,151 raw
+frames / 14,404 candidates**: train 11,637, validation 1,369, test 1,398.
+`preflight_02/summary.json` includes the recovered seed17 audit missed by the
+initial `audit/audit.json` glob, the new 15-frame seed61 pilot, and seven
+latest source holds. The seed61 pilot yielded 15 easy examples and no medium;
+two new representative original/card pairs were inspected and assistant-accepted.
+Wegener/D additionally inspected two validation-medium original/audit-card
+pairs and recommended holds, which were recorded at source level without
+fabricating fresh task-card review. Total new targeted inspections: 55 unique
+original/card pairs, not a statistical sample of the complete corpus.
+
+The full release fails **validation medium 2/20 and test medium 17/20**.
+All other numerical gates pass in this diagnostic; replacement/current-subset
+stratified QA and a normal complete export still remain. These are candidate
+counts, not individually approved/exportable records. The existing 163-row
+engineering preview is unchanged and remains rejected by the training loader.
+No final ZIP or training-ready claim is made. A narrower visible/occluded
+baseline was proposed to the user as an explicit scope choice, not silently
+substituted for the balanced release. No server or training job was started.
+
+The exporter now offers `--reconcile-reviews` for a newly rebuilt corpus:
+all input review provenance is retained, but only exact current-label accepts
+count toward QA. A hold on a retained image still fails; stale accepts never
+approve changed queries. Numeric/visual gates and frozen splits are unchanged.
+Export also detects appended review files during copying, so a new hold cannot
+silently enter after the initial source scan. Default strict behavior remains.
+Source-image holds also follow exact RGB hashes across duplicate audited runs;
+another unreviewed copy cannot resurrect a held image.
+
 ## Task and files
 
 Task `greenhouse.target_conditioned_cutpoint_rgb.v3` takes **unaltered mounted

@@ -1,4 +1,20 @@
 import numpy as np
+
+
+def test_jaw_skew_preserves_rigid_pose_and_approach_without_mutating_input():
+    from sim_physics.full_robot import skew_jaw_frame
+    rotation=np.array([[0.,0,1],[1,0,0],[0,1,0]])
+    before=rotation.copy()
+    for degrees in (-30,0,30):
+        result=skew_jaw_frame(rotation,degrees)
+        np.testing.assert_array_equal(result[:,2],rotation[:,2])
+        np.testing.assert_allclose(result.T@result,np.eye(3),atol=1e-12)
+        assert np.linalg.det(result)==pytest.approx(1)
+    np.testing.assert_array_equal(skew_jaw_frame(rotation,0),rotation)
+    np.testing.assert_array_equal(before,rotation)
+    for degrees in (-31,31,float('nan'),float('inf')):
+        with pytest.raises(ValueError): skew_jaw_frame(rotation,degrees)
+    with pytest.raises(ValueError): skew_jaw_frame(np.ones((3,3)),0)
 import pytest
 from sim_physics.plant_test import native
 
@@ -102,6 +118,8 @@ def test_explicit_station_and_approach_require_full_robot(tmp_path,extra):
     ('--grasp-depth-m','nan'),('--grasp-depth-m','.089'),('--grasp-depth-m','.126'),('--grasp-depth-m','.125'),
     ('--cut-arc-m','.009'),('--cut-arc-m','.021'),('--cut-arc-m','.02'),('--cut-arc-m','nan'),
     ('--cut-standoff-m','.007'),('--cut-standoff-m','.026'),('--cut-standoff-m','nan'),('--cut-standoff-m','.008'),
+    ('--grasp-compression-m','.0001'),('--grasp-compression-m','.0011'),('--grasp-compression-m','nan'),('--grasp-compression-m','.001'),
+    ('--bimanual-reposition-m','nan'),('--bimanual-reposition-m','-.001'),('--bimanual-reposition-m','.011'),('--bimanual-reposition-m','.008'),
     ('--approach-distance','nan'),('--approach-distance','.009'),
     ('--approach-distance','.081'),('--approach-distance','.02'),('--grasp-roll','180')])
 def test_initial_pose_options_fail_closed_without_qualified_full_robot(tmp_path,option,value):

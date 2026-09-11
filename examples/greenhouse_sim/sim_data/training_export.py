@@ -36,6 +36,17 @@ RELEASE_GATES={**RELEASE_GATES,'minimum_localized_rows':{'train':5000,'validatio
                'minimum_occluded_rows':{'train':1000,'validation':50,'test':50}}
 
 
+def review_directory_snapshot(directory):
+    return {str(p.resolve()):sha256(p) for p in sorted(Path(directory).glob('*.json'))}
+
+
+def verify_review_directories(snapshots):
+    # File hashes alone miss a newly appended hold while a large export copies.
+    for directory,expected in snapshots.items():
+        require(review_directory_snapshot(directory)==expected,
+            'Review history changed during export; recount required: '+directory)
+
+
 def read_jsonl(path):
     with Path(path).open(encoding='utf-8') as f:
         for line in f:
@@ -106,7 +117,7 @@ def gather(audit_paths, *, output=None):
     """Validate immutable sources and derive deduplicated labels without writing."""
     output=Path(output).resolve() if output is not None else None
     require(bool(audit_paths),'No audited captures')
-    bindings={}; audits=[]; families={}; reports={}; source_plans={}
+    bindings={}; audits=[]; families={}; reports={}; source_plans={}; review_directories={}
     for name in audit_paths:
         path=Path(name).resolve(); audit_hash=sha256(path); audit=read_json(path)
         require(audit.get('schema_version')==SCHEMA and audit.get('state')=='complete_engineering_audit_not_approval', 'Incomplete audit')
@@ -142,23 +153,33 @@ def gather(audit_paths, *, output=None):
         for card,h in audit['cards_sha256'].items():
             require(sha256(safe_file(path.parent,card))==h,'Changed review evidence')
         if family not in reports: reports[family]=audit_manifest(job['source_manifest_path'])
-        records=[]
-        for record_path in sorted((path.parent/'records').glob('*.json')):
-            bindings[str(record_path)]=sha256(record_path)
+        records=[];folder=path.parent/'records'
+        review_directories[str(folder)]=review_directory_snapshot(folder)
+        for record_name,record_hash in review_directories[str(folder)].items():
+            record_path=Path(record_name)
+            bindings[str(record_path)]=record_hash
             records.append(read_json(record_path))
         reviews=active_reviews(records,audit,audit_hash)
         audits.append((path,audit,capture,family,split,manifest.get('lighting'),reviews,audit_hash,manifest.get('render_budget_profile','established')))
     verify_bindings(bindings)
+    # A duplicate capture must not resurrect the RGB of an explicitly held
+    # source sample merely because its own audit has no review yet.
+    held_images=set()
+    for _,audit,capture,_,_,_,reviews,_,_ in audits:
+        for (sid,_role),review in reviews.items():
+            if review.get('decision') in ('hold','reject'):
+                require(sid in {r['sample_id'] for r in audit['samples']},'Unknown held source sample')
+                held_images.add(read_json(capture/sid/'sample.json')['files']['inputs/rgb.png']['sha256'])
     candidates=[]; exclusions=[]; duplicate=set(); duplicate_views=set()
     for path,audit,capture,family,split,lighting,reviews,audit_hash,profile in audits:
         for checked in audit['samples']:
             require(checked.get('integrity_and_recomputed_annotations_passed') is True
                     and checked['camera'].get('mounted_robot_pov_verified') is True,'Unaudited observation')
             sid=checked['sample_id']; directory=capture/sid; meta=read_json(directory/'sample.json')
-            if any(reviews.get((sid,role),{}).get('decision') in ('hold','reject') for role in ('assistant','human')):
+            key=meta['files']['inputs/rgb.png']['sha256']
+            if key in held_images:
                 exclusions.append(dict(source_sample=str(directory),reason='explicit_reviewer_hold_or_reject',family=family)); continue
             label=derive_label(directory,meta,reports[family])
-            key=meta['files']['inputs/rgb.png']['sha256']
             if not label['eligible']:
                 exclusions.append(dict(source_sample=str(directory),reason=label['reason'],family=family)); continue
             # Count unique rendered images, not repeated prompts or repeated exports.
@@ -173,10 +194,12 @@ def gather(audit_paths, *, output=None):
                 directory=directory,metadata=meta,label=label,source_audit_sha256=audit_hash,task_contract_sha256=contract_hash(),
                 source_sample_sha256=sha256(directory/'sample.json'),capture_profile=profile,view_signature=signature))
     require(bool(candidates),'No eligible synthetic labels; no release written')
-    return dict(candidates=candidates,exclusions=exclusions,bindings=bindings,source_plans=source_plans)
+    verify_review_directories(review_directories)
+    return dict(candidates=candidates,exclusions=exclusions,bindings=bindings,source_plans=source_plans,
+        review_directories=review_directories)
 
 
-def build(audit_paths,output,*,allow_incomplete=False,visual_reviews=None):
+def build(audit_paths,output,*,allow_incomplete=False,visual_reviews=None,reconcile_reviews=False):
     output=Path(output).resolve()
     require(not output.exists(),'Choose a new release output; never overwrite')
     gathered=gather(audit_paths,output=output)
@@ -185,7 +208,9 @@ def build(audit_paths,output,*,allow_incomplete=False,visual_reviews=None):
     if not allow_incomplete:
         require(gates['passed'],'Release coverage gates failed: '+', '.join(gates['failures']))
     from .training_release_review import verify_reviews
-    review_evidence=verify_reviews(visual_reviews or [],candidates,require_complete=not allow_incomplete)
+    review_evidence=verify_reviews(visual_reviews or [],candidates,require_complete=not allow_incomplete,
+        reconcile=reconcile_reviews)
+    review_directories={**gathered['review_directories'],**review_evidence['review_directory_snapshots']}
     complete=bool(gates['passed'] and review_evidence['passed'])
     output.mkdir(parents=True)
     for folder in ('images','depth','labels','splits'): (output/folder).mkdir()
@@ -225,6 +250,9 @@ def build(audit_paths,output,*,allow_incomplete=False,visual_reviews=None):
         implementation_sha256={p:sha256(Path(__file__).with_name(p)) for p in
             ('training_export.py','training_contract.py','query_visibility.py','training_release_review.py')})
     verify_bindings(bindings)
+    if review_evidence['source_evidence_sha256']:
+        verify_bindings(review_evidence['source_evidence_sha256'])
+    verify_review_directories(review_directories)
     write_json(output/'manifest.json',result)
     validate(output,allow_incomplete=allow_incomplete)
     return result
@@ -284,8 +312,11 @@ def main(argv=None):
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--allow-incomplete',action='store_true')
     p.add_argument('--visual-review',type=Path,action='append')
+    p.add_argument('--reconcile-reviews',action='store_true',
+        help='Retain full review provenance; count only exact current labels, never override a retained-image hold')
     a=p.parse_args(argv)
-    r=build(a.audit,a.output,allow_incomplete=a.allow_incomplete,visual_reviews=a.visual_review) if a.command=='build' else validate(a.output,allow_incomplete=a.allow_incomplete)
+    r=build(a.audit,a.output,allow_incomplete=a.allow_incomplete,visual_reviews=a.visual_review,
+        reconcile_reviews=a.reconcile_reviews) if a.command=='build' else validate(a.output,allow_incomplete=a.allow_incomplete)
     print(json.dumps({k:v for k,v in r.items() if k in ('state','acceptance','rows','portable_loader_verified')},indent=2),flush=True)
 
 

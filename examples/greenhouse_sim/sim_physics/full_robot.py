@@ -21,6 +21,17 @@ def finger_force_budget(gravity):
     return .5-np.abs(gravity)
 
 
+def skew_jaw_frame(rotation,degrees):
+    """Bounded in-plane grasp proposal; never changes palm approach direction."""
+    rotation=np.asarray(rotation,float)
+    if (rotation.shape!=(3,3) or not np.isfinite(rotation).all()
+            or not np.allclose(rotation.T@rotation,np.eye(3),atol=1e-6)
+            or np.linalg.det(rotation)<0 or not np.isfinite(degrees) or abs(degrees)>30):
+        raise ValueError('Rigid grasp frame and finite jaw skew within +/-30 degrees required')
+    a=np.radians(degrees);c,s=np.cos(a),np.sin(a)
+    return rotation@np.array([[c,-s,0],[s,c,0],[0,0,1]])
+
+
 def finger_compliance(finger_masses,stem_mass):
     """Experimental force-based pad compliance; engineering prior, not measured.
 
@@ -39,7 +50,7 @@ def finger_compliance(finger_masses,stem_mass):
 
 class FullRobotGripper(GripperFixture):
     def __init__(self,stage,rig,*,arc=.08,friction=.5,ground_height=None,
-                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None):
+                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None,grasp_skew=0.):
         from pxr import Gf,Sdf,Usd,UsdGeom,UsdPhysics,UsdShade
         from greenhouse_sim.robot_model import DEFAULT_ASSET,DEFAULT_URDF
         from greenhouse_sim.robot_kinematics import Rby1Kinematics,base_transform
@@ -81,6 +92,11 @@ class FullRobotGripper(GripperFixture):
         if grasp_roll not in (0,180): raise ValueError('Grasp roll must be 0 or 180 degrees')
         self.grasp_roll=grasp_roll
         if grasp_roll==180: self.goal[:3,:2]*=-1
+        # Small in-plane jaw skew is a grasp proposal, not a relaxed IK error.
+        # Actual opposing shaft contacts and full finger/cut clearance still
+        # decide whether this oblique physical grasp is acceptable.
+        self.goal[:3,:3]=skew_jaw_frame(self.goal[:3,:3],grasp_skew)
+        self.grasp_skew=float(grasp_skew)
         # Original collision pads span palm Z=-135.5..-73.5 mm. A bounded
         # distal grasp can avoid burying the palm/fingers in attached foliage.
         # This moves the hand, not the plant or its collision geometry.
@@ -285,6 +301,7 @@ class FullRobotGripper(GripperFixture):
             joint_state_names=getattr(self,'names',None),
             approach_tilt_degrees=self.approach_tilt,
             grasp_roll_degrees=self.grasp_roll,
+            grasp_skew_degrees=self.grasp_skew,
             grasp_depth_m=self.grasp_depth,
             approach_distance_m=self.approach_distance,
             approach_side=self.approach_side,

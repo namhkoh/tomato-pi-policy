@@ -21,10 +21,13 @@ def main(argv=None):
     parser.add_argument('--station-forward',type=float,default=.04)
     parser.add_argument('--multi-seed',action='store_true')
     parser.add_argument('--fixed-shoulders',type=float,nargs='+')
+    parser.add_argument('--pose-family',type=int,default=0,help='Opt-in bounded continuation steps per direction, 0..32')
     parser.add_argument('--station-pose',type=float,nargs=3)
     parser.add_argument('--target',default='SubStem_41')
+    parser.add_argument('--plant',default='seed101_full')
     parser.add_argument('--cut-standoff',type=float,default=.025)
     parser.add_argument('--grasp-depth',type=float,default=.125)
+    parser.add_argument('--grasp-skew',type=float,default=0.)
     parser.add_argument('--approach-vector',type=float,nargs=3)
     parser.add_argument('--approach-tilts',type=float,nargs='+',default=[10.,-10.,30.])
     parser.add_argument('--radial-stations',action='store_true')
@@ -33,7 +36,8 @@ def main(argv=None):
     parser.add_argument('--grasp-arcs',type=float,nargs='+',default=[.05,.08])
     parser.add_argument('--station-headings',type=float,nargs='+',default=[-120.,-90.,180.,-150.,120.,0.])
     args=parser.parse_args(argv)
-    if args.output.exists() or not 1<=args.max_layouts<=100: raise ValueError('New output and bounded layout count required')
+    if args.output.exists() or not 1<=args.max_layouts<=100 or not 0<=args.pose_family<=32:
+        raise ValueError('New output and bounded layout/continuation counts required')
     args.output.mkdir(parents=True)
     from pxr import Gf,Usd,UsdGeom
     from sim_data.audit import DEFAULT_PACK,audit_manifest
@@ -41,7 +45,7 @@ def main(argv=None):
     from .plant import build
     from .bimanual import BimanualRobot
     from .startup_screen import screen
-    manifest=DEFAULT_PACK/'plants/components/seed101_full/manifest.json'
+    manifest=DEFAULT_PACK/'plants/components'/args.plant/'manifest.json'
     stage=Usd.Stage.CreateInMemory();UsdGeom.SetStageMetersPerUnit(stage,1);UsdGeom.SetStageUpAxis(stage,'Z')
     audit=audit_manifest(manifest);paths=assemble_plant(stage,'/World/Plant',audit)
     stage.SetEditTarget(stage.GetSessionLayer())
@@ -69,6 +73,7 @@ def main(argv=None):
     for number,options in enumerate(options_list):
         if number>=args.max_layouts: break
         options['grasp_depth']=args.grasp_depth
+        options['grasp_skew']=args.grasp_skew
         if args.approach_vector is not None: options['approach_vector']=args.approach_vector
         result=dict(options=options,torso_degrees=args.torso,endpoint_counts={},proposals=[],rejections=[]);results.append(result)
         print('PAIRED_LAYOUT '+json.dumps(options),flush=True)
@@ -84,6 +89,9 @@ def main(argv=None):
             robot.held_plant_screen.include_static_scene(stage,robot.root,rig.root,
                 robot.body_world(robot.initial_q,robot.right)['link_right_arm_0'][:3,3])
             robot.held_plant_screen.snapshot(rig.rest_frames)
+            result['grasp_screen']=robot.screen_grasp_scene(rig.rest_frames)
+            if not result['grasp_screen']['passed']:
+                raise ValueError('Left grasp corridor intersects unintended plant geometry')
             seeds=[robot.right]
             if args.multi_seed:
                 lower,upper=robot.kin.arm_limits_degrees('right')
@@ -100,23 +108,28 @@ def main(argv=None):
                     solution=solve_fixed_joint(robot.kin,'right',desired,seeds[seed_index],robot.base,
                         joint_degrees=args.fixed_shoulders[seed_index-1],maximum_evaluations=180)
                 else: solution=robot.kin.solve_pose('right',desired,seeds[seed_index],robot.base,maximum_evaluations=180)
-                reason='ik';q=np.asarray(solution.joint_degrees)
-                if solution.succeeded:
-                    reason='interarm'
-                    if robot.kin.inter_arm_clearance(left,q,robot.base).clearance_m>=.01:
-                        reason='self'
-                        self_result=robot.check_self(left,q)
-                        if self_result['passed']:
-                            reason='scene'
-                            if robot.check_held_plant(left,q):
-                                reason='endpoint_clear'
-                                result['proposals'].append(dict(angle=angle,wing_m=wing,normal_sign=normal_sign,
-                                    seed_index=seed_index,right_degrees=q.tolist(),left_degrees=left.tolist()))
-                if reason in ('self','scene'):
-                    result['rejections'].append(dict(angle=angle,wing_m=wing,normal_sign=normal_sign,seed_index=seed_index,
-                        reason=reason,detail=self_result if reason=='self' else robot.held_plant_screen.last_failure,
-                        right_degrees=q.tolist()))
-                result['endpoint_counts'][reason]=result['endpoint_counts'].get(reason,0)+1
+                from .redundant_ik import pose_family
+                family=pose_family(robot.kin,'right',desired,solution.joint_degrees,robot.base,
+                    steps_per_direction=args.pose_family) if args.pose_family and solution.succeeded else ()
+                for family_index,solution in enumerate(itertools.chain([solution],family)):
+                    reason='ik';q=np.asarray(solution.joint_degrees)
+                    if solution.succeeded:
+                        reason='interarm'
+                        if robot.kin.inter_arm_clearance(left,q,robot.base).clearance_m>=.01:
+                            reason='self'
+                            self_result=robot.check_self(left,q)
+                            if self_result['passed']:
+                                reason='scene'
+                                if robot.check_held_plant(left,q):
+                                    reason='endpoint_clear'
+                                    result['proposals'].append(dict(angle=angle,wing_m=wing,normal_sign=normal_sign,
+                                        seed_index=seed_index,family_index=family_index,right_degrees=q.tolist(),left_degrees=left.tolist()))
+                    if reason in ('self','scene'):
+                        result['rejections'].append(dict(angle=angle,wing_m=wing,normal_sign=normal_sign,seed_index=seed_index,
+                            family_index=family_index,reason=reason,detail=self_result if reason=='self' else robot.held_plant_screen.last_failure,
+                            right_degrees=q.tolist()))
+                    result['endpoint_counts'][reason]=result['endpoint_counts'].get(reason,0)+1
+                    if len(result['proposals'])>=3: break
                 if len(result['proposals'])>=3: break
             result['robot_base']=robot.base.tolist()
         except Exception as exc: result['error']=str(exc)

@@ -147,8 +147,20 @@ def test_bimanual_grasp_stops_at_shaft_width_without_relaxing_force_limit(monkey
     monkeypatch.setattr(FullRobotGripper,'close',lambda self,f:fractions.append(f))
     robot.close(0.);robot.close(.5);robot.close(1.)
     np.testing.assert_allclose(fractions,[0.,.45,.9])
+    robot.grasp_compression=.001;robot.close(1.)
+    assert fractions[-1]==pytest.approx(.92)
     for f in (float('nan'),-.1,1.1):
         with pytest.raises(ValueError): robot.close(f)
+
+
+def test_reposition_schedule_preserves_default_and_requires_reobservation_before_motion():
+    from sim_physics.bimanual_probe import sequence_times
+    original=sequence_times(0)
+    assert original==dict(delay=0.,plan=3.5,approach=4.,stroke=8.,end=14.)
+    moved=sequence_times(.008)
+    assert moved==dict(delay=1.5,plan=5.,approach=5.5,stroke=9.5,end=15.5)
+    for value in (-.001,.011,float('nan')):
+        with pytest.raises(ValueError): sequence_times(value)
 
 
 def test_reset_invalidates_scene_snapshot_and_planning_time(monkeypatch):

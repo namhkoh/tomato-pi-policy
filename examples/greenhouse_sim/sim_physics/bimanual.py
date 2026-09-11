@@ -9,6 +9,9 @@ from .knife import KnifeGeometry,ShearGate,mount_forward,cut_plane_normal,transv
 class BimanualRobot(FullRobotGripper):
     def __init__(self,*args,**kwargs):
         standoff=kwargs.pop('cut_standoff',.025)
+        self.grasp_compression=kwargs.pop('grasp_compression',.0005)
+        if not np.isfinite(self.grasp_compression) or not .00025<=self.grasp_compression<=.001:
+            raise ValueError('Diagnostic pad compression must be finite 0.25..1 mm')
         kwargs.setdefault('station_offset',(0.,0.))
         kwargs.setdefault('approach_side',1)
         super().__init__(*args,**kwargs)
@@ -69,6 +72,49 @@ class BimanualRobot(FullRobotGripper):
         return (not hasattr(self,'held_plant_screen') or
             self.held_plant_screen.check(self.body_world(left,right),stroke=stroke))
 
+    def screen_grasp_scene(self,frames):
+        """Conservative left approach/closure screen; never certifies a grasp.
+
+        The caller supplies current native plant frames before moving. Only
+        finger/selected-shaft pairs are expected; every leaf remains checked.
+        Reuse the local static cache, never traverse USD in each physics tick.
+        """
+        from .held_plant_screen import HeldPlantScreen
+        if self.held_plant_screen.workspace is None:
+            self.held_plant_screen.include_static_scene(self.stage,self.root,self.rig.root,
+                self.body_world(self.initial_q,self.right)['link_right_arm_0'][:3,3])
+        screen=HeldPlantScreen(self.rig,self.self_screen.shapes,self.knife.collider,
+            arm='left',grasp_path=self.grasp_path)
+        screen.static=self.held_plant_screen.static
+        screen.static_indices=self.held_plant_screen.static_indices
+        screen.workspace=self.held_plant_screen.workspace
+        screen.snapshot(frames)
+        previous=getattr(self,'planning_slides',None);checks=0
+        result=dict(passed=False,training_eligible=False,native_grasp_verified=False)
+        try:
+            self.planning_slides=self.slides.copy()
+            for fraction,q in zip(self.fractions,self.path_q):
+                if fraction>1.+1e-8: break
+                checks+=1
+                if not screen.check(self.body_world(q,self.right),grasp=True):
+                    result['failure']={**screen.last_failure,'phase':'approach','fraction':float(fraction)}
+                    return result
+            q=self.path_q[int(np.argmin(abs(self.fractions-1.)))]
+            aperture=max(0.,self.radius-self.grasp_compression)
+            for gap in np.linspace(.025,aperture,max(2,int(np.ceil((.025-aperture)/.001))+1)):
+                self.planning_slides={'gripper_finger_l1':-gap,'gripper_finger_l2':gap}
+                checks+=1
+                if not screen.check(self.body_world(q,self.right),grasp=True):
+                    result['failure']={**screen.last_failure,'phase':'closure','aperture_m':float(gap)}
+                    return result
+            result['passed']=True
+            return result
+        finally:
+            if previous is None: del self.planning_slides
+            else: self.planning_slides=previous
+            result['checks']=checks
+            self.grasp_scene_screen=result
+
     def bind(self,simulation_view):
         super().bind(simulation_view)
         self.right_indices=[self.names.index(f'right_arm_{i}') for i in range(7)]
@@ -79,10 +125,11 @@ class BimanualRobot(FullRobotGripper):
     def close(self,fraction):
         # Geometry-bounded closure for this privileged shaft fixture. Driving
         # to a zero-width aperture keeps compressing a ~6 mm stem after grasp.
-        # Stop 0.5 mm inside its radius instead; force and penetration guards
+        # Default stop is 0.5 mm inside radius; the bounded diagnostic bias
+        # can be qualified separately. Force and penetration guards
         # remain unchanged and actual opposing contact still verifies grasp.
         if not np.isfinite(fraction) or not 0<=fraction<=1: raise ValueError('Invalid finger closure')
-        aperture=max(0.,self.radius-.0005)
+        aperture=max(0.,self.radius-getattr(self,'grasp_compression',.0005))
         super().close(fraction*(1-aperture/.025))
 
     def seam(self,frames):
@@ -326,8 +373,8 @@ class BimanualRobot(FullRobotGripper):
         result=super().report()
         result.update(right_arm='original_fitted_knife_guarded_native_joint_drives',
             grasp_closure=dict(mode='ground_truth_shaft_width_stop_with_native_contact_verification',
-                commanded_half_aperture_m=max(0.,self.radius-.0005),
-                nominal_pad_compression_m=.0005,material_calibrated=False),
+                commanded_half_aperture_m=max(0.,self.radius-self.grasp_compression),
+                nominal_pad_compression_m=self.grasp_compression,material_calibrated=False),
             minimum_grasp_self_capsule_clearance_m=self.minimum_grasp_self_clearance,
             knife_mount=self.knife_mount,
             blade_contact_geometry=self.blade_contacts,

@@ -83,6 +83,22 @@ def test_incomplete_default_export_refuses_without_writing(source_audit):
     assert not output.exists()
 
 
+def test_duplicate_audit_cannot_resurrect_a_held_rgb(source_audit,monkeypatch):
+    path,_=source_audit
+    other=path.parent.parent/'duplicate_audit'/'audit.json'
+    other.parent.mkdir();shutil.copyfile(path,other)
+    calls=[]
+    def reviews(*args):
+        calls.append(1)
+        return {('sample_0001','assistant'):{'decision':'hold'}} if len(calls)==1 else {}
+    monkeypatch.setattr(export,'active_reviews',reviews)
+    def should_not_derive(*args):
+        raise AssertionError('Held RGB must be excluded before deriving a label')
+    monkeypatch.setattr(export,'derive_label',should_not_derive)
+    with pytest.raises(ValueError,match='No eligible synthetic labels'):
+        export.gather([path,other])
+
+
 def test_counts_alone_cannot_complete_a_release(source_audit,monkeypatch):
     path,output=source_audit
     monkeypatch.setattr(export,'check_release_rows',lambda *a,**k:dict(passed=True,failures=[]))
@@ -131,3 +147,29 @@ def test_identical_scene_camera_has_same_signature_despite_numeric_roundoff():
     assert export.view_signature(a,'one')!=export.view_signature(a,'two')
     b['calibration']['camera_to_world_usd_row_vectors'][3][0]+=.01
     assert export.view_signature(a,'one')!=export.view_signature(b,'one')
+
+
+def test_new_review_during_copy_prevents_any_release_manifest(source_audit,monkeypatch):
+    audit,output=source_audit;original=export.shutil.copyfile;injected=False
+    def copy_and_append_review(source,destination):
+        nonlocal injected
+        result=original(source,destination)
+        if not injected:
+            folder=audit.parent/'records';folder.mkdir(exist_ok=True)
+            (folder/'new_hold.json').write_text('{}')
+            injected=True
+        return result
+    monkeypatch.setattr(export.shutil,'copyfile',copy_and_append_review)
+    with pytest.raises(ValueError,match='Review history changed'):
+        export.build([audit],output,allow_incomplete=True)
+    assert not (output/'manifest.json').exists()
+
+
+def test_review_snapshot_detects_new_file_and_preserves_existing_record(tmp_path):
+    folder=tmp_path/'reviews';snapshots={str(folder):export.review_directory_snapshot(folder)}
+    export.verify_review_directories(snapshots)
+    folder.mkdir();p=folder/'hold.json';p.write_text('{}')
+    with pytest.raises(ValueError,match='Review history changed'): export.verify_review_directories(snapshots)
+    snapshots={str(folder):export.review_directory_snapshot(folder)}
+    p.write_text('{"decision":"hold"}')
+    with pytest.raises(ValueError,match='Review history changed'): export.verify_review_directories(snapshots)

@@ -25,6 +25,35 @@ def evidence(records):
     return dict(schema_version=review.SCHEMA,policy=review.POLICY,records=records)
 
 
+def test_reconcile_excluded_hold_keeps_audit_but_never_approves_retained_hold():
+    rows=[row(1)];okay=dict(record(rows[0]),review_id='current')
+    held=dict(record(row(2),'hold'),review_id='held')
+    selected,excluded=review.reconcile_records([okay,held],rows)
+    assert selected==[okay]
+    assert excluded==[dict(review_id='held',id='one_2',decision='hold',reason='image_not_in_current_release')]
+    assert held['decision']=='hold'
+    with pytest.raises(ValueError,match='still in candidate'):
+        review.reconcile_records([okay,held],[*rows,row(2)])
+
+
+def test_reconcile_changed_accept_cannot_grant_current_qa_and_old_hold_still_blocks():
+    current=row();old=dict(record(current),review_id='old')
+    old['entry']['task_contract_sha256']='old-contract'
+    selected,excluded=review.reconcile_records([old],[current])
+    assert selected==[] and excluded[0]['reason']=='changed_task_identity_requires_fresh_review'
+    with pytest.raises(ValueError,match='incomplete'):
+        review.check_evidence(evidence(selected),[current])
+    old['decision']='hold'
+    with pytest.raises(ValueError,match='still in candidate'):
+        review.reconcile_records([old],[current])
+
+
+def test_reconcile_cannot_mask_invalid_inspection_scope():
+    invalid=dict(record(row(2),'hold'),review_id='bad',human_confirmation=True)
+    with pytest.raises(ValueError,match='inspection scope'):
+        review.reconcile_records([invalid],[row(1)])
+
+
 def test_strata_and_profiles_require_explicit_records():
     rows=[row(1),row(2),row(3,'hard'),row(4,'easy','two','established')]
     assert len(review.selected_rows(rows))==4

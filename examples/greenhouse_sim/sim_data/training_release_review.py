@@ -179,15 +179,46 @@ def check_evidence(evidence,rows,*,require_complete=True):
     return result
 
 
-def verify_reviews(bundles,rows,*,require_complete=True):
-    records=[]; sources={}; seen_reviews=set()
+def reconcile_records(records,rows):
+    """Select exact current approvals without erasing excluded review history.
+
+    A bundle can contain a held image that the source exporter has already
+    excluded. Such a record belongs in the provenance, not the current row
+    quota. A hold on ANY retained image always blocks export, including an
+    older task contract or another review bundle. Stale accepts never count.
+    """
+    indexed={r['id']:r for r in rows};accepted=[];not_counted=[]
+    for record in records:
+        e=record['entry'];sid=e['id'];decision=record['decision']
+        require(record['reviewer_role'] in ('assistant','human') and decision in ('accept','hold','reject'),
+            'Invalid reviewer/decision')
+        require(record['human_confirmation'] is (record['reviewer_role']=='human')
+            and record['physical_execution_approved'] is False and record['inspected']==CHECKLIST,
+            'Invalid inspection scope')
+        if sid in indexed and decision in ('hold','reject'):
+            raise ValueError('Explicit visual hold/reject is still in candidate rows: '+sid)
+        reason=None
+        if sid not in indexed: reason='image_not_in_current_release'
+        elif identity(e)!=identity(indexed[sid]): reason='changed_task_identity_requires_fresh_review'
+        if reason:
+            not_counted.append(dict(review_id=record['review_id'],id=sid,decision=decision,reason=reason))
+        else: accepted.append(record)
+    return accepted,not_counted
+
+
+def verify_reviews(bundles,rows,*,require_complete=True,reconcile=False):
+    from .training_export import review_directory_snapshot,verify_review_directories
+    records=[]; sources={}; seen_reviews=set();directories={}
     for path in bundles:
         path=Path(path).resolve(); bundle=read_json(path); h=sha256(path)
         require(bundle['schema_version']==SCHEMA and bundle['policy']==POLICY,'Invalid visual review bundle')
         entries={e['id']:e for e in bundle['entries']}
         sources[str(path)]=h
-        decision_paths = sorted((path.parent/'decisions').glob('*.json'))
-        decision_paths += sorted((path.parent/'human_decisions').glob('*.json'))
+        decision_paths=[]
+        for name in ('decisions','human_decisions'):
+            folder=path.parent/name;snapshot=review_directory_snapshot(folder)
+            directories[str(folder)]=snapshot
+            decision_paths.extend(Path(p) for p in snapshot)
         for p in decision_paths:
             row=read_json(p); sid=row['entry']['id']
             require(row['schema_version']==SCHEMA and row['bundle_sha256']==h and row['entry']==entries.get(sid),'Changed or stale visual decision')
@@ -202,8 +233,14 @@ def verify_reviews(bundles,rows,*,require_complete=True):
             e=row['entry']; card=safe_file(path.parent,e['card'])
             require(sha256(card)==e['card_sha256'],'Changed inspected card')
             sources[str(p)]=sha256(p); sources[str(card)]=e['card_sha256']; records.append(row)
+    not_counted=[]
+    if reconcile: records,not_counted=reconcile_records(records,rows)
     evidence=dict(schema_version=SCHEMA,policy=POLICY,records=records,source_evidence_sha256=sources)
+    evidence['review_directory_snapshots']=directories
+    if reconcile: evidence['review_reconciliation']=dict(excluded_from_qa_counts=not_counted,
+        no_hold_overrides=True,exact_task_identity_required=True)
     evidence.update(check_evidence(evidence,rows,require_complete=require_complete))
+    verify_review_directories(directories)
     return evidence
 
 

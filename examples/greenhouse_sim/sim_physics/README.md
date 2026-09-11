@@ -6,6 +6,22 @@ environment. Do not collect training demonstrations from this harness.
 
 ## Experimental knife integration, September 11
 
+Latest checkpoint: the shared left-grasp corridor screen now checks open-jaw
+approach and <=1 mm closure samples against cached native plant/scene geometry.
+It permits only finger contact with the selected detachable shaft and its
+immediate capsule neighbors, never an intervening leaf. Native bilateral
+selected-shaft contact remains the authority for grasp success. This caught
+the distal leaf obstruction in `bimanual_cut_20260911_29`.
+
+`bimanual_hold_control_20260911_08` passed 65 corridor checks and held the
+selected stem for 20 simulated seconds (4,800 ticks), no fault, max slip
+0.005253 mm. It deliberately does not move/cut with the right arm and exits
+with false cutting gates, not a successful full-sequence claim. Its headless
+tick RTF was 0.5146 under concurrent offline work, not a GUI-speed result.
+Vectorized mesh expansion and conservative triangle indexing avoid repeated
+large-mesh narrow-phase work without removing geometry or reducing margins.
+**No successful current-environment grasp-cut-retain-deposit run yet.**
+
 `run_bimanual_cut_probe.cmd --output <new-directory>` is an **unqualified**
 bounded integration test, not a working end-to-end demonstration. The existing
 grasp-demo launchers remain unchanged. Add `--gui --robot-interactive` only for

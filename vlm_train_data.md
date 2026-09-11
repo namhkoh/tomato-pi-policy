@@ -890,3 +890,43 @@ stratified QA and targeted native partial-occlusion capture; the recent random
 view increments have not yielded medium examples. Do not relax their definition
 or collection/release gates to meet a deadline. No training, remote server
 access, hardware action or new dynamic training episode was started.
+
+### 2026-09-11: Requested multi-agent label reassessment and release preparation
+
+Three independent assistant work threads visually inspected 51 full original
+RGB/card pairs, with hash-bound per-image reasoning. They assessed all 37
+remaining pending cards (33 support, four hold) and 14 existing uncertain cases
+(11 hold including one new disagreement, three reject). These are assistant
+findings, not invented human decisions or statistical dataset-wide accuracy.
+The broader 108-card queue is now 91 accept / 14 hold / 3 reject / zero pending;
+one existing human acceptance remains intact but has a separate assistant
+source hold, so its sample is excluded pending disagreement resolution.
+No source image, depth array, split or prior review was changed.
+
+New evidence: `data/sim_data/dataset_audits/release_20260911_agents/`.
+The exact model input/output and annotation limitations are documented in
+`examples/greenhouse_sim/sim_data/DATASET_CARD.md`. Task v3 is still original
+robot-head RGB plus explicit target query -> cut UV / visibility / abstention,
+not autonomous target discovery, XYZ action generation or grasp-cut episodes.
+
+Implemented opt-in exact-label review reconciliation for exports, preserving
+negative decisions and retaining provenance for reviews that no longer count
+toward the current subset. Added directory-snapshot checks to reject a new
+review/hold appended while an export is being copied. Neither change weakens
+the numerical/stratified release gates. Three fresh medium-label holds make
+new native partial-visibility capture and its actual visual review necessary.
+The reconciled diagnostic (`release_20260911_agents/preflight_02/summary.json`)
+now covers 63 audits / 20,151 raw / 14,404 candidates: 11,637 train,
+1,369 validation and 1,398 test. It includes the nonstandard recovered seed17
+audit and 15 new native seed61 frames, all easy, and excludes seven fresh
+source holds. The full release remains blocked by validation medium 2/20 and
+test medium 17/20, plus current-subset representative QA/final export work.
+These are not 14,404 individually approved labels. The follow-up count reuses
+the first diagnostic snapshot; it is not a replacement for normal export
+validation. Two more validation-medium original/audit-card pairs were held,
+and two new seed61 original/task-card pairs were assistant-accepted (55 unique
+new targeted inspections overall). Source holds now follow duplicate RGB
+hashes across audits. No source images/depth, human records, splits or gates
+were altered. A narrower visible/occluded baseline is an explicit user choice,
+not an automatic gate waiver. No final archive, actual-model training or H200
+job is claimed yet.

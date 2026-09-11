@@ -4150,3 +4150,101 @@ or offline endpoint are not measured tissue cutting or successful manipulation.
 Remaining work: establish a jointly feasible native grasp and whole right-tool
 corridor, then validate edge load/release/withdraw/retain with unchanged guards.
 No hardware, collection, tuning, review, split or training-export changes.
+
+#### 2026-09-11: Agent-assisted VLM release QA and export safeguards
+
+- User explicitly requested independent agents for uncertain images. Three
+  agents inspected 51 unique original RGB/card pairs with verified hashes:
+  37 pending plus 14 existing uncertain/negative. Their reports and exact
+  findings are in `data/sim_data/dataset_audits/release_20260911_agents/`.
+- Appended 33 assistant task accepts and four task/source holds. A fifth new
+  source hold records ambiguity in `seed11_full_b64924da6591cb0a7b72`; its prior
+  human acceptance is preserved, not overwritten. `applied_assessments.json`
+  binds every action to the agent report. Queue: 91 accept / 14 hold / three
+  reject / zero pending; one nominal accept is blocked by that source hold.
+  No blanket approval of all candidate images or human-confirmation claim.
+- Three newly held examples are medium. The earlier medium-coverage count
+  is not valid current approval. A fresh all-source recount and small native
+  seed61/offset487 collection probe are running separately; numeric coverage,
+  replacement QA and final portable archive remain unfinished.
+- Added `sim_data/DATASET_CARD.md` explaining query-conditioned RGB input,
+  exact JSON outputs, 10 mm nominal / 10-20 mm arc convention, native metric
+  depth sidecars, frozen family splits and unsupported robot-action training.
+- `training_export --reconcile-reviews` retains source review provenance but
+  counts only exact current-label accepts. Any negative review on a retained
+  image still blocks the export. Default strict behavior and all gates stay
+  unchanged. Directory snapshots now catch new review files appended during
+  copying, in addition to changed existing-file hashes.
+- Complete regression: **842 tests plus 47 subtests passed in 110.66 s**,
+  covering sim_data, sim_physics, robot kinematics and simulation clocks.
+  New tests cover excluded-review accounting, stale accepts, retained holds,
+  and review races during file copying. No training or hardware command.
+
+#### 2026-09-11: Bounded held-target and grasp-posture diagnostics
+
+- Added opt-in held-target reposition (0..10 mm), settling and fresh native
+  grasp/seam snapshot before right planning. Default no-reposition timing is
+  unchanged. Added bounded diagnostic closure bias (0.25..1 mm; default0.5)
+  and +/-30-degree jaw-skew proposals; force/slip/penetration gates unchanged.
+- Native `_26`: 8 mm reposition lost opposing grasp contact. `_27`: 4 mm
+  reposition with 1 mm closure bias stopped at the native force guard.
+  `_28`: 1 mm reposition with 0.75 mm bias retained opposing contact through
+  reobservation at 5 s, max measured slip 0.192789 mm, but right planning found
+  no clear endpoint. This is not a successful cutting or long retention trial.
+- Added bounded 7-DOF pose-family continuation to offline `paired_layout`.
+  Exact URDF pose residuals/limits are maintained; each returned posture still
+  requires independent clearance and native execution checks. `_33` inspected
+  508 proposals at the original near-junction grasp: no clear endpoint.
+  `_34` changed-grasp tilt hit spawn overlap; `_35` torso -30 deg had no IK
+  endpoint; `_36` torso +30 deg failed arm clearance. None authorized motion.
+- `_37` moved the diagnostic grasp beyond the first leaf attachment (requested
+  arc145 mm), preserving source plant, cameras and corrected knife. Three
+  clear offline endpoint proposals were found. Full greenhouse native run
+  `bimanual_cut_20260911_29` failed native grasp verification: leaf000 loaded
+  both fingers, but the selected shaft did not have opposing contact. No
+  right-arm motion/cut was authorized. An endpoint is NOT a valid grasp,
+  stroke, cut, or success claim. All artifacts remain non-training.
+
+#### 2026-09-11: Reconciled data counts and full-greenhouse grasp screening
+
+- `release_20260911_agents/preflight_02/summary.json`: 63 completed audits,
+  20,151 raw / 14,404 deduplicated current-contract candidates (11,637 train,
+  1,369 validation, 1,398 test). Includes recovered seed17 `audit_recovered`
+  and the 15 new seed61 easy frames; removes seven new source holds. The
+  initial 61-audit discovery omitted the nonstandard recovery directory.
+  `count_scope_check.json` records the exact provenance reconciliation.
+- All numerical release gates except held-out medium coverage pass in this
+  diagnostic: validation 2/20, test 17/20. Original 61-audit buffers were
+  checked in the first recount, not rehashed in the follow-up diagnostic;
+  final export must still run normal gather and portable validation. No ZIP,
+  training release, trained VLM or qualified dynamic episode is claimed.
+- Agent D inspected two further original/native audit-card pairs and recorded
+  conservative source holds via the main agent. Agent B inspected/accepted
+  two new seed61 original/task-card pairs. All 55 unique inspected examples
+  have attributed findings and hashes. No human records, input images,
+  native depth arrays, family splits or release thresholds were changed.
+- Export source holds now follow duplicate RGB hashes across audits. Tests
+  prove a second, unreviewed copy cannot reintroduce a withheld image.
+- Added a shared left-grasp approach/closure collision screen before native
+  movement and expensive right IK. Only finger contact with the selected
+  detachable shaft and its immediate discretization neighbors is expected;
+  foliage, other branches, support, palm and wrist cameras remain checked.
+  Actual bilateral contact on the selected body is still mandatory. This
+  rejects the leaf-blocked distal proposal that failed native run29.
+- Native hold control07 was stopped during excessively slow scene-cache
+  preparation; no success or trajectory was inferred from it. Optimized mesh
+  triangulation (retaining both quad diagonals), workspace clipping and
+  conservative indexed triangle lookup. Same geometry/margins/narrow-phase
+  tests and native contact guards; no plant/robot collision filtering added.
+- Native hold control08 completed 4,800 steps / 20 s without a guard fault:
+  65 approach/closure checks passed, selected-stem grasp verified, maximum
+  slip **0.005253 mm**. Headless tick time 38.8635 s, RTF0.5146; native-step
+  p50 5.8516 ms / p95 9.0819 ms under concurrent offline work. This is not a
+  GUI FPS or hardware measurement. Deliberate no-cut control exits with
+  failed cutting gates; it does not prove cut, detached retention or deposit.
+- Full regression after these changes: **852 tests + 47 subtests passed in
+  99.94 s**. Indexed geometry tests agree with exhaustive checks, including
+  long/degenerate triangles, grazing bounds and solid-hull containment.
+- Bounded alternative station/posture searches remain unsuccessful. They
+  preserve original source assets and the committed knife mounting; endpoint
+  proposals never bypass native grasp, contact, force, direction or slip gates.

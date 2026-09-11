@@ -44,6 +44,10 @@ def parser():
     p.add_argument('--bimanual-cut',action='store_true',help='Guarded native left grasp and original right knife seam-release qualification')
     p.add_argument('--cut-standoff-m',type=float,default=.025,
         help='Collision-screened precontact offset (8..25 mm), also checked against actual shaft size; bimanual only')
+    p.add_argument('--bimanual-reposition-m',type=float,default=0.,
+        help='Opt-in 0..10 mm held-target pull along the checked left approach, followed by native reobservation')
+    p.add_argument('--grasp-compression-m',type=float,default=.0005,
+        help='Diagnostic 0.25..1 mm shaft-width closure bias; no change to effort, slip or penetration guards')
     p.add_argument('--bimanual-hold-control',action='store_true',
         help='Negative control: hold left grasp with right arm parked; never qualifies as cutting')
     p.add_argument('--robot-interactive',action='store_true',help='Keep the full-robot test window open with replay controls')
@@ -63,6 +67,8 @@ def parser():
         help='Explicit initial palm approach direction for paired-layout qualification')
     p.add_argument('--grasp-roll',type=int,choices=(0,180),default=0,
         help='Initial equivalent finger orientation about palm approach axis; native grasp must be requalified')
+    p.add_argument('--grasp-skew',type=float,default=0.,
+        help='Bounded +/-30 degree jaw skew in the palm plane; requires native grasp requalification')
     p.add_argument('--grasp-depth-m',type=float,default=.1025,
         help='Shaft distance from the palm within the original pads: 90..125 mm; no live base or plant override')
     p.add_argument('--torso-yaw',type=float,default=0.,
@@ -83,6 +89,15 @@ def parser():
 
 def main(argv=None):
     args=parser().parse_args(argv)
+    if not math.isfinite(args.grasp_skew) or abs(args.grasp_skew)>30 or (args.grasp_skew and not args.full_robot_probe):
+        raise ValueError('Jaw skew requires a full robot and finite +/-30 degrees')
+    if not math.isfinite(args.grasp_compression_m) or not .00025<=args.grasp_compression_m<=.001 or (
+            args.grasp_compression_m!=.0005 and not args.bimanual_cut):
+        raise ValueError('Grasp compression requires bimanual qualification within 0.25..1 mm')
+    if not math.isfinite(args.bimanual_reposition_m) or not 0<=args.bimanual_reposition_m<=.01 or (
+            args.bimanual_reposition_m and (not args.bimanual_cut or args.seconds<24
+                or args.approach_distance<args.bimanual_reposition_m+.008)):
+        raise ValueError('Reposition requires bimanual, >=24 seconds, 0..10 mm and approach clearance for pull +8 mm retention')
     if not math.isfinite(args.cut_standoff_m) or not .008<=args.cut_standoff_m<=.025 or (
             args.cut_standoff_m!=.025 and not args.bimanual_cut):
         raise ValueError('Cut standoff requires bimanual qualification within 8..25 mm')
@@ -191,6 +206,7 @@ def main(argv=None):
         for component in audit['components'].values():
             path=manifest.parent/component['file'];source_hashes[path]=component['asset_sha256']
         robot_options=dict(sparse_contacts=args.sparse_contacts,finger_gravity=args.finger_gravity,
+            grasp_skew=args.grasp_skew,
             approach_tilt=args.approach_tilt,grasp_roll=args.grasp_roll,approach_distance=args.approach_distance,
             compliant_fingers=args.compliant_fingers,station_yaw=args.station_yaw,grasp_depth=args.grasp_depth_m)
         if args.station_offset is not None: robot_options['station_offset']=args.station_offset
@@ -243,6 +259,7 @@ def main(argv=None):
                 from .bimanual import BimanualRobot
                 robot_class=BimanualRobot
                 robot_options['cut_standoff']=args.cut_standoff_m
+                robot_options['grasp_compression']=args.grasp_compression_m
             fixture=robot_class(stage,rig,arc=args.grasp_arc_m,friction=args.finger_friction,**robot_options)
             source_hashes[fixture.asset]=hashlib.sha256(fixture.asset.read_bytes()).hexdigest()
             report['robot_probe']=fixture.report()
