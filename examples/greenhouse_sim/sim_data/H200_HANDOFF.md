@@ -144,6 +144,17 @@ Use the role-preserving adapter or explicitly validate an upstream integration.
 2. Build a **new** export without `--allow-incomplete`; require all frozen
    numerical and visual gates. Validate locally, archive with a checksum, and
    have the user copy it. Current engineering artifacts are not that archive.
+
+   Once the normal validator passes, the guarded packager can create the ZIP:
+
+   ```bash
+   python -m sim_data.release_archive --release /path/to/final_release --output /path/to/grounding_release.zip
+   ```
+
+   This has no incomplete-mode override. It packages only manifest-bound
+   files, verifies the bytes inside the ZIP, and publishes a `.zip.sha256`
+   sidecar. Interrupted or failed copies remain `.partial`, not final ZIPs.
+   It does not start training. No archive has been published at this checkpoint.
 3. From the matching checkout's `examples/greenhouse_sim`, on H200:
 
    ```bash

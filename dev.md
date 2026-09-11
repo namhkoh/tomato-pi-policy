@@ -4248,3 +4248,16 @@ No hardware, collection, tuning, review, split or training-export changes.
 - Bounded alternative station/posture searches remain unsuccessful. They
   preserve original source assets and the committed knife mounting; endpoint
   proposals never bypass native grasp, contact, force, direction or slip gates.
+
+#### 2026-09-11: Guarded training archive preparation
+
+- Added `python -m sim_data.release_archive --release <complete-release>
+  --output <new.zip>`. Always runs the normal complete-release validator,
+  includes only manifest-bound payloads, checks hashes of bytes read from the
+  ZIP, and publishes a SHA256 sidecar. ZIP64 supported; incomplete/interrupted
+  archives cannot be mistaken for successful final files. No overwrite.
+- Four packaging unit tests pass. Ordinary non-Isaac Python also correctly
+  refused the actual `grounding_sunday_20260911_engineering_v2` preview with
+  `Incomplete release` before creating any ZIP. No training archive, server
+  transfer or training start is claimed. This command is ready for the final
+  approved export, not a way around remaining coverage/review requirements.
