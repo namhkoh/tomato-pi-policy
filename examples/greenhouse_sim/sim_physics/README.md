@@ -684,3 +684,29 @@ plate. Simply replacing two rounded capsules' FixedJoint cannot create that
 channel. Bulk/closing-contact tests and source-volume mass checks must precede
 blade loading. The production beam, original knife mount, material defaults
 and legacy shear qualification thresholds are unchanged by these prototypes.
+
+`cohesive_closing_probe.py` now isolates opening, closing-contact and reopening
+with the bounded `cohesive_unilateral.py` soft-limit adapter. The active normal
+limit is [-2 mm, 0], with measured motion guarded inside +/-1 mm. At complete
+failure its limit schemas/properties are removed; tangential stiffness becomes
+zero. This avoids a zero-stiffness limit turning into a hard stop. Remote
+support is not a weld across the tested interface. `native_errors.py` passively
+stops on delivered native physics errors during setup or solves.
+
+Do not use the first closing-intact run (`_01`): native PhysX rejected its
+infinite lower limit. Corrected 960 Hz runs each complete10,560 steps and pass
+predeclared per-step momentum, cumulative energy, contact and hold-tail checks:
+
+| Coupon | Evidence directory suffix | Result |
+| --- | --- | --- |
+| Intact | `cohesive_closing_intact_20260911_02` | Zero damage; settled25/50 micrometre opening; compression then reopening |
+| Partially damaged | `cohesive_closing_damaged_20260911_01` | Damage0.799976 retained through closing/reopening |
+| Fully separated | `cohesive_closing_failed_20260911_01` | Damage1; failed normal axes remain free; compression collision remains active |
+
+`bounded_protocol_accepted` means only that individual coupon protocol passed.
+Joint forces remain endpoint reconstructions, material uncalibrated, coefficient
+updates one step lagged. These tests contain no blade, plant grasp or training
+episode. The original6 mm-thick blade still needs a physically opened channel.
+`material_band.py` authors a continuous-volume discrete rigid-cell/spring
+prototype with checked mass/inertia and area-weighted fracture anchors; native
+bulk mechanics, spatial refinement and blade passage are not yet qualified.

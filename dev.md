@@ -4636,3 +4636,58 @@ No hardware, collection, tuning, review, split or training-export changes.
   separation timing passes the declared comparison with1920 Hz. At480 Hz,
   timing misses it. These are restricted isolated-coupon findings, not
   full-plant spatial/material calibration.
+
+### 2026-09-11: Native grasp measurements and unilateral interface controls
+
+- Integrated the exact-identity `shaft_grasp_native.py` adapter with the full
+  robot probe. It snapshots shaft/pad geometry and live joint identities,
+  invalidates changed bindings, and compares selected contacts with the native
+  tensor stream. Contact faults remain latched across steps; empty exception
+  strings now also stop the controller. No weld, force-limit change or timed cut.
+- Native hold controls34/35 reproduce the known left posture with the right
+  knife parked. Control34 reconciles selected callback/tensor vectors through
+  712 steps (maximum error1.46e-8 N), then rejects a negative point impulse.
+  Control35 captures that first value as -9.44e-21 N.s. Added a fixed1e-15 N.s
+  signed-zero bound with zero, never positive, grasp contribution. Control36
+  reaches step719 and rejects a larger -4.20e-8 N.s impulse; it is NOT roundoff.
+- Added hold-only `--diagnostic-grasp-contacts`, prohibited during cutting.
+  It drains only the faulted callback step, reads both selected tensor buffers,
+  then always raises before another control step. Native control37 captures all
+  12 delivered rows with no truncation. At the identical point/normal/separation,
+  the callback impulse is negative but the tensor scalar is positive magnitude
+  (10.083 microNewtons). Thus the old signed-vector tensor comparison is not
+  valid for negative point impulses. Correct signed physical support versus
+  unsigned sensor reconciliation is under investigation; no grasp/cut pass.
+- Added isolated `material_band.py` geometry/mass/interface authoring and
+  `cohesive_unilateral.py` bounded normal soft-limit coupling. Neither is
+  integrated into the production plant or a claim of calibrated tissue.
+  Compression contacts remain active; full failure removes the normal limit
+  APIs/properties instead of turning zero stiffness into a hard stop.
+- `cohesive_closing_intact_20260911_01` is DISQUALIFIED: the first draft's
+  active negative-infinite bound caused four native `limit invalid` errors.
+  Replaced it with a finite -2 mm bound outside the guarded +/-1 mm domain.
+  This is a bounded-domain unilateral approximation, not an infinite free axis.
+  Added passive bounded `native_errors.py` observation before author/reset and
+  before/after every solve; delivered native physics errors now stop the test.
+- Corrected native intact control02 completes10,560 steps at960 Hz, all three
+  hold tails checked, zero damage/dissipation, zero observed native errors.
+  Measured settled opening passes the predeclared25/50 micrometre +/-5% bands.
+  Maximum reconstructed momentum residual8.05e-7 N (limit4.1e-4 N);
+  maximum cumulative energy residual0.418 nJ (intact limit25 nJ).
+  `bounded_protocol_accepted=true` is only this coupon's acceptance, NOT
+  native material calibration, blade passage, plant cutting or robot success.
+- Focused regression after integration:392 passed in21.51 s under Isaac Python.
+  Evidence directories are under `data/sim_physics/`; failed runs are preserved.
+  Next: partial/final failure closing controls, timestep refinement, corrected
+  signed grasp evidence, then actual-blade material-band and full-robot trials.
+  VLM records, frozen splits, reviews, training archives and hardware untouched.
+- The three corrected closing cases now each pass at both960 and1920 Hz:
+  intact02/03, damaged01/02, failed01/02. Each finer run completes21,120 steps;
+  dependency hashes remain unchanged, native error observers report no errors.
+  Partial damage0.799976 is retained; fully separated cases retain zero interface
+  stiffness/free normal axes while allowing native compression contact.
+  Same-time failed-case displacement differs by at most0.545 micrometres,
+  damage by0.004114, per-facet reconstructed normal force by34.24 microNewtons.
+  Complete separation occurs at2.693750/2.692188 s respectively; both dissipate
+  the specified8 microjoules. These measured refinement differences do not
+  constitute continuum calibration or actual-knife cutting evidence.
