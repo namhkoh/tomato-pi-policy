@@ -517,11 +517,19 @@ class BimanualRobot(FullRobotGripper):
         _,angle,d,q,normal_sign,wing,normal=candidate
         failure=dict(angle=angle,plane_tilt_degrees=tilt,normal_sign=normal_sign,wing_m=wing)
         minimum=float('inf');stroke=[];seed=q
-        for offset in self.stroke_offsets:
+        for sample_index,offset in enumerate(self.stroke_offsets):
             desired=self.knife.wrist_for_edge(centre+offset*d,d,normal,wing)
             solution=self.solve_right_pose(desired,seed)
             failure.update(offset_m=float(offset),rejection='stroke_IK')
-            if not solution.succeeded:break
+            if not solution.succeeded:
+                # Exact failed solve, not the preceding sample's collision checks.
+                failure.update(sample_index=sample_index,ik_result=dict(
+                    joint_degrees=np.asarray(solution.joint_degrees).tolist(),
+                    position_error_m=float(solution.position_error_m),
+                    orientation_error_rad=float(solution.orientation_error_rad),
+                    evaluations=None if solution.evaluations is None else int(solution.evaluations),
+                    succeeded=bool(solution.succeeded)))
+                break
             seed=np.asarray(solution.joint_degrees)
             clearance=self.kin.inter_arm_clearance(left_q,seed,self.base).clearance_m
             minimum=min(minimum,clearance)

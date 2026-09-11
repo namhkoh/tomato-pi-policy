@@ -45,6 +45,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     records=[];events=[];captures={};fault=None;stable=0;lost=0
     grasp_local=None;goal_set=False;planned=False;grasp_verified=False;cut_time=None;cut_fraction=0.
     last_right_command=('park',0.)
+    spring_snapshot=None
     measured_withdrawal=bool(getattr(args,'measured_withdrawal',False));withdrawal=None
     hold_control=bool(getattr(args,'bimanual_hold_control',False))
     reposition=float(getattr(args,'bimanual_reposition_m',0.))
@@ -77,6 +78,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
 
     def before(stamp,dt):
         nonlocal goal_set,grasp_local,planned,cut_fraction,grasp_verified,last_right_command
+        nonlocal spring_snapshot
         t=stamp.simulation_time_s
         if t>=.9 and not goal_set:
             fixture.goal[:3,3]=runtime.frames[fixture.body_index,:3,3]+fixture.grasp_depth*fixture.goal[:3,2]
@@ -148,12 +150,25 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             fixture.command_right(phase,fraction)
             last_right_command=(phase,fraction)
         fixture.prepare_step(runtime.frames)
-        springs.step(dt,root_constrained=not rig.cut)
+        spring_effort=springs.step(dt,root_constrained=not rig.cut)
+        if getattr(args,'diagnostic_grasp_dynamics',False):
+            from .spring_work import capture as spring_capture
+            spring_snapshot=spring_capture(runtime.articulation,spring_effort,step=stamp.step)
 
     def after(stamp,dt):
         nonlocal stable,lost,cut_time,cut_fraction,withdrawal
         frames,velocity=runtime.sample();frame=frames[fixture.body_index]
-        c=fixture.contact_with_frames(dt,frames,step_id=stamp.step)
+        spring_work=None
+        if getattr(args,'diagnostic_grasp_dynamics',False):
+            from .spring_work import finish as spring_finish
+            spring_work=spring_finish(spring_snapshot,runtime.articulation,
+                springs.k,step=stamp.step,dt=dt)
+        try:
+            c=fixture.contact_with_frames(dt,frames,step_id=stamp.step)
+        except Exception as exc:
+            events.append(dict(t=stamp.simulation_time_s,event='post_fetch_contact_fault',
+                error=type(exc).__name__+': '+str(exc),spring_work=spring_work))
+            raise
         stable=stable+1 if c['bilateral'] else 0
         lost=0 if c['bilateral'] else lost+1
         palm=pose_matrices(fixture.palm.get_transforms())[0]
@@ -177,6 +192,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             fastest_body=rig.body_paths[int(np.argmax(np.linalg.norm(velocity[:,:3],axis=1)))])
         records.append(record)
         if getattr(args,'diagnostic_grasp_dynamics',False):
+            record['spring_work']=spring_work
             from .grasp_dynamics_evidence import grasp_dynamics_evidence
             positions=fixture.robot.get_dof_positions()[0]
             joint_velocity=fixture.robot.get_dof_velocities()[0]

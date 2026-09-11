@@ -5264,3 +5264,45 @@ No hardware, collection, tuning, review, split or training-export changes.
 - Cut-retain-withdraw remains unqualified; calibrated tissue fracture,
   completed forward stroke and deposit remain unverified. No training,
   collection, dataset review/split changes or hardware commands were made.
+
+### 2026-09-12: Post-cut spring-work discrepancy isolated, not a grasp slip
+
+- CPU replay of the original61-pose stroke confirms full55's failed sample57
+  reaches joint5=109.999427 degrees and rotation error0.00507984 rad. Keeping
+  right joint1=-0.75 degrees solves all61 poses with minimum joint-limit margin
+  0.346804 degrees; no stroke shortening or limit change. Failed stroke IK
+  diagnostics now retain the exact failing vector/residuals/sample/evaluation
+  count (including null when unavailable), rather than only prior clearance.
+- Full56 uses that constant shoulder setting. The full plan and left grasp
+  pass; signed edge-load seam release occurs11.866667 s. At11.900000 s the
+  unchanged conservative left fingerl2/Leaf000 screen rejects. Actual source
+  convex shapes remain separated1.411121 mm; the box-expansion margin is
+  0.997787 mm against the required1 mm. No unintended native load was observed
+  at this stop; maximum grasp slip97.463 micrometres. Leaf carrier motion
+  (2.6925 mm and6.0023 degrees since release), not finger motion, closes the gap.
+  Changing grasp skew trades finger clearances and is not a physics repair.
+- Added read-only `spring_work.py`: exact submitted float32 actuation readback,
+  copied pre/post native joint coordinates and adjacent-step checks. It reports
+  constant generalized-effort work plus declared quadratic-potential change;
+  it is NOT contact work, native-integrator energy or whole-system balance.
+  Full57 reproduces56's2856 samples exactly in plant dynamics, palm and contact
+  state. Across the8 post-release intervals, declared elastic energy rises
+  5.115758 mJ while commanded spring work is-0.013339 mJ: the coordinate-level
+  constitutive discrepancy is+5.102420 mJ. At the final sample Joint004:1 has
+  q=-0.191231 rad but only+0.000904572 N.m spring effort. This is strong evidence
+  against treating the contact-omitting predictor as the intended beam law.
+  Root support, collision geometry, materials and motion commands were unchanged.
+- Corrected interpretation of coupon31/34 torque spikes: the old gate checks
+  STATIC zero torque. Independent complete signed-contact/momentum accounting
+  gives maximum tail dynamic torque residual2.97048 nN.m (RMS0.94565 nN.m).
+  Spike1042's-15.439874 microN.m is explained by angular-momentum change,
+  including orbital terms. Static limits still fail704/961 samples; low RMS
+  velocity does not imply negligible acceleration. New `contact_momentum.py`
+  keeps static and dynamic results separate and introduces NO dynamic pass gate.
+  Full physics/material/settling qualification is still not established.
+- Focused work/snapshot/momentum tests80 passed in11.52 s; earlier IK/planning
+  tests69 passed (additional null-evaluation test subsequently added). Work is
+  now on contact-aware spring prediction and source-bound native geometry,
+  not further tiny posture changes to mask a constitutive error. Full57 remains
+  FAILED; tissue fracture, retention/withdrawal completion and deposit remain
+  unverified. Original greenhouse/plant assets remain hash-unchanged.
