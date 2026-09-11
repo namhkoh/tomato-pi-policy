@@ -39,6 +39,17 @@ small oblique blade plane can pass offline sampled geometry, but native
 **No successful current-environment cut/retain/deposit is claimed.**
 See `dev.md` for commands, unchanged guards, provenance and regression results.
 
+Latest September 11 cutting checkpoint: source cross-sections exposed a real
+knife-proxy error (6 mm long plate represented by the thick mount's 13 mm box).
+The bimanual harness now uses separate source-derived plate/mount contacts and
+an aligned leading strip. No source visual or CAD asset is modified.
+Held-plant and local static geometry now screen right-arm paths, with a bounded
+detour search and geometry-sized stroke. Native trial `bimanual_cut_20260911_18`
+verifies grasp but rejects the remaining blocked approach before right motion.
+The revised station's `bimanual_hold_control_20260911_05` holds for 20 s with
+0.0691 mm maximum slip and no fault. This does not establish a successful cut,
+post-cut retention, deposit, dynamic training data or hardware safety.
+
 ## What the current evidence supports
 
 - Supplied greenhouse + full native RB-Y1 A v1.2 articulation. The left arm

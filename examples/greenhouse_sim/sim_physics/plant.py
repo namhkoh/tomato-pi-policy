@@ -130,7 +130,7 @@ class PlantRig:
                     stem_visual_meshes=len(self.visuals),cut_material_arc_m=float(self.arcs[self.cut_index]),
                     material_calibration='engineering_prior_not_lab_calibrated',
                     parent_support='fixed_current_increment',leaves='rigid_lamina_convex_contact',
-                    release_model='preauthored_10mm_seam_diagnostic_or_measured_blade_load',
+                    release_model='preauthored_admissible_seam_diagnostic_or_measured_blade_load',
                     physical_cut_verified=False,robot_grasp_verified=False,training_eligible=False)
 
 
@@ -184,9 +184,11 @@ def _joint(stage,path,parent,child,anchor,frames,props,*,external):
     return joint
 
 
-def build(stage,record,component_id,*,root='/World/InteractionPhysics/Target',material=None,max_segment_m=.025,constraint_mode='articulation'):
+def build(stage,record,component_id,*,root='/World/InteractionPhysics/Target',material=None,max_segment_m=.025,constraint_mode='articulation',cut_m=.01):
     """Convert only a leaf-bearing native petiole; preserve package/source layers."""
     material=material or Material()
+    if not np.isfinite(cut_m) or not .01<=cut_m<=.02:
+        raise ValueError('Diagnostic cut must remain in the agreed 10..20 mm petiole interval')
     if constraint_mode not in ('articulation','maximal','fixed_articulation'): raise ValueError('Invalid constraint mode')
     if stage.GetPrimAtPath(root): raise ValueError('Physics root already exists')
     report=audit_manifest(record['manifest_path']);component=report['components'][component_id]
@@ -204,9 +206,9 @@ def build(stage,record,component_id,*,root='/World/InteractionPhysics/Target',ma
     if not np.allclose(source_frame[:3,:3].T@source_frame[:3,:3],np.eye(3),atol=1e-6):
         raise ValueError('Physics needs rigid metre transforms; source scaling is unsupported')
     local,_,_,_=_oriented_chain(component,1e-6)
-    chain,arcs=resample_chain(local,max_segment_m=max_segment_m)
+    chain,arcs=resample_chain(local,cut_m=cut_m,max_segment_m=max_segment_m)
     xyz=chain[:,:3]@source_frame[:3,:3].T+source_frame[:3,3]
-    frames=segment_frames(xyz);cut_index=int(np.flatnonzero(arcs==.01)[0])
+    frames=segment_frames(xyz);cut_index=int(np.flatnonzero(arcs==cut_m)[0])
     leaves=[key for key in members if key!=component_id]
     leaf_frames={key:world_matrix(stage.GetPrimAtPath(record['component_paths'][key]),cache) for key in leaves}
     leaf_carriers={key:max(cut_index,int(nearest_segments(np.array([frame[:3,3]]),xyz)[0][0])) for key,frame in leaf_frames.items()}

@@ -46,7 +46,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         nonlocal goal_set,grasp_local,planned,cut_fraction,grasp_verified
         t=stamp.simulation_time_s
         if t>=.9 and not goal_set:
-            fixture.goal[:3,3]=runtime.frames[fixture.body_index,:3,3]+.1025*fixture.goal[:3,2]
+            fixture.goal[:3,3]=runtime.frames[fixture.body_index,:3,3]+fixture.grasp_depth*fixture.goal[:3,2]
             fixture.plan_approach();goal_set=True
         goal=fixture.start[:3,3]+ramp(t,1,2)*(fixture.goal[:3,3]-fixture.start[:3,3])
         if cut_time is not None:
@@ -59,7 +59,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 events.append(dict(t=t,event='left_grasp_verification_failed',
                     consecutive_bilateral_steps=stable,
                     last_contact=records[-1]['contact'] if records else None,
-                    native_contact_pairs_n=[[a,b,v/dt] for (a,b),v in fixture.event_monitor.pairs.items()]))
+                    native_contact_pairs_n=records[-1]['native_contact_pairs_n'] if records else []))
                 raise RuntimeError('Left grasp was not stable before knife planning')
             grasp_verified=True
             events.append(dict(t=t,event='left_grasp_verified',grasp_body=fixture.grasp_path,
@@ -68,6 +68,11 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             grasp_local=(runtime.frames[fixture.body_index,:3,3]-palm[:3,3])@palm[:3,:3]
             if not hold_control:
                 q=np.degrees(fixture.robot.get_dof_positions()[0,fixture.left_indices])
+                positions=fixture.robot.get_dof_positions()[0]
+                snapshot=dict(native_body_frames=runtime.frames.tolist(),left_joint_degrees=q.tolist(),
+                    finger_slides_m={name:float(positions[fixture.names.index(name)]) for name in fixture.slides},
+                    simulation_time_s=t,target=rig.source_target,training_eligible=False)
+                (output/'bimanual_planning_snapshot.json').write_text(json.dumps(snapshot,allow_nan=False),encoding='utf-8')
                 fixture.plan_cut(runtime.frames,q);planned=True
                 events.append(dict(t=t,event='grasp_verified_and_right_IK_planned',plan=fixture.report()['cut_plan']))
         if t>=4 and lost>int(.05*args.physics_hz):
@@ -108,6 +113,9 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             grasp_point=frame[:3,3].tolist(),max_speed_m_s=speed,max_gripper_net_contact_n=total,
             support_error_m=support,seam_world=seam.tolist(),
             detached_seam_gap_m=float(np.linalg.norm(seam-rig.chain_world[rig.cut_index])),cut=rig.cut)
+        # Snapshot after the native step. target_palm() clears the event stream
+        # at the next tick; inspecting it in before() loses the blocking pair.
+        record['native_contact_pairs_n']=[[a,b,v/dt] for (a,b),v in fixture.event_monitor.pairs.items()]
         # Diagnostic dynamics, not camera observations or training approval.
         plant_q=np.asarray(runtime.articulation.get_dof_positions(),dtype=float)[0]
         plant_v=np.asarray(runtime.articulation.get_dof_velocities(),dtype=float)[0]

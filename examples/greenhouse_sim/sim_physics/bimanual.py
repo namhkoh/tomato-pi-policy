@@ -1,8 +1,9 @@
 """Guarded full-robot knife test. Privileged fixture, not a learned controller."""
+import time
 import numpy as np
 
 from .full_robot import FullRobotGripper
-from .knife import KnifeGeometry,ShearGate,mount_forward,cut_plane_normal
+from .knife import KnifeGeometry,ShearGate,mount_forward,cut_plane_normal,transverse_stroke_offsets
 
 
 class BimanualRobot(FullRobotGripper):
@@ -12,7 +13,15 @@ class BimanualRobot(FullRobotGripper):
         super().__init__(*args,**kwargs)
         if not self.sparse_contacts: raise ValueError('Bimanual test requires sparse native contacts')
         self.knife_mount=mount_forward(self.stage,self.root)
+        from .blade_contacts import refine_blade_contacts
+        self.blade_contacts=refine_blade_contacts(self.stage,self.root)
+        old=self.root+'/ee_right/attachments/DeleafKnife/BladeCollision'
+        self.collider_paths=[p for p in self.collider_paths if p!=old]+self.blade_contacts['collider_paths']
         self.knife=KnifeGeometry(self.stage,self.root)
+        from pxr import UsdGeom
+        radius=max(float(UsdGeom.Capsule.Get(self.stage,self.rig.body_paths[i]+'/StemCollider').GetRadiusAttr().Get())
+            for i in (self.rig.cut_index-1,self.rig.cut_index))
+        self.stroke_offsets=transverse_stroke_offsets(radius,self.knife.size[0])
         self.cut_gate=ShearGate(self.rig.source_target)
         self.cut_authorized=False;self.edge_points=[];self.edge_impulses=[]
         self.cut_contacts=0;self.cut_event=None;self.plan=None
@@ -20,6 +29,8 @@ class BimanualRobot(FullRobotGripper):
         self.expected_right=self.kin.forward('right',self.right,self.base)
         from .self_screen import SelfCapsuleScreen
         self.self_screen=SelfCapsuleScreen(self.stage,self.root,include_tool_boxes=True)
+        from .held_plant_screen import HeldPlantScreen
+        self.held_plant_screen=HeldPlantScreen(self.rig,self.self_screen.shapes,self.knife.collider)
         # This includes arm-versus-torso, which an inter-arm-only check misses.
         # Check initial and dense grasp path before any native physics starts.
         self.check_grasp_path()
@@ -39,13 +50,19 @@ class BimanualRobot(FullRobotGripper):
             minimum=min(minimum,result['minimum_clearance_m'])
         self.minimum_grasp_self_clearance=minimum
 
-    def check_self(self,left,right,*,include_clearances=False):
+    def body_world(self,left,right):
         pose=dict(self.pose)
         pose.update({f'left_arm_{i}':float(v) for i,v in enumerate(left)})
         pose.update({f'right_arm_{i}':float(v) for i,v in enumerate(right)})
-        return self.self_screen.check({link:self.base@frame for link,frame in
-            self.kin.all_link_transforms(pose,prismatic_m=getattr(self,'planning_slides',self.slides)).items()},
-            include_clearances=include_clearances)
+        return {link:self.base@frame for link,frame in
+            self.kin.all_link_transforms(pose,prismatic_m=getattr(self,'planning_slides',self.slides)).items()}
+
+    def check_self(self,left,right,*,include_clearances=False):
+        return self.self_screen.check(self.body_world(left,right),include_clearances=include_clearances)
+
+    def check_held_plant(self,left,right,*,stroke=False):
+        return (not hasattr(self,'held_plant_screen') or
+            self.held_plant_screen.check(self.body_world(left,right),stroke=stroke))
 
     def bind(self,simulation_view):
         super().bind(simulation_view)
@@ -81,12 +98,12 @@ class BimanualRobot(FullRobotGripper):
         self.edge_points=[];self.edge_impulses=[]
 
     def right_transit(self,left_q,goal):
-        """Bounded shoulder-abduction detours, not a whole-scene planner.
+        """Bounded shoulder and joint-space detours, not a continuous scene certificate.
 
         A clear endpoint can require opening the right shoulder before raising
         the forearm. Try the direct path first, then fixed URDF-valid outward
-        shoulder waypoints. Every vertex and <=1-degree segment sample retains
-        the same arm/torso clearance checks; no collision filter is modified.
+        shoulder waypoints, then a seeded bounded bidirectional search. Every
+        <=1-degree sample retains arm/tool and scene checks; no filter is changed.
         """
         lower,upper=self.kin.arm_limits_degrees('right')
         goal=np.asarray(goal,dtype=float)
@@ -107,21 +124,49 @@ class BimanualRobot(FullRobotGripper):
             path=np.concatenate(chunks);minimum=float('inf')
             for row in path:
                 clearance=self.kin.inter_arm_clearance(left_q,row,self.base).clearance_m
-                if clearance<.01 or not self.check_self(left_q,row)['passed']: break
+                if (clearance<.01 or not self.check_self(left_q,row)['passed']
+                        or not self.check_held_plant(left_q,row)): break
                 minimum=min(minimum,clearance)
             else:
                 return path,minimum,dict(method='direct' if waypoint is None else 'outward_shoulder_waypoint',
                     waypoint_degrees=None if waypoint is None else waypoint.tolist(),
-                    maximum_joint_sample_step_degrees=1.,whole_scene_certified=False)
+                    maximum_joint_sample_step_degrees=1.,held_plant_snapshot_screened=hasattr(self,'held_plant_screen'),
+                    whole_scene_certified=False)
+        from .joint_path import connect_path
+        checked=0
+        def valid(q):
+            nonlocal checked
+            checked+=1
+            return (self.kin.inter_arm_clearance(left_q,q,self.base).clearance_m>=.01
+                and self.check_self(left_q,q)['passed'] and self.check_held_plant(left_q,q))
+        path=connect_path(self.right,goal,lower,upper,valid)
+        if path is not None:
+            minimum=min(self.kin.inter_arm_clearance(left_q,q,self.base).clearance_m for q in path)
+            return path,minimum,dict(method='bounded_bidirectional_joint_search',seed=0,
+                collision_checks=checked,maximum_joint_sample_step_degrees=1.,
+                held_plant_snapshot_screened=hasattr(self,'held_plant_screen'),whole_scene_certified=False)
         return None
 
     def plan_cut(self,frames,left_q):
+        # Include failed planning attempts: PhysicsClock does not complete its
+        # tick timing when a planner raises before the next native step.
+        start=time.perf_counter()
+        try: return self._plan_cut(frames,left_q)
+        finally: self.planning_wall_seconds=time.perf_counter()-start
+
+    def _plan_cut(self,frames,left_q):
         """Bounded orientation search, then dense arm-pair screened IK paths.
 
         Native whole-scene guards remain essential: arm capsules alone do not
         certify the knife, cameras, foliage or gutter swept volume.
         """
         centre,axis=self.seam(frames)
+        # Context plants/gutters are populated after robot construction. Cache
+        # only once the complete scene exists, not in __init__.
+        if self.held_plant_screen.workspace is None:
+            self.held_plant_screen.include_static_scene(self.stage,self.root,self.rig.root,
+                self.body_world(self.initial_q,self.right)['link_right_arm_0'][:3,3])
+        self.held_plant_screen.snapshot(frames)
         # Finger geometry must use the held aperture, not the initial open hand.
         if hasattr(self,'robot'):
             positions=self.robot.get_dof_positions()[0]
@@ -133,14 +178,18 @@ class BimanualRobot(FullRobotGripper):
         attempts=[];failures=[]
         self.plan=None
         self.plan_diagnostics=dict(endpoint_attempts=attempts,path_failures=failures,
-            minimum_required_interarm_m=.01,whole_scene_path_certified=False)
+            minimum_required_interarm_m=.01,held_plant_margin_m=.001,
+            held_plant_native_snapshot_screened=True,local_static_colliders=len(self.held_plant_screen.static),
+            local_scene_bounds_m=[v.tolist() for v in self.held_plant_screen.workspace],
+            whole_scene_path_certified=False)
         # Try the original plane first; only then small oblique planes within
         # the existing measured angular gate. Never replace actual stem truth
         # with the proposed blade normal when evaluating native contact.
         clear_endpoints=0
         for tilt in (0.,-10.,10.):
             candidates=[]
-            for degrees,normal_sign,wing in [(a,s,w) for w in (0.,-.028,.028) for s in (1,-1)
+            usable_wing=float(self.knife.size[1]/2-.005)
+            for degrees,normal_sign,wing in [(a,s,w) for w in (0.,-usable_wing/2,usable_wing/2,-usable_wing,usable_wing) for s in (1,-1)
                     for a in (0,15,-15,30,-30,45,-45,90,-90,135,-135,180)]:
                 angle=np.radians(degrees)
                 d=direction*np.cos(angle)+np.cross(axis,direction)*np.sin(angle)
@@ -161,17 +210,18 @@ class BimanualRobot(FullRobotGripper):
                 check=self.check_self(left_q,q)
                 attempt['self_capsule_screen']=check
                 if check['passed']:
+                    if not self.check_held_plant(left_q,q):
+                        attempt['rejection']='endpoint_held_plant'
+                        attempt['plant_screen']=self.held_plant_screen.last_failure
+                        continue
                     candidates.append((np.linalg.norm(q-self.right),degrees,d,q,normal_sign,wing,normal))
                     clear_endpoints+=1
                 else: attempt['rejection']='endpoint_self_collision'
             for _,angle,d,q,normal_sign,wing,normal in sorted(candidates,key=lambda v:v[0]):
                 failure=dict(angle=angle,plane_tilt_degrees=tilt,normal_sign=normal_sign,wing_m=wing)
-                transit=self.right_transit(left_q,q)
-                if transit is None:
-                    failures.append(dict(failure,rejection='bounded_transit_arm_or_self_clearance'));continue
-                approach,minimum,transit_evidence=transit
+                minimum=float('inf')
                 stroke=[];seed=q
-                for offset in np.linspace(-.025,.012,75):
+                for offset in self.stroke_offsets:
                     desired=self.knife.wrist_for_edge(centre+offset*d,d,normal,wing)
                     solution=self.kin.solve_pose('right',desired,seed,self.base,maximum_evaluations=250)
                     failure.update(offset_m=float(offset),rejection='stroke_IK')
@@ -184,12 +234,24 @@ class BimanualRobot(FullRobotGripper):
                     check=self.check_self(left_q,seed)
                     failure.update(rejection='stroke_self_collision',self_screen=check)
                     if not check['passed']: break
+                    if not self.check_held_plant(left_q,seed,stroke=True):
+                        failure.update(rejection='stroke_held_plant',plant_screen=self.held_plant_screen.last_failure)
+                        break
                     stroke.append(seed)
-                if len(stroke)!=75:
+                if len(stroke)!=len(self.stroke_offsets):
                     failures.append(failure);continue
+                # Reject unusable stroke endpoints before spending the bounded
+                # joint-space transit budget. Both use the same native snapshot.
+                transit=self.right_transit(left_q,q)
+                if transit is None:
+                    failures.append(dict(failure,rejection='bounded_transit_arm_self_or_plant_clearance'));continue
+                approach,transit_minimum,transit_evidence=transit
+                minimum=min(minimum,transit_minimum)
                 self.plan=dict(approach=approach,stroke=np.asarray(stroke),direction=d,
                     centre=centre.copy(),axis=axis.copy(),angle=angle,normal_sign=normal_sign,wing_m=wing,
                     blade_plane_normal=normal.copy(),plane_tilt_degrees=tilt,
+                    stroke_offset_range_m=[float(self.stroke_offsets[0]),float(self.stroke_offsets[-1])],
+                    stroke_samples=len(self.stroke_offsets),stroke_end_basis='shaft_radius_plus_half_edge_strip_plus_1mm',
                     minimum_interarm_m=minimum,transit=transit_evidence)
                 return
         ik=sum(a['ik_succeeded'] for a in attempts)
@@ -225,6 +287,8 @@ class BimanualRobot(FullRobotGripper):
         super().restore_authored_state()
         self.cut_gate=ShearGate(self.rig.source_target);self.cut_authorized=False
         self.cut_event=None;self.plan=None;self.plan_diagnostics=None;self.cut_contacts=0
+        self.planning_wall_seconds=None
+        self.held_plant_screen.workspace=None;self.held_plant_screen.static=[]
         if hasattr(self,'planning_slides'): del self.planning_slides
         self.expected_right=self.kin.forward('right',self.right,self.base)
 
@@ -246,6 +310,8 @@ class BimanualRobot(FullRobotGripper):
         result.update(right_arm='original_fitted_knife_guarded_native_joint_drives',
             minimum_grasp_self_capsule_clearance_m=self.minimum_grasp_self_clearance,
             knife_mount=self.knife_mount,
+            blade_contact_geometry=self.blade_contacts,
+            planning_wall_seconds=getattr(self,'planning_wall_seconds',None),
             cut_plan_diagnostics=self.plan_diagnostics,
             cut_model='measured_contact_seam_failure_not_calibrated_tissue_cutting')
         if self.plan is not None:

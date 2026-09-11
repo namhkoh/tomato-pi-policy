@@ -72,6 +72,8 @@ def test_station_offset_requires_full_robot(tmp_path):
 @pytest.mark.parametrize('option,value',[
     ('--torso-yaw','nan'),('--torso-yaw','46'),('--torso-yaw','20'),
     ('--station-yaw','nan'),('--station-yaw','91'),('--station-yaw','45'),
+    ('--grasp-depth-m','nan'),('--grasp-depth-m','.089'),('--grasp-depth-m','.126'),('--grasp-depth-m','.125'),
+    ('--cut-arc-m','.009'),('--cut-arc-m','.021'),('--cut-arc-m','.02'),('--cut-arc-m','nan'),
     ('--approach-distance','nan'),('--approach-distance','.009'),
     ('--approach-distance','.081'),('--approach-distance','.02'),('--grasp-roll','180')])
 def test_initial_pose_options_fail_closed_without_qualified_full_robot(tmp_path,option,value):
@@ -84,9 +86,10 @@ def test_default_initial_pose_is_preserved():
     from sim_physics.benchmark import parser
     args=parser().parse_args(['--output','unused'])
     assert args.grasp_roll==args.torso_yaw==args.station_yaw==0 and args.approach_distance==.08
+    assert args.grasp_depth_m==.1025
 
 
-def test_shorter_approach_does_not_move_base_or_grasp_and_roll_preserves_geometry(native):
+def test_grasp_depth_and_shorter_approach_keep_base_and_roll_preserves_geometry(native):
     from pxr import Gf,UsdGeom
     from sim_physics.plant import build
     from sim_physics.full_robot import FullRobotGripper
@@ -98,9 +101,9 @@ def test_shorter_approach_does_not_move_base_or_grasp_and_roll_preserves_geometr
     first=FullRobotGripper(stage,rig,**kwargs)
     first_base=first.base.copy();first_goal=first.goal.copy()
     stage.RemovePrim(first.root)
-    second=FullRobotGripper(stage,rig,approach_distance=.02,grasp_roll=180,**kwargs)
+    second=FullRobotGripper(stage,rig,approach_distance=.02,grasp_roll=180,grasp_depth=.125,**kwargs)
     np.testing.assert_allclose(first_base,second.base,atol=1e-9)
-    np.testing.assert_allclose(first_goal[:3,3],second.goal[:3,3],atol=1e-9)
+    np.testing.assert_allclose(second.goal[:3,3]-first_goal[:3,3],.0225*first_goal[:3,2],atol=1e-9)
     np.testing.assert_allclose(first_goal[:3,2],second.goal[:3,2],atol=1e-9)
     np.testing.assert_allclose(first_goal[:3,:2],-second.goal[:3,:2],atol=1e-9)
     assert np.linalg.norm(second.start[:3,3]-second.goal[:3,3])==pytest.approx(.02)

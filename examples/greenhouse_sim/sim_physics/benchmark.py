@@ -37,6 +37,8 @@ def parser():
     p.add_argument('--gripper-probe',action='store_true',help='Bounded actual left-gripper contact fixture, not full-arm IK')
     p.add_argument('--finger-friction',type=float,default=.5)
     p.add_argument('--grasp-arc-m',type=float,default=.12)
+    p.add_argument('--cut-arc-m',type=float,default=.01,
+        help='Explicit diagnostic seam within agreed 10..20 mm petiole interval; original 10 mm default unchanged')
     p.add_argument('--diagnostic-detach',action='store_true')
     p.add_argument('--full-robot-probe',action='store_true',help='Full dynamic v1.2 robot with an IK-driven left arm')
     p.add_argument('--bimanual-cut',action='store_true',help='Guarded native left grasp and original right knife seam-release qualification')
@@ -53,6 +55,8 @@ def parser():
         help='Initial station heading relative to palm approach, within +/-90 degrees; no live base motion')
     p.add_argument('--grasp-roll',type=int,choices=(0,180),default=0,
         help='Initial equivalent finger orientation about palm approach axis; native grasp must be requalified')
+    p.add_argument('--grasp-depth-m',type=float,default=.1025,
+        help='Shaft distance from the palm within the original pads: 90..125 mm; no live base or plant override')
     p.add_argument('--torso-yaw',type=float,default=0.,
         help='Fixed initial torso_5 yaw in package robot tests, bounded to +/-45 degrees')
     p.add_argument('--approach-distance',type=float,default=.08,
@@ -71,6 +75,12 @@ def parser():
 
 def main(argv=None):
     args=parser().parse_args(argv)
+    if not math.isfinite(args.cut_arc_m) or not .01<=args.cut_arc_m<=.02 or (
+            args.cut_arc_m!=.01 and not args.bimanual_cut):
+        raise ValueError('Non-default cut arc requires bimanual qualification within 10..20 mm')
+    if not math.isfinite(args.grasp_depth_m) or not .09<=args.grasp_depth_m<=.125 or (
+            args.grasp_depth_m!=.1025 and not args.full_robot_probe):
+        raise ValueError('Grasp depth requires a full robot and finite 90..125 mm')
     if not math.isfinite(args.station_yaw) or abs(args.station_yaw)>90 or (args.station_yaw and not args.full_robot_probe):
         raise ValueError('Station yaw requires a full robot and finite +/-90 degrees')
     if args.bimanual_hold_control and not args.bimanual_cut:
@@ -163,7 +173,7 @@ def main(argv=None):
             path=manifest.parent/component['file'];source_hashes[path]=component['asset_sha256']
         robot_options=dict(sparse_contacts=args.sparse_contacts,finger_gravity=args.finger_gravity,
             approach_tilt=args.approach_tilt,grasp_roll=args.grasp_roll,approach_distance=args.approach_distance,
-            compliant_fingers=args.compliant_fingers,station_yaw=args.station_yaw)
+            compliant_fingers=args.compliant_fingers,station_yaw=args.station_yaw,grasp_depth=args.grasp_depth_m)
         if args.station_offset is not None: robot_options['station_offset']=args.station_offset
         if args.scene=='package' and args.full_robot_probe:
             from .greenhouse_scene import prepare
@@ -202,7 +212,7 @@ def main(argv=None):
                 # Explicit test-station placement BEFORE building physics, never
                 # a running plant pose override or source-package edit.
                 UsdGeom.Xformable(stage.GetPrimAtPath('/World/Plant')).AddTranslateOp(opSuffix='testStation').Set(Gf.Vec3d(0,0,.35))
-        rig=build(stage,record,args.target,max_segment_m=args.max_segment_m,constraint_mode=args.constraint_mode)
+        rig=build(stage,record,args.target,max_segment_m=args.max_segment_m,constraint_mode=args.constraint_mode,cut_m=args.cut_arc_m)
         report['rig']=rig.report()
         fixture=None
         if args.full_robot_probe:

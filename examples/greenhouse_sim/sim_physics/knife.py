@@ -1,7 +1,7 @@
 """Original fitted knife geometry and a measured-contact seam-failure model.
 
 This is NOT calibrated tissue fracture. A force-qualified transverse edge load
-breaks one preauthored 10 mm joint; mesh penetration is not called cutting work.
+breaks one preauthored admissible seam (10 mm default); mesh penetration is not called cutting work.
 No timer, commanded velocity, broad blade face or U-support can trigger release.
 """
 from dataclasses import dataclass
@@ -76,7 +76,7 @@ class KnifeGeometry:
         from pxr import UsdGeom,UsdPhysics
         self.wrist_path=robot_root+'/ee_right'
         self.root=self.wrist_path+'/attachments/DeleafKnife'
-        self.collider=self.root+'/BladeCollision'
+        self.collider=self.root+('/BladePlateContact' if stage.GetPrimAtPath(self.root+'/BladePlateContact') else '/BladeCollision')
         cache=UsdGeom.XformCache()
         wrist=stage.GetPrimAtPath(self.wrist_path)
         inverse=np.linalg.inv(np.asarray(cache.GetLocalToWorldTransform(wrist)).T)
@@ -85,13 +85,13 @@ class KnifeGeometry:
             if not prim or not prim.IsActive(): raise ValueError('Missing active knife '+name)
             return prim,inverse@np.asarray(cache.GetLocalToWorldTransform(prim)).T
         edge,matrix=local('CuttingEdge')
-        plate,_=local('BladeCollision')
+        plate,_=local(self.collider.rsplit('/',1)[1])
         blade,_=local('Blade');arc,_=local('Arc')
         arc_contact,_=local('ArcCollision')
         if (edge.GetAttribute('tomato:cuttingSurface').Get() is not True
                 or blade.GetAttribute('tomato:cuttingSurface').Get() is not False
                 or arc.GetAttribute('tomato:cuttingSurface').Get() is not False
-                or not plate.HasAPI(UsdPhysics.CollisionAPI)
+                or not plate.HasAPI(UsdPhysics.CollisionAPI) or not UsdPhysics.CollisionAPI(plate).GetCollisionEnabledAttr().Get()
                 or not arc_contact.HasAPI(UsdPhysics.CollisionAPI)):
             raise ValueError('Knife edge/plate/support semantics or contacts invalid')
         if UsdGeom.Imageable(blade).ComputeVisibility()=='invisible':
@@ -131,6 +131,20 @@ class KnifeGeometry:
             raise ValueError('Contact must leave at least 5 mm from the knife end')
         edge[:3,3]=centre-wing*edge[:3,1]
         return edge@np.linalg.inv(self.local)
+
+
+def transverse_stroke_offsets(stem_radius,edge_width):
+    """Cover the shaft, not an arbitrary 12 mm of post-seam overtravel.
+
+    End only after the full leading strip clears the shaft radius plus 1 mm
+    planning margin. Actual contact/force/travel still decide whether to cut;
+    reaching this endpoint never releases a seam.
+    """
+    if (not np.isfinite([stem_radius,edge_width]).all() or min(stem_radius,edge_width)<=0):
+        raise ValueError('Positive finite shaft radius and leading-strip width required')
+    end=float(stem_radius+edge_width/2+.001)
+    if end>.012: raise ValueError('Shaft exceeds the bounded diagnostic cutting corridor')
+    return np.linspace(-.025,end,int(np.ceil((end+.025)/.0005))+1)
 
 
 class ShearGate:

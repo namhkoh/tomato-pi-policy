@@ -80,3 +80,16 @@ def test_invalid_constraint_mode_has_no_stage_side_effects(native):
     with pytest.raises(ValueError,match='constraint mode'):
         build(stage,record,'SubStem_56',constraint_mode='unqualified')
     assert stage.GetSessionLayer().ExportToString()==before
+
+
+def test_optional_seam_stays_in_existing_rule_without_changing_source(native):
+    from sim_data.cut_regions import load_rule
+    assert load_rule()['accepted_interval_m']==[.01,.02]
+    stage,record=native;before=stage.GetRootLayer().ExportToString()
+    rig=build(stage,record,'SubStem_41',cut_m=.02)
+    assert rig.report()['cut_material_arc_m']==.02
+    assert rig.arcs[rig.cut_index]==.02 and not rig.cut
+    assert stage.GetRootLayer().ExportToString()==before
+    for invalid in (.009,.021,float('nan')):
+        with pytest.raises(ValueError,match='10..20 mm'):
+            build(stage,record,'SubStem_41',cut_m=invalid)

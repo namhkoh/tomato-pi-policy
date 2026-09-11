@@ -38,6 +38,15 @@ def test_stationary_loading_reversed_motion_and_separate_taps_do_not_cut():
     assert all(sample(g,i*.0001,held=i%3!=0) is None for i in range(20))
 
 
+def test_geometry_sized_stroke_covers_shaft_without_fixed_overtravel():
+    from sim_physics.knife import transverse_stroke_offsets
+    path=transverse_stroke_offsets(.003,.002)
+    assert path[0]==-.025 and path[-1]==pytest.approx(.005)
+    assert np.diff(path).min()>0 and np.diff(path).max()<=.0005+1e-12
+    for radius,width in ((0,.002),(.003,float('nan')),(.02,.002)):
+        with pytest.raises(ValueError): transverse_stroke_offsets(radius,width)
+
+
 def test_original_knife_and_blade_release_preserve_source(native):
     from pxr import Gf,UsdGeom,UsdPhysics
     from sim_physics.plant import build
@@ -54,7 +63,9 @@ def test_original_knife_and_blade_release_preserve_source(native):
     assert k.local[2,3]<0
     from sim_physics.knife import mount_forward
     assert not mount_forward(stage,robot.root)['changed']
-    assert k.size==pytest.approx([.002,.07147998,.013])
+    assert k.size[0]==pytest.approx(.002) and .045<k.size[1]<.055
+    assert k.size[2]==pytest.approx(.006,abs=1e-6)
+    assert k.collider.endswith('/BladePlateContact')
     frame=k.frame(np.eye(4))
     assert k.on_edge(frame[:3,3],frame)
     assert not k.on_edge(frame[:3,3]+.01*frame[:3,0],frame)
@@ -79,6 +90,32 @@ def test_bimanual_replan_cannot_skip_self_screen(monkeypatch):
     monkeypatch.setattr(FullRobotGripper,'plan_approach',lambda self:setattr(self,'path_q',np.zeros((3,7))))
     monkeypatch.setattr(robot,'check_self',lambda *args:dict(passed=False,minimum_clearance_m=-.01))
     with pytest.raises(RuntimeError,match='path index 0'): robot.plan_approach()
+
+
+def test_failed_planning_time_is_reported(monkeypatch):
+    from sim_physics.bimanual import BimanualRobot
+    robot=object.__new__(BimanualRobot)
+    def fail(*args): raise RuntimeError('blocked geometry')
+    monkeypatch.setattr(robot,'_plan_cut',fail)
+    with pytest.raises(RuntimeError,match='blocked geometry'): robot.plan_cut(None,None)
+    assert robot.planning_wall_seconds>=0
+
+
+def test_reset_invalidates_scene_snapshot_and_planning_time(monkeypatch):
+    from types import SimpleNamespace
+    from sim_physics.bimanual import BimanualRobot
+    from sim_physics.full_robot import FullRobotGripper
+    robot=object.__new__(BimanualRobot)
+    robot.rig=SimpleNamespace(source_target='petiole')
+    robot.held_plant_screen=SimpleNamespace(workspace=(0,1),static=['old'])
+    robot.kin=SimpleNamespace(forward=lambda *args:np.eye(4))
+    robot.right=np.zeros(7);robot.base=np.eye(4)
+    robot.planning_slides={'old':1};robot.planning_wall_seconds=1.
+    monkeypatch.setattr(FullRobotGripper,'restore_authored_state',lambda self:None)
+    robot.restore_authored_state()
+    assert robot.held_plant_screen.workspace is None and robot.held_plant_screen.static==[]
+    assert robot.planning_wall_seconds is None and not hasattr(robot,'planning_slides')
+    assert robot.plan is None and robot.cut_event is None and not robot.cut_authorized
 
 
 def test_known_bad_torso_station_rejected_before_native_physics(native):

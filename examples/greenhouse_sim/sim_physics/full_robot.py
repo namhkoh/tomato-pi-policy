@@ -39,7 +39,7 @@ def finger_compliance(finger_masses,stem_mass):
 
 class FullRobotGripper(GripperFixture):
     def __init__(self,stage,rig,*,arc=.08,friction=.5,ground_height=None,
-                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.):
+                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025):
         from pxr import Gf,Sdf,Usd,UsdGeom,UsdPhysics,UsdShade
         from greenhouse_sim.robot_model import DEFAULT_ASSET,DEFAULT_URDF
         from greenhouse_sim.robot_kinematics import Rby1Kinematics,base_transform
@@ -80,7 +80,13 @@ class FullRobotGripper(GripperFixture):
         if grasp_roll not in (0,180): raise ValueError('Grasp roll must be 0 or 180 degrees')
         self.grasp_roll=grasp_roll
         if grasp_roll==180: self.goal[:3,:2]*=-1
-        self.goal[:3,3]=point+.1025*z
+        # Original collision pads span palm Z=-135.5..-73.5 mm. A bounded
+        # distal grasp can avoid burying the palm/fingers in attached foliage.
+        # This moves the hand, not the plant or its collision geometry.
+        if not np.isfinite(grasp_depth) or not .09<=grasp_depth<=.125:
+            raise ValueError('Grasp depth must stay within the original pads: 90..125 mm')
+        self.grasp_depth=float(grasp_depth)
+        self.goal[:3,3]=point+self.grasp_depth*z
         if not np.isfinite(approach_distance) or not .01<=approach_distance<=.08:
             raise ValueError('Initial approach distance must be 10..80 mm')
         self.approach_distance=float(approach_distance)
@@ -95,7 +101,7 @@ class FullRobotGripper(GripperFixture):
         left=np.array([-np.sin(angle),np.cos(angle),0.])
         # Keep station selection independent of the approach length. Shortening
         # the approach must not silently move the entire robot toward the plant.
-        station_reference=self.goal[:3,3]+.08*self.goal[:3,2]
+        station_reference=point+(.1025+.08)*self.goal[:3,2]
         self.base=base_transform(station_reference-.4*forward-.22*left,yaw);self.base[2,3]=.001
         self.station_offset=np.asarray(station_offset,dtype=float)
         if self.station_offset.shape!=(2,) or not np.isfinite(self.station_offset).all() or np.linalg.norm(self.station_offset)>.3:
@@ -245,6 +251,7 @@ class FullRobotGripper(GripperFixture):
             joint_state_names=getattr(self,'names',None),
             approach_tilt_degrees=self.approach_tilt,
             grasp_roll_degrees=self.grasp_roll,
+            grasp_depth_m=self.grasp_depth,
             approach_distance_m=self.approach_distance,
             approach_side=self.approach_side,
             minimum_planned_interarm_capsule_clearance_m=self.minimum_interarm,

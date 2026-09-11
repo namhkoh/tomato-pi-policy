@@ -3953,3 +3953,90 @@ No unsafe configuration was executed or collision margin relaxed.
   Next data work is targeted medium-visibility acquisition plus remaining
   stratified QA and global reconciliation, not blind relabeling of easy/hard
   frames. Updated `H200_HANDOFF.md` and `vlm_train_data.md` accordingly.
+
+### 2026-09-11: cutting geometry, scene-aware approach and native failure audit
+
+User requested improved successful cutting. **The implementation is improved,
+but a successful current-environment cut is still unverified.** No guards were
+weakened, no contact was relabelled to force a pass, and no timer/pose override,
+grasp weld, hardware command, collection/training job or dataset change was used.
+
+- Fixed contact diagnostics: `target_palm()` clears the native contact stream
+  for the next tick. Failed-grasp diagnostics had read that cleared stream.
+  Each completed native step now snapshots its collider pairs, so the failure
+  event retains actual blocking contacts. Planning-time native body frames,
+  actual left joints and finger aperture are saved separately for reproduction;
+  these privileged diagnostics are explicitly non-training.
+- Added bounded `--grasp-depth-m` (90..125 mm, original 102.5 mm default).
+  Original finger collision pads span palm Z=-135.5..-73.5 mm. The 125 mm
+  proposal moves the hand, not the plant/base or finger geometry. Settled-goal
+  updates preserve that chosen depth. Grasp still requires opposing selected
+  shaft contact, not a finger stopped by an attached leaf.
+- Added cached held-plant geometry from native body poses plus active local
+  static contacts, including hidden and instance-proxy shapes. Cache creation
+  occurs after context population. A 2 m cube about the fixed right shoulder
+  bounds the checked region; any proposed right shape leaving it is rejected.
+  Trial18 includes 271 local static colliders. Source convex hulls/triangles and
+  conservative tool bounds are not a continuous whole-scene certificate.
+- Added deterministic bounded bidirectional joint-space detours after the
+  direct/outward-shoulder options, maximum 300 iterations / 4,000 predicate
+  calls with <=1-degree path samples. Full-tool/inter-arm/plant checks remain.
+  Stroke is screened before spending the transit budget. Failed planning wall
+  time is recorded separately: an exception can bypass PhysicsClock's completed
+  tick timing, so its real-time factor is not an end-to-end planning metric.
+- Replaced arbitrary +12 mm post-seam stroke extent with shaft radius + half
+  leading-strip width + 1 mm, sampled at <=0.5 mm. For this fixture the endpoint
+  is +4.990 mm. Actual native edge load/dwell/travel still gates release.
+- Added explicit `--cut-arc-m` for a diagnostic seam within the existing agreed
+  10..20 mm longitudinal interval. Default 10 mm, source assets, annotation
+  rule, existing reviews and dataset labels are unchanged. A 20 mm offline
+  alternative also fails the sampled full-scene approach search; it is not
+  native-qualified or an automatic execution fallback.
+- Found and corrected a source-geometry mismatch in the knife: actual long
+  plate sections have Z=-6.5..-0.5 mm, while the inherited full bounding box
+  used Z=-6.5..+6.5 mm. Its centre-Z=0 semantic edge was above that long plate.
+  `blade_contacts.py` partitions all source triangles at Y=-11.9819 mm into
+  plate and mount convex contact hulls, retaining both and preserving source
+  surface area. The usable long leading strip follows the measured 2-degree
+  slant, is centred at Z=-3.5 mm, and is 49.528 mm long / 6 mm thick. The old
+  enclosing box is superseded only in the session layer. This is not a claim
+  that the supplied 6 mm plate is a calibrated sharp-tissue cutting model.
+
+Native evidence, under `data/sim_physics` (all failures preserved):
+
+| Trial | Measured result |
+|---|---|
+| `bimanual_cut_20260911_11`, `_12` | Requested 100 mm grasp selects 95.576 mm body centre. Only one opposing shaft contact; the other finger is stopped by Segment005/Leaf000. Trial12's corrected pair log identifies this explicitly. No right motion/cut. |
+| `_13` | 125 mm pad depth at that same farther grasp clears the palm/leaf contact but does not establish opposing shaft contact. Rejected at 3.5 s. |
+| `_14` | Requested 80 mm grasp selects 71.126 mm body centre, depth125, station yaw60. Grasp verified; right forearm brushes distal leaves and grasp is lost at 5.6875 s. No cut. |
+| `_15` | Native held-plant snapshot screening rejects the leaf-conflicting stroke before right motion. |
+| `_16` | Geometry-sized stroke plus held-plant-aware detour keeps opposing grasp through 7 s, then native guard catches a 44.357 N forearm/tomato contact. This was a failed diagnostic, not safe execution. It motivated adding surrounding static geometry. |
+| `_17` | Local static scene screen rejects the blocked approach at 3.5 s, avoiding the earlier right-arm collision. Native planning snapshot saved. |
+| `_18` | New source-derived blade contacts cook/load and grasp verifies (100% bilateral during 3..3.5 s). 180 endpoint attempts: 114 IK-converged, none pass all geometry checks. No right motion, edge contacts or cuts. Source hashes unchanged; paused native inspection images saved. |
+| `bimanual_hold_control_20260911_05` | Same revised station/tool, right parked: all 4,800 steps / 20 s complete without a guard fault; maximum post-verification slip 0.06903 mm. Cutting gates intentionally false and control exit remains non-success. Attached hold only, not severed retention. |
+
+Additional read-only offline checks explored original/finer blade angles,
+redundant IK seeds, six station/torso combinations and six other eligible
+seed101 petioles. They did not establish a complete sampled collision-clear
+sequence; alternatives failed IK, self/scene clearance or spawn checks. These
+bounded searches do not prove the task physically impossible. +/-15-degree
+blade proposals were inspected offline only; the implementation's +/-10-degree
+proposal and original measured angular gate remain unchanged.
+
+Regression: **799 tests + 47 subtests passed (86.63 s)** across sim_physics,
+robot kinematics/clock/RL tick and sim_data. Source-surface preservation, exact
+plate profile, negative cut controls, deterministic detours/budgets, static
+contacts, unchecked-region rejection and unchanged default cut rule are tested.
+No success rate, calibrated tissue fracture or H200 readiness is inferred.
+Reset also invalidates the cached static scene and previous planning timing;
+the next plan rebuilds its scene snapshot. Final focused regression, including
+that reset test: **87 passed (22.02 s)**. `git diff --check` is clean.
+Inspected trial18's native knife-mount and grasp-close images: the supplied
+knife remains visible; foliage still partly obscures the grasp in the close-up.
+These are diagnostic views, not robot-camera training inputs or visual proof
+of opposing contact. The force/identity traces provide that evidence. All
+workers launched for this increment have exited; no jobs were left running.
+Next required work is joint grasp/cutter configuration selection against the
+complete scene (including refinement of conservative tool bounds where
+warranted), followed by actual native blade load/release/withdraw/retain tests.
+Do not promote these diagnostic records into a VLM action dataset.

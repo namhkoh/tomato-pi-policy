@@ -19,6 +19,16 @@ diagnostic replay; a failed plan/guard never forces release.
 - `bimanual.py` caches source knife transforms, reads native right-wrist state
   and contact positions, and searches bounded IK/edge-wing alternatives. Arm
   capsule clearance is only one screen, not full-tool/path certification.
+- `blade_contacts.py` replaces the enclosing blade box with two source-triangle
+  convex hulls in the session layer. Cross-sections of the supplied long plate
+  are Z=-6.5..-0.5 mm (6 mm thick), not the mounting-end box's -6.5..+6.5 mm.
+  Its usable long edge is centred at Z=-3.5 mm and follows the CAD's 2-degree
+  slant. The thick mount still collides. Visible source meshes are untouched.
+- `held_plant_screen.py` snapshots actual native held-body poses and caches
+  nearby static contacts, including hidden/instanced geometry, after scene
+  population. Right-arm paths must stay within the checked 2 m shoulder-centred
+  cube. `joint_path.py` adds deterministic, budgeted detours with <=1-degree
+  samples. These are conservative screens, not a continuous dynamic certificate.
 - `startup_screen.py` rejects possible initial robot/scene collision overlaps
   before starting dynamics. Static triangle/quad surfaces refine broad boxes;
   convex solids retain containment checks. Hidden and instanced collisions
@@ -36,12 +46,31 @@ diagnostic replay; a failed plan/guard never forces release.
   release. Deposit, recovery, synchronized dynamic camera records and VLM/VLA
   execution are not implemented by this probe. No result is training-approved.
 
-Measured current blocker: `data/sim_physics/bimanual_cut_20260911_03` passed
-the spawn screen and reached the left grasp (all 120 measured hold frames had
-opposing stem contact). At 3.5 s, the right IK/arm-clearance search failed and
-the test stopped without a cut. An earlier opposite-side candidate in
-`bimanual_cut_20260910_01` collided at spawn; it is rejected, not a demo setup.
-Do not report a completed grasp-cut-retain sequence from either run.
+Latest native checkpoint: `bimanual_cut_20260911_18` loads the source-derived
+knife contacts, verifies opposing left contact, and rejects the blocked right
+approach at 3.5 s. Zero edge contacts/cuts; source assets unchanged. The revised
+station's parked-right control `bimanual_hold_control_20260911_05` completes
+20 s with no guard fault and maximum post-verification slip 0.0691 mm.
+This is one attached-plant fixture, not post-cut retention or general reliability.
+The control deliberately has false cutting gates and a non-success exit.
+
+New opt-in parameters: `--grasp-depth-m .125` places the shaft farther toward
+the original finger tips without moving the base; default .1025 is unchanged.
+`--cut-arc-m .02` selects a diagnostic seam within the existing agreed 10..20 mm
+interval; default .01 and all dataset labels remain unchanged. The 20 mm option
+has geometry/unit checks, not a passing native cutting qualification.
+Stroke end is now shaft radius + half leading-strip width + 1 mm, instead of
+fixed 12 mm overtravel. Reaching it cannot authorize a cut.
+
+Example **unqualified** latest diagnostic (choose a new output):
+
+```powershell
+examples\greenhouse_sim\run_bimanual_cut_probe.cmd --output D:/research/tomato-pi-policy/data/sim_physics/my_cut_check --station-offset .06 .24 --station-yaw 60 --grasp-arc-m .08 --grasp-roll 180 --grasp-depth-m .125 --approach-distance .02 --compliant-fingers
+```
+
+The remaining task is a compatible, scene-clear grasp/cutter configuration,
+then native blade loading, release, withdrawal and retained-material tests.
+No successful current-environment grasp-cut-retain sequence is claimed.
 
 ## Latest full-robot checkpoint
 

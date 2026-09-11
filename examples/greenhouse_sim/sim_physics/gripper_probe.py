@@ -214,7 +214,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         nonlocal goal_set,baseline,grasp_local,moved,release_authorized
         t=stamp.simulation_time_s
         if t>=.9 and not goal_set:
-            fixture.goal[:3,3]=runtime.frames[fixture.body_index,:3,3]+.1025*fixture.goal[:3,2]
+            depth=fixture.grasp_depth if full_robot else .1025
+            fixture.goal[:3,3]=runtime.frames[fixture.body_index,:3,3]+depth*fixture.goal[:3,2]
             if full_robot: fixture.plan_approach()
             goal_set=True
         goal=fixture.start[:3,3]+ramp(t,1.,2.)*(fixture.goal[:3,3]-fixture.start[:3,3])
