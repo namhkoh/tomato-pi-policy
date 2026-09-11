@@ -4289,3 +4289,15 @@ No hardware, collection, tuning, review, split or training-export changes.
   separate native force-limited loading diagnostic is still needed to resolve
   the rigid-interface/indentation-model question. No automatic force-threshold
   relaxation, timed release, hidden collision exclusion, or successful cut.
+
+- Follow-up assistant A source-geometry inspection (offline, not native):
+  right bracket visual/collision meshes match at 2,308 triangles; enclosing
+  box is 40x44x41 mm, approximately 65.1% empty relative to source mesh volume.
+  Native collision uses convex decomposition; planner uses the enclosing box.
+  For 120 deg / -18 mm wing / normal -1 / zero tilt at requested75 mm grasp
+  (actual71.126 mm), the 25 mm staging pose's left camera OBB clears bracket
+  triangles by 4.78 mm, while the 10 mm pose intersects 861 triangles including
+  the mounting foot. Thus an initial source-mesh false positive does NOT make
+  the straight stroke clear. Remaining ten variants and native cooked hulls
+  were not measured. Refine conservativeness without shrinking hardware or
+  claiming a source triangle test certifies the native decomposed collider.
