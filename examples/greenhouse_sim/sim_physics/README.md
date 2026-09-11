@@ -22,6 +22,15 @@ Vectorized mesh expansion and conservative triangle indexing avoid repeated
 large-mesh narrow-phase work without removing geometry or reducing margins.
 **No successful current-environment grasp-cut-retain-deposit run yet.**
 
+Cut evidence now measures net advance since the first consecutive qualified
+contact sample. Free approach motion and positive-only sums of tiny contact
+jitter cannot satisfy loading travel. This fixes evidence accounting; the
+rigid seam's physical ability to satisfy the force/travel criterion is still
+unqualified. A force-limited native loading diagnostic is required before
+calling this a validated cutting model. `RigidToolScreen` can cheaply reject
+incompatible wrist-tool subsets before IK, but does not certify an arm path
+and uses conservative source-derived bounds, not exact mesh collision proof.
+
 `run_bimanual_cut_probe.cmd --output <new-directory>` is an **unqualified**
 bounded integration test, not a working end-to-end demonstration. The existing
 grasp-demo launchers remain unchanged. Add `--gui --robot-interactive` only for

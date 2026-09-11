@@ -4261,3 +4261,31 @@ No hardware, collection, tuning, review, split or training-export changes.
   `Incomplete release` before creating any ZIP. No training archive, server
   transfer or training start is claimed. This command is ready for the final
   approved export, not a way around remaining coverage/review requirements.
+
+#### 2026-09-11: Cut evidence integrity and pre-IK rigid-tool checks
+
+- Independent code/results assessments are retained in
+  `data/sim_physics/cutting_model_review_20260911.md` and
+  `paired_geometry_review_20260911.md`. None of native cut25..29 or hold08
+  recorded an accepted blade-edge contact; they do not validate mechanical
+  feasibility of the 0.2..0.5 N / 25 ms / 0.3 mm loading condition.
+- Fixed two evidence-accounting bugs in `ShearGate`: precontact approach
+  travel no longer enters the first qualifying contact window, and tolerated
+  submicrometre reversals subtract from net travel instead of ratcheting a
+  false cut. All physical thresholds stay unchanged. New negative tests cover
+  a large free-space approach followed by stationary load, a force dropout,
+  and 1,000 tiny forward/back cycles. These are logic tests, not tissue tests.
+- Added reusable `RigidToolScreen`: checks fixed left-hand/arm geometry versus
+  proposed right-wrist hardware, and hardware versus the scene snapshot,
+  before arm IK. A pass explicitly does NOT certify the omitted right arm,
+  its transit, native grasp/contact, or cutting. Original caches are not mutated.
+- `rigid_corridor_20260911_01.json`: 12 targeted 75 mm-grasp / 120-degree
+  sector configurations, negative near-end wings, +/-10-degree plane tilt,
+  10/25 mm standoffs. All are conservatively rejected at the first pose by
+  left D405 body / right bracket bounds; total offline wall time 5.317 s.
+  This is not proof of actual mesh collision or global unreachability. The
+  bracket's enclosing bound is being compared with its source geometry.
+- Focused regression: 38 tests pass (knife, rigid tool screen, archive). A
+  separate native force-limited loading diagnostic is still needed to resolve
+  the rigid-interface/indentation-model question. No automatic force-threshold
+  relaxation, timed release, hidden collision exclusion, or successful cut.

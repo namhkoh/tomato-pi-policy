@@ -38,6 +38,25 @@ def test_stationary_loading_reversed_motion_and_separate_taps_do_not_cut():
     assert all(sample(g,i*.0001,held=i%3!=0) is None for i in range(20))
 
 
+def test_free_approach_displacement_is_not_qualified_cutting_travel():
+    g=ShearGate('petiole')
+    assert sample(g,0.,points=[],impulses=[]) is None
+    assert all(sample(g,.001) is None for _ in range(20))
+    assert g.dwell>=.025 and g.travel==0.
+    # Losing force restarts the loading reference, not merely its counter.
+    assert sample(g,.002,impulses=[[0,0,0]]) is None
+    assert all(sample(g,.003) is None for _ in range(20))
+    assert g.travel==0.
+
+
+def test_submicrometre_contact_jitter_cannot_accumulate_a_cut():
+    g=ShearGate('petiole')
+    # Each reverse step is below the numerical tolerance. The old positive
+    # increment sum accumulated >0.3 mm despite <1 um of net displacement.
+    assert all(sample(g,(i%2)*.0000008) is None for i in range(1000))
+    assert g.travel<.000001 and not g.completed
+
+
 def test_geometry_sized_stroke_covers_shaft_without_fixed_overtravel():
     from sim_physics.knife import transverse_stroke_offsets
     path=transverse_stroke_offsets(.003,.002)

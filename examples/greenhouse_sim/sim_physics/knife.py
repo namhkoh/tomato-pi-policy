@@ -169,10 +169,11 @@ def transverse_stroke_offsets(stem_radius,edge_width,standoff=.025):
 class ShearGate:
     def __init__(self,target,parameters=None):
         self.target=target;self.parameters=parameters or ShearParameters()
-        self.completed=False;self.previous=None;self.reset_window()
+        self.completed=False;self.reset_window()
 
     def reset_window(self):
         self.dwell=0.;self.travel=0.;self.peak=0.;self.steps=0
+        self.previous=None;self.loading_origin=None;self.loading_direction=None
 
     def observe(self,*,dt,edge,centre,axis,points,impulses,held,slip):
         p=self.parameters
@@ -180,7 +181,6 @@ class ShearGate:
         if not np.isfinite(values).all() or dt<=0: raise ValueError('Invalid native shear sample')
         relative=edge[:3,3]-centre;direction=-edge[:3,0]
         step=0. if self.previous is None else float(np.dot(relative-self.previous,direction))
-        self.previous=relative.copy()
         force=sum(abs(float(np.dot(v,direction))) for v in impulses)/dt
         valid=bool(not self.completed and held and slip is not None and np.isfinite(slip)
             and slip<p.maximum_grasp_slip_m and len(points)>0
@@ -190,11 +190,20 @@ class ShearGate:
             and all(abs(float(np.dot(np.asarray(point)-centre,axis)))<=p.axial_tolerance_m for point in points))
         if not valid:
             self.reset_window();return None
-        self.dwell+=dt;self.travel+=max(step,0);self.peak=max(self.peak,force);self.steps+=1
+        if self.loading_origin is None:
+            # No approach displacement is credited to the first qualifying
+            # contact sample. Both ends of measured advance need a valid load.
+            self.loading_origin=relative.copy();self.loading_direction=direction.copy()
+        self.previous=relative.copy()
+        # Net advance, not a sum of positive jitter. Tiny permitted reverse
+        # steps must subtract from travel instead of ratcheting a false cut.
+        self.travel=max(0.,float(np.dot(relative-self.loading_origin,self.loading_direction)))
+        self.dwell+=dt;self.peak=max(self.peak,force);self.steps+=1
         if self.dwell<p.dwell_s or self.travel<p.minimum_loading_travel_m: return None
         self.completed=True
         return dict(target=self.target,model='force_qualified_pre_authored_seam_release',
             force_threshold_n=p.force_n,peak_force_n=self.peak,contact_dwell_s=self.dwell,
             measured_relative_loading_travel_m=self.travel,contact_steps=self.steps,
+            travel_definition='net_advance_since_first_consecutive_qualified_contact',
             stable_left_grasp=True,grasp_slip_m=float(slip),flat_edge_contact_verified=True,
             commanded_motion_used_as_evidence=False,tissue_fracture_calibrated=False)
