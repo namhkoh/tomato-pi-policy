@@ -4924,3 +4924,99 @@ No hardware, collection, tuning, review, split or training-export changes.
   spring/contact qualification follows; CPU tests do not qualify those physics.
   Reliable cut-retain-withdraw, deposit and calibrated tissue cutting remain
   incomplete. Existing failed evidence is preserved, not relabeled successful.
+
+### 2026-09-11: Reduced spring/contact reproducer (not a cutting success)
+
+- Added standalone three-link/two-revolute contact coupon using source52
+  Segment001..003 masses/inertias and Joint002/003 Y-axis stiffness/damping.
+  Six fixed compliant pads create internal bending; no root weld, body-force
+  injection or moved runtime poses. This elementary geometry is NOT the full
+  spherical-joint plant. Same-step signed normal/friction contacts are retained.
+  Equilibrium requires contact moments, spring response, low velocity and net
+  wrench balance; visually static output is insufficient.
+- Initialization failures01..03 are preserved, not physics results: Kit adds
+  render/camera prims to a new context; SimulationManager warm-up advances two
+  solves; raw attachment defers articulation insertion until a first solve.
+  The runner now authors an owned empty anonymous stage, attaches it explicitly,
+  and runs one REPORTED1 microsecond native bootstrap for BOTH comparison modes.
+  It preserves bootstrap contacts and initial q/qdot, verifies the original
+  0.005 rad strain within unchanged tolerance, and then owns every simulate/fetch.
+  No hidden reset, zeroing or state override. Native-error monitoring remains
+  active through owned cleanup; final errors cannot be hidden by a pass flag.
+- Valid3-second runs, each720 recorded steps: native PGS16/4 (`...native...04`),
+  PGS32/0 (`...native...05`), old predictor PGS16/4 (`...implicit...06`), and
+  native TGS16/4 (`...native...07`) all fail load/velocity qualification.
+  Max static moment residuals respectively3.4604/3.8093/3.2847/3.9171 mN.m;
+  native joint-velocity RMS0.3224/0.2009/0.3430/0.9048 rad/s. Net contact wrench
+  balance and pad coverage pass. No plant or robot result follows from these.
+- Native04..06 positions change <0.8 microradian over the last0.5 s, while
+  reported joint/body velocities remain substantial. Independent projected
+  body-angular velocities agree with native joint velocities. Public PhysX
+  source has distinct saved position-integration and final carried velocities;
+  even requested PGS0 velocity iterations has a mandatory writeback solve.
+  These sources explain a possible mechanism, not the exact installed defect:
+  [PGS solver](https://github.com/NVIDIA-Omniverse/PhysX/blob/main/physx/source/lowleveldynamics/src/DySolverControl.cpp),
+  [articulation integration](https://github.com/NVIDIA-Omniverse/PhysX/blob/main/physx/source/lowleveldynamics/src/DyFeatherstoneForwardDynamic.cpp).
+  Finite differences must not silently replace carried velocities in damping.
+- Test08 investigates [PhysX issue498](https://github.com/NVIDIA-Omniverse/PhysX/issues/498):
+  native legacy joint-friction readback is already0, and setting it explicitly
+  to0 reproduces04's result exactly. The unintended-bearing-friction hypothesis
+  is therefore NOT supported here. Finger/pad contact friction was unchanged.
+- Helper/runner CPU tests75 pass; no complete native contact-spring pass yet.
+  Next isolated comparison: paired off-axis native linear springs with the
+  same small-angle angular stiffness/damping, no added bodies or grasp weld.
+  This must pass force/motion checks before any greenhouse integration. No
+  physical robot, model training, data collection or dataset approvals changed.
+
+### 2026-09-11: Section-spring and maximal-coordinate controls (still not robot qualification)
+
+- Added off-axis native linear D6 section springs for the SMALL planar coupon:
+  two connectors per joint, each k=K/(2r^2), c=C/(2r^2), only transZ driven.
+  Rest-local anchors preserve initial strain; original angular drives are zero
+  before parsing. Ideal finite-angle energy is K*sin(theta)^2/2, not a globally
+  linear beam or calibrated plant model. Pose-derived fiber energy includes
+  central-anchor error. External native gains remain USD-verified only.
+- Native09, articulated section springs with pads, fails: 3.2521 mN.m static
+  moment residual and 0.3444 rad/s native joint-velocity RMS. This alternative
+  was NOT integrated into the greenhouse. Both native friction representations
+  are zero. Native10, the contact-FREE counterpart, grows from approximately
+  7.97 microjoules initial fiber energy to 509.9 microjoules at step14; q2
+  reaches +0.057865 rad while carried qdot2 is -3.3685 rad/s. The small-angle
+  guard stops the run. Independent body-pose/angular-velocity checks agree
+  with the respective joint readings: no joint-order explanation was found.
+- Native11, FREE original angular drives, passes the existing 720-step tail
+  tests: velocity RMS 2.28e-14 rad/s. This narrows the external-constraint
+  hypothesis, but does not establish an exact installed PhysX implementation
+  defect. That historical report predates the new whole-run energy gate.
+- Added an explicit maximal-coordinate counterpart: same rigid-body masses,
+  inertias, rest frames, pads and fibers; external revolutes, no articulation.
+  Native rigid-body paths/masses/inertias/COM/initial frames are verified.
+  Derived joint angles and projected relative angular velocities are labelled
+  as body-derived, never fabricated articulation readbacks. No root weld,
+  runtime pose/velocity writes, mass inflation or contact-filter workaround.
+- Native12 preserves an initialization rejection: even a reported 1 us solve
+  shifts the initial angles by 9--10 microradians, beyond the unchanged
+  tolerance. Rigid bodies can instead be bound BEFORE any solve. Native13
+  uses that explicit zero-bootstrap path and passes FREE 720-step checks,
+  including whole-run modeled kinetic-plus-fiber energy. Initial reference
+  7.9714 microjoules; maximum recorded energy 6.4229 microjoules; largest rise
+  above a prior minimum 2.75e-14 J. This is a small free-motion result only.
+- Free acceptance now requires the complete contiguous run, not merely a
+  settled tail, and rejects energy growth beyond a disclosed allowance of
+  1 nJ + 1e-4 times initial energy. Kinetic energy uses actual world body
+  velocities and body-frame inertia, not finite-difference substitution.
+  The runner also retains whole-run angle maxima and validates new native
+  telemetry before strict JSON serialization.
+- Native14, maximal section springs HELD by the same pads under PGS16/4,
+  fails contact qualification: anchor error, 2.8622 mN.m moment residual and
+  0.19435 rad/s velocity RMS. Thus free recovery alone is insufficient. A
+  matched TGS maximal contact test follows; no complete cut-retain-withdraw
+  or deposit result is claimed. Dataset ZIPs/labels/splits remain unchanged.
+- Native15, the matched maximal HELD TGS16/4 case, also fails: 2.8349 mN.m
+  residual and 0.56754 rad/s native velocity RMS, with failed anchor tolerance.
+  The free success therefore does not justify production integration. Next
+  diagnostic isolates compliant versus rigid contacts with the same spring,
+  body and collision geometry; this is not removal of production compliance.
+- Checkpoint regression: **1,955 CPU/USD tests passed in 100.75 s**, logged in
+  `data/sim_physics/regression_20260911_contact_spring_coupons.log`. This code
+  regression is separate from, and cannot override, native physical failures.
