@@ -45,6 +45,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     records=[];events=[];captures={};fault=None;stable=0;lost=0
     grasp_local=None;goal_set=False;planned=False;grasp_verified=False;cut_time=None;cut_fraction=0.
     last_right_command=('park',0.)
+    measured_withdrawal=bool(getattr(args,'measured_withdrawal',False));withdrawal=None
     hold_control=bool(getattr(args,'bimanual_hold_control',False))
     reposition=float(getattr(args,'bimanual_reposition_m',0.))
     times=sequence_times(reposition);delay=times['delay']
@@ -132,21 +133,25 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 # target execution following an unmodeled plant movement.
                 if cut_time is None and np.linalg.norm(fixture.seam(runtime.frames)[0]-fixture.plan['centre'])>.003:
                     raise RuntimeError('Cut target moved >3 mm since verified plan; reobserve/replan required')
-            if cut_time is not None:
+            if cut_time is not None and not measured_withdrawal:
                 if t<cut_time+2:
                     phase='stroke';fraction=cut_fraction*(1-ramp(t,cut_time,cut_time+2))
                 else:
                     phase='approach';fraction=1-ramp(t,cut_time+2,cut_time+6)
-            elif t>=stroke_end:
+            elif cut_time is None and t>=stroke_end:
                 raise RuntimeError('Cut stroke ended without qualified blade contact; no timed release')
-        fixture.cut_authorized=phase=='stroke'
-        fixture.command_right(phase,fraction)
-        last_right_command=(phase,fraction)
+        if cut_time is not None and measured_withdrawal:
+            if withdrawal is None:raise RuntimeError('No measured release snapshot; withdrawal refused')
+            withdrawal.command(stamp)
+        else:
+            fixture.cut_authorized=phase=='stroke'
+            fixture.command_right(phase,fraction)
+            last_right_command=(phase,fraction)
         fixture.prepare_step(runtime.frames)
         springs.step(dt,root_constrained=not rig.cut)
 
     def after(stamp,dt):
-        nonlocal stable,lost,cut_time,cut_fraction
+        nonlocal stable,lost,cut_time,cut_fraction,withdrawal
         frames,velocity=runtime.sample();frame=frames[fixture.body_index]
         c=fixture.contact_with_frames(dt,frames,step_id=stamp.step)
         stable=stable+1 if c['bilateral'] else 0
@@ -197,6 +202,9 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             raise RuntimeError('Bimanual force/slip/penetration/support guard')
         record['knife']=fixture.inspect_cut(dt,frames,stable>=int(.025*args.physics_hz),slip)
         record['cut']=rig.cut
+        # True only here: every existing callback, robot, force, penetration,
+        # support, slip and knife guard above has returned without exception.
+        record['native_guards_passed']=True
         if rig.cut and cut_time is None:
             cut_time=stamp.simulation_time_s
             # The release timestamp is AFTER fetch; it is one step later than
@@ -204,6 +212,16 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             # would add an unrequested forward increment after release.
             cut_fraction=released_stroke_fraction(last_right_command)
             events.append(dict(t=cut_time,**fixture.cut_event))
+        if rig.cut and measured_withdrawal:
+            from .withdrawal_controller import WithdrawalController
+            if withdrawal is None:
+                withdrawal=WithdrawalController(fixture,runtime,clock,cut_fraction=cut_fraction)
+            try:
+                withdrawal.observe(stamp,record)
+            except Exception as exc:
+                record['withdrawal_failure']=dict(error=type(exc).__name__+': '+str(exc),
+                    native_receipt=withdrawal.adapter.last_receipt)
+                raise
         if rig.cut and stamp.step==int(args.seconds*args.physics_hz):
             from .withdrawal_native_check import check as check_withdrawal
             record['withdrawal']=check_withdrawal(fixture,frames,stamp.step)
@@ -250,11 +268,16 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             try: capture('stopped_on_fault')
             except Exception as error: captures['fault_capture_error']=str(error)
     retained=[r for r in records if cut_time is not None and r['t']>=cut_time+2]
+    from .withdrawal_controller import measured_completion
+    helper_complete=bool(records and measured_completion(records[-1],
+        (clock.stamp.episode,clock.stamp.step))) if measured_withdrawal else None
     gates=dict(bounded=fault is None,completed=len(records)==int(args.seconds*args.physics_hz),
         left_grasp_verified=grasp_verified,collision_clear_right_plan=planned,blade_contact_release=rig.cut,
         native_retention=bool(retained) and all(r['contact']['bilateral'] and r['slip_m']<.003 for r in retained),
         released_material_separates=bool(retained) and max(r['detached_seam_gap_m'] for r in retained)>.003,
-        right_withdrawal_completed=bool(records and records[-1].get('withdrawal',{}).get('right_withdrawal_completed') is True))
+        right_withdrawal_completed=bool(records
+            and records[-1].get('withdrawal',{}).get('right_withdrawal_completed') is True
+            and (not measured_withdrawal or helper_complete)))
     result=dict(state='passed_bimanual_mechanism_not_robot_task' if all(gates.values()) else 'failed_bimanual_qualification',
         gates=gates,error=fault,events=events,images=captures,timing=clock.report(),robot=fixture.report(),
         measurements=dict(native_edge_contact_count=fixture.cut_contacts,cut_time_s=cut_time,
@@ -264,6 +287,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         right_withdrawal_schedule_elapsed=cut_time is not None and records[-1]['t']>=cut_time+6,
         right_withdrawal_verification='final_post_fetch_native_endpoint_and_fresh_clearance_not_elapsed_time',
         full_forward_cut_stroke_verified=False,
+        measured_withdrawal_requested=measured_withdrawal,
+        measured_withdrawal_completed=helper_complete,
         negative_control_no_right_motion=hold_control,
         requested_pre_cut_reposition_m=reposition,
         target_source='privileged_test_fixture_not_perception_verified',training_eligible=False)

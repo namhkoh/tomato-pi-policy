@@ -86,10 +86,13 @@ def test_patch_free_control_submits_only_spring_effort_and_retains_binding():
     assert report['coupled_prediction']['friction_in_prediction'] is True
     assert report['coupled_prediction']['friction_force_applied'] is False
     assert p.anchor_binding == evidence['geometry']['anchor_binding']
+    assert p.predicted_seed == evidence['prediction']['next_predicted_seed']
+    assert p.predicted_seed['context']['step_id']==1
     binding = deepcopy(p.anchor_binding)
     args.update(step_id=2, reference_step_id=1)
     p.step(**args)
     assert p.anchor_binding == binding and len(a.commands) == 2
+    assert p.predicted_seed['context']['step_id']==2
     np.testing.assert_array_equal(command, a.commands[0][0])
 
 
@@ -112,3 +115,19 @@ def test_unresolved_patch_never_submits_or_changes_anchor_epoch(monkeypatch):
     with pytest.raises(ValueError,match='Unresolved'):
         p.step(**args)
     assert a.commands == [] and p.last_step == 0 and p.anchor_binding is None
+    assert p.predicted_seed is None
+
+
+def test_native_write_failure_cannot_commit_predicted_seed_or_anchor():
+    a,p,_,args = setup(patch_friction=True)
+    a.set_dof_actuation_forces=lambda *a:(_ for _ in ()).throw(RuntimeError('native write fault'))
+    with pytest.raises(RuntimeError,match='write fault'):p.step(**args)
+    assert p.last_step==0 and p.anchor_binding is None and p.predicted_seed is None
+
+
+def test_foreign_predicted_seed_stops_before_second_command():
+    a,p,_,args = setup(patch_friction=True);p.step(**args)
+    p.predicted_seed['context']['step_id']=77
+    args.update(step_id=2,reference_step_id=1)
+    with pytest.raises(ValueError,match='seed provenance'):p.step(**args)
+    assert len(a.commands)==1 and p.last_step==1

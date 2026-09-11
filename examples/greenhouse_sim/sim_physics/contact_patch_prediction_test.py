@@ -173,7 +173,7 @@ def test_zero_mu_is_normal_only_not_a_hidden_tangent_pin():
 
 
 def test_one_iteration_exhaustion_has_no_partial_effort():
-    a = system(); a['f'][1] = .5
+    a = system(); a['f'][1] = 2.  # all-stick candidate violates the cone
     r = solve(**a, max_iterations=1)
     assert r['status'] == 'unresolved'
     assert r['reason'] == 'iteration_limit'
@@ -356,7 +356,7 @@ def test_free_compile_has_no_fake_anchors():
 
 def _source_mass_fixture():
     # Analytic synthetic coupon spatial inertia, NOT a native dynamics readback.
-    fixture = geometry(); c = fixture['coupon']
+    fixture = geometry(coupon(dt=1/1920)); c = fixture['coupon']
     J,g,s,report = compile_patches(**fixture)
     jac = fixture['nativeJac']; frames = fixture['frames']; M = np.zeros((8,8))
     for i in range(3):
@@ -404,6 +404,275 @@ def test_geometry_binding_includes_material_and_rejects_coefficient_change():
         compile_patches(**a)
 
 
-def test_solver_has_no_native_friction_force_or_warm_start_argument():
+def test_solver_has_no_measured_friction_force_argument():
     with pytest.raises(TypeError):
         solve(**system(), measured_friction_force=np.ones(4))
+
+
+# Numerical acceleration only: all force seeds below are returned by solve.
+def _bound_system():
+    a = system()
+    a['patches']['prediction_context'] = dict(schema='coupon_patch_prediction_context_v1',
+        source_sha256='a'*64, coupon_sha256='b'*64, anchor_binding_sha256='c'*64,
+        root='/World/SyntheticAlgebra', dt_s=a['h'], step_id=1)
+    return a
+
+
+def _advance(a):
+    a['patches']['prediction_context']['step_id'] += 1
+
+
+def test_all_stick_candidate_uses_all_eight_coordinates_not_root_pin():
+    a = system()
+    a['f'][1] = .5
+    a['f'][3:6] = [.1, -.2, .3]  # unconstrained root rotations MUST move
+    a['M'][3, 6] = a['M'][6, 3] = .2
+    a['q'][6:] = [.02, -.01]
+    from sim_physics.contact_patch_prediction import _solve
+    cold = _solve(**a, _try_all_stick=False)
+    fast = solve(**a, max_iterations=1)
+    assert fast['all_stick_candidate']['status'] == 'accepted'
+    assert fast['iterations'] == 0 and fast['tau_spring'][:6] == [0.]*6
+    assert np.linalg.norm(fast['v_pred'][3:6]) > .001
+    np.testing.assert_allclose(fast['v_pred'], cold['v_pred'], atol=2e-15)
+    np.testing.assert_allclose(fast['tau_spring'], cold['tau_spring'], atol=2e-15)
+    assert fast['relative_fixed_point_residual'] <= 1e-8
+    assert fast['relative_equilibrium_residual'] <= 1e-8
+
+
+def test_nonunique_tangent_forces_do_not_require_cold_warm_multiplier_equality():
+    a = _bound_system(); a['f'][1] = .6
+    T = np.asarray(a['patches']['tangent_jacobians'])
+    T[0, 0, 0, 1] = 2.
+    a['patches']['tangent_jacobians'] = T.tolist()
+    first = solve(**a)
+    seed = first['next_predicted_seed']; saved = deepcopy(seed)
+    _advance(a)
+    # Same bound anchors/basis, changed current point Jacobian: no stale J reused.
+    T[0, 0, 0, 1] = 1.
+    a['patches']['tangent_jacobians'] = T.tolist()
+    cold = solve(**a)
+    warm = solve(**a, previous_predicted_seed=seed)
+    assert seed == saved
+    assert warm['all_stick_candidate']['status'] == 'accepted'
+    assert warm['previous_predicted_seed_used']
+    np.testing.assert_allclose(warm['v_pred'], cold['v_pred'], atol=2e-15)
+    np.testing.assert_allclose(warm['tau_spring'], cold['tau_spring'], atol=2e-15)
+    assert not np.allclose(warm['friction_forces_n'], cold['friction_forces_n'])
+    json.dumps(warm, allow_nan=False)
+    assert warm['next_predicted_seed']['context']['step_id'] == 2
+
+
+@pytest.mark.parametrize('fault', [
+    'same_step', 'skip_step', 'source', 'coupon', 'anchor', 'root', 'dt',
+    'schema', 'seed_schema', 'checksum', 'force_nan', 'force_inf',
+    'material', 'mu', 'indices', 'extra_measured_field', 'unbound'])
+def test_seed_provenance_invalid_before_prediction(monkeypatch, fault):
+    import sim_physics.contact_patch_prediction as module
+    a = _bound_system()
+    seed = solve(**a)['next_predicted_seed']
+    _advance(a)
+    ctx = a['patches']['prediction_context']
+    if fault == 'same_step': ctx['step_id'] = 1
+    elif fault == 'skip_step': ctx['step_id'] = 3
+    elif fault in ('source', 'coupon', 'anchor'):
+        key = dict(source='source_sha256', coupon='coupon_sha256',
+                   anchor='anchor_binding_sha256')[fault]
+        ctx[key] = 'd'*64
+    elif fault == 'root': ctx['root'] = '/World/Another'
+    elif fault == 'dt': ctx['dt_s'] = a['h'] = .02
+    elif fault == 'schema': ctx['schema'] = 'future_context'
+    elif fault == 'seed_schema': seed['schema'] = 'native_force'
+    elif fault == 'checksum': seed['friction_forces_n'][0][0][0] = 1e-20
+    elif fault == 'force_nan': seed['friction_forces_n'][0][0][0] = np.nan
+    elif fault == 'force_inf': seed['friction_forces_n'][0][0][0] = np.inf
+    elif fault == 'material': a['K'][6] += .01
+    elif fault == 'mu': a['patches']['mu'] = .6
+    elif fault == 'indices': a['patches']['normal_indices'] = [[1, 0]]
+    elif fault == 'extra_measured_field': seed['measured_force'] = [0, 0, 0]
+    else: a['patches'].pop('prediction_context')
+    def forbidden(*args, **kwargs):
+        pytest.fail('Invalid seed reached prediction')
+    monkeypatch.setattr(module, '_solve', forbidden)
+    with pytest.raises(ValueError):
+        solve(**a, previous_predicted_seed=seed)
+
+
+@pytest.mark.parametrize('change', [
+    {'step_id': True}, {'step_id': -1}, {'dt_s': True}, {'dt_s': np.nan},
+    {'source_sha256': 'not-a-hash'}, {'anchor_binding_sha256': None},
+    {'schema': 'v0'}, {'root': ''},
+])
+def test_invalid_compiled_context_never_used(change):
+    a = _bound_system()
+    a['patches']['prediction_context'].update(change)
+    with pytest.raises(ValueError):
+        solve(**a)
+
+
+def test_compiler_context_bound_to_source_anchor_step_and_dt():
+    a = geometry(coupon(dt=1/1920))
+    _, _, _, report = compile_patches(**a)
+    ctx = report['patches']['prediction_context']
+    binding = report['anchor_binding']
+    assert ctx['source_sha256'] == a['coupon'].source_sha256
+    assert ctx['coupon_sha256'] == binding['coupon_sha256']
+    assert ctx['anchor_binding_sha256'] == binding['binding_sha256']
+    assert ctx['dt_s'] == a['coupon'].dt and ctx['step_id'] == 1
+    assert ctx['root'] == a['coupon'].root
+
+
+def test_warm_cone_failure_falls_back_to_identical_cold_iterations_and_effort():
+    from sim_physics.contact_patch_prediction import _solve
+    a = _bound_system(); a['f'][1] = .5
+    seed = solve(**a)['next_predicted_seed']
+    _advance(a); a['f'][1:3] = [1.2, 1.6]
+    baseline = _solve(**a, _try_all_stick=False)
+    warm = solve(**a, previous_predicted_seed=seed)
+    assert warm['all_stick_candidate']['status'] == 'rejected'
+    for key in ('v_pred', 'tau_spring', 'friction_forces_n', 'normal_forces_n',
+                'iterations', 'backtracks', 'numerical_trust_steps',
+                'relative_fixed_point_residual', 'relative_equilibrium_residual'):
+        np.testing.assert_array_equal(warm[key], baseline[key])
+
+
+def test_rejected_candidate_exhaustion_no_seed_or_effort():
+    a = _bound_system()
+    seed = solve(**a)['next_predicted_seed']; _advance(a)
+    a['f'][1] = 2.
+    r = solve(**a, previous_predicted_seed=seed, max_iterations=1)
+    assert r['status'] == 'unresolved' and r['reason'] == 'iteration_limit'
+    assert r['tau_spring'] is r['v_pred'] is r['next_predicted_seed'] is None
+
+
+def test_all_stick_factorization_failure_uses_unchanged_cold_solver(monkeypatch):
+    import sim_physics.contact_patch_prediction as module
+    a = system(); a['f'][1] = .5
+    cold = module._solve(**a, _try_all_stick=False)
+    def fail(*args, **kwargs):
+        raise np.linalg.LinAlgError('synthetic failed candidate only')
+    monkeypatch.setattr(module, '_all_stick_candidate', fail)
+    r = solve(**a)
+    assert r['all_stick_candidate']['reason'] == 'numerical_candidate_failure'
+    np.testing.assert_array_equal(r['v_pred'], cold['v_pred'])
+    np.testing.assert_array_equal(r['tau_spring'], cold['tau_spring'])
+    assert r['iterations'] == cold['iterations']
+
+
+def test_candidate_normal_branch_change_must_fall_back(monkeypatch):
+    import sim_physics.contact_patch_prediction as module
+    a = system(); a['f'][1] = .5
+    original = module._all_stick_candidate
+    def changed(*args):
+        # Deliberately request the wrong branch; candidate must reject it.
+        args = list(args); args[-2] = ~args[-2]
+        return original(*args)
+    monkeypatch.setattr(module, '_all_stick_candidate', changed)
+    r = solve(**a)
+    assert r['all_stick_candidate']['reason'] == 'normal_branch_changed'
+    assert r['status'] == 'resolved' and r['iterations'] > 0
+
+
+def test_candidate_original_equations_checked_not_just_cone_or_rank(monkeypatch):
+    import sim_physics.contact_patch_prediction as module
+    a = system(); a['f'][1] = .5
+    original = module._all_stick_candidate
+    def corrupted(*args):
+        z, info = original(*args)
+        z[0] += 1e-4  # apparently finite/compressive but violates exact normal law
+        return z, info
+    monkeypatch.setattr(module, '_all_stick_candidate', corrupted)
+    cold = module._solve(**a, _try_all_stick=False)
+    r = solve(**a)
+    assert r['all_stick_candidate']['reason'] == 'original_fixed_point_residual'
+    np.testing.assert_array_equal(r['tau_spring'], cold['tau_spring'])
+    np.testing.assert_array_equal(r['v_pred'], cold['v_pred'])
+
+
+def test_free_bound_seed_never_creates_contacts_or_changes_existing_prediction():
+    a = system(0)
+    a['patches']['prediction_context'] = _bound_system()['patches']['prediction_context']
+    a['q'][6:] = [.002, -.004]; a['v'][3:6] = [.01, -.02, .03]
+    first = solve(**a)
+    assert first['next_predicted_seed']['friction_forces_n'] == []
+    _advance(a)
+    warm = solve(**a, previous_predicted_seed=first['next_predicted_seed'])
+    base = normal_solve(**{k:v for k,v in a.items() if k != 'patches'})
+    np.testing.assert_array_equal(warm['v_pred'], base['v_pred'])
+    np.testing.assert_array_equal(warm['tau_spring'], base['tau_spring'])
+    assert warm['friction_forces_n'] == []
+
+
+def test_unbound_algebra_emits_no_seed_and_inputs_results_do_not_alias():
+    assert solve(**system())['next_predicted_seed'] is None
+    a = _bound_system(); before = deepcopy(a['patches'])
+    r = solve(**a)
+    r['next_predicted_seed']['context']['step_id'] = 99
+    r['next_predicted_seed']['friction_forces_n'][0][0][0] = 99.
+    assert a['patches'] == before
+    assert r['friction_forces_n'][0][0][0] != 99.
+
+
+def test_archived_native32_step2_keeps_original_failure_without_effort():
+    """Optional immutable capture replay; never launches native or reads impulses."""
+    import hashlib
+    from dataclasses import fields
+    from sim_physics.contact_patch_prediction import _solve, _prediction_context
+    directory = (Path(__file__).resolve().parents[3] / 'data' / 'sim_physics'
+                 / 'contact_spring_native_20260911_32')
+    if not (directory / 'trace.json').is_file():
+        pytest.skip('Ignored native32 capture not present; pure regressions still run')
+    trace_bytes = (directory / 'trace.json').read_bytes()
+    report_bytes = (directory / 'report.json').read_bytes()
+    assert hashlib.sha256(trace_bytes).hexdigest() == '8daa9e04625818260a48a3231ab000ceec09ad4f8ff0531889b82c46d8273d42'
+    assert hashlib.sha256(report_bytes).hexdigest() == '20a644b244366de0ecab786e1d2a4616d1e76e0bb1001b03fdbce55242a74ca9'
+    row, = json.loads(trace_bytes)
+    report = json.loads(report_bytes)
+    c = Coupon(**{x.name: report['configuration'][x.name] for x in fields(Coupon)})
+    before = row['native_prediction_before_step']
+    geom = row['coupled_prediction']['geometry']
+    frames = np.asarray(before['frames_world_m'])
+    jac = np.asarray(before['body_world_com_jacobians'])
+    J = []; g = []
+    for x in geom['features']:
+        i = int(x['collider'].split('/Link_')[1].split('/')[0])
+        arm = np.asarray(x['point_world_m'])-frames[i, :3, 3]
+        point_jac = jac[i, :3]+np.cross(jac[i, 3:].T, arm).T
+        J.append(np.asarray(x['normal_on_body'])@point_jac)
+        g.append(x['gap_m'])
+    patches = deepcopy(geom['patches'])
+    patches['prediction_context'] = _prediction_context(c, geom['anchor_binding'], 1)
+    a = dict(M=np.asarray(before['mass_matrix']),
+        q=np.r_[np.zeros(6), report['initial_readback']['q']],
+        v=np.asarray(before['generalized_velocity']),
+        K=np.r_[np.zeros(6), c.stiffness], C=np.r_[np.zeros(6), c.damping],
+        J=np.array(J), g=np.array(g), s=np.zeros(len(g)),
+        kc=np.full(len(g), c.contact_stiffness), dc=np.full(len(g), c.contact_damping),
+        h=c.dt, f=np.asarray(before['native_known_external_force']),
+        law=LAW, patches=patches, feature_observed=geom['feature_observed'])
+    first = solve(**a)
+    assert first['status'] == 'resolved'
+    # Step2 current state is saved post-step1, with row1 reference BEFORE step1.
+    after = row['native_prediction_after_step']
+    J, g, s, compiled = compile_patches(c, row['frames_world_m'],
+        row['body_velocities_world'], after['body_world_com_jacobians'],
+        native_rows=row['contact_rows'], generalized_velocity=after['generalized_velocity'],
+        step_id=2, native_geometry_step_id=1,
+        native_geometry_frames=before['frames_world_m'],
+        anchor_binding=geom['anchor_binding'])
+    a.update(M=np.asarray(after['mass_matrix']), q=np.r_[np.zeros(6), row['q_rad']],
+        v=np.asarray(after['generalized_velocity']),
+        f=np.asarray(after['native_known_external_force']),
+        J=J, g=g, s=s, patches=compiled['patches'],
+        feature_observed=compiled['feature_observed'])
+    cold = _solve(**a, _try_all_stick=False)
+    warm = solve(**a, previous_predicted_seed=first['next_predicted_seed'])
+    assert warm['all_stick_candidate']['status'] == 'rejected'
+    assert warm['status'] == cold['status'] == 'unresolved'
+    assert warm['reason'] == cold['reason'] == 'semismooth_line_search'
+    assert warm['iterations'] == cold['iterations'] == 11
+    assert warm['next_predicted_seed'] is warm['tau_spring'] is warm['v_pred'] is None
+    for key in ('relative_fixed_point_residual', 'normal_law_residual_n',
+                'friction_fixed_point_residual_n'):
+        assert warm[key] == cold[key]
+    assert warm['relative_fixed_point_residual'] > 1e-8

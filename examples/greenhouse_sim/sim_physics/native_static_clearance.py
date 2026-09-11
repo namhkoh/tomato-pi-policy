@@ -36,12 +36,14 @@ def capsule_enclosing_box(start,end,radius):
 
 class NativeStaticClearance:
     def __init__(self, query, records, *, guard=lambda:None, max_queries=20000, wall_limit_s=8.,
-                 close_guard=None, epoch_report=None):
+                 close_guard=None, epoch_report=None, lazy_coverage=False):
         if (type(max_queries) is not int or not 0 < max_queries <= 20000
+                or type(lazy_coverage) is not bool
                 or isinstance(wall_limit_s,(bool,np.bool_))
                 or not np.isfinite(wall_limit_s) or not 0 < wall_limit_s <= 60.):
             raise ValueError('Bounded native query budget required')
         self.query=query;self.guard=guard;self.max_queries=max_queries
+        self.lazy_coverage=lazy_coverage
         self.started=time.perf_counter();self.wall_limit_s=wall_limit_s
         self.active=True;self.calls=0;self.clearances=0;self.blocked=0
         self.capsule_box_attempts=0
@@ -49,8 +51,10 @@ class NativeStaticClearance:
         self.used_paths=set();self.coverage_boxes={};self.final_coverage=[]
         self.validation_passed=False;self.closed=False
         self.close_guard=close_guard;self.epoch_report=epoch_report
-        # Positive controls verify that each labelled native collider exists.
-        # Failure retains that collider's old conservative box; no silent skip.
+        # Every cached coarse bound is retained. Optional lazy coverage defers
+        # the positive native actor control until that EXACT actor is queried
+        # for refinement, never past a claimed clearance. Each instance still
+        # owns one synchronous epoch; final used-actor controls are unchanged.
         for path,kind,data,low,high in records:
             if kind!='box':continue
             if path in self.coverage_boxes:raise ValueError('Duplicate static collider: '+path)
@@ -60,9 +64,17 @@ class NativeStaticClearance:
                 raise ValueError('Invalid static coverage bounds')
             box=((low+high)/2,np.eye(3),(high-low)/2+.001)
             self.coverage_boxes[path]=tuple(v.copy() for v in box)
-            result=self._overlap(path,*box)
-            if result is True:self.covered.add(path)
-            else:self.coverage_failed.append(path)
+            if not self.lazy_coverage:self._ensure_coverage(path)
+
+    def _ensure_coverage(self,path):
+        if not self.active or path not in self.coverage_boxes:return False
+        if path in self.covered:return True
+        if path in self.coverage_failed:return False
+        if self._overlap(path,*self.coverage_boxes[path]) is True:
+            self.covered.add(path)
+            return True
+        self.coverage_failed.append(path)
+        return False
 
     def _invalidate(self,reason):
         if reason not in self.errors:self.errors.append(reason)
@@ -104,7 +116,7 @@ class NativeStaticClearance:
     def clear_box(self,path,centre,axes,half,margin):
         if not np.isfinite(margin) or margin<.001:
             raise ValueError('Native refinement preserves >=1 mm scene margin')
-        if not self.active or path not in self.covered:return False
+        if not self._ensure_coverage(path):return False
         self.validation_passed=False
         hit=self._overlap(path,centre,axes,np.asarray(half,float)+margin)
         clear=hit is False
@@ -171,6 +183,8 @@ class NativeStaticClearance:
                     capsule_enclosing_box_attempts=self.capsule_box_attempts,
                     capsule_query='whole_capsule_plus_margin_contained_not_tessellated_samples',
                     retained_rejections=self.blocked,covered_static_colliders=sorted(self.covered),
+                    coverage_mode='lazy_before_exact_actor_refinement' if self.lazy_coverage else 'eager',
+                    unchecked_static_colliders=sorted(set(self.coverage_boxes)-self.covered-set(self.coverage_failed)),
                     coverage_failed=self.coverage_failed,errors=self.errors,
                     used_static_colliders=sorted(self.used_paths),
                     final_coverage_checked=list(self.final_coverage),
@@ -256,7 +270,7 @@ class _SceneQueryEpoch:
                     physics_pre_step_subscribed=True)
 
 
-def current_scene_query(stage, records, *, wall_limit_s=8.):
+def current_scene_query(stage, records, *, wall_limit_s=8., max_queries=20000, lazy_coverage=False):
     """Create only during native planning after fetched physics; never load/step."""
     import omni.usd
     import omni.timeline
@@ -295,7 +309,8 @@ def current_scene_query(stage, records, *, wall_limit_s=8.):
         epoch.check()
         native=get_physx_scene_query_interface()
         result=NativeStaticClearance(query,eligible,guard=epoch.check,
-            close_guard=epoch.close,epoch_report=epoch.report,wall_limit_s=wall_limit_s)
+            close_guard=epoch.close,epoch_report=epoch.report,wall_limit_s=wall_limit_s,
+            max_queries=max_queries,lazy_coverage=lazy_coverage)
         epoch.check()
         return result
     except BaseException as exc:

@@ -5184,3 +5184,83 @@ No hardware, collection, tuning, review, split or training-export changes.
   native32 diagnostics in wall time; these timings are not isolated machine
   performance measurements. No coupon result yet establishes reliable
   full-greenhouse cut-retain-withdraw; all failed native traces are preserved.
+- Added a source/anchor/material/timestep/contiguous-step-bound seed containing
+  ONLY the previous resolved predicted forces. One all-stick KKT candidate may
+  accelerate the patch solve; all original physical equations, residual gates
+  and cold fallback remain. Six free-root coordinates remain present; no
+  predictive contact force is submitted. Native34 matches native31 bitwise
+  across all1920 joint positions/velocities, body frames/velocities, submitted
+  spring efforts and net-contact torques.1849 steps accept the fast candidate.
+  Median wrapper prediction13.818 to4.887 ms; total28.290 to14.895 s. This is
+  a timing comparison of diagnostic runs, not isolated-machine production RTF.
+  The same global-torque gate still FAILS; optimization does not qualify it.
+
+### 2026-09-11: Measured-start withdrawal integrated as explicit diagnostic
+
+- `measured_withdrawal.py` constructs a backward connector from the actual
+  fetched wrist/joints into the existing reverse stroke/approach. It rejects
+  off-path/forward-extraction connectors, stale samples, changed left targets,
+  bad receipts and exhausted budgets. Waypoints advance on measured posture
+  attainment, not elapsed time. It never sends native commands itself.
+- `measured_withdrawal_native.py` reads complete native robot/plant inventories,
+  all joint/finger positions and command targets. Raw observed finger-stop
+  excursions are retained/reported, not clamped: run53's right finger1 is
+  +0.207 micrometres beyond its nominal zero stop. Measured geometry is distinct
+  from command approval; all submitted/planned targets retain source limits.
+  Actual robot frames, exact source FK, held-leaf convex hulls and unchanged
+  self3 mm/interarm10 mm/scene1 mm margins are checked. Existing native force,
+  penetration, slip, support and bilateral-grasp guards stay authoritative.
+- Native static actor positive controls can now be requested lazily, immediately
+  BEFORE that exact actor may clear a conservative rejection. Every cached
+  obstacle is retained. Every used actor is checked again before acceptance;
+  missing coverage, native epoch changes or cleanup errors reject the receipt.
+  Fresh per-call epochs and8 s/20,000 total-query bounds remain. This avoids
+  eagerly querying80 unchanged actors on every physics tick; defaults outside
+  the new withdrawal adapter remain eager. Focused coverage tests95 passed.
+- `--measured-withdrawal` is opt-in to the bounded bimanual harness with native
+  scene clearance enabled. `withdrawal_controller.py` submits only the right
+  joint drive targets after fresh validation. Left targets are held unchanged.
+  Float32 radians are rounded toward the measured state when nearest rounding
+  overshoots, BEFORE path validation/hash binding; no limit clamp. Submission
+  must reproduce that exact packet and its native drive-target readback.
+  Final success also requires same-step helper completion AND the independent
+  legacy native parked-wrist/clearance check.216 focused tests pass.
+- Full54 preserves source assets (hash check true), verifies the left grasp
+  and releases the seam at11.8667 s. Initial withdrawal path passes in4.406 s
+  with119 native queries. Subsequent checks use8 queries each. At11.9000 s,
+  the actual right upper-arm capsule versus distal Leaf004 crosses the1 mm
+  planning margin:step2855 clearance1.037 mm,step2856 clearance0.772 mm.
+  Left grasp remains bilateral; slip78.2 micrometres at stop. This is a
+  conservative-clearance rejection, NOT measured unintended contact/damage.
+  Full54 is FAILED; the guard stops before continuing an unsafe corridor.
+- Independent reconstruction separates motion:release robot/release leaf
+  clearance2.260 mm;last robot/release leaf2.272 mm;release robot/last leaf
+  0.766 mm. Leaf deflection, not the new arm command, closes the gap. A bounded
+  single-pose IK proposal fixes right joint1 at0 degrees instead of-1.5 and
+  preserves the knife TCP while increasing this pair's clearance to5.407 mm.
+  Right joint5 still has1.583 degrees below110-degree source limit. Full55
+  tests the entire original stroke/transit and measured withdrawal; this
+  single-pose calculation is not whole-path or future-motion qualification.
+
+### 2026-09-12: Guarded withdrawal checkpoint; full-path constraint remains
+
+- Full55 (same full greenhouse, right joint1 fixed at0 degrees) verifies the
+  left grasp, then rejects the original full stroke at offset+3.490645 mm:
+  `stroke_IK`. No right cutting motion or seam release is executed. The better
+  endpoint clearance does NOT establish a feasible whole path. Source assets
+  remain unchanged. Next work must address whole-path redundancy/clearance;
+  it must not clip the stroke or relax source joint/collision limits.
+- Full CPU/USD regression:2408 passed in104.51 s, recorded at
+  `data/sim_physics/regression_20260911_measured_withdrawal.log`.
+  Independent read-only review found no remaining material blocker in the
+  exact native packet binding or same-sample completion checks. These tests
+  validate software guards, NOT successful full-greenhouse physics.
+- Installed `PhysxMaterialAPI` exposes no strong-friction flag or equivalent
+  setter/readback. Public PhysX source makes positional friction-anchor bias
+  a plausible explanation for the diagnostic predictor/native discrepancy,
+  but native31/34 do not establish that cause. No invented USD attribute or
+  unsupported material change is used. The optimized patch predictor stays
+  coupon-only because its global torque qualification still fails.
+- Cut-retain-withdraw remains unqualified; calibrated tissue fracture,
+  completed forward stroke and deposit remain unverified. No training,
+  collection, dataset review/split changes or hardware commands were made.

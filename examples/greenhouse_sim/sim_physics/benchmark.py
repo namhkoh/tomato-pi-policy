@@ -52,6 +52,8 @@ def parser():
     p.add_argument('--diagnostic-detach',action='store_true')
     p.add_argument('--full-robot-probe',action='store_true',help='Full dynamic v1.2 robot with an IK-driven left arm')
     p.add_argument('--bimanual-cut',action='store_true',help='Guarded native left grasp and original right knife seam-release qualification')
+    p.add_argument('--measured-withdrawal',action='store_true',
+        help='Opt-in measured-start reverse path with fresh native geometry/hold checks; diagnostic only')
     p.add_argument('--native-static-clearance',action='store_true',help='Opt-in live native static-box refinement during the single synchronous bimanual plan')
     p.add_argument('--native-static-planning-seconds',type=float,default=8.,
         help='Bounded synchronous diagnostic planning budget, up to 60 seconds; default 8; no physics/collision guard changes')
@@ -140,6 +142,9 @@ def main(argv=None):
         raise ValueError('Raw grasp contact diagnostic requires right-parked bimanual hold control')
     if getattr(args,'native_static_clearance',False) and not args.bimanual_cut:
         raise ValueError('Native static clearance requires the bimanual harness')
+    if getattr(args,'measured_withdrawal',False) and (not args.bimanual_cut
+            or args.bimanual_hold_control or not getattr(args,'native_static_clearance',False)):
+        raise ValueError('Measured withdrawal requires bimanual cutting and native static clearance, not hold control')
     budget=getattr(args,'native_static_planning_seconds',8.)
     if (not math.isfinite(budget) or not 0<budget<=60
             or (budget!=8 and not getattr(args,'native_static_clearance',False))):

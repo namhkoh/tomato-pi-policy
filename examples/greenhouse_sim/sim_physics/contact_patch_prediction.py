@@ -4,6 +4,10 @@ compile_patches has compile_geometry's API plus anchor_binding=None. Return
 J,g,s,report; retain report['anchor_binding'] unchanged for this manifold/epoch.
 Pass report['patches'] and report['feature_observed'] to solve. Native rows
 provide ONLY identities, points, normals and separations: impulses are not read.
+Optional previous_predicted_seed centers one all-stick KKT candidate; every
+original equation/gate is checked before acceptance, else the cold solver runs.
+Only commit next_predicted_seed after successful bounded effort write. Reset it
+with anchor_binding on a new epoch; neither checksum is physical certification.
 The first binding requires both observed friction anchors to match the two
 observed normal features. Thereafter their exact collider0-local coordinates
 are retained; changed, missing or duplicate anchors fail closed.
@@ -183,7 +187,8 @@ headers. Pad frames are authored static; moving pads are unsupported.
         patches=dict(model=MODEL, tangent_jacobians=tangent.tolist(),
             surface_speeds_m_s=np.zeros((len(groups), 2, 2)).tolist(),
             normal_indices=[list(x) for x in groups], mu=coupon.friction,
-            observed=[True]*len(groups)),
+            observed=[True]*len(groups),
+            prediction_context=_prediction_context(coupon, binding, step_id)),
         native_impulses_read=False, impulse_replayed=False, friction_in_prediction=True,
         native_contact_law_parity=False, native_qualified=False,
         friction_law_basis='instantaneous circular Coulomb disks; no strong-friction positional bias',
@@ -228,8 +233,138 @@ def _failed(reason, iterations, **metrics):
         measured_friction_used=False, **metrics)
 
 
+SEED_SCHEMA = 'previous_predicted_patch_forces_v1'
+CONTEXT_SCHEMA = 'coupon_patch_prediction_context_v1'
+
+
+def _prediction_context(coupon, binding, step_id):
+    return dict(schema=CONTEXT_SCHEMA, source_sha256=coupon.source_sha256,
+        coupon_sha256=_digest(coupon.report()),
+        anchor_binding_sha256=binding['binding_sha256'], root=coupon.root,
+        dt_s=float(coupon.dt), step_id=_integer(step_id, 'prediction step'))
+
+
+def _seed_inputs(patches, h, law, K, C, kc, dc, previous):
+    """Checksums bind software provenance, NOT sensor authenticity or native parity."""
+    context = patches.get('prediction_context') if isinstance(patches, dict) else None
+    if context is None:
+        if previous is not None:
+            raise ValueError('Predicted seed requires compiled source/anchor/step context')
+        return None, None, None
+    context = json.loads(json.dumps(context, allow_nan=False))
+    keys = {'schema', 'source_sha256', 'coupon_sha256', 'anchor_binding_sha256',
+            'root', 'dt_s', 'step_id'}
+    if not isinstance(context, dict) or set(context) != keys or context['schema'] != CONTEXT_SCHEMA:
+        raise ValueError('Versioned prediction context required')
+    for name in ('source_sha256', 'coupon_sha256', 'anchor_binding_sha256'):
+        value = context[name]
+        if not isinstance(value, str) or len(value) != 64 or any(c not in '0123456789abcdef' for c in value):
+            raise ValueError('Prediction context SHA256 required')
+    _integer(context['step_id'], 'prediction step')
+    if (not isinstance(context['root'], str) or not context['root'].startswith('/World/')
+            or isinstance(context['dt_s'], bool) or not isinstance(context['dt_s'], (int, float))
+            or not np.isfinite(context['dt_s']) or context['dt_s'] <= 0
+            or context['dt_s'] != h):
+        raise ValueError('Prediction source root/timestep mismatch')
+    if not isinstance(law, MaterialLaw) or law.response != 'unilateral_kv_v1':
+        raise ValueError('Explicit unilateral law required')
+    constitutive = _digest(dict(law=law.response, model=MODEL,
+        K=_matrix(K, 8, 'K').tolist(), C=_matrix(C, 8, 'C').tolist(),
+        kc=np.asarray(kc, dtype=float).tolist(), dc=np.asarray(dc, dtype=float).tolist(),
+        mu=float(patches['mu']), normal_indices=patches['normal_indices']))
+    if previous is None:
+        return context, constitutive, None
+    seed = json.loads(json.dumps(previous, allow_nan=False))
+    if not isinstance(seed, dict):
+        raise ValueError('Versioned previous predicted seed required')
+    seed_context = seed.get('context')
+    if not isinstance(seed_context, dict):
+        raise ValueError('Previous prediction context required')
+    _integer(seed_context.get('step_id'), 'previous prediction step')
+    digest = seed.pop('seed_sha256', None)
+    expected_context = dict(context, step_id=context['step_id']-1)
+    if (digest != _digest(seed) or seed.get('schema') != SEED_SCHEMA
+            or seed.get('basis') != 'previous_resolved_prediction_only'
+            or seed.get('context') != expected_context
+            or seed.get('constitutive_sha256') != constitutive
+            or set(seed) != {'schema', 'basis', 'context', 'constitutive_sha256',
+                             'normal_forces_n', 'friction_forces_n'}):
+        raise ValueError('Stale/changed/corrupt predicted seed provenance')
+    p = len(patches['normal_indices'])
+    normals = _array(seed['normal_forces_n'], (2*p,), 'previous predicted normals')
+    if np.any(normals < 0):
+        raise ValueError('Predicted normals must be nonnegative')
+    force = np.asarray(seed['friction_forces_n'], dtype=float)
+    if not p and force.size == 0:
+        force = force.reshape(0, 2, 2)
+    force = _array(force, (p, 2, 2), 'previous predicted tangent forces')
+    return context, constitutive, force.ravel()
+
+
+def _all_stick_candidate(M, q, v, K, C, J, g, s, kc, dc, h, f,
+                         T, st, active, centre):
+    """One mass-whitened KKT solution, nearest predicted multipliers or zero.
+
+Rank deficiency is allowed: redundant anchor forces are not unique. The eight
+velocity coordinates are NEVER reduced/pinned. This computes a proposal only;
+rank truncation, normal-branch changes and cones still face original residuals.
+"""
+    A = M+h*C+h*h*K + J.T@((active*(h*dc+h*h*kc))[:, None]*J)
+    b = M@v+h*(f-K@q+J.T@(active*(-kc*g+(dc+h*kc)*s)))
+    vf = np.linalg.solve(A, b)
+    D = h*np.linalg.solve(A, T.T)
+    centre = np.zeros(len(T)) if centre is None else centre
+    H = np.linalg.solve(np.linalg.cholesky(A), T.T).T
+    U, singular, _ = np.linalg.svd(H, full_matrices=False)
+    rank = int(np.count_nonzero(singular > singular[0]*max(H.shape)*np.finfo(float).eps))
+    rhs = st-T@(vf+D@centre)
+    force = centre.copy()
+    if rank:
+        force += U[:, :rank]@((U[:, :rank].T@rhs)/(h*singular[:rank]**2))
+    vp = vf+D@force
+    speed = J@vp-s; gap = g+h*speed
+    raw = -kc*gap-dc*speed
+    actual_active = (gap <= 0) & (raw > 0)
+    if not np.array_equal(actual_active, active):
+        return None, dict(status='rejected', reason='normal_branch_changed', rank=rank)
+    z = np.r_[np.where(actual_active, raw, 0.), force]
+    if not np.isfinite(z).all():
+        return None, dict(status='rejected', reason='nonfinite_candidate', rank=rank)
+    return z, dict(status='candidate', rank=rank)
+
+
 def solve(M, q, v, K, C, J, g, s, kc, dc, h, f, *, law, patches,
-          feature_observed, max_iterations=64):
+          feature_observed, max_iterations=64, previous_predicted_seed=None):
+    """Optional seed is ONLY this solver's preceding resolved prediction.
+
+Use compile_patches' current report['patches'] unchanged. Commit the returned
+next_predicted_seed only AFTER the caller successfully writes bounded effort;
+clear both seed and anchor binding at a new native epoch. No seed is emitted
+on failure. Source/anchor/material/dt and contiguous steps are checked exactly.
+Checksums cannot distinguish identical restarted epochs: caller owns lifecycle.
+Unbound pure algebra calls remain supported cold, but cannot use/emit a seed.
+A seed centers ONE all-stick KKT candidate; rejected candidates leave the
+original cold semismooth initialization/fallback and every gate unchanged.
+"""
+    context, constitutive, centre = _seed_inputs(patches, h, law, K, C, kc, dc,
+                                                previous_predicted_seed)
+    result = _solve(M, q, v, K, C, J, g, s, kc, dc, h, f, law=law,
+        patches=patches, feature_observed=feature_observed,
+        max_iterations=max_iterations, _seed_center=centre)
+    result['previous_predicted_seed_used'] = previous_predicted_seed is not None
+    result['next_predicted_seed'] = None
+    if context is not None and result['status'] == 'resolved':
+        seed = dict(schema=SEED_SCHEMA, basis='previous_resolved_prediction_only',
+            context=context, constitutive_sha256=constitutive,
+            normal_forces_n=result.get('normal_forces_n', []),
+            friction_forces_n=result['friction_forces_n'])
+        seed['seed_sha256'] = _digest(seed)
+        result['next_predicted_seed'] = json.loads(json.dumps(seed, allow_nan=False))
+    return result
+
+
+def _solve(M, q, v, K, C, J, g, s, kc, dc, h, f, *, law, patches,
+           feature_observed, max_iterations=64, _seed_center=None, _try_all_stick=True):
     """Eight-coordinate coupon solve; no actual or lagged friction-force argument.
 
 Returned normal/tangent forces are algebraic diagnostics ONLY, never additional
@@ -336,73 +471,102 @@ physical equations. This is not added physical damping or mass regularization.
                 raise ValueError('Nonfinite patch prediction')
             return residual, jacobian, vp, N, gp, speed, active, cap, u
 
+        def qualified(z, evaluated, iteration, backtracks, trust_steps):
+            r, _, vp, N, gp, speed, active, cap, u = evaluated
+            error = float(np.max(abs(r))/scale)
+            if error > TOLERANCE:
+                return None
+            if np.any(active & ~observed_normals) or any(
+                    np.any(active[ids]) and not observed_patches[k]
+                    for k, ids in enumerate(indices)):
+                return _failed('unobserved_active_feature', iteration)
+            force = z[m:].reshape(2*p, 2)
+            tau = -K@(q+h*vp)-C@vp
+            residual = M@(vp-v)-h*(f+tau+J.T@z[:m]+T.T@z[m:])
+            denom = max(float(np.linalg.norm(M@vp)), float(np.linalg.norm(M@v)),
+                        h*float(np.linalg.norm(f+tau)),
+                        h*float(np.linalg.norm(B.T@z)), 1e-30)
+            equilibrium = float(np.linalg.norm(residual)/denom)
+            violation = float(np.max(np.maximum(0., np.linalg.norm(force, axis=1)-cap)))
+            power = np.einsum('ij,ij->i', force, u)
+            # Verify algebraic momentum, cone feasibility and dissipativity;
+            # never use a native measured contact to decide these gates.
+            if (equilibrium > TOLERANCE or violation > TOLERANCE*scale
+                    or np.any(tau[:6] != 0) or not np.isfinite(tau).all()):
+                return _failed('equilibrium_or_cone_residual', iteration)
+            # Projection variational inequality with e=F-proj(F-rho*u):
+            # F.u <= |e| (|proj|/rho + |u|). Near exact stick u is
+            # roundoff-small; a bound proportional only to |u| falsely
+            # rejects signed-zero work. Account for the ACTUAL projection
+            # residual plus floating arithmetic, not physical friction gain.
+            force_norm = np.linalg.norm(force, axis=1)
+            projection_error = np.linalg.norm(r[m:].reshape(2*p, 2), axis=1)
+            projection_error += 32*np.finfo(float).eps*np.maximum(force_norm, scale)
+            power_allowance = projection_error*((force_norm+projection_error)/rho
+                                               +np.linalg.norm(u, axis=1))
+            if np.any(power > power_allowance):
+                return _failed('nondissipative_friction_residual', iteration)
+            modes = []
+            for a in range(2*p):
+                if cap[a] == 0:
+                    modes.append('unsupported')
+                elif rho[a]*np.linalg.norm(u[a]) <= TOLERANCE*scale:
+                    modes.append('stick')
+                else:
+                    modes.append('slip')
+            return dict(status='resolved', model=MODEL, iterations=iteration,
+                backtracks=backtracks, numerical_trust_steps=trust_steps, v_pred=vp.tolist(),
+                tau_spring=tau.tolist(), tau_joint=tau[6:].tolist(),
+                normal_forces_n=z[:m].tolist(), normal_response_n=N.tolist(),
+                friction_forces_n=force.reshape(p, 2, 2).tolist(),
+                anchor_limits_n=cap.reshape(p, 2).tolist(),
+                friction_modes=np.asarray(modes).reshape(p, 2).tolist(),
+                tangent_speeds_m_s=u.reshape(p, 2, 2).tolist(),
+                anchor_relative_power_w=power.reshape(p, 2).tolist(),
+                anchor_power_error_bound_w=power_allowance.reshape(p, 2).tolist(),
+                normal_active=active.tolist(), gap_pred_m=gp.tolist(),
+                normal_relative_speed_m_s=speed.tolist(),
+                normal_law_residual_n=float(np.max(abs(r[:m]))),
+                friction_fixed_point_residual_n=float(np.max(abs(r[m:]))),
+                relative_fixed_point_residual=error,
+                relative_equilibrium_residual=equilibrium,
+                cone_max_violation_n=violation, material_law=law.response,
+                mu=mu, normal_support_basis='sum predicted compressive patch normals / 2 per anchor',
+                root_actuated=False, contact_force_applied=False, friction_force_applied=False,
+                measured_friction_used=False, friction_in_prediction=True,
+                native_contact_law_parity=False, native_qualified=False,
+                feature_coverage_bound=True, friction_position_bias=False,
+                basis='bounded instantaneous circular Coulomb/KV approximation; spring effort only')
+
+        fast = dict(status='not_attempted', reason='normal_initialization_unresolved')
+        if _try_all_stick and initial['status'] == 'resolved':
+            try:
+                candidate, fast = _all_stick_candidate(
+                    M, q, v, K, C, J, g, s, kc, dc, h, f, T, st,
+                    np.asarray(initial['active'], dtype=bool), _seed_center)
+                if candidate is not None:
+                    assessed = evaluate(candidate, False)
+                    result = qualified(candidate, assessed, 0, 0, 0)
+                    if result is not None and result['status'] == 'resolved':
+                        result['all_stick_candidate'] = dict(fast, status='accepted')
+                        return result
+                    fast.update(status='rejected',
+                        reason=result['reason'] if result else 'original_fixed_point_residual',
+                        relative_fixed_point_residual=float(np.max(abs(assessed[0]))/scale))
+            except (np.linalg.LinAlgError, FloatingPointError):
+                fast = dict(status='rejected', reason='numerical_candidate_failure')
+        if not _try_all_stick:
+            fast = dict(status='not_attempted', reason='cold_reference')
         backtracks = 0
         trust_steps = 0
         for iteration in range(1, max_iterations+1):
-            r, derivative, vp, N, gp, speed, active, cap, u = evaluate(z, True)
+            evaluated = evaluate(z, True)
+            r, derivative = evaluated[:2]
             error = float(np.max(abs(r))/scale)
-            if error <= TOLERANCE:
-                if np.any(active & ~observed_normals) or any(
-                        np.any(active[ids]) and not observed_patches[k]
-                        for k, ids in enumerate(indices)):
-                    return _failed('unobserved_active_feature', iteration)
-                force = z[m:].reshape(2*p, 2)
-                tau = -K@(q+h*vp)-C@vp
-                residual = M@(vp-v)-h*(f+tau+J.T@z[:m]+T.T@z[m:])
-                denom = max(float(np.linalg.norm(M@vp)), float(np.linalg.norm(M@v)),
-                            h*float(np.linalg.norm(f+tau)),
-                            h*float(np.linalg.norm(B.T@z)), 1e-30)
-                equilibrium = float(np.linalg.norm(residual)/denom)
-                violation = float(np.max(np.maximum(0., np.linalg.norm(force, axis=1)-cap)))
-                power = np.einsum('ij,ij->i', force, u)
-                # Verify algebraic momentum, cone feasibility and dissipativity;
-                # never use a native measured contact to decide these gates.
-                if (equilibrium > TOLERANCE or violation > TOLERANCE*scale
-                        or np.any(tau[:6] != 0) or not np.isfinite(tau).all()):
-                    return _failed('equilibrium_or_cone_residual', iteration)
-                # Projection variational inequality with e=F-proj(F-rho*u):
-                # F.u <= |e| (|proj|/rho + |u|). Near exact stick u is
-                # roundoff-small; a bound proportional only to |u| falsely
-                # rejects signed-zero work. Account for the ACTUAL projection
-                # residual plus floating arithmetic, not physical friction gain.
-                force_norm = np.linalg.norm(force, axis=1)
-                projection_error = np.linalg.norm(r[m:].reshape(2*p, 2), axis=1)
-                projection_error += 32*np.finfo(float).eps*np.maximum(force_norm, scale)
-                power_allowance = projection_error*((force_norm+projection_error)/rho
-                                                   +np.linalg.norm(u, axis=1))
-                if np.any(power > power_allowance):
-                    return _failed('nondissipative_friction_residual', iteration)
-                modes = []
-                for a in range(2*p):
-                    if cap[a] == 0:
-                        modes.append('unsupported')
-                    elif rho[a]*np.linalg.norm(u[a]) <= TOLERANCE*scale:
-                        modes.append('stick')
-                    else:
-                        modes.append('slip')
-                return dict(status='resolved', model=MODEL, iterations=iteration,
-                    backtracks=backtracks, numerical_trust_steps=trust_steps, v_pred=vp.tolist(),
-                    tau_spring=tau.tolist(), tau_joint=tau[6:].tolist(),
-                    normal_forces_n=z[:m].tolist(), normal_response_n=N.tolist(),
-                    friction_forces_n=force.reshape(p, 2, 2).tolist(),
-                    anchor_limits_n=cap.reshape(p, 2).tolist(),
-                    friction_modes=np.asarray(modes).reshape(p, 2).tolist(),
-                    tangent_speeds_m_s=u.reshape(p, 2, 2).tolist(),
-                    anchor_relative_power_w=power.reshape(p, 2).tolist(),
-                    anchor_power_error_bound_w=power_allowance.reshape(p, 2).tolist(),
-                    normal_active=active.tolist(), gap_pred_m=gp.tolist(),
-                    normal_relative_speed_m_s=speed.tolist(),
-                    normal_law_residual_n=float(np.max(abs(r[:m]))),
-                    friction_fixed_point_residual_n=float(np.max(abs(r[m:]))),
-                    relative_fixed_point_residual=error,
-                    relative_equilibrium_residual=equilibrium,
-                    cone_max_violation_n=violation, material_law=law.response,
-                    mu=mu, normal_support_basis='sum predicted compressive patch normals / 2 per anchor',
-                    root_actuated=False, contact_force_applied=False, friction_force_applied=False,
-                    measured_friction_used=False, friction_in_prediction=True,
-                    native_contact_law_parity=False, native_qualified=False,
-                    feature_coverage_bound=True, friction_position_bias=False,
-                    basis='bounded instantaneous circular Coulomb/KV approximation; spring effort only')
+            result = qualified(z, evaluated, iteration, backtracks, trust_steps)
+            if result is not None:
+                result['all_stick_candidate'] = fast
+                return result
             delta = np.linalg.lstsq(derivative, -r, rcond=None)[0]
             merit = float(r@r)
             accepted = False
@@ -435,11 +599,11 @@ physical equations. This is not added physical damping or mass regularization.
                     if accepted:
                         break
             if not accepted:
-                return _failed('semismooth_line_search', iteration,
+                return _failed('semismooth_line_search', iteration, all_stick_candidate=fast,
                     relative_fixed_point_residual=error,
                     normal_law_residual_n=float(np.max(abs(r[:m]))),
                     friction_fixed_point_residual_n=float(np.max(abs(r[m:]))))
-        return _failed('iteration_limit', max_iterations,
+        return _failed('iteration_limit', max_iterations, all_stick_candidate=fast,
                        relative_fixed_point_residual=error,
                        normal_law_residual_n=float(np.max(abs(r[:m]))),
                        friction_fixed_point_residual_n=float(np.max(abs(r[m:]))))

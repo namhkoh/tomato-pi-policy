@@ -9,6 +9,63 @@ def records():
     return [('/World/Stem','box',None,np.full(3,-.01),np.full(3,.01))]
 
 
+def test_lazy_coverage_keeps_all_bounds_and_brackets_refinement_with_positive_controls():
+    calls=[]
+    def query(path,centre,axes,half):
+        calls.append(path)
+        return len(calls) in (1,3)
+    extra=[('/World/Far','box',None,np.full(3,10.),np.full(3,11.))]
+    n=NativeStaticClearance(query,records()+extra,lazy_coverage=True,max_queries=3)
+    assert n.calls==0 and len(n.coverage_boxes)==2 and not n.covered
+    assert n.clear_box_checked('/World/Stem',np.zeros(3),np.eye(3),np.ones(3),.001)
+    assert n.calls==2 and n.used_paths=={'/World/Stem'}
+    n.validate();n.close()
+    r=n.report()
+    assert calls==['/World/Stem']*3 and r['final_validation_passed']
+    assert r['unchecked_static_colliders']==['/World/Far']
+    assert r['final_coverage_checked']==['/World/Stem']
+    assert r['coverage_mode']=='lazy_before_exact_actor_refinement'
+
+
+@pytest.mark.parametrize('failure',['missing','throw','budget','epoch','late_final','final_missing'])
+def test_lazy_controls_fail_closed_before_any_false_clearance(failure,monkeypatch):
+    import sim_physics.native_static_clearance as module
+    calls=[]
+    def query(*args):
+        calls.append(args)
+        if failure=='throw':raise RuntimeError('native fault')
+        if failure=='missing':return False
+        if len(calls)==1:return True
+        if failure=='late_final' and len(calls)==3:
+            monkeypatch.setattr(module.time,'perf_counter',lambda:n.started+9)
+        return len(calls)==3 and failure!='final_missing'
+    n=NativeStaticClearance(query,records(),lazy_coverage=True,max_queries=1 if failure=='budget' else 10)
+    if failure=='epoch':n.guard=lambda:(_ for _ in ()).throw(RuntimeError('physics advanced'))
+    try:
+        clear=n.clear_box_checked('/World/Stem',np.zeros(3),np.eye(3),np.ones(3),.001)
+    except RuntimeError:
+        clear=False
+    if failure in ('late_final','final_missing'):
+        assert clear
+        with pytest.raises(RuntimeError):n.validate()
+    else:
+        assert not clear and n.used_paths==set()
+    n.close()
+    assert not n.report()['final_validation_passed']
+
+
+def test_lazy_unknown_or_previously_missing_actor_never_refines():
+    calls=[]
+    n=NativeStaticClearance(lambda *args:calls.append(args) or False,records(),lazy_coverage=True)
+    for path in ('/World/Unknown','/World/Stem','/World/Stem'):
+        assert not n.clear_box(path,np.zeros(3),np.eye(3),np.ones(3),.001)
+    assert len(calls)==1 and n.coverage_failed==['/World/Stem']
+
+
+def test_lazy_flag_is_explicit_boolean():
+    with pytest.raises(ValueError):NativeStaticClearance(lambda *a:True,records(),lazy_coverage=1)
+
+
 def test_requires_positive_native_coverage_before_empty_query_can_clear():
     missing=NativeStaticClearance(lambda *args:False,records())
     assert not missing.clear_box('/World/Stem',np.zeros(3),np.eye(3),np.ones(3),.001)

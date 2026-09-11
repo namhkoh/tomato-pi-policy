@@ -26,6 +26,7 @@ class ContactCoupledCouponSpring:
             raise ValueError('Explicit boolean patch friction requires unilateral_kv_v1')
         self.a = articulation; self.coupon = coupon; self.law = law
         self.patch_friction = patch_friction; self.anchor_binding = None
+        self.predicted_seed = None
         self.indices = np.array([0], dtype=np.uint32)
         self.paths = list(articulation.link_paths[0])
         self.names = list(articulation.shared_metatype.dof_names)
@@ -84,6 +85,7 @@ class ContactCoupledCouponSpring:
             **geometry_options)
         if self.patch_friction:
             solve_options['patches'] = geometry['patches']
+            solve_options['previous_predicted_seed'] = self.predicted_seed
         prediction = prediction_solver(state['mass_matrix'], np.r_[np.zeros(6),q], native_v,
             np.r_[np.zeros(6),self.k], np.r_[np.zeros(6),self.c], J,g,s,
             np.full(len(g),self.coupon.contact_stiffness), np.full(len(g),self.coupon.contact_damping),
@@ -100,6 +102,7 @@ class ContactCoupledCouponSpring:
         self.a.set_dof_actuation_forces(command[None,:], self.indices)
         if self.patch_friction:
             self.anchor_binding = geometry['anchor_binding']
+            self.predicted_seed = prediction['next_predicted_seed']
         self.last_step = step_id
         return command.astype(float), dict(geometry=geometry, prediction=prediction,
             submitted_spring_effort_nm=command.tolist(), effort_is_measured=False,
@@ -112,4 +115,5 @@ class ContactCoupledCouponSpring:
             contact_force_applied=False, root_actuated=False, friction_in_prediction=self.patch_friction,
             measured_friction_used=False, friction_force_applied=False,
             friction_model='two_anchor_circular_coulomb_v1' if self.patch_friction else None,
+            predictor_seed='previous_resolved_prediction_only' if self.patch_friction else None,
             native_qualified=False, scope='three-link planar coupon only')

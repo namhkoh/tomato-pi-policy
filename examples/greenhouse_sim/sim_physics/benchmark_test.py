@@ -18,6 +18,16 @@ def test_default_probe_includes_release_and_does_not_use_gpu():
     assert args.constraint_mode=='articulation'
     assert not args.attached_only and not args.gui and args.render_hz==0
     assert not args.solve_articulation_contact_last
+    assert not args.measured_withdrawal
+
+
+@pytest.mark.parametrize('extra',[[],['--bimanual-cut'],
+    ['--bimanual-cut','--native-static-clearance','--bimanual-hold-control']])
+def test_measured_withdrawal_needs_cut_and_native_clearance_before_launch(tmp_path,extra):
+    output=tmp_path/'unused'
+    with pytest.raises(ValueError,match='Measured withdrawal'):
+        main(['--output',str(output),'--measured-withdrawal',*extra])
+    assert not output.exists()
 
 
 def test_contact_solver_order_is_explicit_and_recorded_without_changing_other_defaults():
