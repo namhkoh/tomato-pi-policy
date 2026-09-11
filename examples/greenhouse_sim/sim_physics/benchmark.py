@@ -288,6 +288,7 @@ def main(argv=None):
         settings=PhysxSchema.PhysxSceneAPI.Apply(physics.GetPrim())
         settings.CreateSolverTypeAttr(args.solver);settings.CreateEnableGPUDynamicsAttr(False)
         settings.CreateBroadphaseTypeAttr('MBP')
+        settings.CreateFrictionTypeAttr('patch')  # Required for native friction-anchor reports.
         # One explicit scene, fixed dt. Rendering is independently scheduled.
         sim=SimulationContext(physics_dt=1/args.physics_hz,rendering_dt=1/60,
                               stage_units_in_meters=1,physics_prim_path='/World/QualificationPhysics',
@@ -302,6 +303,7 @@ def main(argv=None):
         sim.reset()
         report['effective_scene_after_reset']=dict(gravity_m_s2=float(physics.GetGravityMagnitudeAttr().Get()),
             solver=settings.GetSolverTypeAttr().Get(),physics_dt=sim.get_physics_dt(),
+            friction_type=settings.GetFrictionTypeAttr().Get(),
             gpu_dynamics=settings.GetEnableGPUDynamicsAttr().Get(),
             update_to_usd=process_settings.get('/physics/updateToUsd'),
             physics_threads=process_settings.get(thread_setting))
@@ -310,7 +312,7 @@ def main(argv=None):
             '/persistent/physics/pvdEnabled','/physics/omniPvdOutputEnabled','/physics/omniPvdIsRecording',
             '/physics/physxDispatcher','/physics/updateVelocitiesToUsd')}
         effective=report['effective_scene_after_reset']
-        if (effective['solver']!=args.solver or effective['gpu_dynamics']
+        if (effective['solver']!=args.solver or effective['gpu_dynamics'] or effective['friction_type']!='patch'
                 or not np.isclose(effective['gravity_m_s2'],args.gravity,rtol=1e-6,atol=1e-8)
                 or not np.isclose(effective['physics_dt'],1/args.physics_hz,rtol=1e-6)):
             raise RuntimeError('Physics reset changed explicit configuration')

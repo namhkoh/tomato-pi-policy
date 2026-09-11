@@ -158,6 +158,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         record['robot']=fixture.check(dt,palm)
         if (speed>20 or total>3 or support>1e-5 or c['min_separation']<-.001
                 or record['robot']['allowed_tool_contact_n']>.5
+                or record['robot']['minimum_tool_separation_m']<-.001
                 or (slip is not None and slip>.003)):
             raise RuntimeError('Bimanual force/slip/penetration/support guard')
         record['knife']=fixture.inspect_cut(dt,frames,stable>=int(.025*args.physics_hz),slip)

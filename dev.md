@@ -4356,3 +4356,100 @@ No hardware, collection, tuning, review, split or training-export changes.
   progress counts are emitted. Focused regression: **64 passed** (9.83 s).
   Tests cover the final file in a multi-batch verification being modified,
   explicit unique/nonempty review lists and all previous profile/history gates.
+
+### 2026-09-11: Baseline visual QA completed; normal rebuild still running
+
+- Two new immutable baseline bundles contain 35 individually inspected original
+  RGB/card pairs: 22 attributed assistant accepts and 13 holds. The second
+  wave closes the remaining seed37/hard representative QA gap. Earlier review
+  records and human decisions remain unchanged; this is not human confirmation
+  or a measured corpus-wide label error rate.
+- `release_20260911_agents/baseline_completed_review_preflight.json` passes
+  snapshot coverage/QA with 136 exact unique representative accepts. Expected
+  selected rows: 14,259 (train11,520 / validation1,358 / test1,381), comprising
+  11,237 easy/clear and 3,022 hard/occluded. All medium rows, one legacy held
+  RGB and the 13 new ambiguous baseline images are excluded, not relabeled.
+- These are preflight counts, not yet the completed export. The normal source
+  build has verified 232,171 bound source files and is rederiving all 20,151
+  raw-frame labels from 63 audits. It must finish validation and archive-member
+  readback before the ZIP is published. No training or hardware job was started.
+
+### 2026-09-11: Native blade loading isolated from grasp/path planning
+
+- Added `sim_physics/blade_loading_probe.py`: original approved knife and two
+  source-derived seam-adjacent capsules, native PGS/240 Hz/gravity/Fabric,
+  50 g diagnostic carriage on a force-limited implicit prismatic velocity drive.
+  This is a **two-body coupon**, not the greenhouse, full plant or full robot.
+  The seam remains enabled throughout; there is no release API or fabricated
+  grasp. Source assets are hashed before/after and remain unchanged.
+- Logs include actual body poses, both joint anchors, contact positions,
+  normals, separations and impulses, projected edge force, full contact-load
+  magnitudes and net advance. Later runs also gate native angular joint-frame
+  residual. Configured drive limits are not reported as measured forces.
+  Full load <=0.5 N, penetration <=1 mm, speed <=20 mm/s and intact-seam
+  guards precede window credit. Broad-face contacts inside the leading-strip
+  volume are rejected using their native normal (30-degree plane tolerance).
+- `blade_loading_20260911_03`: rigid interface, 8 s / 1,920 ticks, no error,
+  5.033 s contiguous qualifying force but only **0.0000167 mm** net loaded
+  advance against the unchanged 0.3 mm requirement. This directly demonstrates
+  a local rigid-contact stall; it does not prove every full-plant pose impossible.
+- Explicit **coupon-only**, uncalibrated compliant-material variants: `_04`
+  1000 N/m / 0.35 N drive cap gives 0.01336 mm; `_05` 250 N/m / 0.35 N gives
+  0.00242 mm; `_06` 250 N/m / 0.45 N gives 0.03649 mm net qualified advance.
+  All complete without guard faults but none satisfies the loading window.
+  These are diagnostic parameter checks, not adopted benchmark coefficients or
+  validated tissue fracture. Main simulator material defaults remain unchanged.
+- `_01` exited before recording usable native evidence; `_02` exposed a
+  float-exact gravity check (9.81 authored as float32), fixed with tolerance and
+  explicit scene diagnostics. Failure reports now survive setup exceptions.
+- Shared normal classification is integrated into the bimanual callback:
+  absent normals/separations cannot grant a tool-contact allowance; broad-face
+  contact is unwanted; accepted tool penetration is checked before seam logic.
+  Existing force, dwell, net travel, grasp and collision thresholds are unchanged.
+  Physics regression: **222 passed** in 61.91 s. A new full-robot hold regression
+  is running; no full-robot cutting success or training eligibility is claimed.
+
+- Follow-up limitation on coupon `_03..06`: the original callback reports
+  contact-point impulses but not friction anchors, so their field named
+  `total_contact_magnitude_n` is a normal-contact-only sum, not a full-load
+  certificate. Raw evidence is preserved; do not reinterpret it as complete
+  load measurement. `_06` changes both cap and velocity-drive damping, not
+  only cap. Neither the force cap nor stationary poses measure applied effort.
+- Added full native friction-anchor reporting and finite/buffer checks.
+  `_07` repeats `_04` at240 Hz and preserves its physical trajectory: measured
+  peak normal magnitude0.23069 N + friction0.08093 N gives a conservative
+  0.31161 N bound. Friction is not credited as normal cutting-edge evidence.
+  Signed native velocity and pose-derived velocity are logged separately;
+  PhysX split-impulse handling can make them differ under stationary contact.
+- Same1000 N/m / 0.35 N /350 Ns/m parameters, full reports: `_08` at480 Hz
+  gives0.04231 mm and `_09` at960 Hz gives0.05127 mm maximum qualified advance.
+  Neither passes. This tests timestep sensitivity, not material calibration or
+  a converged whole-robot contact model. Full-robot simulation stays240 Hz.
+  Native frictionType is explicitly patch and checked after reset; the current
+  SDK emits a deprecation warning for the authored setting, which is retained
+  in logs rather than suppressed.
+- Full-robot sparse accounting now includes normal and friction magnitudes
+  without cancellation. A mixed/unverified tool patch cannot inherit friction
+  permission; buffers with missing/invalid data fail closed. Friction-only
+  headers still count; empty lost-contact offsets are not dereferenced. The
+  existing0.5 N allowed-tool guard therefore includes tangential load.
+- `bimanual_hold_control_20260911_10` completes4800 steps with verified left
+  grasp, no fault and maximum slip0.005253 mm after normal/penetration changes.
+  It is a parked-right negative control, not a cut/retention/deposit pass.
+  Full-friction regression `_11` is running; `_09` was rejected before launch
+  because the diagnostic command omitted required PGS/implicit spring options.
+- Integrated the existing `RigidToolScreen` into `_plan_cut` **before** each
+  endpoint IK. Every complete <=0.5 mm tool stroke is checked against the
+  current held-hand geometry and scene snapshot. Constant-orientation wrist
+  poses are translated in one array, avoiding repeated matrix inversions.
+  A new regression verifies756 blocked proposals cause zero IK calls. The
+  remaining arm IK/transit/native guards are not removed; this necessary-subset
+  screen does not certify an executable whole-scene path.
+
+- Full-friction native hold `_11` now completes all4800 steps, no error,
+  verified opposing grasp and maximum slip0.005253 mm. All records confirm
+  full/patch friction reporting; palm and grasp-point native poses exactly
+  match hold08. Peak summed target-contact bound0.61178 N includes0.17837 N
+  friction (two fingers; not a per-finger force). Peak unwanted bound0.04346 N,
+  no blade contacts or release. Headless control only; no GUI FPS or cutting
+  success is inferred. Updated physics regression: **281 passed** (64.82 s).

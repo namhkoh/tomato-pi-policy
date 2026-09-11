@@ -9,6 +9,18 @@ from dataclasses import dataclass
 import numpy as np
 
 
+def leading_face_normal(normal,direction):
+    """Native normal must face the source leading plane, not a broad face.
+
+    Either collider-order sign is allowed; the 30-degree tolerance permits
+    rounded shaft contact. This geometric test is not tissue calibration.
+    """
+    n=np.asarray(normal,float);d=np.asarray(direction,float)
+    if n.shape!=(3,) or d.shape!=(3,) or not np.isfinite(np.r_[n,d]).all():return False
+    lengths=np.linalg.norm(n)*np.linalg.norm(d)
+    return bool(lengths>1e-9 and abs(np.dot(n,d))/lengths>=np.cos(np.pi/6))
+
+
 def mount_forward(stage,robot_root):
     """Distal knife with the corrected 180-degree wrist roll, session-only.
 

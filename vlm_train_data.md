@@ -959,3 +959,12 @@ existing hold was relaxed. Final export now accepts a hash-bound explicit list
 of completed review bundles at finalization, retaining the earlier pinned
 history. Parallel source hashing is bounded to four workers/256-future batches
 and does not replace or cache away any source-byte verification.
+
+The second immutable QA wave is now complete. Across both new bundles,
+35 original/card pairs received 22 assistant accepts and 13 holds. Preflight
+now has 136 exact current representative accepts and passes all narrowed-profile
+QA strata. Expected baseline: 14,259 images (11,520 train / 1,358 validation /
+1,381 test), 11,237 easy and 3,022 hard. The normal rebuild is still deriving
+original labels; these are not a claim that the final ZIP exists. All medium
+and ambiguous held rows remain excluded, frozen families unchanged. This is
+static target-conditioned localization/abstention data, not bimanual episodes.

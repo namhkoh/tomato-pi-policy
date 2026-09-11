@@ -505,3 +505,61 @@ grasp/reset gates with automatic milestone capture disabled.
 
 For the smallest VLM + low-level-controller experiment and its explicit
 unimplemented gates, see [PROOF_OF_LIFE.md](PROOF_OF_LIFE.md).
+
+## Intact-seam blade loading diagnostic (2026-09-11)
+
+Run from `examples/greenhouse_sim` with a **new** output directory:
+
+```powershell
+& D:/isaac-sim-6.0.1/python.bat -B -m sim_physics.blade_loading_probe --output ../../data/sim_physics/my_blade_loading
+```
+
+This headless 8-second test isolates the original knife against the two source
+capsules adjacent to the 10 mm seam. A native force-limited prismatic drive
+loads at <=1 mm/s. It has no robot grasp and **never releases the seam**.
+`report.json` and `trace.jsonl` distinguish configured drive limits from native
+contact measurements and retain source hashes. Full-plant bending/leaf loads,
+arm/camera clearance and actual tissue fracture are not modeled by the coupon.
+
+Optional `--contact-stiffness-n-m 250|500|1000|2000` authors an explicit
+uncalibrated native contact material on the coupon; default `0` remains rigid.
+These are model-discovery experiments, not changes to greenhouse defaults.
+The full-contact 0.5 N and 1 mm penetration guards remain enabled. Native contact
+normals reject broad-face contact; force, net advance and joint-anchor checks
+must coexist. The 0.3 mm loading criterion is not reduced to obtain a pass.
+
+Recorded cases under `data/sim_physics/`:
+
+| `blade_loading_20260911_` run | Contact stiffness | Drive cap | Maximum qualified net advance |
+|---|---:|---:|---:|
+| `03` | Rigid | 0.35 N | 0.0000167 mm |
+| `04` | 1000 N/m | 0.35 N | 0.01336 mm |
+| `05` | 250 N/m | 0.35 N | 0.00242 mm |
+| `06` | 250 N/m | 0.45 N | 0.03649 mm |
+
+All four complete their bounded diagnostic without a guard fault; **none**
+meets the mechanical loading window. These results motivate a separately
+validated local indentation/fracture model, not more force or timed release.
+They do not establish camera-clear right-arm access or bimanual cutting.
+
+Correction to those first four reports: their `total_contact_magnitude_n`
+contains contact-point impulses only; friction was not recorded. Do not treat
+that field as a complete force bound. The current diagnostic subscribes to
+native full contact reports, retaining friction anchors separately and adding
+their magnitudes conservatively for guards. Friction never counts as normal
+edge loading. PhysX documents the separate anchor stream in its
+[contact reporting guide](https://nvidia-omniverse.github.io/PhysX/physx/5.6.1/docs/AdvancedCollisionDetection.html#contact-friction-information).
+
+Full-report run `07` repeats k1000/cap0.35 at240 Hz: peak conservative load
+0.31161 N, same0.01336 mm loaded advance as `04`. `08` at480 Hz and `09` at960 Hz,
+with unchanged physical/drive parameters, reach0.04231/0.05127 mm respectively;
+neither qualifies. `--physics-hz` is an isolated diagnostic option, not a
+greenhouse rate change. Native and pose-derived signed velocities are both
+recorded; they are not assumed equivalent under the solver's
+[split-impulse handling](https://nvidia-omniverse.github.io/PhysX/physx/5.8.0/docs/Simulation.html#solver-iterations).
+
+The full-robot planner now screens the entire rigid tool stroke before spending
+endpoint IK iterations. This rejects camera/bracket/plant conflicts early;
+all downstream arm/transit/native checks remain mandatory. Native full-robot
+contact guards also include friction-anchor loads, with no friction used as
+cutting evidence. Neither change claims a successful bimanual cut.

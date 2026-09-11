@@ -3,7 +3,7 @@ import time
 import numpy as np
 
 from .full_robot import FullRobotGripper
-from .knife import KnifeGeometry,ShearGate,mount_forward,cut_plane_normal,transverse_stroke_offsets
+from .knife import KnifeGeometry,ShearGate,mount_forward,cut_plane_normal,transverse_stroke_offsets,leading_face_normal
 
 
 class BimanualRobot(FullRobotGripper):
@@ -137,14 +137,15 @@ class BimanualRobot(FullRobotGripper):
         half=np.linalg.norm(self.rig.chain_world[i+1]-self.rig.chain_world[i])/2
         return frames[i,:3,3]-half*frames[i,:3,2],frames[i,:3,2]
 
-    def _tool_contact(self,robot,other,point,impulse):
+    def _tool_contact(self,robot,other,point,impulse,normal,separation):
         # Only the flat leading strip contacting the two seam-adjacent shaft
         # capsules is an expected tool load. Arc, camera, main stem and leaves
         # remain unwanted contacts. Positions come from the native callback.
         eligible=[self.rig.body_paths[i]+'/StemCollider'
             for i in (self.rig.cut_index-1,self.rig.cut_index)]
         if (not self.cut_authorized or robot!=self.knife.collider or other not in eligible
-                or not self.knife.on_edge(point,self.edge_frame)):
+                or not self.knife.on_edge(point,self.edge_frame)
+                or not leading_face_normal(normal,-self.edge_frame[:3,0])):
             return False
         centre,axis=self.cut_frame
         if abs(np.dot(np.asarray(point)-centre,axis))>.003: return False
@@ -235,6 +236,8 @@ class BimanualRobot(FullRobotGripper):
         else:
             # Offline fixture-only plan; native execution always snapshots above.
             self.planning_slides={'gripper_finger_l1':-self.radius,'gripper_finger_l2':self.radius}
+        from .rigid_tool_screen import RigidToolScreen
+        rigid_screen=RigidToolScreen(self,left_q)
         direction=-self.goal[:3,2];direction-=axis*np.dot(direction,axis);direction/=np.linalg.norm(direction)
         attempts=[];failures=[]
         self.plan=None
@@ -242,6 +245,7 @@ class BimanualRobot(FullRobotGripper):
             minimum_required_interarm_m=.01,held_plant_margin_m=.001,
             held_plant_native_snapshot_screened=True,local_static_colliders=len(self.held_plant_screen.static),
             local_scene_bounds_m=[v.tolist() for v in self.held_plant_screen.workspace],
+            complete_tool_stroke_screened_before_IK=True,
             whole_scene_path_certified=False)
         # Try the original plane first; only then small oblique planes within
         # the existing measured angular gate. Never replace actual stem truth
@@ -260,11 +264,22 @@ class BimanualRobot(FullRobotGripper):
                 # "arc up" is not a cut-contact criterion. Scene/tool checks
                 # still reject the support hitting the main stem or left hand.
                 desired=self.knife.wrist_for_edge(centre+self.stroke_offsets[0]*d,d,normal,wing)
-                solution=self.kin.solve_pose('right',desired,self.right,self.base,maximum_evaluations=250)
                 attempt=dict(angle=degrees,normal_sign=normal_sign,wing_m=wing,plane_tilt_degrees=tilt,
+                    ik_attempted=False,ik_succeeded=False,evaluations=0)
+                attempts.append(attempt)
+                # Constant orientation: translate the actual wrist frame for
+                # every <=0.5 mm stroke sample, including the final endpoint.
+                # Reject local hardware/plant conflicts before costly arm IK.
+                wrist_frames=np.repeat(desired[None],len(self.stroke_offsets),axis=0)
+                wrist_frames[:,:3,3]+=(self.stroke_offsets-self.stroke_offsets[0])[:,None]*d
+                subset=rigid_screen.check(wrist_frames)
+                attempt['rigid_tool_corridor']=subset
+                if not subset['passed']:
+                    attempt['rejection']='rigid_tool_corridor';continue
+                solution=self.kin.solve_pose('right',desired,self.right,self.base,maximum_evaluations=250)
+                attempt.update(ik_attempted=True,
                     position_error_m=solution.position_error_m,orientation_error_rad=solution.orientation_error_rad,
                     evaluations=solution.evaluations,ik_succeeded=solution.succeeded)
-                attempts.append(attempt)
                 if not solution.succeeded:
                     attempt['rejection']='endpoint_IK';continue
                 q=np.array(solution.joint_degrees)
@@ -320,7 +335,8 @@ class BimanualRobot(FullRobotGripper):
                 return
         ik=sum(a['ik_succeeded'] for a in attempts)
         raise RuntimeError(f'No bimanual arm-clearance path: endpoints={len(attempts)}, '
-            f'IK_converged={ik}, arm_clear_endpoints={clear_endpoints}, path_failures={failures}')
+            f'IK_attempted={sum(a["ik_attempted"] for a in attempts)}, IK_converged={ik}, '
+            f'arm_clear_endpoints={clear_endpoints}, path_failures={failures}')
 
     def command_right(self,phase,fraction):
         if phase=='park': q=self.right
