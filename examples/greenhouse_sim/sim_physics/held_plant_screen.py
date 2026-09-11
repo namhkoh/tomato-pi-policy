@@ -222,6 +222,17 @@ class HeldPlantScreen:
                         hit=((equations is not None and np.all(equations[:,:3]@centre+equations[:,3]<=1e-9))
                              or triangles_intersect_box(local,-half-margin,half+margin))
                 if hit:
+                    # Optional, same-tick native static-actor refinement. Keep
+                    # the entire proposed tool box and margin; dynamic target,
+                    # capsules, source triangles and all unverified paths keep
+                    # their original checks. A query error can never clear one.
+                    native=getattr(self,'native_static_query',None)
+                    fitted_tool=(self.arm=='right' and link=='ee_right' and body.endswith('/ee_right')
+                        and path.startswith(tuple(body+'/attachments/'+name+'/'
+                            for name in ('RightWristCamera','DeleafKnife'))))
+                    if (fitted_tool and kind=='box' and okind=='box' and native is not None
+                            and native.clear_box(other,centre,axes,half,margin)):
+                        continue
                     self.last_failure=dict(robot_collider=path,plant_collider=other,margin_m=margin,
                         phase='grasp' if grasp else 'stroke' if stroke else 'transit',conservative_overlap=True)
                     return False

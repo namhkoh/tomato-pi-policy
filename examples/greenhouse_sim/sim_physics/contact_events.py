@@ -52,9 +52,15 @@ class ContactEvents:
         self.subscription=None;self.paths={};self.total_events=0;self.error=None
         self.native_full_contact_reporting=False;self.native_friction_type=None
         self.tool_contact=None
+        self.normal_contact_observer=None
         self.begin_step()
 
     def begin_step(self):
+        if self.normal_contact_observer is not None:
+            try: self.normal_contact_observer.begin_step()
+            except Exception as exc:
+                self.error=str(exc)
+                raise
         self.pairs={};self.normal_pairs={};self.friction_pairs={};self._pair_states={}
         self.normal_impulse=0.;self.friction_impulse=0.
         for kind in self._buckets:
@@ -91,6 +97,17 @@ class ContactEvents:
                 raise ValueError('Native separation/impulse count mismatch')
             if not all(math.isfinite(v) for v in separations):
                 raise ValueError('Nonfinite native contact separation')
+        # Preserve original collider order and pass NORMAL rows only. This
+        # evidence observer cannot reclassify loads or authorize a tool cut.
+        if self.normal_contact_observer is not None and impulses:
+            try:
+                if points is None or normals is None or separations is None:
+                    raise ValueError('Normal grasp observer requires full native contact rows')
+                for point,normal,impulse,separation in zip(points,normals,impulses,separations,strict=True):
+                    self.normal_contact_observer.add_contact(first,second,point,normal,impulse,separation)
+            except Exception as exc:
+                self.error=str(exc)
+                raise
         magnitudes=[math.hypot(*v) for v in impulses]
         friction=_sum(math.hypot(*v) for v in friction_impulses)
         magnitude=_sum([*magnitudes,friction])
@@ -197,4 +214,5 @@ class ContactEvents:
 
     def close(self):
         self.subscription=None
+        self.normal_contact_observer=None
         self.native_full_contact_reporting=False;self.native_friction_type=None

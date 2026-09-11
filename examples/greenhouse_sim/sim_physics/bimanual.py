@@ -8,6 +8,9 @@ from .knife import KnifeGeometry,ShearGate,mount_forward,cut_plane_normal,transv
 
 class BimanualRobot(FullRobotGripper):
     def __init__(self,*args,**kwargs):
+        proposal_path=kwargs.pop('cut_proposal_json',None)
+        self.native_static_clearance=kwargs.pop('native_static_clearance',False)
+        if type(self.native_static_clearance) is not bool:raise ValueError('Explicit native clearance flag required')
         standoff=kwargs.pop('cut_standoff',.025)
         self.grasp_compression=kwargs.pop('grasp_compression',.0005)
         if not np.isfinite(self.grasp_compression) or not .00025<=self.grasp_compression<=.001:
@@ -15,6 +18,8 @@ class BimanualRobot(FullRobotGripper):
         kwargs.setdefault('station_offset',(0.,0.))
         kwargs.setdefault('approach_side',1)
         super().__init__(*args,**kwargs)
+        from .cut_proposal import load_cut_proposal
+        self.cut_proposal=load_cut_proposal(proposal_path,source_target=self.rig.source_target)
         if not self.sparse_contacts: raise ValueError('Bimanual test requires sparse native contacts')
         self.knife_mount=mount_forward(self.stage,self.root)
         from .blade_contacts import refine_blade_contacts
@@ -213,8 +218,42 @@ class BimanualRobot(FullRobotGripper):
         # Include failed planning attempts: PhysicsClock does not complete its
         # tick timing when a planner raises before the next native step.
         start=time.perf_counter()
-        try: return self._plan_cut(frames,left_q)
-        finally: self.planning_wall_seconds=time.perf_counter()-start
+        planning_error=None
+        try:
+            self.plan=None
+            result=self._plan_cut(frames,left_q)
+            candidate=self.plan
+            self.plan=None  # Provisional geometry is not an accepted plan.
+            screen=getattr(self,'held_plant_screen',None)
+            native=getattr(screen,'native_static_query',None)
+            if native is not None:native.validate()
+            self.plan=candidate
+            return result
+        except BaseException as exc:
+            self.plan=None;planning_error=exc
+            raise
+        finally:
+            cleanup_errors=[]
+            screen=getattr(self,'held_plant_screen',None)
+            native=getattr(screen,'native_static_query',None)
+            if native is not None:
+                try:native.close()
+                except Exception as exc:cleanup_errors.append(exc)
+                try:
+                    diagnostics=getattr(self,'plan_diagnostics',None)
+                    if diagnostics is not None:
+                        reported=native.report()
+                        evidence=diagnostics.setdefault('native_static_clearance',{})
+                        evidence.update(reported)
+                        evidence['query_count_known']=type(reported.get('query_count')) is int
+                except Exception as exc:cleanup_errors.append(exc)
+                finally:screen.native_static_query=None
+            self.planning_wall_seconds=time.perf_counter()-start
+            if cleanup_errors:
+                self.plan=None
+                detail='Native refinement cleanup failed: '+str([str(e) for e in cleanup_errors])
+                if planning_error is not None:planning_error.add_note(detail)
+                else:raise RuntimeError(detail) from cleanup_errors[0]
 
     def _plan_cut(self,frames,left_q):
         """Bounded orientation search, then dense arm-pair screened IK paths.
@@ -222,6 +261,22 @@ class BimanualRobot(FullRobotGripper):
         Native whole-scene guards remain essential: arm capsules alone do not
         certify the knife, cameras, foliage or gutter swept volume.
         """
+        # Reset before any snapshot/query setup: a failed new plan must never
+        # publish a prior plan's diagnostics or omit a zero-attempt failure.
+        attempts=[];failures=[]
+        self.plan=None
+        self.plan_diagnostics=dict(endpoint_attempts=attempts,path_failures=failures,
+            minimum_required_interarm_m=.01,held_plant_margin_m=.001,
+            held_plant_native_snapshot_screened=False,
+            complete_tool_stroke_screened_before_IK=False,
+            whole_scene_path_certified=False)
+        native_requested=getattr(self,'native_static_clearance',False)
+        if native_requested:
+            native_evidence=dict(initialization_status='not_started',query_count=0,
+                query_count_known=True,final_validation_passed=False,errors=[],
+                current_plan_only=True,whole_path_certified=False,
+                all_simulation_shape_query_coverage_proved=False)
+            self.plan_diagnostics['native_static_clearance']=native_evidence
         centre,axis=self.seam(frames)
         # Context plants/gutters are populated after robot construction. Cache
         # only once the complete scene exists, not in __init__.
@@ -229,6 +284,23 @@ class BimanualRobot(FullRobotGripper):
             self.held_plant_screen.include_static_scene(self.stage,self.root,self.rig.root,
                 self.body_world(self.initial_q,self.right)['link_right_arm_0'][:3,3])
         self.held_plant_screen.snapshot(frames)
+        self.plan_diagnostics.update(held_plant_native_snapshot_screened=True,
+            local_static_colliders=len(self.held_plant_screen.static),
+            local_scene_bounds_m=[v.tolist() for v in self.held_plant_screen.workspace])
+        if native_requested:
+            try:
+                if not hasattr(self,'robot'):raise RuntimeError('Native static refinement requires an initialized robot scene')
+                from .native_static_clearance import current_scene_query
+                # The factory can perform coverage queries before raising. If
+                # it never returns, its internal count is unknown, not zero.
+                native_evidence.update(initialization_status='in_progress',
+                    query_count=None,query_count_known=False)
+                self.held_plant_screen.native_static_query=current_scene_query(self.stage,self.held_plant_screen.static)
+                native_evidence['initialization_status']='ready'
+            except BaseException as exc:
+                native_evidence['initialization_status']='failed'
+                native_evidence['errors'].append(type(exc).__name__+': '+str(exc))
+                raise
         # Finger geometry must use the held aperture, not the initial open hand.
         if hasattr(self,'robot'):
             positions=self.robot.get_dof_positions()[0]
@@ -238,26 +310,43 @@ class BimanualRobot(FullRobotGripper):
             self.planning_slides={'gripper_finger_l1':-self.radius,'gripper_finger_l2':self.radius}
         from .rigid_tool_screen import RigidToolScreen
         rigid_screen=RigidToolScreen(self,left_q)
-        direction=-self.goal[:3,2];direction-=axis*np.dot(direction,axis);direction/=np.linalg.norm(direction)
-        attempts=[];failures=[]
-        self.plan=None
-        self.plan_diagnostics=dict(endpoint_attempts=attempts,path_failures=failures,
-            minimum_required_interarm_m=.01,held_plant_margin_m=.001,
-            held_plant_native_snapshot_screened=True,local_static_colliders=len(self.held_plant_screen.static),
-            local_scene_bounds_m=[v.tolist() for v in self.held_plant_screen.workspace],
-            complete_tool_stroke_screened_before_IK=True,
-            whole_scene_path_certified=False)
+        self.plan_diagnostics['complete_tool_stroke_screened_before_IK']=True
+        direction=-self.goal[:3,2];direction-=axis*np.dot(direction,axis)
+        direction_norm=float(np.linalg.norm(direction))
+        if not np.isfinite(direction_norm):raise ValueError('Finite legacy palm approach required')
+        direction=direction/direction_norm if direction_norm>1e-12 else None
+        single=None
+        if getattr(self,'cut_proposal',None) is not None:
+            from .cut_proposal import resolve_cut_proposal
+            single=resolve_cut_proposal(self.cut_proposal,source_target=self.rig.source_target,
+                stem_axis_world=axis,edge_width_m=self.knife.size[1])
+            self.plan_diagnostics['single_world_proposal']=single
+            single_direction=np.asarray(single['direction_world'],float)
+            # A world-space proposal does not need a legacy transverse basis.
+            # When that basis is undefined, retain the real direction and use
+            # JSON null for the diagnostic relative angle; invent no heading.
+            single_angle=None if direction is None else float(np.degrees(np.arctan2(
+                np.dot(np.cross(direction,single_direction),axis),np.dot(direction,single_direction))))
+            single['relative_angle_defined']=direction is not None
+            if direction is None:
+                single['relative_angle_unavailable_reason']='legacy_approach_parallel_to_stem_axis'
+        elif direction is None:
+            raise ValueError('Legacy palm approach is parallel to stem axis; no orientation-grid basis')
         # Try the original plane first; only then small oblique planes within
         # the existing measured angular gate. Never replace actual stem truth
         # with the proposed blade normal when evaluating native contact.
         clear_endpoints=0
-        for tilt in (0.,-10.,10.):
+        for tilt in ((single['plane_tilt_degrees'],) if single is not None else (0.,-10.,10.)):
             candidates=[]
             usable_wing=float(self.knife.size[1]/2-.005)
-            for degrees,normal_sign,wing in [(a,s,w) for w in (0.,-usable_wing/2,usable_wing/2,-.9*usable_wing,.9*usable_wing,-usable_wing,usable_wing) for s in (1,-1)
-                    for a in (0,15,-15,30,-30,45,-45,60,-60,90,-90,120,-120,135,-135,150,-150,180)]:
-                angle=np.radians(degrees)
-                d=direction*np.cos(angle)+np.cross(axis,direction)*np.sin(angle)
+            proposals=([(single_angle,single['normal_sign'],single['wing_m'])] if single is not None else
+                [(a,s,w) for w in (0.,-usable_wing/2,usable_wing/2,-.9*usable_wing,.9*usable_wing,-usable_wing,usable_wing) for s in (1,-1)
+                    for a in (0,15,-15,30,-30,45,-45,60,-60,90,-90,120,-120,135,-135,150,-150,180)])
+            for degrees,normal_sign,wing in proposals:
+                if single is not None:d=single_direction.copy()
+                else:
+                    angle=np.radians(degrees)
+                    d=direction*np.cos(angle)+np.cross(axis,direction)*np.sin(angle)
                 normal=cut_plane_normal(d,normal_sign*axis,tilt)
                 # Mounting roll is fixed on the wrist. Both signs of a
                 # transverse cutting plane are valid wrist poses; global

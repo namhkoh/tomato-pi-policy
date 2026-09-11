@@ -136,6 +136,38 @@ def select_targets(paths, robot_root="/World/RBY1", plant_root="/World/Plant"):
     return selected
 
 
+def _explicit_targets(collider_paths, robot_root, plant_root):
+    """Copy an ordered, exact prim allowlist; never normalize or expand it."""
+    from pxr import Sdf
+
+    def prim_path(value):
+        if not isinstance(value, str) or not Sdf.Path.IsValidPathString(value):
+            raise ValueError("Expected an absolute USD prim path: " + repr(value))
+        path = Sdf.Path(value)
+        if (not path.IsAbsolutePath() or not path.IsPrimPath()
+                or path.ContainsPrimVariantSelection() or str(path) != value):
+            raise ValueError("Expected an absolute USD prim path: " + repr(value))
+        return path
+
+    roots = [prim_path(root) for root in (robot_root, plant_root)]
+    if (any(str(root).count("/") < 2 for root in roots)
+            or roots[0].HasPrefix(roots[1]) or roots[1].HasPrefix(roots[0])):
+        raise ValueError("Robot/plant roots must be specific, disjoint prim paths, not broad roots")
+    if not isinstance(collider_paths, (list, tuple)) or not collider_paths:
+        raise ValueError("collider_paths must be a nonempty ordered list or tuple of exact prim paths")
+    selected = []
+    seen = set()
+    for value in collider_paths:
+        path = prim_path(value)
+        if path in roots or not any(path.HasPrefix(root) for root in roots):
+            raise ValueError("Collider must be strictly under a specified robot/plant root: " + value)
+        if value in seen:
+            raise ValueError("Duplicate explicit collider path: " + value)
+        seen.add(value)
+        selected.append(value)
+    return selected
+
+
 async def request_convexes(cooking, stage_id, prim_ids, next_update, guard, *,
                            valid_result, timeout_s=60.0):
     """Dependency-injected orchestration; no Kit import or stage mutations."""
@@ -263,8 +295,17 @@ def write_new_report(path, report):
 
 
 async def capture_current_stage(output, *, robot_root="/World/RBY1",
-                                plant_root="/World/Plant", timeout_s=60.0):
-    """Capture three existing colliders; caller owns one stopped diagnostic stage.
+                                plant_root="/World/Plant", timeout_s=60.0,
+                                collider_paths=None):
+    """Capture existing colliders; caller owns one stopped diagnostic stage.
+
+    None preserves the legacy three-target selector. Otherwise collider_paths
+    must be a nonempty list/tuple of unique absolute USD prim-path strings
+    strictly below the specific, disjoint robot_root/plant_root prims. Explicit
+    selection never traverses the stage, expands a root, or substitutes a prim.
+    Every selected prim must pass the same collision-mesh/source snapshot checks.
+    To include the wrist adapter, explicitly name (at the default robot root):
+    /World/RBY1/ee_right/attachments/RightWristCamera/AdapterCollision
 
     A successful capture is advisory, not automatically eligible to clear any
     existing screen. In particular this API does not expose actor/shape handles.
@@ -275,6 +316,8 @@ async def capture_current_stage(output, *, robot_root="/World/RBY1",
         raise ValueError("A NEW report path in an existing directory is required")
     if not math.isfinite(timeout_s) or not 0 < timeout_s <= 90:
         raise ValueError("Cooking deadline must be positive and <=90 seconds")
+    requested_paths = (None if collider_paths is None else
+                       _explicit_targets(collider_paths, robot_root, plant_root))
     # All runtime imports are deliberately lazy. No SimulationApp is constructed.
     import carb.settings
     import omni.kit.app
@@ -300,10 +343,13 @@ async def capture_current_stage(output, *, robot_root="/World/RBY1",
     stage_id = UsdUtils.StageCache.Get().GetId(stage)
     if not stage_id.IsValid():
         raise ValueError("Active stage must already be registered in USD StageCache")
-    paths = select_targets([str(p.GetPath()) for p in
-                            Usd.PrimRange.Stage(stage, Usd.TraverseInstanceProxies())
-                            if p.HasAPI(UsdPhysics.CollisionAPI)],
-                           robot_root, plant_root)
+    if requested_paths is None:
+        paths = select_targets([str(p.GetPath()) for p in
+                                Usd.PrimRange.Stage(stage, Usd.TraverseInstanceProxies())
+                                if p.HasAPI(UsdPhysics.CollisionAPI)],
+                               robot_root, plant_root)
+    else:
+        paths = list(requested_paths)
     source = _source_snapshot(stage, paths)
     settings = carb.settings.get_settings()
 
@@ -318,6 +364,14 @@ async def capture_current_stage(output, *, robot_root="/World/RBY1",
     report = {
         "schema": "native_cooked_geometry_probe_v1",
         "status": "pending", "source": source,
+        "requested_scope": {
+            "selection_mode": "legacy_three_targets" if requested_paths is None else "explicit_collider_paths",
+            "robot_root": robot_root, "plant_root": plant_root,
+            "requested_collider_paths": requested_paths,
+            "selected_collider_paths": list(paths),
+            "stage_traversal_for_selection": requested_paths is None,
+            "scope_expanded": False,
+        },
         "cooking_api": "omni.physx.get_physx_cooking_interface().request_convex_collision_representation",
         "stage_id": stage_id.ToLongInt(), "python_version": sys.version,
         "usd_version": list(Usd.GetVersion()),

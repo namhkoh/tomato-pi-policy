@@ -9,6 +9,43 @@ def monitor():
         fingers=['/World/R/finger'],floor_root='/World/Floor')
 
 
+def test_grasp_observer_preserves_header_order_and_never_receives_friction():
+    m=monitor();rows=[];steps=[]
+    m.normal_contact_observer=NS(begin_step=lambda:steps.append(True),add_contact=lambda *row:rows.append(row))
+    m.begin_step()
+    m.consume('/World/Target/Stem','/World/R/finger/shape',[(.001,0,0)],
+        [(1,2,3)],[(1,0,0)],[-.0001],friction_impulses=[(0,.002,0)])
+    assert rows==[('/World/Target/Stem','/World/R/finger/shape',(1,2,3),(1,0,0),(.001,0,0),-.0001)]
+    m.consume('/World/Target/Stem','/World/R/finger/shape',[],friction_impulses=[(0,.001,0)])
+    assert len(rows)==1 and steps==[True]
+    assert m.measurements(.01)['allowed_target_contact_n']==pytest.approx(.4)
+
+
+def test_grasp_observer_fault_is_latched_and_cannot_make_loads_look_safe():
+    m=monitor()
+    def fail(*args): raise ValueError('stale normal evidence')
+    m.normal_contact_observer=NS(begin_step=lambda:None,add_contact=fail)
+    with pytest.raises(ValueError,match='stale'):
+        m.consume('/World/Target/Stem','/World/R/finger/shape',[(.001,0,0)],[(0,0,0)],[(1,0,0)],[0.])
+    m.begin_step()
+    with pytest.raises(RuntimeError,match='stale'): m.measurements(.01)
+
+
+def test_grasp_observer_requires_complete_normal_rows_and_releases_on_close():
+    m=monitor();m.normal_contact_observer=NS(begin_step=lambda:None,add_contact=lambda *a:None)
+    with pytest.raises(ValueError,match='full native'):
+        m.consume('/World/Target/Stem','/World/R/finger/shape',[(.001,0,0)])
+    m.close();assert m.normal_contact_observer is None
+
+
+def test_grasp_step_failure_latches_in_main_safety_monitor():
+    m=monitor()
+    def fail(): raise ValueError('wrong step')
+    m.normal_contact_observer=NS(begin_step=fail)
+    with pytest.raises(ValueError,match='wrong step'): m.begin_step()
+    with pytest.raises(RuntimeError,match='wrong step'): m.measurements(.01)
+
+
 def test_contact_accounting_does_not_cancel_opposing_forces():
     m=monitor();m.consume('/World/R/arm/shape','/World/Gutter',[(.001,0,0),(-.001,0,0)])
     assert m.measurements(.01)['unwanted_contact_n']==pytest.approx(.2)

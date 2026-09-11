@@ -2,7 +2,7 @@
 import asyncio
 import copy
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 import sys
 import subprocess
 
@@ -139,6 +139,233 @@ def test_exact_target_selection_excludes_other_plants_and_detects_ambiguity():
         probe.select_targets(paths[:2])
     with pytest.raises(ValueError, match="found 2"):
         probe.select_targets(paths + [stem26.replace("/MainStem_00/", "/DifferentBranch/")])
+
+
+BRACKET = "/World/RBY1/ee_right/attachments/RightWristCamera/BracketCollision"
+ADAPTER = "/World/RBY1/ee_right/attachments/RightWristCamera/AdapterCollision"
+STEM26 = "/World/Plant/MainStem_00/MainStem_26/MainStem_26/MainStem_26"
+STEM27 = "/World/Plant/MainStem_00/MainStem_27/MainStem_27/MainStem_27"
+
+
+def test_explicit_selection_is_ordered_copied_and_can_include_adapter():
+    requested = [ADAPTER, STEM27, BRACKET, STEM26]
+    selected = probe._explicit_targets(requested, "/World/RBY1", "/World/Plant")
+    assert selected == requested and selected is not requested
+    requested.clear()
+    assert selected == [ADAPTER, STEM27, BRACKET, STEM26]
+    assert probe._explicit_targets((ADAPTER,), "/World/RBY1", "/World/Plant") == [ADAPTER]
+
+
+@pytest.mark.parametrize("paths", [
+    [], (), ADAPTER, {ADAPTER}, {"path": ADAPTER}, [None], [1], [Path(ADAPTER)],
+    [""], ["World/RBY1/Mesh"], ["/"], ["/World"], ["/World/RBY1"], ["/World/Plant"],
+    ["/World/RBY10/Mesh"], ["/World/PlantBackup/Mesh"], ["/Elsewhere/Mesh"],
+    ["/World/RBY1/../Plant/Mesh"], ["/World//RBY1/Mesh"], [ADAPTER + "/"],
+    [ADAPTER + ".points"], ["/World/RBY1{variant=one}/Mesh"],
+    ["/World/RBY1/*"], ["/World/RBY1/**"], [ADAPTER + " "],
+    [ADAPTER.replace("/", "\\")], [ADAPTER, ADAPTER],
+])
+def test_invalid_explicit_selection_fails_before_runtime_imports(tmp_path, monkeypatch, paths):
+    # No Kit module can be imported even if another test has loaded it.
+    monkeypatch.setitem(sys.modules, "carb", None)
+    output = tmp_path / "not_created.json"
+    with pytest.raises(ValueError):
+        asyncio.run(probe.capture_current_stage(output, collider_paths=paths))
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("robot_root,plant_root", [
+    ("/", "/World/Plant"), ("/World", "/World/Plant"),
+    ("/World/RBY1", "/World"), ("World/RBY1", "/World/Plant"),
+    ("/World/RBY1/", "/World/Plant"), ("/World/RBY1", "/World/RBY1"),
+    ("/World/RBY1", "/World/RBY1/Plant"), ("/World/Plant/Robot", "/World/Plant"),
+    ("/World/RBY1.points", "/World/Plant"), (None, "/World/Plant"),
+])
+def test_explicit_selection_rejects_broad_invalid_or_overlapping_roots(robot_root, plant_root):
+    with pytest.raises(ValueError):
+        probe._explicit_targets([ADAPTER], robot_root, plant_root)
+
+
+def test_explicit_selection_uses_the_specified_roots_not_default_prefixes():
+    adapter = ADAPTER.replace("/World/RBY1", "/Diagnostic/Robot")
+    stem = STEM26.replace("/World/Plant", "/Diagnostic/Plant")
+    assert probe._explicit_targets([adapter, stem], "/Diagnostic/Robot", "/Diagnostic/Plant") == [adapter, stem]
+    with pytest.raises(ValueError, match="strictly under"):
+        probe._explicit_targets([ADAPTER], "/Diagnostic/Robot", "/Diagnostic/Plant")
+
+
+def collision_mesh(stage, path, approximation="convexDecomposition"):
+    """Small in-memory USD fixture, never a source asset or native actor."""
+    from pxr import UsdGeom, UsdPhysics
+    mesh = UsdGeom.Mesh.Define(stage, path)
+    native = tetra()
+    mesh.CreatePointsAttr([(v.x, v.y, v.z) for v in native.vertices])
+    mesh.CreateFaceVertexCountsAttr([3] * 4)
+    mesh.CreateFaceVertexIndicesAttr(native.indices)
+    UsdPhysics.CollisionAPI.Apply(mesh.GetPrim()).CreateCollisionEnabledAttr(True)
+    UsdPhysics.MeshCollisionAPI.Apply(mesh.GetPrim()).CreateApproximationAttr(approximation)
+    return mesh.GetPrim()
+
+
+@pytest.fixture
+def capture_runtime(monkeypatch):
+    """Mock Kit/PhysX orchestration around CPU-only, in-memory USD snapshots."""
+    import pxr
+    from pxr import Usd, UsdUtils
+    stage = Usd.Stage.CreateInMemory()
+    cache = UsdUtils.StageCache.Get()
+    cache.Insert(stage)
+    cooking = Cooking()
+
+    async def update():
+        for request in cooking.requests:
+            request["on_result"]("VALID", [tetra()])
+
+    def module(name, **attributes):
+        value = ModuleType(name)
+        value.__dict__.update(attributes)
+        monkeypatch.setitem(sys.modules, name, value)
+        if "." in name:
+            parent, child = name.rsplit(".", 1)
+            monkeypatch.setattr(sys.modules[parent], child, value, raising=False)
+        return value
+
+    module("carb")
+    module("carb.settings", get_settings=lambda: SimpleNamespace(get=lambda key: None))
+    module("omni")
+    module("omni.kit")
+    module("omni.kit.app", get_app=lambda: SimpleNamespace(next_update_async=update))
+    module("omni.timeline", get_timeline_interface=lambda: SimpleNamespace(is_stopped=lambda: True))
+    module("omni.usd", get_context=lambda: SimpleNamespace(get_stage=lambda: stage))
+    module("omni.physx", get_physx_cooking_interface=lambda: cooking)
+    module("omni.physx.bindings")
+    module("omni.physx.bindings._physx", __file__=probe.__file__,
+           PhysxCollisionRepresentationResult=SimpleNamespace(RESULT_VALID="VALID"))
+    ids = {}
+
+    def prim_id(path):
+        return ids.setdefault(str(path), len(ids) + 1)
+
+    monkeypatch.setattr(pxr, "PhysicsSchemaTools", SimpleNamespace(sdfPathToInt=prim_id), raising=False)
+    try:
+        yield SimpleNamespace(stage=stage, cooking=cooking, ids=ids)
+    finally:
+        cache.Erase(stage)
+
+
+def test_explicit_capture_never_traverses_or_substitutes_and_reports_exact_scope(
+        capture_runtime, monkeypatch, tmp_path):
+    from pxr import Usd
+    runtime = capture_runtime
+    # Default targets do not exist; only the explicitly requested adapter does.
+    collision_mesh(runtime.stage, ADAPTER)
+    before = runtime.stage.GetRootLayer().ExportToString()
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Explicit selection must not walk or fall back")
+
+    monkeypatch.setattr(Usd, "PrimRange", SimpleNamespace(Stage=forbidden))
+    monkeypatch.setattr(probe, "select_targets", forbidden)
+    output = tmp_path / "adapter.json"
+    report = asyncio.run(probe.capture_current_stage(output, collider_paths=[ADAPTER]))
+    assert report["status"] == "captured_advisory"
+    assert report["requested_scope"] == {
+        "selection_mode": "explicit_collider_paths",
+        "robot_root": "/World/RBY1", "plant_root": "/World/Plant",
+        "requested_collider_paths": [ADAPTER], "selected_collider_paths": [ADAPTER],
+        "stage_traversal_for_selection": False, "scope_expanded": False,
+    }
+    assert list(report["colliders"]) == list(report["source"]["meshes"]) == [ADAPTER]
+    assert len(runtime.cooking.requests) == 1
+    assert runtime.stage.GetRootLayer().ExportToString() == before
+    assert report["source_unchanged"] and report["settings_unchanged"]
+    assert not report["eligible_to_replace_screen"]
+    payload_hash = report.pop("payload_sha256")
+    assert probe.fingerprint(report) == payload_hash
+    assert output.exists()
+
+
+def test_default_capture_still_selects_exactly_three_and_does_not_add_adapter(capture_runtime, tmp_path):
+    runtime = capture_runtime
+    for path in (BRACKET, STEM26, STEM27, ADAPTER):
+        collision_mesh(runtime.stage, path)
+    report = asyncio.run(probe.capture_current_stage(tmp_path / "default.json"))
+    assert report["status"] == "captured_advisory"
+    assert list(report["colliders"]) == [BRACKET, STEM26, STEM27]
+    assert report["requested_scope"]["selection_mode"] == "legacy_three_targets"
+    assert report["requested_scope"]["requested_collider_paths"] is None
+    assert report["requested_scope"]["selected_collider_paths"] == [BRACKET, STEM26, STEM27]
+    assert report["requested_scope"]["stage_traversal_for_selection"] is True
+    assert len(runtime.cooking.requests) == 3
+
+
+def test_explicit_capture_custom_roots_multiple_paths_and_input_mutation(capture_runtime, tmp_path):
+    runtime = capture_runtime
+    adapter = ADAPTER.replace("/World/RBY1", "/Diagnostic/Robot")
+    stem = STEM26.replace("/World/Plant", "/Diagnostic/Plant")
+    expected = [stem, adapter]
+    requested = list(expected)
+    collision_mesh(runtime.stage, adapter)
+    collision_mesh(runtime.stage, stem, "convexHull")
+    request = runtime.cooking.request_convex_collision_representation
+
+    def mutate_caller_list(**kwargs):
+        requested[:] = ["/World/Unexpected"]
+        return request(**kwargs)
+
+    runtime.cooking.request_convex_collision_representation = mutate_caller_list
+    report = asyncio.run(probe.capture_current_stage(
+        tmp_path / "custom.json", robot_root="/Diagnostic/Robot", plant_root="/Diagnostic/Plant",
+        collider_paths=requested))
+    assert report["status"] == "captured_advisory"
+    assert list(report["colliders"]) == expected
+    assert report["requested_scope"]["requested_collider_paths"] == expected
+    assert report["requested_scope"]["selected_collider_paths"] == expected
+    assert list(runtime.ids) == expected
+
+
+@pytest.mark.parametrize("defect", [
+    "missing", "inactive", "non_mesh", "no_collision", "disabled",
+    "no_mesh_collision", "triangle_mesh", "broad_assembly",
+])
+def test_explicit_capture_keeps_existing_snapshot_validation_and_starts_no_cooking(
+        capture_runtime, tmp_path, defect):
+    from pxr import UsdGeom, UsdPhysics
+    runtime = capture_runtime
+    path = ADAPTER
+    if defect == "broad_assembly":
+        collision_mesh(runtime.stage, ADAPTER)
+        path = ADAPTER.rsplit("/", 1)[0]
+    elif defect == "non_mesh":
+        prim = UsdGeom.Cube.Define(runtime.stage, path).GetPrim()
+        UsdPhysics.CollisionAPI.Apply(prim)
+    elif defect != "missing":
+        prim = collision_mesh(runtime.stage, path)
+        if defect == "inactive":
+            prim.SetActive(False)
+        elif defect == "no_collision":
+            prim.RemoveAPI(UsdPhysics.CollisionAPI)
+        elif defect == "disabled":
+            UsdPhysics.CollisionAPI(prim).CreateCollisionEnabledAttr(False)
+        elif defect == "no_mesh_collision":
+            prim.RemoveAPI(UsdPhysics.MeshCollisionAPI)
+            prim.RemoveProperty("physics:approximation")
+        elif defect == "triangle_mesh":
+            UsdPhysics.MeshCollisionAPI(prim).CreateApproximationAttr("none")
+    output = tmp_path / "invalid.json"
+    with pytest.raises(ValueError, match="collision mesh|convex approximation"):
+        asyncio.run(probe.capture_current_stage(output, collider_paths=[path]))
+    assert runtime.cooking.requests == []
+    assert not output.exists()
+
+
+def test_one_missing_explicit_collider_blocks_entire_request(capture_runtime, tmp_path):
+    collision_mesh(capture_runtime.stage, ADAPTER)
+    with pytest.raises(ValueError, match="collision mesh"):
+        asyncio.run(probe.capture_current_stage(
+            tmp_path / "not_partial.json", collider_paths=[ADAPTER, STEM26]))
+    assert capture_runtime.cooking.requests == []
+    assert not (tmp_path / "not_partial.json").exists()
 
 
 def test_source_hash_binds_geometry_transform_and_cooking_settings():

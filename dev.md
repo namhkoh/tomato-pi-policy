@@ -4556,3 +4556,83 @@ No hardware, collection, tuning, review, split or training-export changes.
   actor/query agreement is still needed before replacing planner bounds.
   No force, penetration, clearance, dwell or loaded-travel gate was relaxed.
   Full physics regression **315 passed** (54.41 s); no full-cut claim.
+
+### 2026-09-11: Native clearance and progressive interface development
+
+- Added explicit exact-collider capture scope (legacy three-target default
+  unchanged), plus a stopped-stage native query comparison including the right
+  wrist adapter. Independent inspection found that raw native polygon planes
+  differ from a hull reconstructed from their vertices. The latter can miss
+  native solid occupancy and must NOT approve motion. Preserve `_01`'s blocked
+  result and the independent `cooked_query_planes_assessment_20260911_c.json`.
+- `cooked_query_20260911_02` matches all2,328 rays using raw planes but remains
+  blocked because actor parsing changes session source bookkeeping after its
+  source snapshot. `_03` parses actors first, then binds/captures: all2,328 rays
+  agree, maximum error1.517 micrometres, source snapshot unchanged, no play or
+  physics step. Finite ray agreement is not exhaustive actor/contact equivalence.
+- Added default-off `--native-static-clearance`: native overlap of the whole
+  fitted right-tool box expanded by the existing1 mm margin against exact
+  static collider identities. All other arm/plant/IK/transit/runtime checks
+  remain. Missing actor coverage, query failure, deadlines and source/physics
+  epoch changes fail closed; final validation rechecks used actor coverage.
+  Native queries do not substitute a newly fitted visual/cooked vertex hull.
+- Preliminary native `bimanual_cut_20260911_31`: left grasp verified,605 coarse
+  pair rejections cleared,867 queries,80 static collider positive controls,
+  3.178 s planning. All756 complete strokes still reject (560 hand/tool,
+  196 scene), zero IK/right motion/contact/cut. Subsequent hardening adds
+  invalidation subscriptions, final acceptance checks, deadline-after-call
+  checks and explicit tool-only scope. Do not treat `_31` as native evidence
+  of those later changes or as a successful full sequence.
+- Added a single world-direction proposal adapter/CLI for controlled posture
+  tests. Source target, fresh-axis projection, blade-end reserve and full path
+  checks remain; the JSON cannot override a target position or safety rule.
+  Native `_32` changes only left tilt10 to30 and preserves native31's longest
+  right corridor. It fails opposing grasp before planning. A newly introduced
+  optional-Path serialization bug prevented its report publication; its840-row
+  trajectory remains intact and must not be presented as a complete report.
+  Fixed central configuration serialization and added regressions. Fresh `_33`
+  uses the same tilt30 with the existing allowed0.75 mm closure command; it
+  publishes correctly but also fails opposing grasp at3.5 s before right motion.
+- Implemented pure energy-consistent `cohesive.py` and isolated native
+  `cohesive_native_probe.py`: four area-weighted facets, implicit D6 secant
+  springs, measured post-step anchor separation, irreversible damage, no weld
+  across failure. Compression remains separately unqualified. Material is an
+  explicit uncalibrated prior, not tomato calibration. Native forces/work are
+  endpoint reconstructions, not independent joint-force readbacks.
+- Same material/carriage configuration at960 Hz: subcritical and damage-disabled
+  controls remain undamaged; softening fully separates at3.407292 s and keeps
+  zero spring stiffness on unloading. Each completes9,600 ticks without guard
+  fault. Reference area4 mm2 and Gc2 J/m2 give8 microjoules; softening's
+  reconstructed absorbed work is8.014777 microjoules. Subcritical displacement
+  matches the300/(300+400) elastic equilibrium; maximum momentum residual
+  2.87e-7 N. Softening repeats at480/1920 Hz complete without faults, but480 Hz
+  fails the strict separation-time refinement comparison. No blade/plant cut
+  or training eligibility follows from these coupon runs.
+- Full physics regression before the single-proposal follow-up:596 passed in
+  54.41 s. Later single-proposal/reporting tests run separately; final whole
+  regression will be recorded after the next integration checkpoint.
+- Next physical model is a separately validated local deforming material band:
+  the actual6 mm plate needs an opened channel, not merely a released seam.
+  Native discrete rigid cells/D6 connections retain full contact reporting;
+  FEM attachment/reporting limitations do not justify faking contact forces.
+  Source knife/assets, current production material/thresholds, VLM data/splits,
+  reviews and H200 archives remain unchanged. No training or hardware commands.
+
+- Checkpoint regression: **782 passed in 67.42 s**, recorded in
+  `data/sim_physics/regression_20260911_physics_checkpoint2.log`. This includes
+  the new source-bound proposal, report serialization, exact-identity normal
+  grasp evidence and isolated material-band geometry tests; no native cut claim.
+- Found a grasp identity mismatch: the planner permits the selected shaft and
+  its immediate connected detached-side segments, while the tensor verifier
+  filters one body only. Native trials32/33 report contacts on neighbouring
+  shaft colliders that the verifier cannot count. Added pure `shaft_grasp.py`
+  and a normal-only observer hook: exact inner pad/StemCollider identity,
+  live-frame geometry, unchanged 20 mN opposition threshold, no leaves,
+  protected support, friction-only evidence, or disconnected neighbours.
+  Live adapter and independent tensor sign/load cross-check remain pending.
+- Independent rate analysis is saved as
+  `data/sim_physics/cohesive_rate_assessment_20260911_01.json`. At960 Hz,
+  softening absorbed-work residual is14.777 nJ (0.1847% of8 microjoules),
+  separation timing passes the declared comparison with1920 Hz. At480 Hz,
+  timing misses it. These are restricted isolated-coupon findings, not
+  full-plant spatial/material calibration.

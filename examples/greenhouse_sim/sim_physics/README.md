@@ -595,3 +595,92 @@ sets `eligible_to_replace_screen=False`. Native transform/scale/query agreement
 and conservative narrow-phase checks are still required before these pieces
 can safely replace enclosing-box rejection in the actual planner. Existing
 hand clearance, protected-plant checks and runtime contact guards stay active.
+
+### Native geometry agreement and current planning limits
+
+`python -B -m sim_physics.cooked_query_probe --output NEW_DATA_SIM_PHYSICS_DIR`
+creates one stopped, diagnostic robot/plant stage, parses native actors, captures
+four explicitly selected colliders and compares labelled native ray queries.
+It never advances physics or changes the source assets. Use Isaac's Python.
+
+Native `cooked_query_20260911_03` passes 2,328 sampled rays with source state
+unchanged; maximum distance error 1.517 micrometres. This is **sampled query
+agreement**, not exhaustive shape equivalence or a collision-free robot path.
+Two preceding blocked reports are preserved: `_01` used a vertex hull that
+differs from native polygon planes; `_02` corrected the planes but bound source
+state before native parsing changed session bookkeeping. `_03` binds after
+parsing and preserves the native planes with full inverse-transpose transforms.
+Do not re-hull captured vertices and assume they enclose the native solid:
+some fitted polygon planes extend outside that hull. `convex_clearance.py`
+therefore remains advisory, not an actor-clearance authorization.
+
+The bimanual harness has opt-in `--native-static-clearance`. Only conservative
+boxes of fitted right camera/knife attachments can refine an existing static
+scene-box rejection, using native `overlap_box` on the *whole tool box plus
+the unchanged margin*. Dynamic stems/leaves, arm/self checks and all later
+IK/transit/native safety checks remain mandatory. Positive collider coverage,
+bounded queries, owned scene/physics-change subscriptions and final validation
+prevent reuse outside one synchronous planning snapshot. Missing, changed or
+late query evidence fails closed. This does not prove complete simulation-shape
+query coverage and cannot interrupt a stalled native call.
+
+Pre-hardening native trial `bimanual_cut_20260911_31` re-verifies the known grasp,
+clears 605 conservative pair rejections with 867 native queries and still finds
+**zero** complete corridors/IK attempts across 756 proposals (560 hand/tool,
+196 scene failures). Planning takes 3.178 s, not a camera-FPS measurement.
+No right motion or cut occurs; the report is not a success case.
+
+`--cut-proposal-json` replaces the orientation grid with ONE explicit,
+source-target-bound world-direction proposal. It cannot supply target position,
+mounting, margin, contact permission or skip IK. Projection onto the fresh
+measured stem axis must stay below the declared limit (at most one degree).
+This enables controlled left-posture tests without accidentally rotating the
+right corridor too. It remains privileged diagnostic input, not VLM execution.
+
+### Isolated progressive material-interface prototype
+
+`cohesive.py` implements an explicitly parameterized, uncalibrated bilinear
+mixed-mode cohesive law: persistent material-point history, irreversible
+damage, elastic unload/reload and area-scaled stored/dissipated energy. It has
+one common fracture energy across modes; it does not implement a general
+mixed-mode toughness fit. Compression and friction are separate. No timer,
+commanded displacement, native release API or production default is present.
+
+`cohesive_native_probe.py` couples four material facets to native implicit D6
+springs in an isolated, zero-gravity two-body laboratory coupon. There is no
+FixedJoint or parallel weld across the failing interface. Damage uses measured
+post-step material-anchor displacement, then updates next-step secant stiffness;
+this is a one-step-lagged coupling, not an implicit nonlinear fracture solve.
+Drive forces/work are reconstructed, **not native force sensor readbacks**.
+The present bridge deliberately stops on compression rather than claiming a
+validated unilateral contact law.
+
+Example, from `examples/greenhouse_sim`, with a new output directory:
+
+```powershell
+& D:/isaac-sim-6.0.1/python.bat -B -m sim_physics.cohesive_native_probe --native-run --kn-pa-m 1e8 --kt-pa-m 2e8 --strength-pa 1e4 --gc-j-m2 2 --physics-hz 960 --case softening --output ../../data/sim_physics/my_cohesive_coupon
+```
+
+These are toy coupon parameters, not measured tomato tissue: reference area
+4 mm2, two native density-derived 4 g bodies, carriage stiffness300 N/m,
+damping8 N.s/m and cap0.08 N. Normal onset is0.1 mm, final separation0.4 mm,
+peak0.04 N and fracture energy8 microjoules. The carriage was chosen before
+native tests to avoid a known quasistatic instability of the earlier draft's
+100 N/m drive; material coefficients/guards were not changed between cases.
+
+Native `cohesive_subcritical_20260911_01`, `cohesive_disabled_20260911_01` and
+`cohesive_softening_20260911_01` each complete9,600 steps without a guard fault.
+The first two retain zero applied damage. Softening reaches complete separation
+at3.407292 s, dissipates8 microjoules and retains zero connection stiffness on
+unloading. Corresponding softening `_02`/`_03` complete at480/1920 Hz. These
+are restricted material-bridge tests: **no blade, grasp, plant, camera stream,
+cutting channel or training episode**. Passing all runs does not itself prove
+timestep convergence; separation timing at480 Hz misses the strict proposed
+timing comparison despite completing safely.
+
+Next: a local, continuous deforming contact band on both sides of the seam,
+with spatially progressive failure and measured passage of the actual6 mm
+plate. Simply replacing two rounded capsules' FixedJoint cannot create that
+channel. Bulk/closing-contact tests and source-volume mass checks must precede
+blade loading. The production beam, original knife mount, material defaults
+and legacy shear qualification thresholds are unchanged by these prototypes.

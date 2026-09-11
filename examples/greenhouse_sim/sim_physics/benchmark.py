@@ -14,6 +14,14 @@ import time
 import traceback
 
 
+def report_configuration(args,output):
+    """Keep failure reports serializable when optional CLI paths are supplied."""
+    result={k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()}
+    result['output']=str(output)
+    json.dumps(result,allow_nan=False)  # Fail before native work, not during publication.
+    return result
+
+
 def parser():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--output',type=Path,required=True)
@@ -42,6 +50,8 @@ def parser():
     p.add_argument('--diagnostic-detach',action='store_true')
     p.add_argument('--full-robot-probe',action='store_true',help='Full dynamic v1.2 robot with an IK-driven left arm')
     p.add_argument('--bimanual-cut',action='store_true',help='Guarded native left grasp and original right knife seam-release qualification')
+    p.add_argument('--native-static-clearance',action='store_true',help='Opt-in live native static-box refinement during the single synchronous bimanual plan')
+    p.add_argument('--cut-proposal-json',type=Path,help='One source-bound world-direction diagnostic instead of the default orientation grid; all safety/IK checks remain')
     p.add_argument('--cut-standoff-m',type=float,default=.025,
         help='Collision-screened precontact offset (8..25 mm), also checked against actual shaft size; bimanual only')
     p.add_argument('--bimanual-reposition-m',type=float,default=0.,
@@ -111,6 +121,10 @@ def main(argv=None):
         raise ValueError('Station yaw requires a full robot and finite +/-90 degrees')
     if args.bimanual_hold_control and not args.bimanual_cut:
         raise ValueError('Bimanual hold control requires the guarded bimanual harness')
+    if getattr(args,'native_static_clearance',False) and not args.bimanual_cut:
+        raise ValueError('Native static clearance requires the bimanual harness')
+    if getattr(args,'cut_proposal_json',None) is not None and not args.bimanual_cut:
+        raise ValueError('Single cut proposal requires the bimanual harness')
     if args.station_offset is not None and (not args.full_robot_probe
             or not all(math.isfinite(x) for x in args.station_offset)
             or math.hypot(*args.station_offset)>.3):
@@ -188,7 +202,7 @@ def main(argv=None):
     if args.physics_threads is not None:
         process_settings.set_int(thread_setting,args.physics_threads)
     report=dict(state='initializing',started_utc=datetime.now(timezone.utc).isoformat(),
-                configuration={**vars(args),'output':str(output)},training_eligible=False)
+                configuration=report_configuration(args,output),training_eligible=False)
     try:
         import numpy as np
         import omni.usd
@@ -260,6 +274,8 @@ def main(argv=None):
                 robot_class=BimanualRobot
                 robot_options['cut_standoff']=args.cut_standoff_m
                 robot_options['grasp_compression']=args.grasp_compression_m
+                robot_options['native_static_clearance']=getattr(args,'native_static_clearance',False)
+                robot_options['cut_proposal_json']=getattr(args,'cut_proposal_json',None)
             fixture=robot_class(stage,rig,arc=args.grasp_arc_m,friction=args.finger_friction,**robot_options)
             source_hashes[fixture.asset]=hashlib.sha256(fixture.asset.read_bytes()).hexdigest()
             report['robot_probe']=fixture.report()

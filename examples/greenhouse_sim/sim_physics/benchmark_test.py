@@ -1,6 +1,9 @@
+import json
+from pathlib import Path
+
 import pytest
 
-from sim_physics.benchmark import main, parser
+from sim_physics.benchmark import main, parser, report_configuration
 
 
 def test_fixed_articulation_requires_attached_only_before_kit_or_output_creation(tmp_path):
@@ -14,6 +17,48 @@ def test_default_probe_includes_release_and_does_not_use_gpu():
     args=parser().parse_args(['--output','unused'])
     assert args.constraint_mode=='articulation'
     assert not args.attached_only and not args.gui and args.render_hz==0
+
+
+@pytest.mark.parametrize('proposal', [None, 'review inputs/single_proposal.json'])
+def test_report_configuration_serializes_optional_cut_proposal(proposal):
+    # Exercise the real CLI types and the actual report configuration helper.
+    # No source file, output directory, or native runtime is opened here.
+    argv=['--output','unused']
+    if proposal is not None:argv+=['--cut-proposal-json',proposal]
+    args=parser().parse_args(argv)
+    configuration=report_configuration(args,args.output.resolve())
+    expected=None if proposal is None else str(Path(proposal))
+    for state in ('initializing','failed','passed_bimanual_mechanism_not_robot_task'):
+        report=dict(state=state,configuration=configuration,training_eligible=False)
+        restored=json.loads(json.dumps(report,allow_nan=False))
+        assert restored['configuration']['cut_proposal_json']==expected
+        assert restored['configuration']['output']==configuration['output']
+
+
+@pytest.mark.parametrize('missing', [('native_static_clearance',), ('cut_proposal_json',),
+    ('native_static_clearance','cut_proposal_json')])
+def test_legacy_namespace_without_opt_ins_reaches_existing_validation(monkeypatch,tmp_path,missing):
+    from types import SimpleNamespace
+    import sim_physics.benchmark as module
+    output=tmp_path/'must_not_create'
+    args=parser().parse_args(['--output',str(output),'--constraint-mode','fixed_articulation'])
+    values=vars(args).copy()
+    for name in missing:del values[name]
+    legacy=SimpleNamespace(**values)
+    monkeypatch.setattr(module,'parser',lambda:SimpleNamespace(parse_args=lambda argv:legacy))
+    # This later, unchanged validation prevents any output/native creation.
+    with pytest.raises(ValueError,match='attached-only'):module.main([])
+    assert not output.exists()
+    assert all(not hasattr(legacy,name) for name in missing)
+
+
+@pytest.mark.parametrize('extra,message', [
+    (['--native-static-clearance'],'Native static clearance requires'),
+    (['--cut-proposal-json','proposal.json'],'Single cut proposal requires')])
+def test_explicit_opt_ins_still_require_bimanual_before_native(tmp_path,extra,message):
+    output=tmp_path/'must_not_create'
+    with pytest.raises(ValueError,match=message):main(['--output',str(output),*extra])
+    assert not output.exists()
 
 
 @pytest.mark.parametrize('extra', [[], ['--gui'], ['--gui','--render-hz','30'],
