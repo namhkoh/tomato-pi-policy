@@ -8,6 +8,7 @@ from .knife import KnifeGeometry,ShearGate,mount_forward,cut_plane_normal,transv
 
 class BimanualRobot(FullRobotGripper):
     def __init__(self,*args,**kwargs):
+        standoff=kwargs.pop('cut_standoff',.025)
         kwargs.setdefault('station_offset',(0.,0.))
         kwargs.setdefault('approach_side',1)
         super().__init__(*args,**kwargs)
@@ -17,11 +18,15 @@ class BimanualRobot(FullRobotGripper):
         self.blade_contacts=refine_blade_contacts(self.stage,self.root)
         old=self.root+'/ee_right/attachments/DeleafKnife/BladeCollision'
         self.collider_paths=[p for p in self.collider_paths if p!=old]+self.blade_contacts['collider_paths']
+        from .arc_contacts import refine_arc_contacts
+        self.arc_contacts=refine_arc_contacts(self.stage,self.root)
+        old_arc=self.root+'/ee_right/attachments/DeleafKnife/ArcCollision'
+        self.collider_paths=[p for p in self.collider_paths if p!=old_arc]+self.arc_contacts['collider_paths']
         self.knife=KnifeGeometry(self.stage,self.root)
         from pxr import UsdGeom
         radius=max(float(UsdGeom.Capsule.Get(self.stage,self.rig.body_paths[i]+'/StemCollider').GetRadiusAttr().Get())
             for i in (self.rig.cut_index-1,self.rig.cut_index))
-        self.stroke_offsets=transverse_stroke_offsets(radius,self.knife.size[0])
+        self.stroke_offsets=transverse_stroke_offsets(radius,self.knife.size[0],standoff)
         self.cut_gate=ShearGate(self.rig.source_target)
         self.cut_authorized=False;self.edge_points=[];self.edge_impulses=[]
         self.cut_contacts=0;self.cut_event=None;self.plan=None
@@ -198,13 +203,16 @@ class BimanualRobot(FullRobotGripper):
         for tilt in (0.,-10.,10.):
             candidates=[]
             usable_wing=float(self.knife.size[1]/2-.005)
-            for degrees,normal_sign,wing in [(a,s,w) for w in (0.,-usable_wing/2,usable_wing/2,-usable_wing,usable_wing) for s in (1,-1)
-                    for a in (0,15,-15,30,-30,45,-45,90,-90,135,-135,180)]:
+            for degrees,normal_sign,wing in [(a,s,w) for w in (0.,-usable_wing/2,usable_wing/2,-.9*usable_wing,.9*usable_wing,-usable_wing,usable_wing) for s in (1,-1)
+                    for a in (0,15,-15,30,-30,45,-45,60,-60,90,-90,120,-120,135,-135,150,-150,180)]:
                 angle=np.radians(degrees)
                 d=direction*np.cos(angle)+np.cross(axis,direction)*np.sin(angle)
                 normal=cut_plane_normal(d,normal_sign*axis,tilt)
-                if normal[2]<0: continue  # original curved support remains up
-                desired=self.knife.wrist_for_edge(centre-.025*d,d,normal,wing)
+                # Mounting roll is fixed on the wrist. Both signs of a
+                # transverse cutting plane are valid wrist poses; global
+                # "arc up" is not a cut-contact criterion. Scene/tool checks
+                # still reject the support hitting the main stem or left hand.
+                desired=self.knife.wrist_for_edge(centre+self.stroke_offsets[0]*d,d,normal,wing)
                 solution=self.kin.solve_pose('right',desired,self.right,self.base,maximum_evaluations=250)
                 attempt=dict(angle=degrees,normal_sign=normal_sign,wing_m=wing,plane_tilt_degrees=tilt,
                     position_error_m=solution.position_error_m,orientation_error_rad=solution.orientation_error_rad,
@@ -323,6 +331,7 @@ class BimanualRobot(FullRobotGripper):
             minimum_grasp_self_capsule_clearance_m=self.minimum_grasp_self_clearance,
             knife_mount=self.knife_mount,
             blade_contact_geometry=self.blade_contacts,
+            arc_contact_geometry=self.arc_contacts,
             planning_wall_seconds=getattr(self,'planning_wall_seconds',None),
             cut_plan_diagnostics=self.plan_diagnostics,
             cut_model='measured_contact_seam_failure_not_calibrated_tissue_cutting')

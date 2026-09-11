@@ -64,6 +64,15 @@ now make the separate attachment, cut and grasp locations inspectable.
 
 ## What the current evidence supports
 
+Latest planning increment follows mounting commit `d0866e4`. Source-preserving
+arc contact partitions and primitive narrow-phase screening improve geometry
+coverage. Both transverse wrist orientations and bounded initial station/grasp
+alternatives are being tested. Native trials `_23`/`_24` reject leaf-obstructed
+farther grasps; `_25` re-verifies the original grasp but rejects all 756 expanded
+right endpoints. **No successful current-environment cut is established yet.**
+Offline `paired_layout` proposals, including `_13`'s three clear endpoints, are
+not native paths, grasps or training data. Detailed evidence is in `dev.md`.
+
 - Supplied greenhouse + full native RB-Y1 A v1.2 articulation. The left arm
   approaches a privileged fixture target, closes physical fingers, verifies
   opposing contact, moves 10 mm, holds and opens. There is no grasp weld.

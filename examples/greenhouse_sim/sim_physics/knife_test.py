@@ -45,6 +45,11 @@ def test_geometry_sized_stroke_covers_shaft_without_fixed_overtravel():
     assert np.diff(path).min()>0 and np.diff(path).max()<=.0005+1e-12
     for radius,width in ((0,.002),(.003,float('nan')),(.02,.002)):
         with pytest.raises(ValueError): transverse_stroke_offsets(radius,width)
+    close=transverse_stroke_offsets(.003,.002,.008)
+    assert close[0]==-.008 and close[-1]==path[-1]
+    assert np.diff(close).max()<=.0005+1e-12
+    for standoff in (.0069,.026,float('nan')):
+        with pytest.raises(ValueError): transverse_stroke_offsets(.003,.002,standoff)
 
 
 def test_original_knife_and_blade_release_preserve_source(native):
@@ -84,6 +89,11 @@ def test_original_knife_and_blade_release_preserve_source(native):
     assert not UsdPhysics.Joint.Get(stage,rig.cut_joint_path).GetJointEnabledAttr().Get()
     rig.restore_authored_state()
     assert stage.GetRootLayer().ExportToString()==original
+
+    # Disabling a replacement support piece cannot silently erase protection.
+    part=stage.GetPrimAtPath(robot.arc_contacts['collider_paths'][0])
+    UsdPhysics.CollisionAPI(part).CreateCollisionEnabledAttr(False)
+    with pytest.raises(ValueError,match='arc support'): KnifeGeometry(stage,robot.root)
 
 
 def test_knife_roll_corrects_old_mount_without_moving_flange_or_camera():
@@ -218,3 +228,17 @@ def test_oblique_plane_preserves_anatomical_axis_and_existing_angular_gates(tilt
 def test_invalid_oblique_proposals_fail_closed(direction,axis,tilt):
     from sim_physics.knife import cut_plane_normal
     with pytest.raises(ValueError): cut_plane_normal(direction,axis,tilt)
+
+
+def test_both_transverse_plane_signs_satisfy_same_physical_gate():
+    # World-up is not material identity. Neither sign removes contact/travel,
+    # grasp, load, transverse direction or target-local axial requirements.
+    from sim_physics.knife import cut_plane_normal
+    for sign in (1,-1):
+        knife=object.__new__(KnifeGeometry);knife.local=np.eye(4);knife.size=np.array([.002,.05,.006])
+        gate=ShearGate('petiole');events=[]
+        for i in range(12):
+            centre=np.array([-i*.0001,0.,0.])
+            frame=knife.wrist_for_edge(centre,[-1.,0,0],cut_plane_normal([-1,0,0],[0,0,sign],0))
+            events.append(sample(gate,i*.0001,edge=frame))
+        assert sum(e is not None for e in events)==1

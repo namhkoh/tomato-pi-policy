@@ -39,7 +39,7 @@ def finger_compliance(finger_masses,stem_mass):
 
 class FullRobotGripper(GripperFixture):
     def __init__(self,stage,rig,*,arc=.08,friction=.5,ground_height=None,
-                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025):
+                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None):
         from pxr import Gf,Sdf,Usd,UsdGeom,UsdPhysics,UsdShade
         from greenhouse_sim.robot_model import DEFAULT_ASSET,DEFAULT_URDF
         from greenhouse_sim.robot_kinematics import Rby1Kinematics,base_transform
@@ -108,11 +108,31 @@ class FullRobotGripper(GripperFixture):
         if self.station_offset.shape!=(2,) or not np.isfinite(self.station_offset).all() or np.linalg.norm(self.station_offset)>.3:
             raise ValueError('Initial station adjustment must be finite and within 0.3 m')
         self.base[:3,3]+=self.station_offset[0]*forward+self.station_offset[1]*left
+        self.explicit_station_pose=None
+        if station_pose is not None:
+            pose=np.asarray(station_pose,float)
+            if (pose.shape!=(3,) or not np.isfinite(pose).all() or abs(pose[2])>180
+                    or not .25<=np.linalg.norm(pose[:2]-rig.chain_world[0,:2])<=1.
+                    or np.any(self.station_offset) or self.station_yaw):
+                raise ValueError('Explicit station requires x/y/yaw within 0.25..1 m of target and no relative station offsets')
+            self.base=base_transform([pose[0],pose[1],.001],pose[2])
+            self.explicit_station_pose=pose.tolist()
         if ground_height is not None: self.base[2,3]+=ground_height(*self.base[:2,3])
         self.pose=dict(SDK_READY_POSE_DEGREES)
         self.pose.update({f'torso_{i}':float(v) for i,v in enumerate(self.kin.default_torso_degrees())})
         self.right=np.array([self.pose[f'right_arm_{i}'] for i in range(7)])
         result=self.kin.solve_pose('left',self.start,[self.pose[f'left_arm_{i}'] for i in range(7)],self.base)
+        self.pregrasp_ik_attempts=1
+        if not result.succeeded:
+            # The 7-DOF arm has wrist/elbow branches. A single ready-pose seed
+            # can hit a wrist limit without proving the target unreachable.
+            lower,upper=self.kin.arm_limits_degrees('left')
+            for wrist_roll in (-120.,0.,120.):
+                seed=np.array([self.pose[f'left_arm_{i}'] for i in range(7)],dtype=float)
+                seed[6]=wrist_roll;seed=np.clip(seed,lower+.1,upper-.1)
+                result=self.kin.solve_pose('left',self.start,seed,self.base,maximum_evaluations=400)
+                self.pregrasp_ik_attempts+=1
+                if result.succeeded: break
         if not result.succeeded: raise ValueError('Full-robot pregrasp IK failed: '+str(result))
         self.initial_q=np.array(result.joint_degrees)
         self.pose.update({f'left_arm_{i}':v for i,v in enumerate(self.initial_q)})
@@ -243,6 +263,7 @@ class FullRobotGripper(GripperFixture):
     def report(self):
         return dict(asset=str(self.asset),scope='full_dynamic_robot_native_joint_drives',
             arm_ik_solved=True,grasp_weld=False,plant_pose_override=False,base_fixed=True,
+            pregrasp_ik_seed_attempts=self.pregrasp_ik_attempts,
             robot_base_world=self.base.tolist(),grasp_body=self.grasp_path,grasp_arc_m=self.arc,
             ground_truth_grasp=dict(target_petiole=self.rig.source_target,
                 attachment_world_m=self.rig.chain_world[0].tolist(),
@@ -254,6 +275,7 @@ class FullRobotGripper(GripperFixture):
                 frame='authored_rest_world_not_live_observation'),
             initial_station_forward_left_offset_m=self.station_offset.tolist(),
             initial_station_yaw_adjustment_degrees=self.station_yaw,
+            explicit_initial_station_xy_yaw=self.explicit_station_pose,
             source_colliders_retained=len(self.collider_paths),finger_max_drive_force_n=.5,
             mounting_proxy_exclusions=self.mount_exclusions,self_collision_enabled=True,
             contact_monitor='sparse_native_events' if self.sparse_contacts else 'dense_pair_matrices',

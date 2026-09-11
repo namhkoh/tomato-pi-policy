@@ -105,6 +105,14 @@ class KnifeGeometry:
             raise ValueError('Knife edge/plate/support semantics or contacts invalid')
         if UsdGeom.Imageable(blade).ComputeVisibility()=='invisible':
             raise ValueError('Original knife blade is not visible')
+        if not UsdPhysics.CollisionAPI(arc_contact).GetCollisionEnabledAttr().Get():
+            group=stage.GetPrimAtPath(self.root+'/ArcContacts')
+            expected=group.GetAttribute('tomato:contactPartCount').Get() if group else None
+            parts=list(group.GetChildren()) if group else []
+            if (not isinstance(expected,int) or not 1<=expected<=14 or len(parts)!=expected
+                    or any(not part.HasAPI(UsdPhysics.CollisionAPI)
+                        or not UsdPhysics.CollisionAPI(part).GetCollisionEnabledAttr().Get() for part in parts)):
+                raise ValueError('Knife arc support has missing or disabled contact partitions')
         self.size=np.linalg.norm(matrix[:3,:3],axis=0)*float(UsdGeom.Cube(edge).GetSizeAttr().Get())
         self.local=matrix.copy();self.local[:3,:3]/=np.linalg.norm(matrix[:3,:3],axis=0)
         if not np.allclose(self.local[:3,:3].T@self.local[:3,:3],np.eye(3),atol=1e-6):
@@ -142,7 +150,7 @@ class KnifeGeometry:
         return edge@np.linalg.inv(self.local)
 
 
-def transverse_stroke_offsets(stem_radius,edge_width):
+def transverse_stroke_offsets(stem_radius,edge_width,standoff=.025):
     """Cover the shaft, not an arbitrary 12 mm of post-seam overtravel.
 
     End only after the full leading strip clears the shaft radius plus 1 mm
@@ -153,7 +161,9 @@ def transverse_stroke_offsets(stem_radius,edge_width):
         raise ValueError('Positive finite shaft radius and leading-strip width required')
     end=float(stem_radius+edge_width/2+.001)
     if end>.012: raise ValueError('Shaft exceeds the bounded diagnostic cutting corridor')
-    return np.linspace(-.025,end,int(np.ceil((end+.025)/.0005))+1)
+    if not np.isfinite(standoff) or not end+.002<=standoff<=.025:
+        raise ValueError('Precontact standoff must clear the shaft/edge/margin plus 2 mm and remain <=25 mm')
+    return np.linspace(-standoff,end,int(np.ceil((end+standoff)/.0005))+1)
 
 
 class ShearGate:

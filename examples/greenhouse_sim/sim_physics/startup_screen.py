@@ -11,6 +11,7 @@ def screen(stage,robot):
     from pxr import Usd,UsdGeom,UsdPhysics
     from sim_data.capture_viewpoints import triangles_intersect_box
     from .capsule_surface import world_capsule,segment_triangles_distance
+    from greenhouse_sim.robot_kinematics import _segment_segment_distance,_segment_aabb_distance
     cache=UsdGeom.BBoxCache(Usd.TimeCode.Default(),['default','render','guide','proxy'],False,True)
     transforms=UsdGeom.XformCache()
     robots=[];obstacles=[];hits=[];tested=0
@@ -46,12 +47,27 @@ def screen(stage,robot):
                     # Both diagonal choices preserve a conservative superset.
                     faces=np.concatenate((tris,*(quads[:,choice] for choice in ([0,1,2],[0,2,3],[0,1,3],[1,2,3]))))
                 triangles=points[faces]
+        obstacle_capsule=world_capsule(prim,np.asarray(transforms.GetLocalToWorldTransform(prim)).T)
         for i in nearby:
             rp,rpath,rlo,rhi=robots[i]
             body=robot.root+'/'+rpath[len(robot.root)+1:].split('/')[0]
             if robot.floor_root and (path==robot.floor_root or path.startswith(robot.floor_root+'/')) and body in {
                     robot.root+'/base',robot.root+'/wheel_l',robot.root+'/wheel_r'}: continue
             tested+=1;overlap=True
+            if obstacle_capsule is not None:
+                a,b,radius=obstacle_capsule
+                matrix=np.asarray(transforms.GetLocalToWorldTransform(rp)).T
+                robot_capsule=world_capsule(rp,matrix)
+                if robot_capsule is not None:
+                    ra,rb,rr=robot_capsule
+                    overlap=_segment_segment_distance(a,b,ra,rb)<=radius+rr+.001
+                else:
+                    scale=np.linalg.norm(matrix[:3,:3],axis=0);axes=matrix[:3,:3]/scale
+                    if np.allclose(axes.T@axes,np.eye(3),atol=1e-6):
+                        bound=cache.ComputeUntransformedBound(rp).ComputeAlignedRange()
+                        blo,bhi=np.asarray(bound.GetMin()),np.asarray(bound.GetMax())
+                        centre=matrix[:3,:3]@((blo+bhi)/2)+matrix[:3,3]
+                        overlap=_segment_aabb_distance(axes.T@(a-centre),axes.T@(b-centre),scale*(bhi-blo)/2)<=radius+.001
             if triangles is not None:
                 near=np.all(triangles.max(axis=1)>=rlo,axis=1)&np.all(triangles.min(axis=1)<=rhi,axis=1)
                 overlap=False
@@ -75,4 +91,5 @@ def screen(stage,robot):
     return dict(passed=not hits,possible_overlap_count=len(hits),possible_overlaps=hits[:30],
         robot_collision_shapes=len(robots),scene_collision_shapes=len(obstacles),tested_broad_pairs=tested,
         method='collision_boxes_with_triangle_and_uniform_capsule_surface_refinement',
+        primitive_capsule_narrow_phase=True,
         whole_path_certified=False,self_collision_certified=False)

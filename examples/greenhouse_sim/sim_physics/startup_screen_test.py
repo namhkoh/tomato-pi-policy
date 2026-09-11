@@ -44,3 +44,16 @@ def test_quad_refinement_clears_empty_bbox_corner_but_not_solid_containment():
     assert not screen(stage,fixture)['passed']
     UsdGeom.Xformable(obstacle).AddTranslateOp().Set(Gf.Vec3d(3,0,0))
     assert screen(stage,fixture)['passed']
+
+
+def test_capsule_narrow_phase_clears_only_empty_rotated_box_corners():
+    stage=Usd.Stage.CreateInMemory()
+    box=UsdGeom.Cube.Define(stage,'/World/R/finger/shape');box.CreateSizeAttr(1.)
+    box.AddRotateZOp().Set(45.);box.AddScaleOp().Set(Gf.Vec3f(.1,.01,.01))
+    UsdPhysics.CollisionAPI.Apply(box.GetPrim())
+    stem=UsdGeom.Capsule.Define(stage,'/World/Stem');stem.CreateRadiusAttr(.002);stem.CreateHeightAttr(.03)
+    op=stem.AddTranslateOp();op.Set(Gf.Vec3d(.03,-.03,0))
+    UsdPhysics.CollisionAPI.Apply(stem.GetPrim())
+    robot=SimpleNamespace(root='/World/R',floor_root=None)
+    assert screen(stage,robot)['passed']
+    op.Set(Gf.Vec3d(.02,.02,0));assert not screen(stage,robot)['passed']

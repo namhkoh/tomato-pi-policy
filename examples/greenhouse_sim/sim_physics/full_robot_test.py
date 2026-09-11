@@ -77,11 +77,31 @@ def test_station_offset_requires_full_robot(tmp_path):
     assert parser().parse_args(['--output','unused']).station_offset is None
 
 
+@pytest.mark.parametrize('extra',[
+    ['--station-pose','nan','0','0'],['--station-pose','0','0','181'],
+    ['--station-pose','.5','.5','0','--station-offset','0','0'],
+    ['--station-pose','.5','.5','0','--station-yaw','1'],
+    ['--approach-vector','0','0','0'],['--approach-vector','0','nan','1']])
+def test_explicit_station_and_approach_reject_invalid_cli_before_kit(tmp_path,extra):
+    from sim_physics.benchmark import main
+    with pytest.raises(ValueError): main(['--output',str(tmp_path/'unused'),'--full-robot-probe',*extra])
+    assert not (tmp_path/'unused').exists()
+
+
+@pytest.mark.parametrize('extra',[
+    ['--station-pose','.5','.5','0'],['--approach-vector','1','0','0']])
+def test_explicit_station_and_approach_require_full_robot(tmp_path,extra):
+    from sim_physics.benchmark import main
+    with pytest.raises(ValueError): main(['--output',str(tmp_path/'unused'),*extra])
+    assert not (tmp_path/'unused').exists()
+
+
 @pytest.mark.parametrize('option,value',[
     ('--torso-yaw','nan'),('--torso-yaw','46'),('--torso-yaw','20'),
     ('--station-yaw','nan'),('--station-yaw','91'),('--station-yaw','45'),
     ('--grasp-depth-m','nan'),('--grasp-depth-m','.089'),('--grasp-depth-m','.126'),('--grasp-depth-m','.125'),
     ('--cut-arc-m','.009'),('--cut-arc-m','.021'),('--cut-arc-m','.02'),('--cut-arc-m','nan'),
+    ('--cut-standoff-m','.007'),('--cut-standoff-m','.026'),('--cut-standoff-m','nan'),('--cut-standoff-m','.008'),
     ('--approach-distance','nan'),('--approach-distance','.009'),
     ('--approach-distance','.081'),('--approach-distance','.02'),('--grasp-roll','180')])
 def test_initial_pose_options_fail_closed_without_qualified_full_robot(tmp_path,option,value):
@@ -115,6 +135,13 @@ def test_grasp_depth_and_shorter_approach_keep_base_and_roll_preserves_geometry(
     np.testing.assert_allclose(first_goal[:3,2],second.goal[:3,2],atol=1e-9)
     np.testing.assert_allclose(first_goal[:3,:2],-second.goal[:3,:2],atol=1e-9)
     assert np.linalg.norm(second.start[:3,3]-second.goal[:3,3])==pytest.approx(.02)
+    stage.RemovePrim(second.root)
+    station=[first_base[0,3],first_base[1,3],np.degrees(np.arctan2(first_base[1,0],first_base[0,0]))]
+    third=FullRobotGripper(stage,rig,station_pose=station,approach_distance=.02,grasp_roll=180,grasp_depth=.125,**kwargs)
+    np.testing.assert_allclose(third.base,first_base,atol=1e-9)
+    assert third.report()['explicit_initial_station_xy_yaw']==station
+    third.restore_authored_state()
+    np.testing.assert_allclose(third.base,first_base,atol=1e-9)
 
 
 def test_cutting_cannot_silently_run_without_native_contact_and_gripper_guards(tmp_path):

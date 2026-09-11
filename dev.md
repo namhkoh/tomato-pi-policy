@@ -4101,3 +4101,52 @@ decision, split or training export changed. Successful cutting/withdrawal/
 post-cut retention/deposit remains **unverified**. Next work is jointly choosing
 a left grasp orientation and right-tool corridor, including mounted camera/arc
 geometry, not bypassing safety gates.
+
+## 2026-09-11: committed knife, paired-layout and contact-screen diagnostics
+
+The requested knife mounting is committed as `d0866e4` on `koh-dev/sim-vlm`.
+That wrist-Z correction is retained unchanged. The user requested continued
+work until cutting is correct; **the complete native cut is still unverified**.
+The previous interactive GUI was closed for serial native qualification;
+the earlier statement that it remains open no longer applies.
+
+- Replaced the source arc's unknown cooked convex-decomposition planning box
+  with 14 explicit source-triangle spatial convex partitions. Every original
+  surface is retained, and the upper open window is no longer filled by one
+  contact box. The same parts serve native contacts and conservative planning
+  bounds. Visible meshes/mounting/source assets are unchanged. Missing/disabled
+  replacement parts fail knife validation. No protected contact filter changed.
+- Added capsule-versus-oriented-box narrow-phase startup checks: an overlap of
+  world bounding boxes alone no longer rejects the empty corner beside a rotated
+  finger. Exact intersections still reject; unsupported shapes stay conservative.
+- Added explicit fixed initial station XY/yaw and palm approach-vector options,
+  without live base/plant motion. Relative and absolute station modes cannot mix.
+  A bounded left wrist-seed fallback avoids interpreting one IK branch failure
+  as unreachable. Default station/grasp/solver/effort settings are preserved.
+- Right wrist proposals now include both signs of the transverse blade plane;
+  the fixed mounting roll is not a world-up wrist constraint. Expanded angle/
+  usable-edge sampling retains the same force, direction, clearance and grasp
+  gates. An opt-in 8..25 mm precontact standoff is checked against actual shaft
+  radius, edge width and clearance; it is not permission to start in contact.
+- Added offline `sim_physics.paired_layout` with preserved rejection evidence,
+  configurable initial poses and optional fixed-shoulder redundancy proposals
+  (`redundant_ik`). These use exact URDF FK, not hardware commands. An endpoint
+  proposal is NOT a checked transit/stroke or native grasp. Full greenhouse,
+  dynamic contact and retention qualification must follow. No training approval.
+
+Evidence in `data/sim_physics` (failures retained):
+
+| Run | Measured result |
+|---|---|
+| `paired_layout_20260911_01` .. `_23` | Offline searches, some early ones interrupted and preserved as partial. Configurations, source-derived geometry, IK and collision rejection records; no physics stepping. `_13` finds three clear cutter endpoint proposals for a 117.802 mm grasp, but this does not validate grasp or the path. |
+| `bimanual_cut_20260911_23` | Full greenhouse, farther 117.802 mm grasp. Native leaf contact prevents opposing selected-shaft contact. Rejects at grasp verification; no right motion/cut. |
+| `_24` | Intermediate grasp likewise blocked by the first leaf: one shaft contact and both fingers touching leaf geometry. Not relabelled as a stem grasp; no right motion/cut. |
+| `_25` | Original 46.676 mm grasp again verifies (all 3..3.5 s samples bilateral). Expanded search: 756 endpoints, 300 IK converged, 122 interarm rejects, 155 self/tool rejects, 23 scene rejects; zero all-clear endpoints and no cut. Scene conflicts include right upper arm / distal leaf and right arm / neighboring SubStem43. |
+
+Regression: **822 tests + 47 subtests passed** (102.46 s), covering sim_physics,
+robot kinematics, clocks and sim_data; log
+`data/sim_physics/regression_20260911_knife_planning.log`. Tests of a contact gate
+or offline endpoint are not measured tissue cutting or successful manipulation.
+Remaining work: establish a jointly feasible native grasp and whole right-tool
+corridor, then validate edge load/release/withdraw/retain with unchanged guards.
+No hardware, collection, tuning, review, split or training-export changes.

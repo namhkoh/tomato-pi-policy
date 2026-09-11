@@ -42,6 +42,8 @@ def parser():
     p.add_argument('--diagnostic-detach',action='store_true')
     p.add_argument('--full-robot-probe',action='store_true',help='Full dynamic v1.2 robot with an IK-driven left arm')
     p.add_argument('--bimanual-cut',action='store_true',help='Guarded native left grasp and original right knife seam-release qualification')
+    p.add_argument('--cut-standoff-m',type=float,default=.025,
+        help='Collision-screened precontact offset (8..25 mm), also checked against actual shaft size; bimanual only')
     p.add_argument('--bimanual-hold-control',action='store_true',
         help='Negative control: hold left grasp with right arm parked; never qualifies as cutting')
     p.add_argument('--robot-interactive',action='store_true',help='Keep the full-robot test window open with replay controls')
@@ -55,6 +57,10 @@ def parser():
         help='Initial fixed-base station offset only (norm <=0.3 m); never moves a running robot')
     p.add_argument('--station-yaw',type=float,default=0.,
         help='Initial station heading relative to palm approach, within +/-90 degrees; no live base motion')
+    p.add_argument('--station-pose',type=float,nargs=3,metavar=('X_M','Y_M','YAW_DEG'),
+        help='Explicit fixed station independent of grasp orientation; full robot only, no live base motion')
+    p.add_argument('--approach-vector',type=float,nargs=3,
+        help='Explicit initial palm approach direction for paired-layout qualification')
     p.add_argument('--grasp-roll',type=int,choices=(0,180),default=0,
         help='Initial equivalent finger orientation about palm approach axis; native grasp must be requalified')
     p.add_argument('--grasp-depth-m',type=float,default=.1025,
@@ -77,6 +83,9 @@ def parser():
 
 def main(argv=None):
     args=parser().parse_args(argv)
+    if not math.isfinite(args.cut_standoff_m) or not .008<=args.cut_standoff_m<=.025 or (
+            args.cut_standoff_m!=.025 and not args.bimanual_cut):
+        raise ValueError('Cut standoff requires bimanual qualification within 8..25 mm')
     if not math.isfinite(args.cut_arc_m) or not .01<=args.cut_arc_m<=.02 or (
             args.cut_arc_m!=.01 and not args.bimanual_cut):
         raise ValueError('Non-default cut arc requires bimanual qualification within 10..20 mm')
@@ -101,6 +110,12 @@ def main(argv=None):
         raise ValueError('Torso yaw requires a package full robot and finite +/-45 degrees')
     if args.bimanual_cut and (not args.full_robot_probe or not args.sparse_contacts or not args.finger_gravity or args.seconds<20):
         raise ValueError('Bimanual cutting requires full robot, sparse contacts, finger gravity and >=20 seconds')
+    if args.station_pose is not None and (not args.full_robot_probe or args.station_offset is not None
+            or args.station_yaw or not all(math.isfinite(v) for v in args.station_pose) or abs(args.station_pose[2])>180):
+        raise ValueError('Explicit station requires full robot, finite x/y/yaw and no relative offsets')
+    if args.approach_vector is not None and (not args.full_robot_probe
+            or not all(math.isfinite(v) for v in args.approach_vector) or sum(v*v for v in args.approach_vector)<1e-12):
+        raise ValueError('Approach vector requires full robot and a finite nonzero direction')
     if not args.robot_auto_run and not args.robot_interactive:
         raise ValueError('Disabling robot auto-run requires robot interactive mode')
     if args.robot_interactive and (not args.full_robot_probe or not args.gui or not args.render_hz):
@@ -179,6 +194,8 @@ def main(argv=None):
             approach_tilt=args.approach_tilt,grasp_roll=args.grasp_roll,approach_distance=args.approach_distance,
             compliant_fingers=args.compliant_fingers,station_yaw=args.station_yaw,grasp_depth=args.grasp_depth_m)
         if args.station_offset is not None: robot_options['station_offset']=args.station_offset
+        if args.station_pose is not None: robot_options['station_pose']=args.station_pose
+        if args.approach_vector is not None: robot_options['approach_vector']=args.approach_vector
         if args.scene=='package' and args.full_robot_probe:
             from .greenhouse_scene import prepare
             from sim_data.floor_alignment import PACKAGE_FLOOR
@@ -225,6 +242,7 @@ def main(argv=None):
             if args.bimanual_cut:
                 from .bimanual import BimanualRobot
                 robot_class=BimanualRobot
+                robot_options['cut_standoff']=args.cut_standoff_m
             fixture=robot_class(stage,rig,arc=args.grasp_arc_m,friction=args.finger_friction,**robot_options)
             source_hashes[fixture.asset]=hashlib.sha256(fixture.asset.read_bytes()).hexdigest()
             report['robot_probe']=fixture.report()
