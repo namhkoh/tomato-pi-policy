@@ -4,6 +4,57 @@ This is an opt-in engineering harness on `koh-dev/sim-vlm`, not a replacement
 for the static dataset collector, and not yet a validated robot manipulation
 environment. Do not collect training demonstrations from this harness.
 
+## September 12: camera-aligned knife and precise closer grasp
+
+The tested inspection launcher is **grasp-only**, not a repaired cutting demo:
+
+```bat
+examples\greenhouse_sim\run_camera_aligned_grasp_demo.cmd --output D:\research\tomato-pi-policy\data\sim_physics\camera_grasp_review_new
+```
+
+Use a new output directory. It opens the full greenhouse paused at the test
+start; press **Run left grasp (hold only)**. The right knife remains parked.
+The guide toggle distinguishes the protected junction, nominal cut and grasp.
+
+- `--knife-alignment camera` rotates the entire original knife about wrist Z
+  so its arc is on the actual right-camera radial side (-90 degrees relative
+  to the previous approved mount). Camera/bracket/flange translations and
+  source meshes remain unchanged. **Global blade-down is a wrist-pose
+  requirement, not established merely by this mount correction.**
+- `--exact-grasp-arc --grasp-arc-m .060` places the grasp at 60 mm from the
+  attachment, not the old nearest-segment centre at 71.126 mm. Planning,
+  post-fetch slip and guide markers use the same body-local material point.
+  The nominal cut stays at 10 mm. Native65 held this closer point for the
+  20-second test with verified bilateral contact, no guard fault, max slip
+  0.1903 mm and 34 mm initial finger-to-cut-plane clearance. This is not
+  post-cut retention or general grasp reliability.
+- A more aggressive 46.676 mm centre grasp (native64) reached the unchanged
+  0.5 N finger-contact limit at 2.9125 seconds and is **not approved**.
+- `--cut-style downward` is a separate **unqualified** planner mode. It
+  projects gravity onto the fresh stem-transverse plane (at most 30 degrees
+  from down), screens the complete blade stroke, requires 0.80..0.98 arm
+  extension, and uses a straight Cartesian approach with no RRT detour.
+  Pose/force/collision/retention gates remain. Upward measured blade
+  directions cannot authorize release. Legacy world proposals/fixed-shoulder
+  constraints cannot silently override this mode. No successful native
+  downward sequence has been recorded; the nearer stance in native66 was
+  rejected before dynamics for surrounding-plant overlaps. Native67 at the
+  original station verified the closer grasp, then rejected all 50 tool
+  corridors before right-arm motion (27 hand/camera and 23 blade-plate/main-
+  stem conflicts), retaining native-query and conservative collision checks.
+- Batched rigid-pose validation preserves all scalar tolerances and validates
+  every new frame. Matched profiled native62/63 reduced median control tick
+  16.19 -> 13.34 ms with four physics threads; recorded physics/contact values
+  were identical, excluding wall-clock validation receipts. This is a modest
+  improvement, **not real-time performance** or a GUI FPS measurement. Neither
+  visuals, source geometry, contact reporting nor physics rate was reduced.
+
+Evidence lives under `data/sim_physics/bimanual_latency_20260912_62`, `_63`,
+`bimanual_downward_20260912_64`, `bimanual_exact_grasp_20260912_65`, and
+`bimanual_downward_20260912_66` / `_67`. The CPU/USD regression passed 3,082
+tests (`data/sim_physics/regression_20260912_downward_v2.log`); this is not
+native cutting qualification. See `dev.md` for limitations.
+
 ## Experimental knife integration, September 11
 
 Latest checkpoint: the shared left-grasp corridor screen now checks open-jaw

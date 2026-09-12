@@ -5405,3 +5405,92 @@ No hardware, collection, tuning, review, split or training-export changes.
   3038 passed; the first run's test-only NameError was corrected and rerun.
   Full grasp-cut-retain-withdraw still requires a physically qualified spring/
   contact integration; tissue fracture calibration and deposit remain absent.
+
+### 2026-09-12: User-requested closer grasp, camera alignment and downward path
+
+- User GUI61 reproduced the baseline signed seam release at11.866667 s,
+  then withdrawal rejection at11.9 s.11.9 simulated seconds cost71.267 wall
+  seconds; median control15.287 ms, native step11.013 ms, render17.494 ms.
+  A planning call cost11.217 s. This is not real-time performance. Startup
+  also reported severe OS commit pressure; helper/CPU imports sometimes failed
+  with a paging-file error. No unrelated process or memory setting was changed.
+- Added opt-in `--knife-alignment camera`: measure the original right wrist
+  camera radial placement, and rotate the COMMON knife parent about wrist Z
+  (-90 degrees relative to legacy) to put the arc on that same side. The flange
+  translation, camera/bracket transforms, original visible meshes and all blade/
+  arc collision parts stay intact. Unknown mounting fails closed; repeat is
+  idempotent. Legacy/coupon mode does not require a camera. This is geometric
+  alignment, NOT CAD screw certification. Global blade-down still requires a
+  validated wrist pose and is not claimed for the parked SDK-ready posture.
+- Added opt-in `--exact-grasp-arc`. Old requests snap to ~24.45 mm segment
+  centres, making small requested changes ineffective or abruptly changing
+  the contacted segment. The new hand goal is a material point inside the
+  selected existing capsule. Settled replanning, post-fetch slip, report and
+  guide markers use its rotating body-local offset. No plant vertex, body,
+  joint, mass, gain or source asset is moved/edited by this option. All original
+  full-finger cut-plane and native contact guards remain.
+- Native64 used the closer centre46.675573 mm with camera-aligned knife.
+  The approach/closure geometry screen passed, but native contact reached the
+  unchanged0.5 N per-finger cap at2.9125 s before bilateral verification. This
+  setup is REJECTED. No knife motion/release occurred and no guard was loosened.
+- Native65 uses exact60 mm (old centre71.125955 mm), nominal cut10 mm and
+  0.5 mm closure compression. Its20-second right-parked HOLD CONTROL completes
+  all4800 ticks bounded, left grasp verified, max slip0.190292 mm and final
+  slip0.000896 mm. Initial full-finger cut-plane clearance34.0 mm (required10).
+  This moves the grasp11.126 mm closer and preserves source assets. The overall
+  bimanual report deliberately remains FAILED because no cutting/withdrawal/
+  post-cut retention/deposit was attempted. This is one qualified hold case,
+  not a general reliability claim or a calibrated plant material model.
+- Added opt-in `--cut-style downward`: fresh measured stem-transverse gravity
+  direction, no >30-degree deviation from down, complete <=0.5 mm tool stroke,
+  arm chord/length ratio0.80..0.98, and straight Cartesian transit with <=2 mm
+  pose samples plus <=1-degree joint screening and <=0.5 mm line deviation.
+  Failed straight transit has NO joint-space detour fallback. All IK/self/plant/
+  native-force gates remain, and measured non-downward blade direction refuses
+  release. Legacy proposal/fixed-shoulder flags cannot override the new mode.
+  These are planning constraints, NOT proof of a completed physical sequence.
+- Offline plant-only posture checks found nearer-stance downward IK candidates,
+  but native66 at station(0.3,0.9,-128.5445 deg) failed the full-greenhouse
+  startup screen with10 possible overlaps, including torso/target foliage and
+  left-wrist/main-stem contacts. Physics did not start. No surrounding vine or
+  collision was removed. A full-scene-valid coordinated stance/grasp/tool
+  approach is still required; new downward cutting has NOT been demonstrated.
+- Profiled native62 isolated the slow step: native simulate median10.613 ms;
+  disabling optional profiler output alone did not solve it. Batched rigid-pose
+  checks now copy/validate ALL current frames with unchanged scalar tolerances,
+  without caching past frames or dropping contacts. Native63 uses this plus4
+  physics threads: median control16.189 ->13.337 ms (~18% lower), post-step
+  4.408 ->2.758 ms, native simulate10.613 ->9.502 ms. Profiled headless RTF
+  0.1627 ->0.1821. All2856 trajectory rows' physical/contact/guard values match
+  native62 exactly; differences are only8 wall-time receipts,8 remaining wall
+  budgets and1 fault receipt time. Same cut time11.866667 s, same withdrawal
+  rejection11.9 s and max slip0.097463 mm. This is NOT a GUI FPS measurement.
+- `run_camera_aligned_grasp_demo.cmd` exposes only the tested closer HOLD
+  inspection, with clear hold-only UI/button/result labels and no automatic
+  motion. It is not advertised as a grasp-cut-retain demo. Existing legacy
+  cutting defaults remain available; the unqualified downward mode is opt-in.
+- No hardware commands, dataset collection/review/split changes, training,
+  source-asset modifications, collision disabling or fidelity reduction.
+  Full downward cut/withdrawal/retention/deposit and real-time latency remain
+  unresolved.
+- Native67 retests the ORIGINAL collision-clear robot station with exact60 mm
+  grasp, camera alignment and the downward planner, with native static queries
+  enabled. Left grasp verifies again; at3.5 s all50 proposed tool corridors are
+  rejected before arm IK/motion:27 left-hand/right-camera conflicts and23 blade
+  plate/protected-main-stem conflicts.104 native queries clear one coarse
+  rejection; the remaining checks retain their conservative margins. This does
+  not prove every possible downward approach impossible or every bound overlap
+  an actual mesh collision. No knife contact or release occurred. Evidence:
+  `data/sim_physics/bimanual_downward_20260912_67/report.json`.
+- Additional offline exact60 mm grasp checks at the original XY station and
+  three headings found no clear tested tool subset. Moving the diagnostic cut
+  from10 to20 mm within the existing admissible interval did not clear those
+  sampled conflicts either. These are bounded CPU geometry checks, not native
+  execution or a justification to change the nominal cut. The launcher still
+  uses10 mm. A jointly feasible grasp orientation, wrist-tool corridor and
+  robot stance must be established before promoting downward execution.
+- Final CPU/USD regression:3082 passed in161.11 s; evidence:
+  `data/sim_physics/regression_20260912_downward_v2.log`. The earlier regression
+  caught two legacy coupon fixtures without cameras and three synthetic
+  report fixtures without the new material-point fields; backward compatibility
+  was restored, then the complete suite rerun. `git diff --check` passed.

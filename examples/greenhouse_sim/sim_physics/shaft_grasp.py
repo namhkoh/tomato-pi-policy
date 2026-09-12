@@ -34,6 +34,24 @@ def _pose(value):
     return result
 
 
+def _poses(value):
+    """Batch the SAME rigid-transform checks, without relaxing any tolerance.
+
+    One owned, read-only copy per batch. No cache, frame skipping or trust in
+    previously validated state: every supplied native pose is checked each step.
+    """
+    result=np.array(value,dtype=float,copy=True)
+    if result.ndim!=3 or result.shape[1:]!=(4,4) or not np.isfinite(result).all():
+        raise ValueError('Finite ordered rigid transform array required')
+    r=result[:,:3,:3]
+    if (not np.allclose(result[:,3,:],[0,0,0,1],atol=1e-7,rtol=0)
+            or not np.allclose(np.swapaxes(r,1,2)@r,np.eye(3),atol=1e-5,rtol=0)
+            or not np.allclose(np.linalg.det(r),1,atol=1e-5,rtol=0)):
+        raise ValueError('Rigid unscaled transform required')
+    result.setflags(write=False)
+    return result
+
+
 def _number(value, low, high):
     if isinstance(value, (bool, np.bool_)) or not np.isfinite(value) or not low <= value <= high:
         raise ValueError('Scalar outside validated range')
@@ -215,7 +233,9 @@ class ShaftGraspEvidence:
         eligible = {s.collider for s in self.candidates
                     if s.body == selected or frozenset((selected, s.body)) in links}
         shapes = (*self.candidates, *self.pads)
-        world = {s.collider: _pose(_pose(body_frames[s.body]) @ s.local_frame) for s in shapes}
+        frames=_poses([body_frames[s.body] for s in shapes])
+        colliders=_poses(frames@np.array([s.local_frame for s in shapes]))
+        world = {s.collider:m for s,m in zip(shapes,colliders,strict=True)}
         forces = np.zeros((2, 3)); loads = np.zeros(2); counts = [0, 0]
         pairs = {}; rejected = []; points = []; separations = []
         for row, (i, other, point, normal, impulse, separation) in enumerate(self.rows):

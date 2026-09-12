@@ -45,9 +45,11 @@ class TargetMarkers:
     Default render purpose makes the opt-in guides visible without globally
     displaying hidden physics proxies. This is a non-training GUI only.
     """
-    def __init__(self,stage,rig,grasp_index):
+    def __init__(self,stage,rig,grasp_index,*,grasp_offset_m=0.):
         from pxr import Sdf,Usd,UsdGeom
         self.stage=stage;self.rig=rig;self.grasp_index=grasp_index;self.visible=False;self.ops={}
+        if not np.isfinite(grasp_offset_m):raise ValueError('Finite material-point offset required')
+        self.grasp_offset_m=float(grasp_offset_m)
         with Usd.EditContext(stage,stage.GetSessionLayer()):
             self.root=UsdGeom.Xform.Define(stage,'/World/DiagnosticTargetMarkers')
             self.root.GetPrim().CreateAttribute('tomato:diagnosticOnly',Sdf.ValueTypeNames.Bool).Set(True)
@@ -70,6 +72,7 @@ class TargetMarkers:
         i=self.rig.cut_index
         half=np.linalg.norm(self.rig.chain_world[i+1]-self.rig.chain_world[i])/2
         points=dict(Attachment=self.rig.chain_world[0],
-            Cut=frames[i,:3,3]-half*frames[i,:3,2],Grasp=frames[self.grasp_index,:3,3])
+            Cut=frames[i,:3,3]-half*frames[i,:3,2],
+            Grasp=frames[self.grasp_index,:3,3]+self.grasp_offset_m*frames[self.grasp_index,:3,2])
         with Usd.EditContext(self.stage,self.stage.GetSessionLayer()):
             for name,point in points.items(): self.ops[name].Set(Gf.Vec3d(*point))

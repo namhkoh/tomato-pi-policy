@@ -57,7 +57,7 @@ def leading_face_normal(normal,direction):
     return bool(lengths>1e-9 and abs(np.dot(n,d))/lengths>=np.cos(np.pi/6))
 
 
-def mount_forward(stage,robot_root):
+def mount_forward(stage,robot_root,*,alignment='legacy'):
     """Distal knife with the corrected 180-degree wrist roll, session-only.
 
     EE -Z remains distal. Relative to the previous forward mount, rotate
@@ -65,7 +65,12 @@ def mount_forward(stage,robot_root):
     Apply to the common parent so visuals, support, contacts and semantic edge
     stay together. Recognize explicit source/old/new frames: repeat is a no-op,
     and an unknown mounting fails closed rather than accumulating rotations.
+    The opt-in camera alignment adds a wrist-Z roll to put source +Z (arc
+    radial side) on the camera bracket's actual radial side. Global blade-down
+    orientation must still be planned at the wrist; it is not a mounting claim.
     """
+    if alignment not in ('legacy','camera'):
+        raise ValueError('Knife alignment must be legacy or camera')
     from pxr import Usd,UsdGeom
     from .plant import matrix_attr
     wrist=stage.GetPrimAtPath(robot_root+'/ee_right')
@@ -77,14 +82,35 @@ def mount_forward(stage,robot_root):
     parent=inverse@np.asarray(cache.GetLocalToWorldTransform(root.GetParent())).T
     source=np.array([[0.,0.,1.],[-1.,0.,0.],[0.,-1.,0.]])
     previous=np.diag([-1.,1.,-1.])@source
-    desired=np.diag([-1.,-1.,1.])@previous
+    legacy=np.diag([-1.,-1.,1.])@previous
+    camera=stage.GetPrimAtPath(str(wrist.GetPath())+'/attachments/RightWristCamera')
+    camera_side=None;camera_aligned=None;angle=0.
+    if camera:
+        camera_relative=inverse@np.asarray(cache.GetLocalToWorldTransform(camera)).T
+        radial=camera_relative[:2,3]
+        if np.isfinite(camera_relative).all() and np.linalg.norm(radial)>=.01:
+            camera_side=radial/np.linalg.norm(radial)
+            angle=float(np.arctan2(radial[1],radial[0]));c,s=np.cos(angle),np.sin(angle)
+            camera_aligned=np.array([[c,-s,0],[s,c,0],[0,0,1.]])@legacy
+    if alignment=='camera' and camera_aligned is None:
+        raise ValueError('Right wrist camera must define an unambiguous radial mounting side')
+    desired=camera_aligned if alignment=='camera' else legacy
     result=dict(changed=False,rotation_wrist_axis='Z',rotation_degrees=180,
         rotation_reference='previous_distal_mount',knife_extends_along='wrist_minus_z',
         flat_edge_faces='wrist_minus_y',curved_support_side='wrist_plus_x',
         source_asset_edited=False,
         hardware_fit='geometric_flange_alignment_not_CAD_fastener_certification')
+    result.update(alignment=alignment,
+        camera_side_wrist=None if camera_side is None else camera_side.tolist(),
+        additional_roll_from_legacy_degrees=float(np.degrees(angle)) if alignment=='camera' else 0.,
+        world_downward_orientation='requires_validated_wrist_pose_not_mount_rotation_alone')
+    if alignment=='camera':
+        result.update(flat_edge_faces='opposite_rotated_source_edge_x',
+            curved_support_side='same_radial_side_as_right_wrist_camera',
+            rotation_reference='legacy_distal_mount',rotation_degrees=float(np.degrees(angle)))
     if np.allclose(relative[:3,:3],desired,atol=1e-6): return result
-    if not any(np.allclose(relative[:3,:3],r,atol=1e-6) for r in (source,previous)):
+    known=(source,previous,legacy)+(() if camera_aligned is None else (camera_aligned,))
+    if not any(np.allclose(relative[:3,:3],r,atol=1e-6) for r in known):
         raise ValueError('Unknown knife mounting; do not guess a correction')
     corrected=relative.copy();corrected[:3,:3]=desired
     with Usd.EditContext(stage,stage.GetSessionLayer()):

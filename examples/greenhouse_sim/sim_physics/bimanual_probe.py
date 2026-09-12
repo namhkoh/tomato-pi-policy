@@ -54,7 +54,11 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             and not getattr(args,'bimanual_hold_control',False)):
         raise ValueError('Raw contact diagnostic is restricted to a right-parked hold control')
     fixture.bind(sim.physics_sim_view)
-    clock=PhysicsClock(sim,physics_hz=args.physics_hz,render_hz=args.render_hz)
+    step_context=sim
+    if getattr(args,'step_profile',False):
+        from .step_profile import MeasuredStep
+        step_context=MeasuredStep(sim)
+    clock=PhysicsClock(step_context,physics_hz=args.physics_hz,render_hz=args.render_hz)
     records=[];events=[];captures={};fault=None;stable=0;lost=0
     grasp_local=None;goal_set=False;planned=False;grasp_verified=False;cut_time=None;cut_fraction=0.
     last_right_command=('park',0.)
@@ -123,7 +127,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         nonlocal contact_springs_started
         t=stamp.simulation_time_s
         if t>=.9 and not goal_set:
-            fixture.goal[:3,3]=runtime.frames[fixture.body_index,:3,3]+fixture.grasp_depth*fixture.goal[:3,2]
+            fixture.goal[:3,3]=fixture.grasp_point(runtime.frames)+fixture.grasp_depth*fixture.goal[:3,2]
             fixture.plan_approach()
             grasp_screen=fixture.screen_grasp_scene(runtime.frames)
             events.append(dict(t=t,event='left_grasp_corridor_screened',result=grasp_screen))
@@ -150,13 +154,13 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             events.append(dict(t=t,event='left_grasp_verified',grasp_body=fixture.grasp_path,
                 consecutive_bilateral_steps=stable))
             palm=pose_matrices(fixture.palm.get_transforms())[0]
-            grasp_local=(runtime.frames[fixture.body_index,:3,3]-palm[:3,3])@palm[:3,:3]
+            grasp_local=(fixture.grasp_point(runtime.frames)-palm[:3,3])@palm[:3,:3]
         if grasp_verified and not planned and not hold_control and t>=plan_time:
             if stable<int(.1*args.physics_hz):
                 raise RuntimeError('Held target not stable after reposition; no right-arm execution')
             events.append(dict(t=t,event='native_grasp_reobserved_before_cut_plan',
                 requested_reposition_m=reposition,grasp_body=fixture.grasp_path,
-                grasp_world_m=runtime.frames[fixture.body_index,:3,3].tolist(),
+                grasp_world_m=fixture.grasp_point(runtime.frames).tolist(),
                 seam_world_m=fixture.seam(runtime.frames)[0].tolist()))
             q=np.degrees(fixture.robot.get_dof_positions()[0,fixture.left_indices])
             positions=fixture.robot.get_dof_positions()[0]
@@ -259,13 +263,14 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         stable=stable+1 if c['bilateral'] else 0
         lost=0 if c['bilateral'] else lost+1
         palm=pose_matrices(fixture.palm.get_transforms())[0]
-        slip=None if grasp_local is None else float(np.linalg.norm((frame[:3,3]-palm[:3,3])@palm[:3,:3]-grasp_local))
+        grasp_point=fixture.grasp_point(frames)
+        slip=None if grasp_local is None else float(np.linalg.norm((grasp_point-palm[:3,3])@palm[:3,:3]-grasp_local))
         speed=float(np.linalg.norm(velocity[:,:3],axis=1).max())
         total=float(np.linalg.norm(fixture.all_contacts.get_net_contact_forces(dt),axis=1).max())
         support=float(np.linalg.norm(frames[:rig.cut_index,:3,3]-rig.rest_frames[:rig.cut_index,:3,3],axis=1).max())
         seam,_=fixture.seam(frames)
         record=dict(t=stamp.simulation_time_s,contact=c,slip_m=slip,palm=palm.tolist(),
-            grasp_point=frame[:3,3].tolist(),max_speed_m_s=speed,max_gripper_net_contact_n=total,
+            grasp_point=grasp_point.tolist(),max_speed_m_s=speed,max_gripper_net_contact_n=total,
             support_error_m=support,seam_world=seam.tolist(),
             detached_seam_gap_m=float(np.linalg.norm(seam-rig.chain_world[rig.cut_index])),cut=rig.cut)
         # Snapshot after the native step. target_palm() clears the event stream
@@ -396,6 +401,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         negative_control_no_right_motion=hold_control,
         requested_pre_cut_reposition_m=reposition,
         target_source='privileged_test_fixture_not_perception_verified',training_eligible=False)
+    if step_context is not sim: result['step_profile']=step_context.report()
     (output/'bimanual_trajectory.json').write_text(json.dumps(records,allow_nan=False),encoding='utf-8')
     if contact_stream is not None:fixture.event_monitor.full_contact_observer=None
     fixture.release_grasp_observer()

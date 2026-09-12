@@ -100,7 +100,7 @@ class FullRobotGripper(GripperFixture):
     finger_actuator_limit_n=.5
 
     def __init__(self,stage,rig,*,arc=.08,friction=.5,ground_height=None,
-                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None,grasp_skew=0.,finger_actuator_limit_n=.5):
+                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None,grasp_skew=0.,finger_actuator_limit_n=.5,exact_grasp_arc=False):
         self.finger_actuator_limit_n=_finger_actuator_limit(finger_actuator_limit_n)
         if self.finger_actuator_limit_n==.8 and not all(
                 flag is True for flag in (sparse_contacts,finger_gravity,compliant_fingers)):
@@ -122,13 +122,20 @@ class FullRobotGripper(GripperFixture):
             raise ValueError('Grasp must leave clearance from the diagnostic seam')
         self.requested_grasp_arc=float(arc)
         self.arc=float((rig.arcs[self.body_index]+rig.arcs[self.body_index+1])/2)
+        if type(exact_grasp_arc) is not bool: raise ValueError('Explicit exact grasp-arc flag required')
+        self.body_centre_arc=self.arc
+        self.grasp_offset_m=float(arc-self.arc) if exact_grasp_arc else 0.
+        if exact_grasp_arc and not rig.arcs[self.body_index]<=arc<=rig.arcs[self.body_index+1]:
+            raise ValueError('Requested grasp must remain inside the selected shaft segment')
+        self.exact_grasp_arc=exact_grasp_arc
+        if exact_grasp_arc:self.arc=float(arc)
         self.grasp_path=rig.body_paths[self.body_index]
         self.half_length=float(np.linalg.norm(rig.chain_world[self.body_index+1]-rig.chain_world[self.body_index])/2)
         self.radius=float(UsdGeom.Capsule.Get(stage,self.grasp_path+'/StemCollider').GetRadiusAttr().Get())
         # Side entry avoids the fixed foliage above this shaft. A kinematic
         # palm fixture does not reveal palm-vs-static contacts; the full dynamic
         # arm does, so do not reuse its top-down approach blindly.
-        point=rig.rest_frames[self.body_index,:3,3]
+        point=self.grasp_point(rig.rest_frames)
         y=rig.rest_frames[self.body_index,:3,2]
         z=np.asarray(approach_vector,dtype=float).copy()
         if z.shape!=(3,) or not np.isfinite(z).all(): raise ValueError('Invalid approach vector')
@@ -300,6 +307,15 @@ class FullRobotGripper(GripperFixture):
         # The opt-in concerns the LEFT gripper only, not unloaded right DOFs.
         return self.finger_actuator_limit_n if name in ('gripper_finger_l1','gripper_finger_l2') else .5
 
+    def grasp_point(self,frames):
+        """The same material point for planning, live slip and guide markers.
+
+        Exact arc positioning changes the hand goal only, never body geometry,
+        topology, masses or poses. Legacy segment-centre behavior remains default.
+        """
+        frame=np.asarray(frames[self.body_index],float)
+        return frame[:3,3]+getattr(self,'grasp_offset_m',0.)*frame[:3,2]
+
     def _author_initial_joints(self):
         from pxr import Sdf,UsdPhysics
         from .plant import physics_schema
@@ -343,8 +359,10 @@ class FullRobotGripper(GripperFixture):
                 attachment_world_m=self.rig.chain_world[0].tolist(),
                 cut_world_m=self.rig.chain_world[self.rig.cut_index].tolist(),
                 cut_arc_m=float(self.rig.arcs[self.rig.cut_index]),
-                grasp_world_m=self.rig.rest_frames[self.body_index,:3,3].tolist(),
-                requested_arc_m=self.requested_grasp_arc,selected_body_centre_arc_m=self.arc,
+                grasp_world_m=self.grasp_point(self.rig.rest_frames).tolist(),
+                requested_arc_m=self.requested_grasp_arc,selected_body_centre_arc_m=getattr(self,'body_centre_arc',self.arc),
+                actual_grasp_arc_m=self.arc,exact_grasp_arc=getattr(self,'exact_grasp_arc',False),
+                body_local_grasp_offset_m=getattr(self,'grasp_offset_m',0.),
                 detachable_side=True,placement_screen=self.grasp_clearance,
                 frame='authored_rest_world_not_live_observation'),
             initial_station_forward_left_offset_m=self.station_offset.tolist(),
@@ -580,6 +598,7 @@ def interactive(app,sim,rig,fixture,args,output):
     from omni.kit.viewport.utility import get_active_viewport
     from .gripper_probe import run
     cutting=bool(getattr(args,'bimanual_cut',False))
+    hold_only=bool(getattr(args,'bimanual_hold_control',False))
     if cutting:
         from .bimanual_probe import run
     from .runtime import PlantRuntime
@@ -588,17 +607,17 @@ def interactive(app,sim,rig,fixture,args,output):
         UsdLux.DomeLight.Define(rig.stage,'/World/RobotProbeLight').CreateIntensityAttr(1400.)
     fixture.setup_views(get_active_viewport())
     from .grasp_target import TargetMarkers
-    markers=TargetMarkers(rig.stage,rig,fixture.body_index)
+    markers=TargetMarkers(rig.stage,rig,fixture.body_index,grasp_offset_m=fixture.grasp_offset_m)
     fixture.target_markers=markers
     request={'run':bool(getattr(args,'robot_auto_run',True)),'reset':False};runs=[]
     def command(name): request[name]=True
-    window=ui.Window('Full RB-Y1 - physical '+('grasp + cut' if cutting else 'grasp test'),width=410,height=740)
+    window=ui.Window('Full RB-Y1 - physical '+('grasp hold only' if hold_only else 'grasp + cut' if cutting else 'grasp test'),width=410,height=740)
     with window.frame:
         with ui.VStack(spacing=6):
             ui.Label('FULL DYNAMIC RBY1-A v1.2',height=25)
             ui.Label('IK-driven left arm, force-limited fingers. Original plant; only the target petiole is compliant. No grasp weld.',word_wrap=True,height=52)
-            status=ui.Label('Ready. Inspect the knife and target, then press Run.' if cutting else 'Ready. Run approach / grasp / 10 mm motion.',word_wrap=True,height=65)
-            ui.Button('Run left grasp + right knife' if cutting else 'Run grasp + 10 mm movement',height=30,clicked_fn=lambda:command('run'))
+            status=ui.Label('Ready: grasp hold only; right knife stays parked.' if hold_only else 'Ready. Inspect the knife and target, then press Run.' if cutting else 'Ready. Run approach / grasp / 10 mm motion.',word_wrap=True,height=65)
+            ui.Button('Run left grasp (hold only)' if hold_only else 'Run left grasp + right knife' if cutting else 'Run grasp + 10 mm movement',height=30,clicked_fn=lambda:command('run'))
             ui.Button('Stop test',height=26,clicked_fn=lambda:setattr(fixture,'stop_requested',True))
             ui.Button('Reset',height=26,clicked_fn=lambda:command('reset'))
             ui.Button('Show / hide ground-truth points',height=26,clicked_fn=markers.toggle)
@@ -642,6 +661,8 @@ def interactive(app,sim,rig,fixture,args,output):
                 (folder/'report.json').write_text(json.dumps(result,indent=2,allow_nan=False),encoding='utf-8')
                 runs.append(result)
                 status.text=('Limited mechanism test PASSED' if all(result['gates'].values()) else 'Test did NOT pass')+'\n'+str(result['error'] or result['gates'])
+                if hold_only and all(result['gates'].get(k) for k in ('bounded','completed','left_grasp_verified')):
+                    status.text='Grasp hold completed. No cut was attempted; cutting/retention/deposit remain unverified.'
                 (output/'live_status.json').write_text(json.dumps(result,indent=2,allow_nan=False),encoding='utf-8')
                 print('FULL_ROBOT_TRIAL '+json.dumps(dict(state=result['state'],error=result['error'],gates=result['gates'])),flush=True)
             else: status.text='Reset. Ready for a new grasp trial.'

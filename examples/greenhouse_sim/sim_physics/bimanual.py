@@ -14,8 +14,14 @@ from .contact_events import NativeNormalContact,original_order_tool_contact,NATI
 class BimanualRobot(FullRobotGripper):
     def __init__(self,*args,**kwargs):
         self.cut_model=kwargs.pop('cut_model',LEGACY_CUT_MODEL)
+        self.cut_style=kwargs.pop('cut_style','legacy')
+        self.knife_alignment=kwargs.pop('knife_alignment','legacy')
+        if self.cut_style not in ('legacy','downward'):
+            raise ValueError('Unknown cut style')
         cut_parameters=ShearParameters(model=self.cut_model)
         proposal_path=kwargs.pop('cut_proposal_json',None)
+        if self.cut_style=='downward' and proposal_path is not None:
+            raise ValueError('Downward policy cannot use an unrelated world-cut proposal')
         fixed=kwargs.pop('right_ik_fixed_joint',None)
         if fixed is not None:
             values=np.asarray(fixed)
@@ -25,6 +31,8 @@ class BimanualRobot(FullRobotGripper):
                 raise ValueError('Right IK fixed-joint proposal requires joint index 0..6 and finite degrees')
             fixed=(int(values[0]),float(values[1]))
         self.right_ik_fixed_joint=fixed
+        if self.cut_style=='downward' and fixed is not None:
+            raise ValueError('Downward policy cannot use legacy fixed-joint constraints')
         self.native_static_clearance=kwargs.pop('native_static_clearance',False)
         self.native_static_planning_seconds=kwargs.pop('native_static_planning_seconds',8.)
         if (isinstance(self.native_static_planning_seconds,(bool,np.bool_))
@@ -49,7 +57,7 @@ class BimanualRobot(FullRobotGripper):
         from .cut_proposal import load_cut_proposal
         self.cut_proposal=load_cut_proposal(proposal_path,source_target=self.rig.source_target)
         if not self.sparse_contacts: raise ValueError('Bimanual test requires sparse native contacts')
-        self.knife_mount=mount_forward(self.stage,self.root)
+        self.knife_mount=mount_forward(self.stage,self.root,alignment=self.knife_alignment)
         from .blade_contacts import refine_blade_contacts
         self.blade_contacts=refine_blade_contacts(self.stage,self.root)
         old=self.root+'/ee_right/attachments/DeleafKnife/BladeCollision'
@@ -115,7 +123,13 @@ class BimanualRobot(FullRobotGripper):
         """
         fixed=getattr(self,'right_ik_fixed_joint',None)
         if fixed is None:
-            return self.kin.solve_pose('right',desired,seed,self.base,maximum_evaluations=250)
+            result=self.kin.solve_pose('right',desired,seed,self.base,maximum_evaluations=250)
+            if getattr(self,'cut_style','legacy')=='downward' and not result.succeeded:
+                for wrist in (-120.,0.,120.):
+                    proposal=np.array(seed,float,copy=True);proposal[6]=wrist
+                    result=self.kin.solve_pose('right',desired,proposal,self.base,maximum_evaluations=250)
+                    if result.succeeded:break
+            return result
         from .redundant_ik import solve_fixed_joint
         return solve_fixed_joint(self.kin,'right',desired,seed,self.base,
             joint_index=fixed[0],joint_degrees=fixed[1],maximum_evaluations=250)
@@ -286,6 +300,9 @@ class BimanualRobot(FullRobotGripper):
         shoulder waypoints, then a seeded bounded bidirectional search. Every
         <=1-degree sample retains arm/tool and scene checks; no filter is changed.
         """
+        if getattr(self,'cut_style','legacy')=='downward':
+            from .downward_cut import cartesian_transit
+            return cartesian_transit(self,left_q,goal)
         lower,upper=self.kin.arm_limits_degrees('right')
         goal=np.asarray(goal,dtype=float)
         if (goal.shape!=(7,) or not np.isfinite(goal).all()
@@ -433,6 +450,13 @@ class BimanualRobot(FullRobotGripper):
         direction_norm=float(np.linalg.norm(direction))
         if not np.isfinite(direction_norm):raise ValueError('Finite legacy palm approach required')
         direction=direction/direction_norm if direction_norm>1e-12 else None
+        downward=getattr(self,'cut_style','legacy')=='downward'
+        if downward:
+            from .downward_cut import downward_direction
+            direction=downward_direction(axis)
+            self.plan_diagnostics['downward_direction_world']=direction.tolist()
+            self.plan_diagnostics['minimum_right_arm_extension']=.8
+            self.plan_diagnostics['maximum_right_arm_extension']=.98
         single=None
         if getattr(self,'cut_proposal',None) is not None:
             from .cut_proposal import resolve_cut_proposal
@@ -454,11 +478,14 @@ class BimanualRobot(FullRobotGripper):
         # the existing measured angular gate. Never replace actual stem truth
         # with the proposed blade normal when evaluating native contact.
         clear_endpoints=0
-        for tilt in ((single['plane_tilt_degrees'],) if single is not None else (0.,-10.,10.)):
+        tilts=(single['plane_tilt_degrees'],) if single is not None else ((0.,-10.,10.,-15.,15.) if downward else (0.,-10.,10.))
+        for tilt in tilts:
             usable_wing=float(self.knife.size[1]/2-.005)
             proposals=([(single_angle,single['normal_sign'],single['wing_m'])] if single is not None else
                 [(a,s,w) for w in (0.,-usable_wing/2,usable_wing/2,-.9*usable_wing,.9*usable_wing,-usable_wing,usable_wing) for s in (1,-1)
                     for a in (0,15,-15,30,-30,45,-45,60,-60,90,-90,120,-120,135,-135,150,-150,180)])
+            if downward:
+                proposals=[(0,s,w) for w in (0.,-usable_wing/2,usable_wing/2,-usable_wing,usable_wing) for s in (1,-1)]
             for degrees,normal_sign,wing in proposals:
                 if single is not None:d=single_direction.copy()
                 else:
@@ -489,6 +516,11 @@ class BimanualRobot(FullRobotGripper):
                 if not solution.succeeded:
                     attempt['rejection']='endpoint_IK';continue
                 q=np.array(solution.joint_degrees)
+                if downward:
+                    from .downward_cut import arm_extension
+                    attempt['right_arm_extension']=arm_extension(self.body_world(left_q,q))
+                    if not .8<=attempt['right_arm_extension']<=.98:
+                        attempt['rejection']='folded_or_fully_extended_right_arm';continue
                 clearance=self.kin.inter_arm_clearance(left_q,q,self.base).clearance_m
                 attempt['interarm_clearance_m']=clearance
                 if clearance<.01: attempt['rejection']='endpoint_arm_clearance';continue
@@ -531,6 +563,10 @@ class BimanualRobot(FullRobotGripper):
                     succeeded=bool(solution.succeeded)))
                 break
             seed=np.asarray(solution.joint_degrees)
+            if getattr(self,'cut_style','legacy')=='downward':
+                from .downward_cut import arm_extension
+                if not .8<=arm_extension(self.body_world(left_q,seed))<=.98:
+                    failure.update(rejection='folded_or_fully_extended_right_arm');break
             clearance=self.kin.inter_arm_clearance(left_q,seed,self.base).clearance_m
             minimum=min(minimum,clearance)
             failure.update(rejection='stroke_arm_clearance',interarm_clearance_m=clearance)
@@ -580,6 +616,9 @@ class BimanualRobot(FullRobotGripper):
         error=float(np.linalg.norm(actual[:3,3]-self.expected_right[:3,3]))
         if error>.012: raise RuntimeError(f'Right wrist tracking error {error:.5f} m')
         edge=self.knife.frame(actual);centre,axis=self.seam(frames)
+        if getattr(self,'cut_style','legacy')=='downward' and self.cut_authorized:
+            if (-edge[:3,0])[2]>-np.cos(np.radians(30)):
+                raise RuntimeError('Measured cutting direction is not downward; release refused')
         decision=self.cut_gate.observe(dt=dt,edge=edge,centre=centre,axis=axis,
             points=self.edge_points,impulses=self.edge_impulses,normals=self.edge_normals,
             impulse_contract=KNIFE_IMPULSE_CONTRACT,edge_contact_verified=True,
@@ -639,6 +678,7 @@ class BimanualRobot(FullRobotGripper):
             cut_plan_diagnostics=self.plan_diagnostics,
             right_ik_fixed_joint=getattr(self,'right_ik_fixed_joint',None),
             right_ik_policy='first_fully_screened_path_not_shortest_path',
+            cut_style=getattr(self,'cut_style','legacy'),
             cut_model=getattr(self,'cut_model',LEGACY_CUT_MODEL),
             cut_model_class='measured_contact_seam_failure_not_calibrated_tissue_cutting')
         if self.plan is not None:

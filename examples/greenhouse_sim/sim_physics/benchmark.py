@@ -47,11 +47,17 @@ def parser():
     p.add_argument('--gripper-probe',action='store_true',help='Bounded actual left-gripper contact fixture, not full-arm IK')
     p.add_argument('--finger-friction',type=float,default=.5)
     p.add_argument('--grasp-arc-m',type=float,default=.12)
+    p.add_argument('--exact-grasp-arc',action='store_true',
+        help='Use the requested material arc instead of snapping to a segment centre; bimanual diagnostic only')
     p.add_argument('--cut-arc-m',type=float,default=.01,
         help='Explicit diagnostic seam within agreed 10..20 mm petiole interval; original 10 mm default unchanged')
     p.add_argument('--diagnostic-detach',action='store_true')
     p.add_argument('--full-robot-probe',action='store_true',help='Full dynamic v1.2 robot with an IK-driven left arm')
     p.add_argument('--bimanual-cut',action='store_true',help='Guarded native left grasp and original right knife seam-release qualification')
+    p.add_argument('--knife-alignment',choices=('legacy','camera'),default='legacy',
+        help='Camera aligns the arc to the actual wrist camera radial side; original source asset untouched')
+    p.add_argument('--cut-style',choices=('legacy','downward'),default='legacy',
+        help='Downward: extended arm, transverse gravity-aligned stroke and straight Cartesian approach; no detour fallback')
     p.add_argument('--measured-withdrawal',action='store_true',
         help='Opt-in measured-start reverse path with fresh native geometry/hold checks; diagnostic only')
     p.add_argument('--native-static-clearance',action='store_true',help='Opt-in live native static-box refinement during the single synchronous bimanual plan')
@@ -120,6 +126,12 @@ def parser():
 
 def main(argv=None):
     args=parser().parse_args(argv)
+    if args.exact_grasp_arc and not args.bimanual_cut:
+        raise ValueError('Exact grasp arc requires bimanual qualification')
+    if (args.knife_alignment!='legacy' or args.cut_style!='legacy') and not args.bimanual_cut:
+        raise ValueError('Knife alignment and cut style require bimanual qualification')
+    if args.cut_style=='downward' and (args.cut_proposal_json is not None or args.right_ik_fixed_joint is not None):
+        raise ValueError('Downward style cannot reuse legacy direction or fixed-shoulder proposals')
     if not math.isfinite(args.grasp_skew) or abs(args.grasp_skew)>30 or (args.grasp_skew and not args.full_robot_probe):
         raise ValueError('Jaw skew requires a full robot and finite +/-30 degrees')
     if not math.isfinite(args.grasp_compression_m) or not .00025<=args.grasp_compression_m<=.001 or (
@@ -273,6 +285,7 @@ def main(argv=None):
         for component in audit['components'].values():
             path=manifest.parent/component['file'];source_hashes[path]=component['asset_sha256']
         robot_options=dict(sparse_contacts=args.sparse_contacts,finger_gravity=args.finger_gravity,
+            exact_grasp_arc=args.exact_grasp_arc,
             grasp_skew=args.grasp_skew,
             approach_tilt=args.approach_tilt,grasp_roll=args.grasp_roll,approach_distance=args.approach_distance,
             compliant_fingers=args.compliant_fingers,station_yaw=args.station_yaw,grasp_depth=args.grasp_depth_m)
@@ -326,6 +339,8 @@ def main(argv=None):
                 from .bimanual import BimanualRobot
                 robot_class=BimanualRobot
                 robot_options['cut_standoff']=args.cut_standoff_m
+                robot_options['knife_alignment']=args.knife_alignment
+                robot_options['cut_style']=args.cut_style
                 robot_options['grasp_compression']=args.grasp_compression_m
                 robot_options['native_static_clearance']=getattr(args,'native_static_clearance',False)
                 robot_options['native_static_planning_seconds']=getattr(args,'native_static_planning_seconds',8.)

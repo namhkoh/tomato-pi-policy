@@ -694,12 +694,13 @@ class ShaftGraspNative:
             if not np.isscalar(dt) or not np.isfinite(dt) or dt <= 0 or dt > 1:
                 raise ValueError("Finite positive step dt required")
             def ordered(value, paths):
+                from .shaft_grasp import _poses
                 if isinstance(value, dict):
-                    return {p: _pose(value[p]) for p in paths}
+                    value=[value[p] for p in paths]
                 array = np.asarray(value, dtype=float)
                 if array.shape != (len(paths), 4, 4):
                     raise ValueError("Exact ordered body frame array required")
-                return {p: _pose(m) for p, m in zip(paths, array, strict=True)}
+                return dict(zip(paths,_poses(array),strict=True))
             world = ordered(frames, self.body_paths)
             world.update(ordered(nativefingerframes, self.finger_paths))
             connected = self._connected()
