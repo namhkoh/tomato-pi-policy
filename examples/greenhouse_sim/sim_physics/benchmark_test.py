@@ -160,3 +160,9 @@ def test_contact_prediction_snapshot_requires_existing_grasp_diagnostic(tmp_path
     import pytest
     with pytest.raises(ValueError,match='Contact prediction snapshots'):
         main(['--output',str(tmp_path/'unused'),'--diagnostic-contact-prediction'])
+@pytest.mark.parametrize('value',['61','nan','30'])
+def test_pad_pitch_needs_isolated_downward_trial_before_kit(tmp_path,value):
+    output=tmp_path/'unused'
+    with pytest.raises(ValueError,match='Pad-span pitch'):
+        main(['--output',str(output),'--grasp-pitch',value])
+    assert not output.exists()

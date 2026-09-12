@@ -142,6 +142,8 @@ def parser():
         help='Initial equivalent finger orientation about palm approach axis; native grasp must be requalified')
     p.add_argument('--grasp-skew',type=float,default=0.,
         help='Bounded +/-30 degree jaw skew in the palm plane; requires native grasp requalification')
+    p.add_argument('--grasp-pitch',type=float,default=0.,
+        help='Isolated downward diagnostic: +/-60 degree pad-span pitch, no geometry or live pose override')
     p.add_argument('--grasp-depth-m',type=float,default=.1025,
         help='Shaft distance from the palm within the original pads: 90..125 mm; no live base or plant override')
     p.add_argument('--torso-yaw',type=float,default=0.,
@@ -234,6 +236,10 @@ def main(argv=None):
         raise ValueError('Downward style cannot reuse legacy direction or fixed-shoulder proposals')
     if not math.isfinite(args.grasp_skew) or abs(args.grasp_skew)>30 or (args.grasp_skew and not args.full_robot_probe):
         raise ValueError('Jaw skew requires a full robot and finite +/-30 degrees')
+    if (not math.isfinite(args.grasp_pitch) or abs(args.grasp_pitch)>60
+            or args.grasp_pitch and not (args.full_robot_probe and args.bimanual_cut
+                and args.cut_style=='downward' and args.isolated_cut_contact_trial)):
+        raise ValueError('Pad-span pitch requires the isolated downward full-robot trial within +/-60 degrees')
     if not math.isfinite(args.grasp_compression_m) or not .00025<=args.grasp_compression_m<=.001 or (
             args.grasp_compression_m!=.0005 and not args.bimanual_cut):
         raise ValueError('Grasp compression requires bimanual qualification within 0.25..1 mm')
@@ -410,6 +416,7 @@ def main(argv=None):
             left_ik_seed_degrees=args.left_ik_seed_degrees,
             anchored_pad_damping=args.anchored_pad_damping,
             grasp_skew=args.grasp_skew,
+            grasp_pitch=args.grasp_pitch,
             approach_tilt=args.approach_tilt,grasp_roll=args.grasp_roll,approach_distance=args.approach_distance,
             compliant_fingers=args.compliant_fingers,station_yaw=args.station_yaw,grasp_depth=args.grasp_depth_m)
         if args.station_offset is not None: robot_options['station_offset']=args.station_offset

@@ -80,3 +80,27 @@ def test_retraction_requires_real_corridor_and_rigid_frames(fault):
     if fault=='bottom':goal[3,0]=1
     if fault=='nan':goal[1,3]=np.nan
     with pytest.raises(ValueError):checked_approach_retraction(start,goal,.005)
+@pytest.mark.parametrize('degrees',[-60,-30,0,30,60])
+def test_pad_pitch_preserves_closing_axis_and_material_point(degrees):
+    from sim_physics.grasp_frame import pitch_for_pad_span
+    r=np.array([[0.,1,0],[0,0,1],[1,0,0]])
+    before=r.copy();result=pitch_for_pad_span(r,degrees)
+    np.testing.assert_allclose(result.T@result,np.eye(3),atol=1e-12)
+    np.testing.assert_array_equal(result[:,0],r[:,0])
+    np.testing.assert_array_equal(r,before)
+    assert result[:,2]@r[:,2]>=.5-1e-12
+    point=np.array([.02,.5,1.4]);depth=.1025
+    palm=point+depth*result[:,2]
+    np.testing.assert_allclose(result.T@(point-palm),[0,0,-depth],atol=1e-14)
+
+
+@pytest.mark.parametrize('degrees',[-61,61,float('nan'),True,[0]])
+def test_bad_pad_pitch_rejected(degrees):
+    from sim_physics.grasp_frame import pitch_for_pad_span
+    with pytest.raises(ValueError):pitch_for_pad_span(np.eye(3),degrees)
+
+
+def test_pad_pitch_rejects_nonrigid_rotation():
+    from sim_physics.grasp_frame import pitch_for_pad_span
+    for r in (np.ones((3,3)),np.diag([-1,1,1]),np.eye(4)):
+        with pytest.raises(ValueError):pitch_for_pad_span(r,30)

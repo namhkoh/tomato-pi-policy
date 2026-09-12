@@ -73,6 +73,7 @@ def fixture(limit=.8,sparse=True):
     f.approach_tilt=10.
     f.grasp_roll=180
     f.grasp_skew=0.
+    f.grasp_pitch=0.
     f.grasp_depth=.125
     f.approach_distance=.02
     f.approach_side=1

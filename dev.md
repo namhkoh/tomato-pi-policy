@@ -6397,3 +6397,42 @@ No hardware, collection, tuning, review, split or training-export changes.
   All156/158/159 are FAILED full sequences despite valid native seam events.
   Full regression **3,586 passed in132.96 s** in
   `data/sim_physics/regression_20260913_target_antiwindup_v1.log`.
+
+### 2026-09-13: Retention-capacity and near-junction grasp-layout work
+
+- Added `sim_physics/grasp_wrench.py`: bounded offline six-axis static wrench
+  audit using supplied points/normals, both finger identities, an inscribed
+  eight-sided friction cone and the unchanged <=0.5 N per-finger contact budgets.
+  It reports the minimum worst-finger budget utilization; it neither commands
+  that force nor changes any controller/safety limit. Static patch assumptions,
+  unknown native provenance and absent actuator/dynamic qualification are explicit.
+  Solver timeout/error, nonfinite/unbalanced output and invalid geometry fail closed.
+  This is a diagnostic utility, NOT an integrated retention certificate.
+- Added bounded initial `--grasp-pitch` (+/-60 degrees) ONLY to the complete
+  isolated downward CLI protocol. Rotation is about the jaw closing axis, to
+  use more of the original pads' long dimension. The palm offset now uses the
+  actual pitched axis; zero pitch preserves existing behavior. Source geometry,
+  material, force limits, grasp clearance, native scene screens and release
+  checks remain unchanged. This is a new pose proposal, not a running pose reset.
+- Native160 repeats159 with a farther180 mm grasp as a moment-arm diagnostic.
+  It is rejected BEFORE physics by torso/left-wrist self clearance (-21.165 mm
+  conservative bound). It is NOT a replacement for the requested near-junction
+  grasp. Other farther-grasp offline proposals meet attached-leaf obstructions.
+- Ideal rest-shaft/pad search suggests a larger contact span and better normal
+  orientation reduce required normal load, but existing-station near-junction
+  pitch proposals fail IK/inter-arm checks. A coordinated stationary robot-pose
+  search is underway. No rejected pose is executed or relabelled safe, and no
+  new force cap is introduced. The predictor/contact-model issue remains open.
+- Diagnostic evidence (not training data): `retention_candidate_audit_20260913_seed101.log`,
+  `ideal_grasp_search_20260913.log`, `retention_layout_search_20260913*.log`,
+  `retention_coordinated_ik_20260913.log` and native160/report.json under
+  `data/sim_physics/`. Source assets, dataset releases/reviews/splits, training,
+  hardware commands and Windows configuration are unchanged. No reboot requested.
+- Native161 tests an85 mm pitched grasp from a coordinated station/torso/arm
+  proposal. The complete native zero-step check confirms an actual left-wrist
+  versus Leaf002 obstruction, with47 robot actor controls checked before/after.
+  Physics steps=0; the candidate is rejected, not an executed grasp/cut failure.
+- Full regression: **3,626 passed in120.73 s**
+  (`regression_20260913_grasp_capacity_v2.log`). The first run found three mocked
+  report fixtures lacking the new zero-default pitch field; those fixtures were
+  updated without weakening assertions or changing the physical guard limits.

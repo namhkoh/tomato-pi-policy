@@ -3,6 +3,23 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 
+def pitch_for_pad_span(rotation, degrees):
+    """Initial grasp proposal rotating about closing X, not a live wrist motion.
+
+    Uses the original pad's Y/Z extent differently without changing geometry.
+    +/-60 degrees preserves at least half the original lateral approach.
+    Full finger/seam, native scene and actual contact checks remain mandatory.
+    """
+    r=np.asarray(rotation,float)
+    if (r.shape!=(3,3) or not np.isfinite(r).all()
+            or not np.allclose(r.T@r,np.eye(3),atol=1e-6,rtol=0)
+            or np.linalg.det(r)<0 or isinstance(degrees,(bool,np.bool_))
+            or not np.isscalar(degrees) or not np.isfinite(degrees) or abs(degrees)>60):
+        raise ValueError('Rigid palm frame and pad-span pitch within +/-60 degrees required')
+    angle=np.radians(degrees);c,s=np.cos(angle),np.sin(angle)
+    return r@np.array([[1.,0,0],[0,c,-s],[0,s,c]])
+
+
 def align_to_axis(rotation, rest_axis, observed_axis):
     r=np.asarray(rotation,float);a=np.asarray(rest_axis,float);b=np.asarray(observed_axis,float)
     if (r.shape!=(3,3) or a.shape!=(3,) or b.shape!=(3,)

@@ -106,7 +106,7 @@ class FullRobotGripper(GripperFixture):
     finger_actuator_limit_n=.5
 
     def __init__(self,stage,rig,*,arc=.08,friction=.5,ground_height=None,
-                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None,grasp_skew=0.,finger_actuator_limit_n=.5,exact_grasp_arc=False,right_ready_degrees=None,left_ik_seed_degrees=None,anchored_pad_damping=False):
+                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None,grasp_skew=0.,grasp_pitch=0.,finger_actuator_limit_n=.5,exact_grasp_arc=False,right_ready_degrees=None,left_ik_seed_degrees=None,anchored_pad_damping=False):
         if type(anchored_pad_damping) is not bool or anchored_pad_damping and not compliant_fingers:
             raise ValueError('Anchored damping prior requires compliant fingers')
         self.finger_actuator_limit_n=_finger_actuator_limit(finger_actuator_limit_n)
@@ -171,13 +171,16 @@ class FullRobotGripper(GripperFixture):
         # decide whether this oblique physical grasp is acceptable.
         self.goal[:3,:3]=skew_jaw_frame(self.goal[:3,:3],grasp_skew)
         self.grasp_skew=float(grasp_skew)
+        from .grasp_frame import pitch_for_pad_span
+        self.goal[:3,:3]=pitch_for_pad_span(self.goal[:3,:3],grasp_pitch)
+        self.grasp_pitch=float(grasp_pitch)
         # Original collision pads span palm Z=-135.5..-73.5 mm. A bounded
         # distal grasp can avoid burying the palm/fingers in attached foliage.
         # This moves the hand, not the plant or its collision geometry.
         if not np.isfinite(grasp_depth) or not .09<=grasp_depth<=.125:
             raise ValueError('Grasp depth must stay within the original pads: 90..125 mm')
         self.grasp_depth=float(grasp_depth)
-        self.goal[:3,3]=point+self.grasp_depth*z
+        self.goal[:3,3]=point+self.grasp_depth*self.goal[:3,2]
         if not np.isfinite(approach_distance) or not .01<=approach_distance<=.08:
             raise ValueError('Initial approach distance must be 10..80 mm')
         self.approach_distance=float(approach_distance)
@@ -425,6 +428,7 @@ class FullRobotGripper(GripperFixture):
             approach_tilt_degrees=self.approach_tilt,
             grasp_roll_degrees=self.grasp_roll,
             grasp_skew_degrees=self.grasp_skew,
+            grasp_pitch_degrees=self.grasp_pitch,
             grasp_depth_m=self.grasp_depth,
             approach_distance_m=self.approach_distance,
             approach_side=self.approach_side,
