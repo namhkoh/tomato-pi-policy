@@ -72,6 +72,8 @@ def parser():
         help='Seed the coordinated left pregrasp IK; exact target and path guards still apply')
     p.add_argument('--blade-force-feed',action='store_true',
         help='Isolated downward diagnostic: retime the screened stroke from fresh native cutting load')
+    p.add_argument('--seam-contact-compliance',action='store_true',
+        help='Isolated blade feedback experiment: uncalibrated 1000 N/m local stem contact compression')
     p.add_argument('--measured-withdrawal',action='store_true',
         help='Opt-in measured-start reverse path with fresh native geometry/hold checks; diagnostic only')
     p.add_argument('--native-static-clearance',action='store_true',help='Opt-in live native static-box refinement during the single synchronous bimanual plan')
@@ -163,6 +165,8 @@ def main(argv=None):
     if args.native_capsule_sphere_cover and not (args.bimanual_cut and args.native_static_clearance):
         raise ValueError('Native capsule sphere cover requires bimanual native static clearance')
     contact_trial=args.isolated_cut_contact_trial
+    if args.seam_contact_compliance and not (contact_trial and args.blade_force_feed):
+        raise ValueError('Seam contact compression requires isolated blade feedback diagnostic')
     if args.blade_force_feed and not (contact_trial and args.cut_style=='downward'
             and args.cut_model=='signed_edge_load_brittle_seam_v1' and args.seconds>=40):
         raise ValueError('Blade feedback requires isolated downward signed-seam trial and >=40 seconds')
@@ -450,6 +454,9 @@ def main(argv=None):
             report['isolated_station']['scope']='branch_contact_fixture_NOT_intact_source_plant'
         rig=build(stage,record,args.target,max_segment_m=args.max_segment_m,constraint_mode=args.constraint_mode,
                   cut_m=args.cut_arc_m,stem_contact_model=args.stem_contact_model)
+        if args.seam_contact_compliance:
+            from .seam_contact_compliance import apply as apply_seam_compliance
+            report['seam_contact_compliance']=apply_seam_compliance(rig,diagnostic_only=True)
         if args.stem_contact_model=='flat_cylinders_v1':
             from omni.physx.bindings._physx import SETTING_COLLISION_APPROXIMATE_CYLINDERS
             cylinder_setting=SETTING_COLLISION_APPROXIMATE_CYLINDERS

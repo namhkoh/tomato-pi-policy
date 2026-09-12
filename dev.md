@@ -6325,3 +6325,37 @@ No hardware, collection, tuning, review, split or training-export changes.
   unchanged. These are isolated branch diagnostics, not greenhouse-access,
   tissue-calibration, hardware or VLM-training approval. Next: test explicitly
   labelled local stem contact compliance, not larger safety thresholds.
+
+### 2026-09-13: Native downward seam release; post-cut grasp still fails
+
+- Added `--seam-contact-compliance`, available ONLY with the complete isolated
+  blade-feedback trial. Two original seam-adjacent shaft surfaces receive a
+  native force-based implicit contact spring (1000 N/m,2 N s/m, engineering
+  priors). Geometry, masses, joints, original 0.5 friction, contact offsets,
+  knife/camera/other plant materials and release guards are unchanged. Existing
+  material bindings are never silently overwritten. Session-only; no source
+  asset edit. This is local contact compression, NOT volumetric tissue or a
+  calibrated fracture-energy model. Mechanism reference:
+  https://nvidia-omniverse.github.io/PhysX/physx/5.4.0/docs/RigidBodyDynamics.html
+- Native156 reaches a genuine native contact-qualified engineering seam release
+  at37.700 s:7 consecutive steps/29.167 ms, signed resistance0.200093..0.200946 N,
+  peak normal-plus-friction bound0.304333 N, maximum axial distance2.562981 mm,
+  and left slip0.229372 mm. No timed release, force-limit increase or forced
+  grasp was used. Exact native fixed-joint disabling is the modeled event;
+  calibrated tissue cutting remains false.
+- Overall trial FAILS at37.733333 s: left contact is lost on the first fetched
+  step after release; slip grows to3.446175 mm in33.3 ms. Both force and contact
+  geometry guards remain active. No post-cut retention, withdrawal, deposit,
+  full-greenhouse sequence or training eligibility is claimed.
+- Diagnosis in progress: the contact-omitting implicit spring predictor reports
+  about48.6 mJ declared quadratic coordinate energy before release and83.4 mJ
+  at failure, while submitted spring work is tiny. This repeats the previously
+  documented constitutive discrepancy, NOT a measured physical energy balance.
+  Also the second finger's command has drifted to14.1 mm while its measured
+  opening is2.27 mm and explicit opening PD effort is saturated. Saturation,
+  actual contact equilibrium and post-release retention need separate checks.
+- Evidence: `data/sim_physics/bimanual_downward_20260912_native156/` report and
+  trajectory.14 local-material tests; full physics regression **3,559 passed
+  in133.21 s** (`regression_20260913_seam_contact_compliance_v1.log`). Source
+  hashes unchanged. Next is coupled contact/spring and retention validation;
+  this one cut is not advertised as reliable grasp-cut-retain.
