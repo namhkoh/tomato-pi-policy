@@ -14,7 +14,7 @@ def screen(stage,robot):
     from greenhouse_sim.robot_kinematics import _segment_segment_distance,_segment_aabb_distance
     cache=UsdGeom.BBoxCache(Usd.TimeCode.Default(),['default','render','guide','proxy'],False,True)
     transforms=UsdGeom.XformCache()
-    robots=[];obstacles=[];hits=[];tested=0
+    robots=[];obstacles=[];hits=[];tested=0;capsule_bound_cleared=0
     for prim in Usd.PrimRange.Stage(stage,Usd.TraverseInstanceProxies()):
         if not prim.HasAPI(UsdPhysics.CollisionAPI) or not UsdPhysics.CollisionAPI(prim).GetCollisionEnabledAttr().Get(): continue
         if not prim.IsA(UsdGeom.Boundable): raise ValueError('Unbounded collision prim '+str(prim.GetPath()))
@@ -54,10 +54,20 @@ def screen(stage,robot):
             if robot.floor_root and (path==robot.floor_root or path.startswith(robot.floor_root+'/')) and body in {
                     robot.root+'/base',robot.root+'/wheel_l',robot.root+'/wheel_r'}: continue
             tested+=1;overlap=True
+            matrix=np.asarray(transforms.GetLocalToWorldTransform(rp)).T
+            robot_capsule=world_capsule(rp,matrix)
+            if robot_capsule is not None:
+                ra,rb,rr=robot_capsule
+                # A rotated capsule's enclosing rectangular box has empty
+                # corners. Prove separation from the ENTIRE obstacle world
+                # bound before assuming anything about an unknown cooked mesh.
+                # Keep the same 1 mm conservative margin; no shape/filter edit.
+                midpoint=(low+high)/2
+                if _segment_aabb_distance(ra-midpoint,rb-midpoint,(high-low)/2)>rr+.001:
+                    capsule_bound_cleared+=1
+                    continue
             if obstacle_capsule is not None:
                 a,b,radius=obstacle_capsule
-                matrix=np.asarray(transforms.GetLocalToWorldTransform(rp)).T
-                robot_capsule=world_capsule(rp,matrix)
                 if robot_capsule is not None:
                     ra,rb,rr=robot_capsule
                     overlap=_segment_segment_distance(a,b,ra,rb)<=radius+rr+.001
@@ -92,4 +102,5 @@ def screen(stage,robot):
         robot_collision_shapes=len(robots),scene_collision_shapes=len(obstacles),tested_broad_pairs=tested,
         method='collision_boxes_with_triangle_and_uniform_capsule_surface_refinement',
         primitive_capsule_narrow_phase=True,
+        robot_capsule_vs_whole_scene_bound_cleared=capsule_bound_cleared,
         whole_path_certified=False,self_collision_certified=False)

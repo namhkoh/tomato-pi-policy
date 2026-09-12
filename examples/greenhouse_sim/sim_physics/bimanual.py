@@ -17,6 +17,9 @@ class BimanualRobot(FullRobotGripper):
         self.cut_style=kwargs.pop('cut_style','legacy')
         self.knife_alignment=kwargs.pop('knife_alignment','legacy')
         self.force_closure_enabled=kwargs.pop('force_closure',False)
+        self.grasp_contact_frames=kwargs.pop('grasp_contact_frames','post_fetch_legacy')
+        if self.grasp_contact_frames not in ('post_fetch_legacy','pre_solve_pgs_v1'):
+            raise ValueError('Unknown grasp contact frame contract')
         if type(self.force_closure_enabled) is not bool:
             raise ValueError('Explicit native force closure flag required')
         if self.cut_style not in ('legacy','downward'):
@@ -277,7 +280,10 @@ class BimanualRobot(FullRobotGripper):
         if not self.event_monitor.native_full_contact_reporting:
             raise RuntimeError('Missing full native contact stream for shaft grasp')
         fingers=pose_matrices(self.fingers.get_transforms())[self.order]
-        result=self.grasp_observer.evaluate(dt,frames,fingers,frames_step_id=step_id)
+        options={}
+        if getattr(self,'grasp_contact_frames','post_fetch_legacy')=='pre_solve_pgs_v1':
+            options['require_pre_step_frames']=True
+        result=self.grasp_observer.evaluate(dt,frames,fingers,frames_step_id=step_id,**options)
         self.latest_finger_bilateral=result['bilateral']
         return result
 

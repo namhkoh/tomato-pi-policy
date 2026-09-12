@@ -1,7 +1,9 @@
 """Pure, normal-only evidence for a discretized shaft; no control or cut authority.
 
 Caller supplies authored collider geometry/chain identity, live intact links and
-post-fetch native body frames. No stage walk, subscriptions, dwell or slip state.
+post-fetch native body frames. The optional PGS pre-step geometry is separately
+stamped; post-fetch proximity and force axes still qualify continued contact.
+No stage walk, subscriptions, dwell or slip state.
 Contact points/impulses must come ONLY from full-report normal contact data, never
 friction anchors. PhysX normals point collider1 -> collider0; impulse acts on 0:
 https://nvidia-omniverse.github.io/PhysX/physx/5.1.0/_build/physx/latest/struct_px_contact_pair_point.html
@@ -210,7 +212,8 @@ class ShaftGraspEvidence:
             self.error = str(exc)
             raise
 
-    def evaluate(self, *, step_id, frames_step_id, dt, body_frames, connected_pairs):
+    def evaluate(self, *, step_id, frames_step_id, dt, body_frames, connected_pairs,
+                 contact_body_frames=None, contact_frames_step_id=None):
         """No dwell update: caller retains existing 20 mN / cos < -0.5 window.
 
         connected_pairs are exact native body IDs for intact adjacent shaft
@@ -223,6 +226,9 @@ class ShaftGraspEvidence:
                 or _index(step_id) != self.step_id or _index(frames_step_id) != self.step_id):
             raise ValueError('Faulted, stale or already consumed native evidence: ' + str(self.error))
         self.evaluated = True
+        if ((contact_body_frames is None) != (contact_frames_step_id is None)
+                or contact_body_frames is not None and _index(contact_frames_step_id)+1 != self.step_id):
+            raise ValueError('Adjacent pre-step contact geometry required')
         dt = _number(dt, np.finfo(float).tiny, 1.)
         links = set()
         for pair in connected_pairs:
@@ -236,6 +242,12 @@ class ShaftGraspEvidence:
         frames=_poses([body_frames[s.body] for s in shapes])
         colliders=_poses(frames@np.array([s.local_frame for s in shapes]))
         world = {s.collider:m for s,m in zip(shapes,colliders,strict=True)}
+        contact_world=world
+        if contact_body_frames is not None:
+            prior=_poses([contact_body_frames[s.body] for s in shapes])
+            prior=_poses(prior@np.array([s.local_frame for s in shapes]))
+            contact_world={s.collider:m for s,m in zip(shapes,prior,strict=True)}
+        current_pairs={}
         forces = np.zeros((2, 3)); loads = np.zeros(2); counts = [0, 0]
         pairs = {}; rejected = []; points = []; separations = []
         for row, (i, other, point, normal, impulse, separation) in enumerate(self.rows):
@@ -251,7 +263,7 @@ class ShaftGraspEvidence:
                 force_n=np.zeros(3), normal_load_upper_n=0., count=0))
             pair['force_n'] += force; pair['normal_load_upper_n'] += float(np.linalg.norm(force)); pair['count'] += 1
             points.append(point.tolist()); separations.append(separation)
-            sw, pw = world[other], world[pad.collider]
+            sw, pw = contact_world[other], contact_world[pad.collider]
             q = _array((point - sw[:3, 3]) @ sw[:3, :3], (3,))
             axis_point = np.array([0., 0., np.clip(q[2], -shaft.half_height_m, shaft.half_height_m)])
             radial = q - axis_point; distance = float(np.linalg.norm(radial))
@@ -271,6 +283,25 @@ class ShaftGraspEvidence:
                 reason = 'normal_not_compressive_on_capsule_and_pad'
             if reason:
                 rejected.append(dict(row=row, finger=pad.body, collider=other, reason=reason))
+            if contact_body_frames is not None and key not in current_pairs:
+                # Old contact geometry is NOT proof of continuing contact.
+                # Independently bound current capsule/inner-face distance.
+                from greenhouse_sim.robot_kinematics import _segment_aabb_distance
+                now_s,now_p=world[other],world[pad.collider]
+                ends=np.array([[0.,0.,-shaft.half_height_m],[0.,0.,shaft.half_height_m]])
+                ends=(ends@now_s[:3,:3].T+now_s[:3,3]-now_p[:3,3])@now_p[:3,:3]
+                face_center=np.zeros(3);face_center[pad.face_axis]=pad.face_sign*pad.half_extents_m[pad.face_axis]
+                half=pad.half_extents_m.copy();half[pad.face_axis]=0.
+                gap=_segment_aabb_distance(*(ends-face_center),half)-shaft.radius_m
+                # Distance to a rectangle is unsigned: reject a shaft that has
+                # crossed to the back of the pad instead of calling it a hold.
+                minimum_side=float(np.min((ends[:,pad.face_axis]-face_center[pad.face_axis])*pad.face_sign))
+                current_pairs[key]=dict(finger=pad.body,collider=other,surface_gap_m=float(gap),
+                    minimum_spine_distance_on_inner_side_m=minimum_side,
+                    carries_nonzero_impulse=False,
+                    passed=bool(-.001<=gap<=offset+_EPS_M and minimum_side>=shaft.radius_m-.001))
+            if contact_body_frames is not None and np.any(impulse!=0.):
+                current_pairs[key]['carries_nonzero_impulse']=True
         if not np.isfinite(forces).all() or not np.isfinite(loads).all():
             raise ValueError('Overflowing native force totals')
         norms = np.linalg.norm(forces, axis=1)
@@ -294,6 +325,11 @@ class ShaftGraspEvidence:
             compressive_support_passed=support_passed,
             forces_scope='eligible_identity_normal_rows_including_geometry_rejections',
             stem_only=not rejected, opposition_cosine=cosine,
-            bilateral=bool(not rejected and np.all(norms >= .02) and cosine is not None and cosine < -.5
+            contact_geometry_basis='caller_pre_step_PGS' if contact_body_frames is not None else 'caller_post_fetch',
+            contact_geometry_step_id=contact_frames_step_id if contact_body_frames is not None else self.step_id,
+            current_contact_proximity=list(current_pairs.values()),
+            bilateral=bool(not rejected and all(p['passed'] or not p['carries_nonzero_impulse']
+                for p in current_pairs.values())
+                and np.all(norms >= .02) and cosine is not None and cosine < -.5
                 and (not self.allow_signed_native_normals or support_passed)),
             normal_only=True, friction_used_for_grasp=False, training_eligible=False)

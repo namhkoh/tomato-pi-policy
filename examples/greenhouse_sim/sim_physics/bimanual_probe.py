@@ -37,6 +37,30 @@ def sequence_times(reposition,force_closure=False):
     return dict(delay=delay,plan=3.5+delay,approach=4.+delay,stroke=8.+delay,end=14.+delay)
 
 
+def grasp_acquisition_state(t,stable_steps,physics_hz,feedback):
+    """Bounded acquisition timing, NEVER an alternative grasp detector.
+
+    stable_steps counts consecutive native, guard-accepted bilateral samples.
+    Keep the original 100 ms requirement. Feedback may finish early or spend
+    bounded time backing off/re-closing; a scheduled deadline is not contact.
+    """
+    if (type(feedback) is not bool or type(stable_steps) is not int or stable_steps<0
+            or type(physics_hz) is not int or physics_hz<=0
+            or not np.isfinite(t) or t<0):raise ValueError('Valid acquisition clock and native dwell required')
+    deadline=13.5 if feedback else 3.5
+    if t>deadline+1e-9:return 'timeout'
+    if t<3.5:return 'waiting'
+    if stable_steps>=int(np.ceil(.1*physics_hz)):return 'verified'
+    return 'timeout' if t>=deadline else 'waiting'
+
+
+def schedule_after_grasp(t,reposition):
+    """Shift the original complete sequence from the actual verified grasp."""
+    if not np.isfinite(t) or not 3.5<=t<=13.5+1e-9:raise ValueError('Bounded verified grasp time required')
+    schedule=sequence_times(reposition)
+    return {key:value+t-3.5 for key,value in schedule.items()}
+
+
 def experimental_spring_phase(enabled,grasp_verified,started):
     """Matched hold experiment starts from the existing verified grasp.
 
@@ -96,8 +120,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     hold_control=bool(getattr(args,'bimanual_hold_control',False))
     reposition=float(getattr(args,'bimanual_reposition_m',0.))
     force_closure=bool(getattr(fixture,'force_closure_enabled',False))
-    times=sequence_times(reposition,force_closure);delay=times['delay']
-    grasp_time=3.5+(5. if force_closure else 0.)
+    times=sequence_times(reposition);delay=times['delay']
+    grasp_time=3.5;acquisition_wait_logged=False
     plan_time=times['plan'];approach_start=times['approach'];stroke_start=times['stroke'];stroke_end=times['end']
     viewport=None
     if args.render_hz:
@@ -129,6 +153,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         nonlocal spring_snapshot,prediction_before
         nonlocal spring_control_record
         nonlocal contact_springs_started
+        nonlocal times,grasp_time,delay,plan_time,approach_start,stroke_start,stroke_end,acquisition_wait_logged
         t=stamp.simulation_time_s
         if t>=.9 and not goal_set:
             fixture.refresh_grasp_goal(runtime.frames)
@@ -147,8 +172,9 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         fixture.target_palm(goal)
         if force_closure: fixture.close(ramp(t,2,3),step=int(stamp.step),dt=dt)
         else: fixture.close(ramp(t,2,3))
-        if t>=grasp_time and not grasp_verified:
-            if stable<int(.1*args.physics_hz):
+        if t>=3.5 and not grasp_verified:
+            acquisition=grasp_acquisition_state(t,stable,args.physics_hz,force_closure)
+            if acquisition=='timeout':
                 # Preserve which actual shapes blocked closure, including a
                 # neighboring leaf that cannot count as opposing shaft contact.
                 events.append(dict(t=t,event='left_grasp_verification_failed',
@@ -156,11 +182,20 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                     last_contact=records[-1]['contact'] if records else None,
                     native_contact_pairs_n=records[-1]['native_contact_pairs_n'] if records else []))
                 raise RuntimeError('Left grasp was not stable before knife planning')
-            grasp_verified=True
-            events.append(dict(t=t,event='left_grasp_verified',grasp_body=fixture.grasp_path,
-                consecutive_bilateral_steps=stable))
-            palm=pose_matrices(fixture.palm.get_transforms())[0]
-            grasp_local=(fixture.grasp_point(runtime.frames)-palm[:3,3])@palm[:3,:3]
+            if acquisition=='waiting':
+                if not acquisition_wait_logged:
+                    events.append(dict(t=t,event='left_grasp_waiting_for_native_contact',
+                        deadline_s=13.5,required_bilateral_dwell_s=.1,right_motion_authorized=False))
+                    acquisition_wait_logged=True
+            else:
+                grasp_verified=True;grasp_time=t
+                times=schedule_after_grasp(t,reposition);delay=times['delay']
+                plan_time=times['plan'];approach_start=times['approach']
+                stroke_start=times['stroke'];stroke_end=times['end']
+                events.append(dict(t=t,event='left_grasp_verified',grasp_body=fixture.grasp_path,
+                    consecutive_bilateral_steps=stable))
+                palm=pose_matrices(fixture.palm.get_transforms())[0]
+                grasp_local=(fixture.grasp_point(runtime.frames)-palm[:3,3])@palm[:3,:3]
         if grasp_verified and not planned and not hold_control and t>=plan_time:
             if stable<int(.1*args.physics_hz):
                 raise RuntimeError('Held target not stable after reposition; no right-arm execution')
@@ -176,7 +211,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             (output/'bimanual_planning_snapshot.json').write_text(json.dumps(snapshot,allow_nan=False),encoding='utf-8')
             fixture.plan_cut(runtime.frames,q);planned=True
             events.append(dict(t=t,event='grasp_verified_and_right_IK_planned',plan=fixture.report()['cut_plan']))
-        if t>=grasp_time+.5 and lost>int(.05*args.physics_hz):
+        if grasp_verified and t>=grasp_time+.5 and lost>int(.05*args.physics_hz):
             raise RuntimeError('Left grasp lost during bimanual sequence')
         phase='park';fraction=0.
         if planned and t>=approach_start:
@@ -202,6 +237,9 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             fixture.command_right(phase,fraction)
             last_right_command=(phase,fraction)
         fixture.prepare_step(runtime.frames)
+        if getattr(fixture,'grasp_contact_frames','post_fetch_legacy')=='pre_solve_pgs_v1':
+            fixture.grasp_observer.capture_contact_frames(runtime.frames,
+                pose_matrices(fixture.fingers.get_transforms())[fixture.order],step_id=stamp.step)
         if prediction_reader is not None:
             prediction_before=prediction_reader.read(step=stamp.step,root_constrained=not rig.cut)
             # Native body paths and COM velocities, not the desired/FK pose.
@@ -347,7 +385,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             record['withdrawal']=check_withdrawal(fixture,frames,stamp.step)
             events.append(dict(t=stamp.simulation_time_s,event='final_native_withdrawal_endpoint',
                 evidence=record['withdrawal']))
-        record['phase']='Left hold negative control' if hold_control else 'Retain / withdraw' if rig.cut else 'Blade stroke' if stamp.simulation_time_s>=stroke_start else 'Right approach' if stamp.simulation_time_s>=approach_start else 'Held target reposition / reobserve' if grasp_verified and reposition else 'Left grasp'
+        record['phase']='Left hold negative control' if hold_control else 'Retain / withdraw' if rig.cut else 'Blade stroke' if planned and stamp.simulation_time_s>=stroke_start else 'Right approach' if planned and stamp.simulation_time_s>=approach_start else 'Held target reposition / reobserve' if grasp_verified and reposition else 'Left grasp'
         fixture.on_sample(record)
 
     def render_state(_):
@@ -411,6 +449,10 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         measured_withdrawal_completed=helper_complete,
         negative_control_no_right_motion=hold_control,
         requested_pre_cut_reposition_m=reposition,
+        grasp_acquisition=dict(feedback_event_driven=force_closure,
+            earliest_verification_s=3.5,deadline_s=13.5 if force_closure else 3.5,
+            required_native_bilateral_dwell_s=.1,verified_time_s=grasp_time if grasp_verified else None,
+            sequence_schedule=times if grasp_verified else None),
         target_source='privileged_test_fixture_not_perception_verified',training_eligible=False)
     if step_context is not sim: result['step_profile']=step_context.report()
     (output/'bimanual_trajectory.json').write_text(json.dumps(records,allow_nan=False),encoding='utf-8')

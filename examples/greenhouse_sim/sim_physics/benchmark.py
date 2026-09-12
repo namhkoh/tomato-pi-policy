@@ -74,6 +74,8 @@ def parser():
         help='Opt-in engineering brittle seam strength model; neither mode is calibrated tissue fracture')
     p.add_argument('--diagnostic-grasp-dynamics',action='store_true',
         help='Opt-in same-step body/finger/contact/drive telemetry for bimanual retention debugging; not training data')
+    p.add_argument('--grasp-contact-frames',choices=('post_fetch_legacy','pre_solve_pgs_v1'),default='post_fetch_legacy',
+        help='Experimental discrete PGS contact-generation geometry plus independent post-fetch proximity; no force/guard changes')
     p.add_argument('--diagnostic-contact-prediction',action='store_true',
         help='Read-only complete plant-contact rows and native floating M/J snapshots; no predicted effort is applied')
     p.add_argument('--experimental-contact-springs',action='store_true',
@@ -195,6 +197,10 @@ def main(argv=None):
         raise ValueError('Engineering brittle seam model requires guarded bimanual qualification')
     if getattr(args,'diagnostic_grasp_dynamics',False) and not args.bimanual_cut:
         raise ValueError('Grasp dynamics telemetry requires guarded bimanual qualification')
+    if args.grasp_contact_frames=='pre_solve_pgs_v1' and not (
+            args.bimanual_cut and args.full_robot_probe and args.solver=='PGS' and args.physics_hz==240
+            and not args.diagnostic_grasp_contacts):
+        raise ValueError('Pre-step grasp frames require synchronous 240 Hz PGS bimanual qualification')
     if getattr(args,'experimental_contact_springs',False) and not (
             args.bimanual_hold_control and args.bimanual_cut and args.full_robot_probe
             and args.diagnostic_contact_prediction and args.diagnostic_grasp_dynamics
@@ -394,6 +400,7 @@ def main(argv=None):
                 robot_options['cut_proposal_json']=getattr(args,'cut_proposal_json',None)
                 robot_options['right_ik_fixed_joint']=getattr(args,'right_ik_fixed_joint',None)
                 robot_options['diagnostic_grasp_contacts']=getattr(args,'diagnostic_grasp_contacts',False)
+                robot_options['grasp_contact_frames']=args.grasp_contact_frames
             fixture=robot_class(stage,rig,arc=args.grasp_arc_m,friction=args.finger_friction,**robot_options)
             source_hashes[fixture.asset]=sha256_file(fixture.asset)
             report['robot_probe']=fixture.report()

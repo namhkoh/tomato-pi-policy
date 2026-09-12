@@ -327,6 +327,7 @@ class ShaftGraspNative:
         self.binding_sha256 = hashlib.sha256(json.dumps(binding, sort_keys=True,
             separators=(",", ":"), allow_nan=False).encode()).hexdigest()
         self._step = 0
+        self._contact_frames=None
         self._watched_bodies = (*self.body_paths, *self.finger_paths)
         self._joint_parents = {p.rsplit("/", 1)[0] for p, _, _ in self.joints}
         self._joint_paths = {p for p, _, _ in self.joints}
@@ -394,6 +395,7 @@ class ShaftGraspNative:
 
     def begin_step(self):
         self._healthy()
+        self._contact_frames=None
         self._step += 1
         self.core.begin_step(self._step)
         self._diagnostic_rows = []
@@ -690,7 +692,24 @@ class ShaftGraspNative:
             result["reason"] = "selected_impulse_magnitude_mismatch"
         return result
 
-    def evaluate(self, dt, frames, nativefingerframes, *, frames_step_id=None):
+    def capture_contact_frames(self,frames,fingers,*,step_id):
+        """Copy native pre-step poses AFTER begin_step and BEFORE simulate.
+
+        Only caller-qualified synchronous PGS/discrete stepping may use this.
+        Never estimates poses from a command, velocity or contact point.
+        """
+        from .shaft_grasp import _poses
+        self._healthy()
+        if (self._contact_frames is not None or _index(step_id)+1!=self._step
+                or self.core.evaluated or self.core.rows or self._diagnostic_rows_seen):
+            raise ValueError('Fresh pre-simulate native contact frame capture required')
+        world=_poses(frames);pads=_poses(fingers)
+        if len(world)!=len(self.body_paths) or len(pads)!=2:
+            raise ValueError('Exact pre-step native frame inventory required')
+        self._contact_frames=(step_id,dict(zip(self.body_paths,world,strict=True))
+            |dict(zip(self.finger_paths,pads,strict=True)))
+
+    def evaluate(self, dt, frames, nativefingerframes, *, frames_step_id=None,require_pre_step_frames=False):
         """Read cached joints and same-step tensors, then return old-compatible keys.
 
         Strict-default crosscheck tolerance is 1e-5 N + 1e-4 * maximum vector magnitude,
@@ -719,8 +738,17 @@ class ShaftGraspNative:
             world = ordered(frames, self.body_paths)
             world.update(ordered(nativefingerframes, self.finger_paths))
             connected = self._connected()
+            contact_options={}
+            if type(require_pre_step_frames) is not bool:
+                raise ValueError('Explicit pre-step contract required')
+            if require_pre_step_frames:
+                if (self._contact_frames is None or self._contact_frames[0]+1!=self._step
+                        or frames_step_id is None or abs(float(dt)-1/240)>1e-12):
+                    raise ValueError('Missing qualified adjacent pre-step native frames')
+                contact_options=dict(contact_frames_step_id=self._contact_frames[0],
+                    contact_body_frames=self._contact_frames[1])
             result = self.core.evaluate(step_id=self._step, frames_step_id=self._step,
-                dt=float(dt), body_frames=world, connected_pairs=connected)
+                dt=float(dt), body_frames=world, connected_pairs=connected,**contact_options)
             selected = np.zeros((2, 3))
             # Core counts exact selected-collider rows separately from neighbours.
             for i, path in enumerate(self.finger_paths):

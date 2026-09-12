@@ -5790,3 +5790,108 @@ No hardware, collection, tuning, review, split or training-export changes.
   Windows paged pool remains abnormally large (~256.7 GB at09:44 UTC); cause
   unidentified. Read-only launch preflight remains enabled. Review Kit130120
   untouched; no OS restart or unrelated process termination.
+
+### 2026-09-12: Native contact timing and guarded acquisition reliability
+
+- Still **no qualified complete downward grasp/cut/withdraw/retain sequence**.
+  Deposit is not implemented in this harness. Do not present hold-only trials,
+  IK solutions, or joint/seam release as full success or calibrated tissue cutting.
+- Fixed a conservative startup false positive: the rotated rectangular bound
+  of a robot capsule can intersect a scene bound while the actual capsule is
+  separated from the ENTIRE scene bound. `startup_screen.py` now tests that
+  separation with the original1 mm margin. Unsupported capsule geometry and
+  actual overlap remain rejected; no collision mesh, filters or margins change.
+  Native101's shifted-base proposal remained blocked. Fixed-base torso proposals
+  native102-108 pass startup; their full-scene checks are not clearance for a
+  moving torso or authorization to teleport a running robot.
+- Feedback grasp acquisition is now event-driven: earliest3.5 s, unchanged
+ 100 ms consecutive native bilateral dwell, hard13.5 s timeout. The whole right
+  sequence is scheduled from actual verification; no right-arm motion while
+  waiting. Geometric closure retains its3.5 s deadline. Timers cannot create
+  a grasp or cut. Native103 (old8.5 s deadline),104 and105 (bounded13.5 s) all
+  fail acquisition: more waiting alone did not resolve the feedback limit cycle.
+- Native105 records native body/finger poses and signed normal contact rows.
+  A read-only previous/post-frame comparison finds **all194 rejected rows**
+  satisfy the SAME authored capsule/pad surface tolerances in the preceding
+  native pose, but fail against the moved post-fetch pose. Median preceding
+  capsule surface error is19.3 nm; median post-fetch error is0.636 mm.
+  This is contact geometry timing, not permission to enlarge shapes/tolerances.
+  Evidence: `data/sim_physics/bimanual_downward_20260912_native105` and
+  `data/sim_physics/contact_frame_diagnosis_20260912.py` / `.log`.
+- Primary PhysX documentation distinguishes actor state at the end of the step
+  from the pose at contact detection, exposed in native C++ via CONTACT_EVENT_POSE:
+  https://nvidia-omniverse.github.io/PhysX/physx/5.7.0/docs/Simulation.html#callback-sequence
+  Our Python adapter does NOT claim to read that native extra-data field.
+  The opt-in `--grasp-contact-frames pre_solve_pgs_v1` instead copies exact native
+  poses before synchronous240 Hz PGS stepping. It validates adjacent step IDs,
+  ordered coverage, rigid transforms and one capture per step; missing/stale
+  captures fail closed. Default `post_fetch_legacy` stays reproducible.
+- Generation poses validate each reported point/normal against its authored
+  collider, without altering signed callback force or tensor integrity checks.
+  Separate POST-fetch capsule-to-inner-pad-face proximity, side-of-pad and
+  penetration checks qualify continuing contact, using existing offsets and
+ 1 mm penetration guard. Old contact after withdrawal/tunneling cannot verify
+  a hold. Current pad reaction axes still determine compressive support.
+  Force closure can distinguish a valid generated contact from a currently
+  maintained grasp; only the unchanged bilateral/dwell controller permits cutting.
+- Matched native106 with corrected timing reaches an actual0.668417 N finger
+  contact at6.629 s and stops at the unchanged0.5 N guard. No grasp, right motion,
+  cut or retention. Native107 geometric closure with the corrected timing also
+  fails acquisition at3.5 s. The sensor bug is fixed experimentally; contact/
+  spring/controller robustness in the new downward posture remains unresolved.
+- Native108 repeats the known20 s HOLD control (original torso,10 mm cut,
+ 54 mm grasp, continuous internal capsules) with corrected contact timing.
+ 4,800 ticks complete, native grasp verifies at3.5 s, and all subsequent samples
+  remain bilateral. Maximum post-verification slip0.00093052 mm; source hashes
+  unchanged. This is intact hold only; no right motion, cut, withdrawal or deposit.
+- No datasets, review decisions, training jobs, hardware commands or source
+  plant/robot assets were changed. Trial results are diagnostic, training-ineligible.
+  GUI FPS and low-latency operation are not qualified by these headless trials.
+  Windows kernel paged pool is still abnormal (~258.7 GB at10:41 UTC); driver
+  cause unknown. Read-only launch reserves stay enabled; unrelated review jobs
+  remain untouched. No reboot or further cache deletion was performed.
+- Native109 repeats the corrected-frame feedback trial with the existing
+  higher-damping option; no force guard violation, but no simultaneous20 mN
+  support from both fingers before the13.5 s timeout. Native110 additionally
+  tries40 mN acquisition before a ramp to the old120 mN holding target. It also
+  fails:0 simultaneous qualifying support samples out of3,240 ticks. Pressure
+  control changes were therefore NOT promoted; their patch is preserved at
+  `data/sim_physics/native110_light_acquisition_trial.diff`. The production
+  `ForceClosure` pressure law remains unchanged. These tests do not justify
+  increasing force limits, acquisition time, or calling a one-sided contact a hold.
+- A read-only source-envelope audit of native110 finds1,573 of3,753 nonzero
+  normal-load rows (>1 microN) inside an adjacent intact shaft capsule by more
+  than1 micrometre. Maximum load among these rows0.327352 N; median15.23 mN.
+  This is measured geometry/force overlap, NOT proof that removing these rows
+  yields correct dynamics. No contacts were removed, rescaled or relabeled;
+  the native contact modification API was NOT implemented. Script/report:
+  `data/sim_physics/shaft_union_audit_20260912.py` / `.log`. Next investigate
+  the segmented-contact surface and coupled spring/contact response with a
+  matched physical-contact coupon before changing the full-scene model again.
+- Current-contact proximity applies to every pair carrying a NONZERO impulse;
+  exact-zero manifold rows remain checked for identity/generation geometry and
+  recorded, but cannot count as support or invalidate other continuing loaded
+  contacts solely because their old pair has separated. No nonzero magnitude
+  cutoff, force threshold or tensor reconciliation rule changed.
+- Acceptance before promoting the downward preset: repeated guarded acquisition
+  in that actual posture, then full approach/cut/withdraw/intact retention,
+  followed by perturbation trials. Hold-only success cannot pass that gate.
+  Cut remains a force-qualified pre-authored seam release, not calibrated
+  tissue fracture; deposit and a validated learned policy remain separate work.
+- Final CPU/USD regression for these retained changes:4,284 passed,2 skipped,
+ 47 subtests passed in214.08 s (`data/sim_physics/regression_20260912_grasp_frames_v3.log`).
+  Targeted contact/acquisition/adapter/benchmark tests:370 passed. The earlier
+  v1 regression found five legacy mock-interface failures; compatibility was
+  repaired and both v2 (4,278 passed) and final v3 passed. Failed experiments
+  are not silently included in the production pressure controller.
+- Native111 repeats native108 using the final nonzero-contact proximity check:
+ 4,800 ticks,20 s, identical recorded palm/plant joint state/grasp point/seam/
+  slip and measured finger force at every tick. Grasp verifies at3.5 s; maximum
+  slip0.00093052 mm. These are two identical-initial-condition hold trials,
+  NOT perturbation robustness, cutting or post-release retention validation.
+- Rechecking earlier base proposals AFTER the startup capsule-bound correction
+  finds four of five v1 proposals clear the complete SOURCE plant startup
+  screen; the fifth has arm/torso self-interference. All four otherwise-valid
+  v2 proposals still collide with target Leaf004 and remain rejected. No leaf
+  was removed and no native robot was moved to these proposals by this check.
+  Evidence: `data/sim_physics/coordinated_spawn_check_20260912_v2.log`.
