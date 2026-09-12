@@ -31,7 +31,7 @@ import json
 
 import numpy as np
 
-from .shaft_grasp import FingerPad, ShaftCapsule, ShaftGraspEvidence, _index, _pose
+from .shaft_grasp import FingerPad, ShaftCapsule, ShaftCylinder, ShaftGraspEvidence, _index, _pose
 
 
 NATIVE37_SENSOR_CONTRACT = "native37_magnitude_sensor0_v1"
@@ -244,18 +244,22 @@ class ShaftGraspNative:
         for body_path in self.body_paths:
             body = stage.GetPrimAtPath(body_path)
             collider = stage.GetPrimAtPath(body_path + "/StemCollider")
-            if (not _active(collider, UsdPhysics) or not collider.IsA(UsdGeom.Capsule)
+            flat=getattr(rig,'stem_contact_model',None)=='flat_cylinders_v1'
+            schema=UsdGeom.Cylinder if flat else UsdGeom.Capsule
+            if (not _active(collider, UsdPhysics) or not collider.IsA(schema)
                     or _owner(collider, UsdPhysics) != body_path):
                 raise ValueError("Exact enabled native StemCollider Capsule required")
             _coverage(stage, body_path, Usd, UsdPhysics)
             _body_world_basis(body, UsdGeom)
-            cap = UsdGeom.Capsule(collider)
+            cap = schema(collider)
+            if flat and collider.GetAttribute('physxConvexGeometry:margin').Get()!=0.:
+                raise ValueError('Flat cylinder needs explicit zero geometry margin')
             if cap.GetAxisAttr().Get() != "Z":
                 raise ValueError("Authored shaft capsule must use Z axis")
             frame, scale = _local_geometry(collider, body, UsdGeom)
             if not np.allclose(scale, scale[0], atol=1e-12, rtol=1e-8):
                 raise ValueError("Nonuniform capsule scale is unsupported")
-            chain.append(ShaftCapsule(
+            chain.append((ShaftCylinder if flat else ShaftCapsule)(
                 body_path, str(collider.GetPath()), frame,
                 float(cap.GetRadiusAttr().Get()) * scale[0],
                 float(cap.GetHeightAttr().Get()) * scale[0] / 2, _offset(collider)))
@@ -321,6 +325,8 @@ class ShaftGraspNative:
             shapes=[pack(s) for s in (*chain, *pads)],
             joints=[dict(path=p, body0=ab[0], body1=ab[1]) for p, _, ab in self.joints],
             selected_body=self.selected_body, selected_collider=self.selected_collider)
+        if getattr(rig,'stem_contact_model',None)=='flat_cylinders_v1':
+            binding['shaft_surface']='flat_cylinder_zero_margin_v1'
         if allow_signed_native_normals:
             binding.update(allow_signed_native_normals=True,
                            sensor_contract=_sensor_contract_record(sensor_contract))

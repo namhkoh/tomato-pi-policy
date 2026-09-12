@@ -11,6 +11,33 @@ def shifted(frames,delta):
     return out
 
 
+@pytest.mark.parametrize('force',[0.,1e-10,.03])
+def test_separated_persistent_zero_row_does_not_veto_actual_support(force):
+    e,pre,links=setup();contact(e,0);contact(e,1)
+    contact(e,0,segment=1,force=force,separation=.0012)
+    r=result(e,pre,links,contact_body_frames=pre,contact_frames_step_id=0)
+    assert r['bilateral']==(force==0.)
+    assert len(r['inactive_manifold_rows'])==(1 if force==0. else 0)
+    assert r['counts']==[2,1]  # Original zero row remains accounted for.
+
+
+def test_zero_rows_alone_never_verify_grasp_and_penetration_still_rejects():
+    e,pre,links=setup()
+    contact(e,0,force=0.,separation=.0012);contact(e,1,force=0.,separation=.0012)
+    r=result(e,pre,links,contact_body_frames=pre,contact_frames_step_id=0)
+    assert not r['bilateral'] and len(r['inactive_manifold_rows'])==2
+    e,pre,links=setup();contact(e,0);contact(e,1)
+    contact(e,0,force=0.,separation=-.0012)
+    assert not result(e,pre,links)['bilateral']
+
+
+def test_zero_separated_row_still_needs_valid_surface_geometry():
+    e,pre,links=setup();contact(e,0);contact(e,1)
+    contact(e,0,force=0.,separation=.0012,point=[-.003,.1,0.])
+    r=result(e,pre,links)
+    assert not r['bilateral'] and not r['stem_only']
+
+
 def test_moving_assembly_uses_contact_geometry_not_old_point_in_new_frame():
     e,pre,links=setup()
     contact(e,0);contact(e,1)

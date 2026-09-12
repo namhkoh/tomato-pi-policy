@@ -5924,3 +5924,95 @@ No hardware, collection, tuning, review, split or training-export changes.
 - Regression:4,295 passed,2 skipped,47 subtests in212.52 s
   (`data/sim_physics/regression_20260912_joint_reserve_v1.log`);110 focused IK/
   downward planning tests passed. Full grasp-cut-withdraw-retain still unqualified.
+
+### 2026-09-12: No-reboot diagnostics and isolated contact comparisons
+
+- User cannot restart Windows. No reboot, unrelated process termination, driver
+  unloading, security changes or pagefile changes were performed. Native113
+  stopped BEFORE Isaac initialization: 10.69 GiB commit headroom was below our
+  conservative 16 GiB launch reserve (not an NVIDIA minimum). Later headroom
+  recovered to approximately 31 GiB without an OS mutation, allowing114 onward
+  to run with the same memory gate. This is not a kernel-memory repair.
+- Added read-only `python -m sim_physics.pool_tags`: bounded Windows x64 pool-tag
+  query, explicit undocumented ABI, no writes/process control. Snapshot:
+  `data/sim_physics/pool_tags_20260912_no_reboot.json`. CBnb accounts for about
+  220.85 GiB raw paged allocations; this differs from committed pool accounting.
+  A read-only driver binary search found CBnb in `cbfltfs4.sys`, signed Callback
+  Filter 4.1.105.114, a running boot filesystem filter. That is an investigation
+  lead, NOT verified consumer ownership or allocation-stack proof. No unload
+  attempted; in-use filters can require reboot and unsafe unloading risks harm.
+- `--isolate-station` builds the same source-bound package station, complete
+  foreground plant, floor and full robot, then session-deactivates surroundings
+  before physics. All original source files remain unchanged. The result is
+  explicitly NOT full-greenhouse/training qualification. Native114 exactly
+  reproduces112: at2.891667 s finger2 reaches0.5995504725 N before grasp. Thus
+  the failure is reproducible locally; removed surroundings were not needed.
+- Matched slow `--force-closure` native115 still fails at4.85 s,0.7990595423 N.
+  A contact audit found one nonzero row inside an adjacent capsule envelope.
+  Added an isolated HOLD-only `flat_cylinders_v1` comparison: same segment
+  frames/mass/inertia/K/C/art, exact-length zero-margin analytic cylinders,
+  no overlapping spherical caps. Native cylinder process setting is explicitly
+  selected/read back; cooked geometry readback is not claimed. Pad verification
+  requires actual cylindrical side proximity, not an enclosing capsule. Native
+  116 geometric closure fails0.7626870197 N; this alternative is NOT promoted.
+- Native117 flat/slow closure stalls on cached zero-load manifold rows whose
+  positive separation exceeds contactOffset. Fixed their classification:
+  retain/log those rows as inactive; do not let them veto approach or count as
+  support. Every nonzero row, penetration guard, identity/frame check and
+  bilateral force/dwell requirement remains unchanged. Native118 progresses
+  beyond that stall but still fails0.7483432344 N. This is a readout/controller
+  bug fix, not a claim that physical contact instability is resolved.
+- Added isolated native-drive HOLD observer: keeps original native K/C, verifies
+  zero targets/external actuation and unchanged drive inventory, never invents
+  measured drive effort/work. Native119 floating-root/external-anchor and120
+  fixed-articulation controls fail BEFORE grasp, at0.266667/0.116667 s, from
+  unwanted plant/robot contact0.72963547/0.62748046 N. Native maxForce readback
+  is float32 maximum, not a missing/zero drive budget. Fixed-root release is
+  still forbidden pending a state-preserving topology implementation.
+- Added HOLD-only uniform solver iteration authoring on EVERY robot/plant
+  rigid body and articulation, with post-reset USD checks. Native121 native
+  drives at128/0 also fails (unwanted contact0.61903849 N); effective native
+  iteration readback is unavailable. No default is changed. Native122 tests
+  the original implicit springs under the same uniform128/0 configuration;
+  its outcome is recorded separately after completion.
+- CPU/USD physics regression: **3,319 passed in134.40 s** in
+  `data/sim_physics/regression_20260912_isolated_contact_v1.log`.
+  No test count here represents native cutting success. Full downward
+  grasp-cut-withdraw-retain remains FAILED/unqualified; deposit and calibrated
+  tissue fracture remain absent. No dataset labels/splits, training jobs,
+  hardware commands or source visual assets were changed.
+
+### 2026-09-13: Explicit finger-effort comparison and long-hold failure
+
+- Native122 (implicit springs, uniform128/0, slow closure) avoids the earlier
+  force stop but times out at13.5 s: support2.23/117.33 mN, no bilateral grasp.
+  The unloaded finger is at the geometry-derived minimum aperture. The other
+  finger's native drive requests opening while measured contact remains loaded.
+  Neither a normal static equilibrium nor an exact native defect is established.
+- Added isolated HOLD-only `--explicit-finger-effort`: same200 N/m,5 N s/m PD,
+  same measured gravity feed-forward, <=0.15 N nongravity effort, original total
+  actuator/contact budgets. Disable ONLY the two left native drive gains; submit
+  their bounded PD effort explicitly after current targets are set. Native
+  gain/inventory, contiguous step, latest targets and submitted effort readback
+  are checked. Other joint drives, native contact/friction, plant mass/K/C and
+  visuals stay intact. Logged commands are not measured internal drive forces.
+- Native123 matched122 with explicit fingers: still no grasp,13.5 s timeout,
+  peak all-contact finger upper bound0.275828 N; final support3.68/112.48 mN.
+- Native124 changes ONLY the existing bounded closure bias0.5->1.0 mm from123.
+  Bilateral grasp is acquired, but HOLD fails at14.6125 s with a force spike
+  (signed support4.034535/0.578837 N); max slip0.182961 mm. The low slip and
+  several seconds of bilateral contact do NOT establish a reliable hold.
+  Immediately before failure neighboring torsion coordinates approach opposite
+  half-turns; quadratic coordinate energy grows to3.208767 J, then maximum
+  reported joint speed reaches165.605 rad/s. This remains a spring/contact
+  stability failure, not successful cutting or a calibrated tissue-energy result.
+- Read-only124 pose/coordinate audit: the positive rotation-vector interpretation
+  of native joint positions reconstructs relative body orientations within
+  0.49 microradian across sampled initial/1/8/14.608 s frames (joint rest frames
+  inferred from the initial sample). Thus the observed opposite rotations are
+  consistent with native body poses, not merely a mislabeled plotted angle.
+  Native125 repeats124 with velocity iterations8 instead of0; outcome pending.
+- Regression before the final nonfinite explicit-PD guard: **3,329 passed in
+  125.19 s**, `data/sim_physics/regression_20260913_finger_effort_v1.log`.
+  Focused controller/configuration checks44+58 passed. No experimental option
+  was promoted to a default, cutting permission, GUI preset or dataset approval.

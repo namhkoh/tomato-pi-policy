@@ -91,6 +91,14 @@ class ShaftCapsule:
 
 
 @dataclass(frozen=True)
+class ShaftCylinder(ShaftCapsule):
+    """Exact flat-ended cylinder. half_height_m includes its entire axial span."""
+    def __post_init__(self):
+        super().__post_init__()
+        if self.half_height_m<=0:raise ValueError('Positive cylinder height required')
+
+
+@dataclass(frozen=True)
 class FingerPad:
     body: str
     collider: str
@@ -249,7 +257,7 @@ class ShaftGraspEvidence:
             contact_world={s.collider:m for s,m in zip(shapes,prior,strict=True)}
         current_pairs={}
         forces = np.zeros((2, 3)); loads = np.zeros(2); counts = [0, 0]
-        pairs = {}; rejected = []; points = []; separations = []
+        pairs = {}; rejected = []; points = []; separations = [];inactive_manifold=[]
         for row, (i, other, point, normal, impulse, separation) in enumerate(self.rows):
             shaft = self.by_collider.get(other); pad = self.pads[i]
             reason = None
@@ -267,23 +275,49 @@ class ShaftGraspEvidence:
             q = _array((point - sw[:3, 3]) @ sw[:3, :3], (3,))
             axis_point = np.array([0., 0., np.clip(q[2], -shaft.half_height_m, shaft.half_height_m)])
             radial = q - axis_point; distance = float(np.linalg.norm(radial))
+            cylindrical=isinstance(shaft,ShaftCylinder)
+            if cylindrical:
+                radial=q.copy();radial[2]=0.
+                distance=float(np.linalg.norm(radial))
             qp = _array((point - pw[:3, 3]) @ pw[:3, :3], (3,))
             face = np.clip(qp, -pad.half_extents_m, pad.half_extents_m)
             face[pad.face_axis] = pad.face_sign * pad.half_extents_m[pad.face_axis]
             offset = shaft.contact_offset_m + pad.contact_offset_m
             tolerance = max(abs(separation), offset) + _EPS_M
             pad_outward = pad.face_sign * pw[:3, pad.face_axis]
+            unloaded_separated=bool(not np.any(impulse!=0.) and separation>offset+_EPS_M)
+            if unloaded_separated:
+                # Persistent manifolds may retain ZERO-load separated points.
+                # They stay recorded and geometry checked, but are not a force
+                # outside the native contact range or evidence of a hold.
+                inactive_manifold.append(dict(row=row,finger=pad.body,collider=other,
+                    separation_m=separation,reason='zero_impulse_beyond_contact_offset'))
             if not np.isfinite(distance) or not np.isfinite(np.linalg.norm(qp - face)):
                 raise ValueError('Overflowing native contact geometry')
-            if separation < -.001 or separation > offset + _EPS_M:
+            if separation < -.001 or (separation > offset + _EPS_M and not unloaded_separated):
                 reason = 'separation_outside_native_contact_guards'
             elif abs(distance - shaft.radius_m) > tolerance or np.linalg.norm(qp - face) > tolerance:
                 reason = 'point_off_capsule_or_inner_pad_face'
+            elif cylindrical and abs(q[2])>shaft.half_height_m+tolerance:
+                reason = 'point_beyond_flat_cylinder_side'
             elif distance == 0 or np.dot(normal, sw[:3, :3] @ radial) <= 0 or np.dot(normal, -pad_outward) <= 0:
                 reason = 'normal_not_compressive_on_capsule_and_pad'
             if reason:
                 rejected.append(dict(row=row, finger=pad.body, collider=other, reason=reason))
-            if contact_body_frames is not None and key not in current_pairs:
+            if contact_body_frames is not None and cylindrical:
+                # A real material-surface witness, NOT an enclosing capsule,
+                # must remain on the actual current inner pad face. Every
+                # nonzero row is checked; old/end-cap contacts cannot hold.
+                from .flat_shaft_contact import current_side_witness
+                key=(i,other,row)
+                witness=(dict(model='current_flat_cylinder_material_side_witness_v1',
+                    passed=False,reason='no_cylindrical_side_direction') if distance==0 else
+                    current_side_witness(q,shaft.radius_m,shaft.half_height_m,
+                    world[other],world[pad.collider],pad.half_extents_m,
+                    pad.face_axis,pad.face_sign,offset))
+                current_pairs[key]=dict(finger=pad.body,collider=other,
+                    **witness,carries_nonzero_impulse=False)
+            elif contact_body_frames is not None and key not in current_pairs:
                 # Old contact geometry is NOT proof of continuing contact.
                 # Independently bound current capsule/inner-face distance.
                 from greenhouse_sim.robot_kinematics import _segment_aabb_distance
@@ -317,6 +351,7 @@ class ShaftGraspEvidence:
             selected_body=selected, eligible_colliders=sorted(eligible), forces=forces.tolist(),
             counts=counts, points=points, min_separation=min(separations, default=0.),
             normal_load_upper_n=loads.tolist(), pairs=list(pairs.values()), rejected=rejected,
+            inactive_manifold_rows=inactive_manifold,
             roundoff_normal_impulses=list(self.roundoff_normal_impulses),
             negative_normal_impulses=list(self.negative_normal_impulses),
             allow_signed_native_normals=self.allow_signed_native_normals,

@@ -144,7 +144,7 @@ class FullRobotGripper(GripperFixture):
         if exact_grasp_arc:self.arc=float(arc)
         self.grasp_path=rig.body_paths[self.body_index]
         self.half_length=float(np.linalg.norm(rig.chain_world[self.body_index+1]-rig.chain_world[self.body_index])/2)
-        self.radius=float(UsdGeom.Capsule.Get(stage,self.grasp_path+'/StemCollider').GetRadiusAttr().Get())
+        self.radius=float(stage.GetPrimAtPath(self.grasp_path+'/StemCollider').GetAttribute('radius').Get())
         # Side entry avoids the fixed foliage above this shaft. A kinematic
         # palm fixture does not reveal palm-vs-static contacts; the full dynamic
         # arm does, so do not reuse its top-down approach blindly.

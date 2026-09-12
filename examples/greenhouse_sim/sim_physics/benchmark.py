@@ -26,10 +26,14 @@ def parser():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--scene',choices=('isolated','package'),default='isolated')
+    p.add_argument('--isolate-station',action='store_true',
+        help='Matched package station with complete source plant/floor/robot, no surroundings; NOT greenhouse qualification')
     p.add_argument('--plant',default='seed101_full')
     p.add_argument('--target',default='SubStem_41')
     p.add_argument('--physics-hz',type=int,choices=(120,240,480,1920),default=240)
     p.add_argument('--solver',choices=('TGS','PGS'),default='TGS')
+    p.add_argument('--uniform-solver-iterations',type=int,nargs=2,
+        help='Isolated HOLD convergence comparison on every robot/plant body and articulation; default unchanged')
     p.add_argument('--solve-articulation-contact-last',action='store_true',
         help='Opt-in pre-parse solver-order comparison; physical properties and guards unchanged')
     p.add_argument('--gravity',type=float,choices=(0.,9.81),default=9.81)
@@ -42,7 +46,7 @@ def parser():
     p.add_argument('--render-hz',type=int,choices=(0,15,30,60),default=0)
     p.add_argument('--seconds',type=float,default=6.)
     p.add_argument('--max-segment-m',type=float,default=.025)
-    p.add_argument('--stem-contact-model',choices=('flush_capsules_v1','continuous_internal_capsules_v1'),
+    p.add_argument('--stem-contact-model',choices=('flush_capsules_v1','continuous_internal_capsules_v1','flat_cylinders_v1'),
         default='flush_capsules_v1',help='Explicit continuity comparison; internal capsules reach joint anchors, no seam crossing')
     p.add_argument('--gui',action='store_true')
     p.add_argument('--interactive',action='store_true',help='Keep an isolated physics demo open with pull/release/reset controls')
@@ -93,6 +97,8 @@ def parser():
         help='Diagnostic 0.25..1 mm shaft-width closure bias; no change to effort, slip or penetration guards')
     p.add_argument('--force-closure',action='store_true',
         help='Bimanual 240 Hz native-feedback finger closure with slower contact approach and five-second extra verification window; >=28 seconds')
+    p.add_argument('--explicit-finger-effort',action='store_true',
+        help='Isolated HOLD-only bounded explicit left-finger PD comparison; no native contact or force-guard change')
     p.add_argument('--anchored-pad-damping',action='store_true',
         help='Explicit uncalibrated pad-damping prior for an anchored shaft; no mass/stiffness/force-guard change')
     p.add_argument('--bimanual-hold-control',action='store_true',
@@ -142,6 +148,27 @@ def parser():
 
 def main(argv=None):
     args=parser().parse_args(argv)
+    if args.explicit_finger_effort and not (args.isolate_station and args.bimanual_hold_control
+            and args.bimanual_cut and args.force_closure and args.physics_hz==240
+            and not args.robot_interactive and not args.experimental_contact_springs):
+        raise ValueError('Explicit finger effort requires isolated 240 Hz feedback HOLD ONLY')
+    if args.uniform_solver_iterations is not None and not (args.isolate_station and not args.robot_interactive
+            and args.bimanual_hold_control and args.bimanual_cut
+            and tuple(args.uniform_solver_iterations) in ((32,8),(64,0),(128,0),(128,8))):
+        raise ValueError('Uniform iterations require isolated HOLD and a bounded diagnostic pair')
+    native_hold=(args.spring_mode=='native' and args.isolate_station and args.bimanual_cut
+        and args.bimanual_hold_control and args.force_newton==0
+        and not args.diagnostic_contact_prediction and not args.experimental_contact_springs
+        and not args.robot_interactive)
+    if args.stem_contact_model=='flat_cylinders_v1' and not (
+            args.isolate_station and args.bimanual_hold_control and args.bimanual_cut and not args.robot_interactive
+            and args.grasp_contact_frames=='pre_solve_pgs_v1'
+            and not args.diagnostic_contact_prediction and not args.experimental_contact_springs):
+        raise ValueError('Flat cylinder experiment requires isolated corrected-frame bimanual HOLD ONLY')
+    if args.isolate_station and not (args.scene=='package' and args.full_robot_probe
+            and not args.local_wire_physics and not args.context_gutters
+            and not args.batch_gutter_visuals and not args.scene_profile):
+        raise ValueError('Isolated station requires package full robot without greenhouse context/window/batching/profiling')
     if args.torso_degrees is not None:
         if not (args.bimanual_cut and args.cut_style=='downward' and args.scene=='package') or args.torso_yaw:
             raise ValueError('Explicit torso requires package downward bimanual fixture and no yaw override')
@@ -248,7 +275,8 @@ def main(argv=None):
     if args.force_closure and not (args.bimanual_cut and args.compliant_fingers and args.seconds>=28):
         raise ValueError('Force closure requires bimanual compliant native fingers')
     if args.full_robot_probe and (args.gripper_probe or args.interactive or (args.scene=='package' and not args.sparse_contacts)
-            or args.constraint_mode!='articulation' or args.spring_mode!='implicit_effort'
+            or (args.constraint_mode!='articulation' and not (native_hold and args.constraint_mode=='fixed_articulation' and args.attached_only))
+            or (args.spring_mode!='implicit_effort' and not native_hold)
             or args.solver!='PGS' or args.physics_hz!=240 or args.gravity!=9.81 or args.seconds<7
             or args.diagnostic_detach or not -30<=args.approach_tilt<=30
             or not 0<=args.finger_friction<=1 or not .04<=args.grasp_arc_m<=.25):
@@ -310,6 +338,7 @@ def main(argv=None):
     previous_threads=process_settings.get(thread_setting)
     profiler_setting='/physics/exposeProfilerData'
     previous_profiler=process_settings.get(profiler_setting)
+    cylinder_setting=None;previous_cylinders=None
     if args.no_physics_profiler: process_settings.set_bool(profiler_setting,False)
     if args.physics_threads is not None:
         process_settings.set_int(thread_setting,args.physics_threads)
@@ -350,6 +379,10 @@ def main(argv=None):
             stage=context.get_stage();stage.SetEditTarget(stage.GetSessionLayer())
             record,height,scene_report=prepare(stage,DEFAULT_PACK,args.plant,sparse_backdrop=not args.context_gutters)
             report['greenhouse']=scene_report
+            if args.isolate_station:
+                from .isolated_station import isolate
+                report['isolated_station']=isolate(stage,floor_root=PACKAGE_FLOOR)
+                report['greenhouse']['full_environment_present']=False
             torso=args.torso_degrees if args.torso_degrees is not None else [0.,0.,0.,0.,0.,args.torso_yaw]
             robot_options.update(ground_height=height,torso_degrees=torso,floor_root=PACKAGE_FLOOR)
         elif args.scene=='package':
@@ -380,6 +413,18 @@ def main(argv=None):
                 UsdGeom.Xformable(stage.GetPrimAtPath('/World/Plant')).AddTranslateOp(opSuffix='testStation').Set(Gf.Vec3d(0,0,.35))
         rig=build(stage,record,args.target,max_segment_m=args.max_segment_m,constraint_mode=args.constraint_mode,
                   cut_m=args.cut_arc_m,stem_contact_model=args.stem_contact_model)
+        if args.stem_contact_model=='flat_cylinders_v1':
+            from omni.physx.bindings._physx import SETTING_COLLISION_APPROXIMATE_CYLINDERS
+            cylinder_setting=SETTING_COLLISION_APPROXIMATE_CYLINDERS
+            previous_cylinders=process_settings.get(cylinder_setting)
+            # Owned diagnostic process only, before physics parsing. Exact
+            # analytic cylinders, zero margin, never silently cooked polygons.
+            process_settings.set_bool(SETTING_COLLISION_APPROXIMATE_CYLINDERS,False)
+            value=process_settings.get(SETTING_COLLISION_APPROXIMATE_CYLINDERS)
+            if value is not False:raise RuntimeError('Exact cylinder backend setting not applied')
+            report['stem_collision_backend']=dict(approximate_cylinders=value,margin_m=0.,
+                source='explicit_USD_cylinder_and_process_setting',native_cooked_shape_readback=False,
+                full_greenhouse_qualified=False)
         report['rig']=rig.report()
         fixture=None
         if args.full_robot_probe:
@@ -393,6 +438,7 @@ def main(argv=None):
                 robot_options['cut_style']=args.cut_style
                 robot_options['grasp_compression']=args.grasp_compression_m
                 robot_options['force_closure']=args.force_closure
+                robot_options['explicit_finger_effort']=args.explicit_finger_effort
                 robot_options['native_static_clearance']=getattr(args,'native_static_clearance',False)
                 robot_options['native_static_planning_seconds']=getattr(args,'native_static_planning_seconds',8.)
                 robot_options['cut_model']=getattr(args,'cut_model','force_qualified_pre_authored_seam_release')
@@ -420,6 +466,10 @@ def main(argv=None):
             source_hashes[fixture.asset]=sha256_file(fixture.asset)
             report['gripper_fixture']=fixture.report()
         if args.bimanual_cut:
+            if args.uniform_solver_iterations is not None:
+                from .solver_configuration import uniform_iterations
+                report['uniform_solver_iterations']=uniform_iterations(stage,
+                    (rig.root,fixture.root),args.uniform_solver_iterations)
             from .startup_screen import screen
             report['startup_collision_screen']=screen(stage,fixture)
             if not report['startup_collision_screen']['passed']:
@@ -445,6 +495,11 @@ def main(argv=None):
                 or not np.isclose(report['effective_scene']['gravity_m_s2'],args.gravity,rtol=1e-6,atol=1e-8)):
             raise RuntimeError('Simulation initialization changed explicit scene configuration')
         sim.reset()
+        if 'uniform_solver_iterations' in report:
+            from .solver_configuration import verify_iterations
+            verify_iterations(stage,report['uniform_solver_iterations'])
+        if cylinder_setting is not None and process_settings.get(cylinder_setting) is not False:
+            raise RuntimeError('Physics reset changed the exact cylinder backend setting')
         report['effective_scene_after_reset']=dict(gravity_m_s2=float(physics.GetGravityMagnitudeAttr().Get()),
             solver=settings.GetSolverTypeAttr().Get(),physics_dt=sim.get_physics_dt(),
             friction_type=settings.GetFrictionTypeAttr().Get(),
@@ -468,6 +523,12 @@ def main(argv=None):
         runtime=PlantRuntime(rig,sim.physics_sim_view)
         report['native_drive_parameters']=runtime.drive_diagnostics
         springs=None
+        if native_hold:
+            from .native_spring_observer import NativeSpringObserver
+            springs=NativeSpringObserver(runtime.articulation)
+            report['spring_control']=dict(mode='native_drives_isolated_hold_comparison',
+                external_spring_effort_applied=False,native_drive_readback_verified=True,
+                drive_work_measured=False,cutting_qualified=False)
         if args.spring_mode=='implicit_effort':
             from .implicit_springs import ImplicitJointSprings,NativeBodyLoads
             springs=ImplicitJointSprings(runtime.articulation)
@@ -613,6 +674,9 @@ def main(argv=None):
         (output/'report.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
         raise
     finally:
+        if cylinder_setting is not None:
+            if previous_cylinders is None:process_settings.destroy_item(cylinder_setting)
+            else:process_settings.set(cylinder_setting,previous_cylinders)
         if args.no_physics_profiler:
             if previous_profiler is None: process_settings.destroy_item(profiler_setting)
             else: process_settings.set(profiler_setting,previous_profiler)

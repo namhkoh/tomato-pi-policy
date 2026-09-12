@@ -70,6 +70,14 @@ class HeldPlantScreen:
                 if not prim.HasAPI(UsdPhysics.CollisionAPI) or not UsdPhysics.CollisionAPI(prim).GetCollisionEnabledAttr().Get(): continue
                 matrix=inverse@np.asarray(cache.GetLocalToWorldTransform(prim)).T
                 capsule=world_capsule(prim,matrix)
+                if prim.IsA(UsdGeom.Cylinder) and getattr(rig,'stem_contact_model',None)=='flat_cylinders_v1':
+                    # PLANNING ONLY: enclose the entire flat cylinder. Native
+                    # grasp uses its real side surface, never this bound.
+                    shape=UsdGeom.Cylinder(prim)
+                    if shape.GetAxisAttr().Get()!='Z' or not np.allclose(matrix[:3,:3].T@matrix[:3,:3],np.eye(3),atol=1e-6):
+                        raise ValueError('Rigid Z cylinder required for conservative planning bound')
+                    d=matrix[:3,2]*float(shape.GetHeightAttr().Get())/2
+                    capsule=(matrix[:3,3]-d,matrix[:3,3]+d,float(shape.GetRadiusAttr().Get()))
                 if capsule is not None:
                     self.local.append((str(prim.GetPath()),i,'capsule',capsule));continue
                 if (not prim.IsA(UsdGeom.Mesh)

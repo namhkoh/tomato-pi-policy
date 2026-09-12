@@ -236,6 +236,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             fixture.cut_authorized=phase=='stroke'
             fixture.command_right(phase,fraction)
             last_right_command=(phase,fraction)
+        if getattr(fixture,'explicit_finger_effort',False):
+            fixture.finger_effort.apply(fixture,step=int(stamp.step),dt=dt)
         fixture.prepare_step(runtime.frames)
         if getattr(fixture,'grasp_contact_frames','post_fetch_legacy')=='pre_solve_pgs_v1':
             fixture.grasp_observer.capture_contact_frames(runtime.frames,
@@ -271,7 +273,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             if contact_springs is not None:
                 spring_control_record=dict(mode='legacy_initialization_until_verified_grasp',
                     predicted_effort_applied=False,native_qualified=False,training_eligible=False)
-        if getattr(args,'diagnostic_grasp_dynamics',False):
+        if getattr(args,'diagnostic_grasp_dynamics',False) and spring_effort is not None:
             from .spring_work import capture as spring_capture
             spring_snapshot=spring_capture(runtime.articulation,spring_effort,step=stamp.step)
 
@@ -293,7 +295,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 experimental_spring_control=spring_control_record,training_eligible=False)
             previous_prediction=prediction_record
         spring_work=None
-        if getattr(args,'diagnostic_grasp_dynamics',False):
+        if getattr(args,'diagnostic_grasp_dynamics',False) and spring_snapshot is not None:
             from .spring_work import finish as spring_finish
             spring_work=spring_finish(spring_snapshot,runtime.articulation,
                 springs.k,step=stamp.step,dt=dt)
@@ -327,6 +329,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             joint_velocities_rad_s=plant_v.tolist(),elastic_energy_j=.5*float(np.dot(springs.k*plant_q,plant_q)),
             fastest_body=rig.body_paths[int(np.argmax(np.linalg.norm(velocity[:,:3],axis=1)))])
         records.append(record)
+        if getattr(fixture,'explicit_finger_effort',False):
+            record['finger_effort_control']=dict(fixture.finger_effort.receipt)
         if prediction_record is not None:record['contact_prediction']=prediction_record
         if getattr(args,'diagnostic_grasp_dynamics',False):
             record['spring_work']=spring_work

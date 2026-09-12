@@ -17,6 +17,9 @@ class BimanualRobot(FullRobotGripper):
         self.cut_style=kwargs.pop('cut_style','legacy')
         self.knife_alignment=kwargs.pop('knife_alignment','legacy')
         self.force_closure_enabled=kwargs.pop('force_closure',False)
+        self.explicit_finger_effort=kwargs.pop('explicit_finger_effort',False)
+        if type(self.explicit_finger_effort) is not bool:
+            raise ValueError('Explicit boolean finger effort flag required')
         self.grasp_contact_frames=kwargs.pop('grasp_contact_frames','post_fetch_legacy')
         if self.grasp_contact_frames not in ('post_fetch_legacy','pre_solve_pgs_v1'):
             raise ValueError('Unknown grasp contact frame contract')
@@ -78,7 +81,7 @@ class BimanualRobot(FullRobotGripper):
         self.collider_paths=[p for p in self.collider_paths if p!=old_arc]+self.arc_contacts['collider_paths']
         self.knife=KnifeGeometry(self.stage,self.root)
         from pxr import UsdGeom
-        radius=max(float(UsdGeom.Capsule.Get(self.stage,self.rig.body_paths[i]+'/StemCollider').GetRadiusAttr().Get())
+        radius=max(float(self.stage.GetPrimAtPath(self.rig.body_paths[i]+'/StemCollider').GetAttribute('radius').Get())
             for i in (self.rig.cut_index-1,self.rig.cut_index))
         self.stroke_offsets=transverse_stroke_offsets(radius,self.knife.size[0],standoff)
         self.cut_gate=ShearGate(self.rig.source_target,cut_parameters)
@@ -182,7 +185,7 @@ class BimanualRobot(FullRobotGripper):
             # than one neighboring link beneath the SAME physical finger.
             # Derive expected contact identity from the final pad footprint,
             # never from an arbitrary segment count. Native guards unchanged.
-            if getattr(self.rig,'stem_contact_model','flush_capsules_v1')=='continuous_internal_capsules_v1':
+            if getattr(self.rig,'stem_contact_model','flush_capsules_v1') in ('continuous_internal_capsules_v1','flat_cylinders_v1'):
                 aperture=max(0.,self.radius-self.grasp_compression)
                 self.planning_slides={'gripper_finger_l1':-aperture,'gripper_finger_l2':aperture}
                 final_q=self.path_q[int(np.argmin(abs(self.fractions-1.)))]
@@ -246,6 +249,9 @@ class BimanualRobot(FullRobotGripper):
             from .force_closure import ForceClosure
             self.force_closer=ForceClosure(self.radius,self.grasp_compression)
         self.right_indices=[self.names.index(f'right_arm_{i}') for i in range(7)]
+        if getattr(self,'explicit_finger_effort',False):
+            from .finger_effort import FingerEffort
+            self.finger_effort=FingerEffort(self)
         self.right_palm=simulation_view.create_rigid_body_view(self.knife.wrist_path)
         if self.right_palm.count!=1: raise RuntimeError('Missing native right wrist')
         self.event_monitor.tool_contact=self._tool_contact

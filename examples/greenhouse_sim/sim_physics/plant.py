@@ -221,7 +221,7 @@ def _joint(stage,path,parent,child,anchor,frames,props,*,external):
 def build(stage,record,component_id,*,root='/World/InteractionPhysics/Target',material=None,max_segment_m=.025,constraint_mode='articulation',cut_m=.01,stem_contact_model='flush_capsules_v1'):
     """Convert only a leaf-bearing native petiole; preserve package/source layers."""
     material=material or Material()
-    if stem_contact_model not in ('flush_capsules_v1','continuous_internal_capsules_v1'):
+    if stem_contact_model not in ('flush_capsules_v1','continuous_internal_capsules_v1','flat_cylinders_v1'):
         raise ValueError('Unknown stem contact model')
     if not np.isfinite(cut_m) or not .01<=cut_m<=.02:
         raise ValueError('Diagnostic cut must remain in the agreed 10..20 mm petiole interval')
@@ -278,7 +278,9 @@ def build(stage,record,component_id,*,root='/World/InteractionPhysics/Target',ma
     rig.stem_contact_model=stem_contact_model
     spans=[]
     for i,length in enumerate(lengths):
-        if stem_contact_model=='continuous_internal_capsules_v1':
+        if stem_contact_model=='flat_cylinders_v1':
+            spans.append(dict(radius_m=float(np.mean(chain[i:i+2,3])),height_m=float(length),center_z_m=0.))
+        elif stem_contact_model=='continuous_internal_capsules_v1':
             from .stem_envelope import capsule_span
             spans.append(capsule_span(float(length),float(np.mean(chain[i:i+2,3])),
                 flush_start=i in (0,cut_index),flush_end=i in (cut_index-1,len(lengths)-1)))
@@ -302,11 +304,15 @@ def build(stage,record,component_id,*,root='/World/InteractionPhysics/Target',ma
                     ('physxArticulation:enabledSelfCollisions',Sdf.ValueTypeNames.Bool,False),
                     ('physxArticulation:solverPositionIterationCount',Sdf.ValueTypeNames.Int,16),
                     ('physxArticulation:solverVelocityIterationCount',Sdf.ValueTypeNames.Int,4)])
-            shape=UsdGeom.Capsule.Define(stage,path+'/StemCollider')
+            flat=stem_contact_model=='flat_cylinders_v1'
+            shape=(UsdGeom.Cylinder if flat else UsdGeom.Capsule).Define(stage,path+'/StemCollider')
             span=spans[i];radius=span['radius_m'];height=span['height_m']
             shape.CreateRadiusAttr(radius);shape.CreateHeightAttr(height)
-            shape.CreateExtentAttr([Gf.Vec3f(-radius,-radius,-height/2-radius),
-                                    Gf.Vec3f(radius,radius,height/2+radius)])
+            cap=0. if flat else radius
+            shape.CreateExtentAttr([Gf.Vec3f(-radius,-radius,-height/2-cap),
+                                    Gf.Vec3f(radius,radius,height/2+cap)])
+            if flat:
+                shape.GetPrim().CreateAttribute('physxConvexGeometry:margin',Sdf.ValueTypeNames.Float).Set(0.)
             if span['center_z_m']:
                 shape.AddTranslateOp().Set(Gf.Vec3d(0,0,span['center_z_m']))
             shape.CreateAxisAttr('Z');shape.CreatePurposeAttr('guide');_collision(shape.GetPrim())
