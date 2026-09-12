@@ -78,6 +78,8 @@ def parser():
         help='Isolated compliant feed comparison: regulate the minimum of seven raw loads; release gates remain unsmoothed')
     p.add_argument('--compliant-blade-rate',action='store_true',
         help='Isolated 1000 N/m contact comparison: loading <=0.3 mm/s, no force/dwell/clearance changes')
+    p.add_argument('--blade-friction-budget',action='store_true',
+        help='Isolated feed comparison: 0.40 N full-contact backoff, unchanged 0.50 N hard guard and raw cut gates')
     p.add_argument('--seam-contact-compliance',action='store_true',
         help='Isolated blade feedback experiment: uncalibrated 1000 N/m local stem contact compression')
     p.add_argument('--native-spring-cut-trial',action='store_true',
@@ -178,6 +180,8 @@ def parser():
 
 def main(argv=None):
     args=parser().parse_args(argv)
+    if args.blade_friction_budget and not (args.compliant_blade_rate and args.blade_dwell_feedback):
+        raise ValueError('Blade friction budget requires isolated compliant rate and minimum-window feedback')
     if args.native_capsule_sphere_cover and not (args.bimanual_cut and args.native_static_clearance):
         raise ValueError('Native capsule sphere cover requires bimanual native static clearance')
     contact_trial=args.isolated_cut_contact_trial

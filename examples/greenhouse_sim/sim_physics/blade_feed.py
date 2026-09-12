@@ -9,7 +9,7 @@ import numpy as np
 
 
 class BladeFeed:
-    def __init__(self, offsets, *, radius, dwell_feedback=False, compliant_rate=False):
+    def __init__(self, offsets, *, radius, dwell_feedback=False, compliant_rate=False, friction_budget=False):
         values=np.asarray(offsets,dtype=float)
         if (values.ndim!=1 or len(values)<2 or not np.isfinite(values).all()
                 or not np.all(np.diff(values)>0) or not -.025<=values[0]<0<values[-1]<=.02
@@ -33,6 +33,14 @@ class BladeFeed:
         self.near_speed=.0003 if compliant_rate else .0001
         self.loading_speed=.0003 if compliant_rate else .00005
         self.load_gain=.00125 if compliant_rate else .0002
+        if type(friction_budget) is not bool or friction_budget and not (compliant_rate and dwell_feedback):
+            raise ValueError('Friction budget requires explicit compliant rate and minimum-window feedback')
+        self.friction_budget=friction_budget
+        # Contact upper bound includes friction; it is not the signed normal
+        # load tested by the cut gate. At mu=.5, .26 N normal may require
+        # .39 N total. .40 N is a CONTROL backoff, not a raised .50 N guard.
+        # The retained .10 N margin is not an analytical overshoot guarantee.
+        self.backoff_load=.40 if friction_budget else .32
 
     def observe(self, knife, *, step, guards_passed, released):
         if (type(step) is not int or step!=self.observed_step+1 or guards_passed is not True
@@ -68,7 +76,7 @@ class BladeFeed:
             raise RuntimeError('Blade load acquisition timed out; no timed release')
         self.near=self.near or self.offset>=self.near_offset or self.upper>.01
         control_load=min(self.loads) if self.dwell_feedback and self.loads else self.normal
-        if self.upper>.32 or self.normal>.28:
+        if self.upper>self.backoff_load or self.normal>.28:
             speed=-.0005;mode='backoff_load'
         elif .22<=control_load<=.28:
             speed=0.;mode='hold_valid_load'
@@ -91,10 +99,11 @@ class BladeFeed:
         self.receipt=dict(mode='native_blade_feed_v1',state=mode,command_step=step,
             observation_step=self.observed_step,offset_m=self.offset,delta_m=self.offset-previous,
             signed_resistance_n=self.normal,all_contact_upper_bound_n=self.upper,
-            desired_signed_load_n=.26,holding_load_band_n=[.22,.28],backoff_load_n=.32,
+            desired_signed_load_n=.26,holding_load_band_n=[.22,.28],backoff_load_n=self.backoff_load,
             near_contact_speed_m_s=self.near_speed,loading_speed_limit_m_s=self.loading_speed,
             backoff_speed_m_s=.0005,cut_authorized=False,force_limit_guaranteed=False)
         self.receipt.update(compliant_rate_comparison=self.compliant_rate,
+            friction_budget_comparison=self.friction_budget,hard_full_contact_guard_n=.5,
             loading_gain_m_per_n_s=self.load_gain,
             maximum_loading_increment_m=self.loading_speed*dt,
             loading_profile_qualified=False)

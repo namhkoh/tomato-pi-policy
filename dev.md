@@ -6605,3 +6605,54 @@ No hardware, collection, tuning, review, split or training-export changes.
   a separate grasp-and-hold/no-reposition comparison with the already bounded
   feed profile, not weakening any release, contact, slip or retention guard.
   Cut reliability, withdrawal, retained material and deposit remain incomplete.
+
+### 2026-09-13: No-pull cut rejection isolated to moving attachment reference
+
+- Native184 combines the already bounded faster feed with NO optional2mm
+  pull. Grasp remains bilateral; maximum recorded slip0.653260mm. Still FAILS
+  at the30s loading timeout with no cut (20,939 eligible edge contact rows).
+  No full retained-cut/withdrawal/deposit qualification is claimed.
+- Exercised the previously unit-tested native-C/explicit-K coupon split.
+  Native185 FREE passes720 steps and whole-run modeled energy decay.
+  Native186 HELD PGS128/0 fails equilibrium (1.293492mNm residual) and velocity
+  (0.045929rad/s RMS). Native187 TGS128/0 is worse:20.039702mNm,2.396180rad/s.
+  Neither split nor solver-mode change is promoted into production.
+- Added default-OFF `--blade-friction-budget`, requiring the complete isolated
+  compliant feed and seven-sample minimum feedback configuration. Total force
+  includes friction:0.26N normal with mu=.5 can require0.39N total, conflicting
+  with the old0.32N CONTROL backoff. The comparison uses0.40N backoff, retaining
+  the0.50N HARD full-contact guard,0.28N normal backoff, raw signed cut force,
+  geometry/direction/dwell, bounded feed increments and failure timeout. This
+  is not an analytical force-overshoot guarantee or permission to release.
+- Native188 still FAILS without a cut; maximum slip0.657997mm. It is NOT a
+  working cutting configuration. Feedback changes alone are insufficient.
+- Added read-only `ShearGate.diagnostic` and native `gate_diagnostic`: exact
+  rejected predicates, measured relative step and pending dwell/travel. The
+  original release predicate/evidence is unchanged; input faults cannot leave
+  a stale qualifying diagnostic. Receipts never authorize a physical cut.
+- Read-only replay of178/184/188 reproduces EVERY logged signed force and
+  dwell value and their exact cut/no-cut outcome (zero mismatches).184 and188
+  reach at most ONE consecutive valid sample. With edge contacts,184 fails
+  signed load3862 times and reverse relative motion3013 times;188 reduces load
+  failures to989 but still has2975 reverse-motion failures.178 reaches seven
+  valid samples and its original16.729167s event, then fails retention as above.
+- Decomposing188's native transforms identifies the moving SEAM, not backward
+  blade commands: at15.325s the blade advances0.129736um while the attached
+  seam advances165.509443um. Other inspected steps alternate about75..170um
+  seam motion while blade increments are submicrometre. The externally anchored
+  floating root is not behaving like the exactly constrained root assumed by
+  the current predictor. This is measured attachment/reference motion; it does
+  not by itself prove a particular installed PhysX defect or a full energy law.
+- Next engineering check is a genuinely fixed root and state-preserving detach
+  with valid fresh tensor metadata; the existing fixed-root release prohibition
+  is NOT bypassed. Native189's exploratory refresh fails with stage ID0 before
+  post-release stepping, identifying a launcher-context identity error. No
+  production stage, running user job, source asset or dataset is changed.
+- Source-preserving seed19/50 proposals at an isolated0.35m plant lift also
+  fail existing arm/path checks; none is executed or called reachable.
+- Evidence under `data/sim_physics`: `bimanual_downward_20260912_native184`,
+  `native188`, `native_damping_20260913_native185`..`native187`,
+  `replay_shear_rejections_20260913.log`, `reverse_motion_audit_20260913.log`.
+  Full regression before diagnostics:3774 passed145.98s; after diagnostics:
+  **3,784 passed in134.03s**, `regression_20260913_shear_diagnostics_v1.log`.
+  These are software checks; reliable cutting/retention is still NOT COMPLETE.

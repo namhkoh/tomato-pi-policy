@@ -814,6 +814,7 @@ class BimanualRobot(FullRobotGripper):
             raw_normal_row_limit=256,raw_normal_rows_complete=True,
             cut_model=self.cut_gate.parameters.model,
             loading_travel_required=self.cut_gate.parameters.model==LEGACY_CUT_MODEL,
+            gate_diagnostic=dict(self.cut_gate.diagnostic),
             gate_dwell_s=self.cut_gate.dwell,gate_travel_m=self.cut_gate.travel,cut_event=self.cut_event)
 
     def restore_authored_state(self):

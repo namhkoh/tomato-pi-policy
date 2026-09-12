@@ -245,7 +245,7 @@ def transverse_stroke_offsets(stem_radius,edge_width,standoff=.025):
 class ShearGate:
     def __init__(self,target,parameters=None):
         self.target=target;self.parameters=parameters or ShearParameters()
-        self.completed=False;self.reset_window()
+        self.completed=False;self.reset_window();self.diagnostic=None
 
     def reset_window(self):
         self.dwell=0.;self.travel=0.;self.peak=0.;self.steps=0
@@ -266,6 +266,9 @@ class ShearGate:
         not a displacement law, fracture energy or calibrated tissue cutting.
         """
         p=self.parameters
+        # Read-only explanation. Never reused as release evidence or fed back
+        # into the validity predicate; an input fault cannot leave a stale pass.
+        self.diagnostic=dict(state='input_validation_pending',cut_authorized=False)
         if impulse_contract!=KNIFE_IMPULSE_CONTRACT or normals is None or tool_contact_upper_bound_n is None:
             self.reset_window()
             raise ValueError('Explicit on-knife normal impulse contract and full tool load bound required')
@@ -300,6 +303,20 @@ class ShearGate:
             and resistance>=p.force_n and force<=p.maximum_force_n and upper<=p.maximum_force_n
             and normal_cosine>=np.cos(np.pi/6) and edge_dot<.3 and direction_dot<.3
             and step>=-1e-6 and axial<=p.axial_tolerance_m)
+        try: slip_ok=bool(slip is not None and np.isfinite(slip) and 0<=slip<p.maximum_grasp_slip_m)
+        except (ValueError,TypeError): slip_ok=False
+        checks=dict(not_already_cut=not self.completed,stable_grasp=bool(held),grasp_slip=slip_ok,
+            edge_contacts=len(points)>0,edge_provenance=edge_contact_verified is True,
+            signed_load=resistance>=p.force_n,projected_load_cap=force<=p.maximum_force_n,
+            full_load_cap=upper<=p.maximum_force_n,leading_normal=normal_cosine>=np.cos(np.pi/6),
+            edge_alignment=edge_dot<.3,stroke_alignment=direction_dot<.3,
+            nonreversing_relative_step=step>=-1e-6,axial_contact=axial<=p.axial_tolerance_m)
+        self.diagnostic=dict(state='qualifying_contact' if valid else 'rejected_contact',
+            failed_conditions=[key for key,ok in checks.items() if not ok],
+            signed_resistance_n=resistance,full_load_upper_n=upper,relative_step_m=step,
+            maximum_axial_contact_m=axial,leading_normal_cosine=normal_cosine,
+            edge_axis_dot_stem=edge_dot,stroke_axis_dot_stem=direction_dot,
+            dwell_before_s=self.dwell,cut_authorized=False)
         if not valid:
             self.reset_window()
             self.signed_resistance_n=resistance;self.unsigned_projection_n=force
@@ -320,8 +337,12 @@ class ShearGate:
         self.maximum_direction_dot=max(self.maximum_direction_dot,direction_dot);self.minimum_step=min(self.minimum_step,step)
         self.minimum_normal_cosine=min(self.minimum_normal_cosine,normal_cosine)
         travel_required=p.model==LEGACY_CUT_MODEL
+        self.diagnostic.update(dwell_after_s=self.dwell,net_loading_travel_m=self.travel,
+            dwell_met=self.dwell>=p.dwell_s,
+            travel_met=not travel_required or self.travel>=p.minimum_loading_travel_m)
         if self.dwell<p.dwell_s or (travel_required and self.travel<p.minimum_loading_travel_m): return None
         self.completed=True
+        self.diagnostic['state']='evidence_emitted_not_physical_fracture_verification'
         return dict(target=self.target,model=p.model,
             force_threshold_n=p.force_n,peak_force_n=self.peak,contact_dwell_s=self.dwell,
             force_contract=KNIFE_IMPULSE_CONTRACT,
