@@ -6201,3 +6201,26 @@ No hardware, collection, tuning, review, split or training-export changes.
   `paired_hand_search_*20260913*.log`, `paired_station_solve_*20260913*.log`,
   `paired_robot_search_*20260913*.log`. No dataset, review, training, hardware,
   running user application or Windows memory configuration is changed.
+
+### 2026-09-13: Frozen native whole-robot startup validator (diagnostic only)
+
+- Added `sim_physics/native_startup_clearance.py` with complete source/robot
+  inventories, before-and-after native actor positive controls, frozen-epoch
+  guards, bounded queries, full-margin boxes and enclosing capsule sphere unions.
+  Unknown actors, incomplete callbacks, expired epochs and missing actors reject.
+  This helper is NOT integrated as execution authority; existing startup and
+  motion guards remain. It does not load, step, reposition or edit the scene.
+- Native143 distinguished real foliage contacts from five coarse bounding-box
+  false positives among seven startup pairs. Native144/145 then screened five
+  proposed whole-robot poses: all still reject on leaf collisions. Source stem
+  `convexDecomposition` geometry explains some conservative USD-AABB rejections,
+  but does not explain away the remaining actual native overlap results.
+- Native145: all 475 source colliders controlled twice, 47 robot shapes in the
+  inventory, 1,349 queries, 0.297 s after scene loading; zero physics steps,
+  zero authored body-pose change during queries, final epoch validation passes.
+  Initial PhysX loading changes a matrix element by at most 8.33e-7; this is
+  recorded separately from query activity. No motion/cut qualification follows.
+  Evidence: `data/sim_physics/bimanual_downward_20260912_native145/`.
+- 29 fake-query contract tests pass; full physics regression **3,448 passed in
+  120.19 s**, `data/sim_physics/regression_20260913_native_startup_v1.log`.
+  Regression success is not evidence of native grasp/cut completion.
