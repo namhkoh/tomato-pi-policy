@@ -6094,3 +6094,32 @@ No hardware, collection, tuning, review, split or training-export changes.
   is the bounded positive result; deposit and calibrated tissue fracture remain
   unsupported. No labels/splits, training, hardware, source assets or OS settings
   changed. Windows was not restarted.
+
+### 2026-09-13: Reobserved retraction corridor correction
+
+- Native134: verified65 mm grasp, requested5 mm target pull, stopped at5.883333 s
+  with `IK interpolation exceeds 0.5 mm`. Root cause: native reobservation changes
+  the grasp goal translation/rotation, but the pull used palm Z instead of the
+  actual refreshed start-to-goal path. Those directions are not necessarily equal.
+- `checked_approach_retraction` now returns a bounded metric vector along that
+  actual checked translation corridor, with an8 mm reserve inside its measured
+  length. Rigid/finite inputs are required. Existing path orientation is reused;
+  this is not an assertion of fixed wrist orientation or new plant clearance.
+  Logs identify the chosen vector. No IK tolerance, grasp-loss window, contact
+  limit, or mandatory post-motion native reobservation was relaxed.
+- Native135 passes the previous interpolation failure and physically moves while
+  bilateral at6.0 s, but loses the grasp at6.283333 s before finishing5 mm.
+  Maximum recorded slip1.414957 mm; latest signed support0/12.847961 mN.
+  Right arm never moves and no cut occurs. Thus the path-command bug is fixed,
+  but5 mm retained repositioning is NOT qualified. Native136 tests2 mm separately.
+- Additional offline searches:75 nearby base proposals (no clear whole-source
+  endpoint),72 torso/station cases (same result), and72 wrist seed combinations
+  (19 distinct converged/self-clear poses rejected by scene,17 duplicates,36
+  solve failures). These conservative offline failures are not proof of physical
+  impossibility. Opposite-side grasps at the tested station fail left IK; direct
+  below/longer grasps have startup foliage conflicts or no new rigid tool corridor.
+  Evidence under `data/sim_physics/held_scene_station_search_20260913*`,
+  `grasp_cut_clearance_search_20260913*`, `wrist_branch_search_20260913*`.
+- Focused98 tests pass. Full physics regression: **3,376 passed in123.48 s**,
+  `data/sim_physics/regression_20260913_retraction_v1.log`. No current reliable
+  downward cut, native retained deposit, or tissue-fracture calibration is claimed.

@@ -3,6 +3,7 @@ import pytest
 from scipy.spatial.transform import Rotation
 
 from sim_physics.grasp_frame import align_to_axis, approach_rotation
+from sim_physics.grasp_frame import checked_approach_retraction
 
 
 def test_current_axis_updates_the_entire_palm_without_changing_roll():
@@ -36,3 +37,46 @@ def test_approach_rotation_reaches_goal_and_does_not_rotate_further_on_pull():
 @pytest.mark.parametrize('fraction',[-.01,1.16,float('nan')])
 def test_unchecked_approach_fraction_is_refused(fraction):
     with pytest.raises(ValueError):approach_rotation(np.eye(3),np.eye(3),fraction)
+
+
+def test_reobserved_retraction_stays_on_actual_path_not_old_palm_axis():
+    start=np.eye(4);goal=np.eye(4)
+    start[:3,3]=[.1,.2,1.]
+    goal[:3,3]=start[:3,3]+[.007,0,-.02]
+    goal[:3,:3]=Rotation.from_euler('y',5,degrees=True).as_matrix()
+    delta=goal[:3,3]-start[:3,3]
+    # Reproduce the old off-path command; the unchanged 0.5 mm guard rejects it.
+    old=goal[:3,3]+.005*goal[:3,2]
+    fraction=np.dot(old-start[:3,3],delta)/np.dot(delta,delta)
+    assert np.linalg.norm(old-(start[:3,3]+fraction*delta))>.0005
+    vector=checked_approach_retraction(start,goal,.005)
+    assert np.linalg.norm(vector)==pytest.approx(.005)
+    for t in np.linspace(0,1,241):
+        point=goal[:3,3]+t*vector
+        fraction=np.dot(point-start[:3,3],delta)/np.dot(delta,delta)
+        assert 0<=fraction<=1+1e-12
+        np.testing.assert_allclose(point,start[:3,3]+fraction*delta,atol=1e-12)
+
+
+@pytest.mark.parametrize('distance',[0.,.001,.005,.01])
+def test_unchanged_axis_aligned_approach_preserves_metric_request(distance):
+    start=np.eye(4);goal=np.eye(4);start[2,3]=.02
+    np.testing.assert_allclose(checked_approach_retraction(start,goal,distance),[0,0,distance])
+
+
+@pytest.mark.parametrize('distance',[-.001,.010001,np.nan,np.inf,True,[.005]])
+def test_invalid_retraction_rejected(distance):
+    start=np.eye(4);start[2,3]=.02
+    with pytest.raises(ValueError):checked_approach_retraction(start,np.eye(4),distance)
+
+
+@pytest.mark.parametrize('fault',['too_short','zero','scale','reflection','bottom','nan'])
+def test_retraction_requires_real_corridor_and_rigid_frames(fault):
+    start=np.eye(4);goal=np.eye(4);start[2,3]=.02
+    if fault=='too_short':start[2,3]=.012
+    if fault=='zero':start[2,3]=0
+    if fault=='scale':goal[0,0]=2
+    if fault=='reflection':goal[0,0]=-1
+    if fault=='bottom':goal[3,0]=1
+    if fault=='nan':goal[1,3]=np.nan
+    with pytest.raises(ValueError):checked_approach_retraction(start,goal,.005)

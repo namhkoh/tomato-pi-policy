@@ -119,6 +119,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     measured_withdrawal=bool(getattr(args,'measured_withdrawal',False));withdrawal=None
     hold_control=bool(getattr(args,'bimanual_hold_control',False))
     reposition=float(getattr(args,'bimanual_reposition_m',0.))
+    reposition_vector=None
     force_closure=bool(getattr(fixture,'force_closure_enabled',False))
     times=sequence_times(reposition);delay=times['delay']
     grasp_time=3.5;acquisition_wait_logged=False
@@ -150,6 +151,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
 
     def before(stamp,dt):
         nonlocal goal_set,grasp_local,planned,cut_fraction,grasp_verified,last_right_command
+        nonlocal reposition_vector
         nonlocal spring_snapshot,prediction_before
         nonlocal spring_control_record
         nonlocal contact_springs_started
@@ -165,7 +167,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             goal_set=True
         goal=fixture.start[:3,3]+ramp(t,1,2)*(fixture.goal[:3,3]-fixture.start[:3,3])
         if grasp_verified and reposition:
-            goal+=reposition*ramp(t,grasp_time,grasp_time+1)*fixture.goal[:3,2]
+            if reposition_vector is None:raise RuntimeError('Missing checked retraction vector')
+            goal+=ramp(t,grasp_time,grasp_time+1)*reposition_vector
         # Keep the target held in place until measured knife withdrawal and a
         # fresh clearance screen authorize a separate transport/reposition.
         # A release+1 s timer cannot establish a clear blade corridor.
@@ -189,6 +192,14 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                     acquisition_wait_logged=True
             else:
                 grasp_verified=True;grasp_time=t
+                if reposition:
+                    from .grasp_frame import checked_approach_retraction
+                    reposition_vector=checked_approach_retraction(fixture.start,fixture.goal,reposition)
+                    events.append(dict(t=t,event='held_retraction_corridor_selected',
+                        direction_source='refreshed_checked_approach_translation_not_palm_axis',
+                        requested_distance_m=reposition,displacement_world_m=reposition_vector.tolist(),
+                        orientation_source='existing_checked_approach_path',
+                        native_grasp_retention_verified=False,current_plant_collision_certified=False))
                 times=schedule_after_grasp(t,reposition);delay=times['delay']
                 plan_time=times['plan'];approach_start=times['approach']
                 stroke_start=times['stroke'];stroke_end=times['end']
