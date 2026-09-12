@@ -725,16 +725,20 @@ def sample(coupon, *, step_id, frames, velocities, q, qdot, contact_rows,
         first, second = row['collider0'], row['collider1']
         if first == second or first not in known or second not in known or row['kind'] not in ('normal', 'friction'):
             raise ValueError('Unknown contact collider/kind; no incomplete attribution')
-        p = _array(row['point_world_m'], (3,), 'contact point')
+        p = _array(row['point_world_m'], (3,), 'contact point on collider0')
+        p1 = _array(row.get('point_on_1_world_m', p), (3,), 'contact point on collider1')
         impulse = _array(row['impulse_on_0_ns'], (3,), 'signed original-order contact impulse')
         force = impulse/coupon.dt
         for path, sign in ((first, 1), (second, -1)):
             if path in colliders:
                 i = colliders[path]; f = sign*force
-                wrench[i, :3] += f; wrench[i, 3:] += np.cross(p-frames[i, :3, 3], f)
+                application = p if sign == 1 else p1
+                wrench[i, :3] += f; wrench[i, 3:] += np.cross(application-frames[i, :3, 3], f)
                 upper[i] += math.hypot(*force)
         item = dict(collider0=first, collider1=second, kind=row['kind'],
             point_world_m=p.tolist(), impulse_on_0_ns=impulse.tolist())
+        if 'point_on_1_world_m' in row:
+            item['point_on_1_world_m'] = p1.tolist()
         if row['kind'] == 'normal':
             normal = _array(row['normal_on_0'], (3,), 'normal on collider0')
             if abs(math.hypot(*normal)-1) > 1e-5: raise ValueError('Unit contact normal required')

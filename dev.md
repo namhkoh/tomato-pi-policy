@@ -6567,3 +6567,41 @@ No hardware, collection, tuning, review, split or training-export changes.
   `bimanual_downward_20260912_native178`, compact seed59 log. Full regression
   **3,747 passed in139.54 s**, `regression_20260913_compliant_rate_v1.log`.
   Reliable full grasp-cut-retain-withdraw/deposit remains NOT COMPLETE.
+
+### 2026-09-13: Bundled Newton reference solver comparison (not promoted)
+
+- Added an isolated, CPU-only Newton1.2.1/Warp1.13.0 coupon runner, using the
+  Isaac6.0.1 bundled packages without enabling its auto-switching extension,
+  starting Kit, changing production physics or downloading another backend.
+  Original source-report mass/inertia/K/C, small-coupon geometry, zero gravity
+  and240 Hz are retained and native arrays checked. AVBD Rayleigh damping is
+  explicitly C/K seconds (not physical C passed into the wrong units).
+- Contact law is explicitly DIFFERENT: unilateral compliant penalty with
+  compression-only damping and IPC regularized friction; not PhysX patch
+  friction or a calibrated plant/gripper material. Static-friction equivalence
+  is unverified. No contact-history snap, body replay, root weld or external
+  spring-force override is used. Original coupon acceptance gates remain.
+- Native179 was an adapter startup error (None numeric seed, zero steps), fixed
+  before180. Native180 FREE passes720 steps, including full-run modeled energy
+  decay (initial7.971460uJ, maximum6.016374uJ). Native181 HELD at32 iterations
+  FAILS equilibrium/velocity/global wrench balance: moment residual0.202076mNm,
+  joint velocity RMS0.013755rad/s. Native182 at128 iterations still FAILS:
+  residual0.314862mNm, velocity0.015083rad/s. All pads observed; no plant test.
+- Native183 tests a more localized IPC low-speed regularizer (0.1 rather than
+  10mm/s, same mu/K/C) and FAILS the unchanged1N per-body contact guard on the
+  first step (maximum1.109510N). Not promoted or treated as a physical repair.
+- Native contact telemetry preserves shape order and force-on-body1 sign,
+  splits normal/friction exactly once, and retains both solver application
+  points rather than inventing a shared point. Shared coupon oracle supports
+  that optional second point; existing single-point PhysX rows are unchanged.
+  Its maximal-coordinate arithmetic label is explicitly not PhysX execution
+  or an independent articulation position sensor in the Newton receipts.
+- Evidence: `data/sim_physics/newton_coupon_20260913_native179`..`native183`.
+  Focused130 passed; full regression **3,763 passed in137.66s**, recorded in
+  `regression_20260913_newton_reference_v1.log`. These are code validations,
+  not full robot grasp/cut qualification. Production defaults are unchanged.
+- A bounded-memory read-only audit of173/178 confirms the no-pull173 trial has
+  lower but still nonzero twisting energy; at18s it is3.873mJ. This motivates
+  a separate grasp-and-hold/no-reposition comparison with the already bounded
+  feed profile, not weakening any release, contact, slip or retention guard.
+  Cut reliability, withdrawal, retained material and deposit remain incomplete.
