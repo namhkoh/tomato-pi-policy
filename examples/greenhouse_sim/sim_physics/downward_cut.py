@@ -62,7 +62,7 @@ def vertical_cut_frame(axis,normal_sign=1,tilt_degrees=0.):
     return direction,normal
 
 
-def cartesian_transit(robot,left,goal,*,replan_stroke_from_endpoint=False):
+def cartesian_transit(robot,left,goal,*,replan_stroke_from_endpoint=False,diagnostics=None):
     """Straight wrist-position transit, smooth rotation, no joint-space detour.
 
     Every <=2 mm / <=1 degree pose plus <=1 degree joint interpolation is
@@ -71,6 +71,13 @@ def cartesian_transit(robot,left,goal,*,replan_stroke_from_endpoint=False):
     """
     if type(replan_stroke_from_endpoint) is not bool:
         raise ValueError('Explicit endpoint replanning flag required')
+    if diagnostics is not None and type(diagnostics) is not dict:
+        raise ValueError('Transit diagnostics must be an explicit dictionary')
+    if diagnostics is not None:diagnostics.clear()
+    def reject(reason,**details):
+        if diagnostics is not None:
+            diagnostics.update(reason=reason,**details,motion_authorized=False)
+        return None
     from scipy.spatial.transform import Rotation,Slerp
     start=robot.kin.forward('right',robot.right,robot.base)
     end=robot.kin.forward('right',goal,robot.base)
@@ -84,21 +91,28 @@ def cartesian_transit(robot,left,goal,*,replan_stroke_from_endpoint=False):
         desired=np.eye(4);desired[:3,:3]=rot
         desired[:3,3]=(1-alpha)*start[:3,3]+alpha*end[:3,3]
         solved=robot.solve_right_pose(desired,path[-1])
-        if not solved.succeeded:return None
+        if not solved.succeeded:return reject('cartesian_IK',fraction=float(alpha))
         q=np.asarray(solved.joint_degrees)
         # Densify joints too, without changing the scheduled Cartesian knots.
         n=max(1,int(np.ceil(np.max(abs(q-path[-1])))))
         for row in np.linspace(path[-1],q,n+1)[1:]:
             checks+=1
             clearance=robot.kin.inter_arm_clearance(left,row,robot.base).clearance_m
-            if (clearance<.01 or not robot.check_self(left,row)['passed']
-                    or not robot.check_held_plant(left,row)):return None
+            if clearance<.01:return reject('interarm_clearance',fraction=float(alpha),
+                check_index=checks,clearance_m=float(clearance),required_m=.01)
+            self_check=robot.check_self(left,row)
+            if not self_check['passed']:return reject('robot_self_clearance',fraction=float(alpha),
+                check_index=checks,detail=self_check)
+            if not robot.check_held_plant(left,row):return reject('plant_or_scene_clearance',
+                fraction=float(alpha),check_index=checks,
+                detail=getattr(getattr(robot,'held_plant_screen',None),'last_failure',None))
             # Linear joint interpolation must stay close to the Cartesian line.
             point=robot.kin.forward('right',row,robot.base)[:3,3]
             delta=end[:3,3]-start[:3,3];length2=float(delta@delta)
             t=float((point-start[:3,3])@delta/length2) if length2>1e-16 else 0.
             closest=start[:3,3]+np.clip(t,0,1)*delta
-            if np.linalg.norm(point-closest)>.0005:return None
+            if np.linalg.norm(point-closest)>.0005:return reject('joint_interpolation_off_line',
+                fraction=float(alpha),check_index=checks,line_error_m=float(np.linalg.norm(point-closest)),required_m=.0005)
             minimum=min(minimum,clearance)
         path.append(q)
     # A redundant arm may reach the same pose on a different elbow branch.
@@ -106,11 +120,14 @@ def cartesian_transit(robot,left,goal,*,replan_stroke_from_endpoint=False):
     # from this exact, screened terminal configuration. Never append a joint
     # jump to the independently proposed endpoint.
     mismatch=float(np.max(abs(path[-1]-goal)))
-    if mismatch>.25 and not replan_stroke_from_endpoint:return None
+    if mismatch>.25 and not replan_stroke_from_endpoint:return reject('terminal_joint_branch',
+        joint_difference_degrees=mismatch,required_degrees=.25)
     actual=robot.kin.forward('right',path[-1],robot.base)
     position_error=float(np.linalg.norm(actual[:3,3]-end[:3,3]))
     orientation_error=float(np.linalg.norm(Rotation.from_matrix(end[:3,:3]@actual[:3,:3].T).as_rotvec()))
-    if not np.isfinite([position_error,orientation_error]).all() or position_error>.0005 or orientation_error>.005:return None
+    if not np.isfinite([position_error,orientation_error]).all() or position_error>.0005 or orientation_error>.005:
+        return reject('terminal_pose',position_error_m=position_error if np.isfinite(position_error) else None,
+            orientation_error_rad=orientation_error if np.isfinite(orientation_error) else None)
     return np.asarray(path),minimum,dict(method='straight_cartesian_no_detour',
         collision_checks=checks,maximum_cartesian_sample_step_m=.002,
         maximum_joint_sample_step_degrees=1.,maximum_line_error_m=.0005,

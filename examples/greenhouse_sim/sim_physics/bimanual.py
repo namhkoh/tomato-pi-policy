@@ -387,7 +387,9 @@ class BimanualRobot(FullRobotGripper):
         """
         if getattr(self,'cut_style','legacy')=='downward':
             from .downward_cut import cartesian_transit
-            return cartesian_transit(self,left_q,goal,replan_stroke_from_endpoint=True)
+            self.last_transit_rejection={}
+            return cartesian_transit(self,left_q,goal,replan_stroke_from_endpoint=True,
+                diagnostics=self.last_transit_rejection)
         lower,upper=self.kin.arm_limits_degrees('right')
         goal=np.asarray(goal,dtype=float)
         if (goal.shape!=(7,) or not np.isfinite(goal).all()
@@ -674,7 +676,8 @@ class BimanualRobot(FullRobotGripper):
         if downward:
             transit=self.right_transit(left_q,q)
             if transit is None:
-                failures.append(dict(failure,rejection='bounded_transit_arm_self_or_plant_clearance'));return False
+                failures.append(dict(failure,rejection='bounded_transit_arm_self_or_plant_clearance',
+                    transit_detail=getattr(self,'last_transit_rejection',None)));return False
             approach,_,_=transit
             seed=np.asarray(approach[-1],float).copy()
         for sample_index,offset in enumerate(self.stroke_offsets):

@@ -64,3 +64,29 @@ def test_new_branch_still_requires_all_path_guards(monkeypatch,failure):
     if failure=='terminal':r.right_transit=lambda *a:(np.zeros((2,7)),.1,{'synthetic_wrong_terminal':True})
     assert not r._try_cut_candidate(np.zeros(7),np.array([.01,0,0]),np.array([0.,0,1]),candidate,0.,failures)
     assert r.plan is None and len(failures)==1
+
+
+@pytest.mark.parametrize('failure',['IK','interarm','self','plant','branch'])
+def test_rejection_diagnostics_distinguish_failures_without_accepting_them(failure):
+    import json
+    r=redundant_robot();q=np.array([.01,0,0,0,0,0,30.]);details={'stale':True}
+    expected=dict(IK='cartesian_IK',interarm='interarm_clearance',self='robot_self_clearance',
+        plant='plant_or_scene_clearance',branch='terminal_joint_branch')
+    if failure=='IK':r.solve_right_pose=lambda *a:S(succeeded=False)
+    if failure=='interarm':r.kin.inter_arm_clearance=lambda *a:S(clearance_m=.009)
+    if failure=='self':r.check_self=lambda *a:{'passed':False,'nearest_pair':['a','b']}
+    if failure=='plant':r.check_held_plant=lambda *a,**kw:False
+    assert cartesian_transit(r,np.zeros(7),q,diagnostics=details) is None
+    assert details['reason']==expected[failure] and not details['motion_authorized'] and 'stale' not in details
+    json.dumps(details,allow_nan=False)
+
+
+def test_successful_transit_clears_old_failure_details():
+    r=redundant_robot();details={'reason':'old'}
+    assert cartesian_transit(r,np.zeros(7),np.array([.01,0,0,0,0,0,0]),diagnostics=details) is not None
+    assert details=={}
+
+
+def test_diagnostics_type_is_not_silently_coerced():
+    with pytest.raises(ValueError,match='dictionary'):
+        cartesian_transit(redundant_robot(),np.zeros(7),np.zeros(7),diagnostics=[])

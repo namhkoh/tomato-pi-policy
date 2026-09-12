@@ -6258,3 +6258,37 @@ No hardware, collection, tuning, review, split or training-export changes.
   `native149`, `paired_*20260913*.log`, `preposition_search_20260913*.log`.
  17 focused fixture tests; full physics regression **3,465 passed in124.55 s**,
  `data/sim_physics/regression_20260913_branch_fixture_v2.log`.
+
+### 2026-09-13: Native startup integration and first prepositioned blade loading
+
+- Downward transit failures now report the exact IK/inter-arm/self/plant/line/
+  terminal rejection, without changing checks or issuing extra native queries.
+  Native151 isolates the parked approach failure: right forearm versus target
+  Leaf_001 at approximately13.2% of the Cartesian approach, all23 endpoints.
+- Native152 checks a prepositioned cutter with4 mm extra upward standoff on a
+  different redundant elbow configuration. The complete fitted-shape native
+  startup check passes:75 scene colliders,47 robot shapes, before/after actor
+  controls, zero physics steps and no query-time authored pose change. The old
+  box warning on the blade/shaft is overly conservative for this exact pose.
+- Added explicit `--native-startup-clearance`, restricted to isolated cut-contact
+  diagnostics with native path clearance enabled. It always checks the complete
+  current scene, not just coarse warnings: all source AND robot actors have
+  positive controls before/after; self geometry, stage/epoch/time, callback
+  completeness, finite transforms, loading quantization and cleanup are checked.
+  Failure stops before the first step. Default startup behavior is unchanged;
+  no named-plant exception, collision filter or contact-force waiver exists.
+- Native153 uses that option:75 scene/47 robot collider inventory,47 robot actor
+  controls twice,484 queries,1.6333 s startup including native parsing, zero
+  physics steps during startup validation. It then physically verifies grasp
+  at5.675 s, reobserves after2 mm pull and plans at7.179167 s, and moves the right
+  arm into blade contact. It stops at13.929167 s: BladePlateContact versus the
+  intended Segment_001 shaft produces0.508689 N classified as unwanted contact.
+  Loaded normal rows lie outside the unchanged3 mm seam axial window;203 eligible
+  contact rows carry zero load. Maximum eligible signed resistance and dwell are
+  both zero. Maximum grasp slip0.326810 mm. NO seam release/cut/deposit occurred.
+  A prepositioned start does not certify the default parked-pose approach.
+- Evidence: `data/sim_physics/bimanual_downward_20260912_native150` through
+  `native153`; native153 `bimanual_trajectory.json` retains original-order normal
+  rows and eligibility reasons.48 focused startup/lifecycle tests pass; full
+  physics regression **3,491 passed in124.00 s**,
+  `data/sim_physics/regression_20260913_native_startup_screen_v1.log`.

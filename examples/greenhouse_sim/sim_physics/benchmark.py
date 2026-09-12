@@ -71,6 +71,8 @@ def parser():
     p.add_argument('--measured-withdrawal',action='store_true',
         help='Opt-in measured-start reverse path with fresh native geometry/hold checks; diagnostic only')
     p.add_argument('--native-static-clearance',action='store_true',help='Opt-in live native static-box refinement during the single synchronous bimanual plan')
+    p.add_argument('--native-startup-clearance',action='store_true',
+        help='Isolated contact diagnostic: full native collider/actor validation before FIRST step; no path/contact guard is bypassed')
     p.add_argument('--native-capsule-sphere-cover',action='store_true',
         help='Optional whole-capsule conservative native sphere union after a coarse box hit; no sampled gaps')
     p.add_argument('--native-static-planning-seconds',type=float,default=8.,
@@ -157,6 +159,8 @@ def main(argv=None):
     if args.native_capsule_sphere_cover and not (args.bimanual_cut and args.native_static_clearance):
         raise ValueError('Native capsule sphere cover requires bimanual native static clearance')
     contact_trial=args.isolated_cut_contact_trial
+    if args.native_startup_clearance and not (contact_trial and args.native_static_clearance):
+        raise ValueError('Native startup validation requires isolated cut contact and native path clearance')
     if args.branch_contact_fixture and not contact_trial:
         raise ValueError('Branch-only selection requires the isolated cut contact diagnostic')
     if contact_trial and not (args.scene=='package' and args.isolate_station and args.full_robot_probe
@@ -496,7 +500,7 @@ def main(argv=None):
                     (rig.root,fixture.root),args.uniform_solver_iterations)
             from .startup_screen import screen
             report['startup_collision_screen']=screen(stage,fixture)
-            if not report['startup_collision_screen']['passed']:
+            if not report['startup_collision_screen']['passed'] and not args.native_startup_clearance:
                 raise RuntimeError('Bimanual spawn has possible collision overlaps; inspect startup_collision_screen before any physics motion')
         physics=UsdPhysics.Scene.Define(stage,'/World/QualificationPhysics')
         physics.CreateGravityDirectionAttr(Gf.Vec3f(0,0,-1));physics.CreateGravityMagnitudeAttr(args.gravity)
@@ -507,6 +511,11 @@ def main(argv=None):
         from .solver_configuration import author_contact_order
         report['contact_solver_order']=author_contact_order(physics.GetPrim(),
             enabled=getattr(args,'solve_articulation_contact_last',False))
+        if args.native_startup_clearance:
+            from .native_startup_screen import screen as native_startup_screen
+            report['native_startup_collision_screen']=native_startup_screen(stage,fixture)
+            if not report['native_startup_collision_screen']['passed']:
+                raise RuntimeError('Complete native startup geometry not verified; no physics motion allowed')
         # One explicit scene, fixed dt. Rendering is independently scheduled.
         sim=SimulationContext(physics_dt=1/args.physics_hz,rendering_dt=1/60,
                               stage_units_in_meters=1,physics_prim_path='/World/QualificationPhysics',
