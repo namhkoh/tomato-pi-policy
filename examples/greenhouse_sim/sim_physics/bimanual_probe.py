@@ -93,7 +93,14 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         from .blade_feed import BladeFeed
         # Radius follows the exact existing stroke endpoint construction.
         blade_feed=BladeFeed(fixture.stroke_offsets,
-            radius=float(fixture.stroke_offsets[-1])-fixture.knife.size[0]/2-.001)
+            radius=float(fixture.stroke_offsets[-1])-fixture.knife.size[0]/2-.001,
+            dwell_feedback=getattr(args,'blade_dwell_feedback',False))
+    strain_probe=None
+    if getattr(args,'diagnostic_grasp_dynamics',False):
+        from .rod_strain import RodStrain
+        strain_probe=RodStrain(rig.rest_frames,np.linalg.norm(np.diff(rig.chain_world,axis=0),axis=1),
+            [float(rig.stage.GetPrimAtPath(p+'/StemCollider').GetAttribute('radius').Get()) for p in rig.body_paths],
+            [p['stiffness'] for p in rig.properties],int(rig.cut_index))
     spring_snapshot=None
     prediction_before=None;prediction_reader=None;contact_stream=None
     previous_prediction=None;contact_springs=None;spring_control_record=None
@@ -357,6 +364,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             record['finger_effort_control']=dict(fixture.finger_effort.receipt)
         if prediction_record is not None:record['contact_prediction']=prediction_record
         if getattr(args,'diagnostic_grasp_dynamics',False):
+            record['plant_dynamics']['frame_based_strain']=strain_probe.evaluate(frames)
             record['spring_work']=spring_work
             from .grasp_dynamics_evidence import grasp_dynamics_evidence
             positions=fixture.robot.get_dof_positions()[0]

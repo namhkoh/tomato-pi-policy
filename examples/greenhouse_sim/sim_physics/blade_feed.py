@@ -4,11 +4,12 @@ Only retimes/reverses the already screened one-dimensional stroke. This is
 not a contact detector, effort limit, release authorization or tissue model.
 """
 import math
+from collections import deque
 import numpy as np
 
 
 class BladeFeed:
-    def __init__(self, offsets, *, radius):
+    def __init__(self, offsets, *, radius, dwell_feedback=False):
         values=np.asarray(offsets,dtype=float)
         if (values.ndim!=1 or len(values)<2 or not np.isfinite(values).all()
                 or not np.all(np.diff(values)>0) or not -.025<=values[0]<0<values[-1]<=.02
@@ -22,6 +23,10 @@ class BladeFeed:
         self.observed_step=0;self.commanded_step=None;self.started_step=None
         self.normal=0.;self.upper=0.;self.released=False;self.receipt=None
         self.near=False
+        if type(dwell_feedback) is not bool:
+            raise ValueError('Explicit boolean dwell feedback required')
+        self.dwell_feedback=dwell_feedback
+        self.loads=deque(maxlen=7)
 
     def observe(self, knife, *, step, guards_passed, released):
         if (type(step) is not int or step!=self.observed_step+1 or guards_passed is not True
@@ -37,6 +42,12 @@ class BladeFeed:
                 or not 0<=upper<=.5 or abs(normal)>upper+1e-7):
             raise RuntimeError('Invalid or unsafe measured blade load')
         self.normal=float(normal);self.upper=float(upper);self.released=released
+        # Consecutive contact samples only. This window affects feed commands,
+        # NEVER the cut detector's unsmoothed per-step force/direction evidence.
+        if self.upper>.01:
+            self.loads.append(self.normal)
+        else:
+            self.loads.clear()
         self.observed_step=step
 
     def command(self, *, step, dt):
@@ -50,14 +61,16 @@ class BladeFeed:
         if (step-self.started_step)*dt>=30:
             raise RuntimeError('Blade load acquisition timed out; no timed release')
         self.near=self.near or self.offset>=self.near_offset or self.upper>.01
+        control_load=min(self.loads) if self.dwell_feedback and self.loads else self.normal
         if self.upper>.32 or self.normal>.28:
             speed=-.0005;mode='backoff_load'
-        elif .22<=self.normal<=.28:
+        elif .22<=control_load<=.28:
             speed=0.;mode='hold_valid_load'
         elif self.upper>.10 and self.normal<.01:
             speed=0.;mode='hold_nonqualifying_load'
         elif self.upper>.01:
-            speed=min(.00005,max(0.,(.26-self.normal)*.0002));mode='load_feedback'
+            target=.22 if self.dwell_feedback else .26
+            speed=min(.00005,max(0.,(target-control_load)*.0002));mode='load_feedback'
         elif self.near:
             speed=.0001;mode='near_contact'
         else:
@@ -75,4 +88,9 @@ class BladeFeed:
             desired_signed_load_n=.26,holding_load_band_n=[.22,.28],backoff_load_n=.32,
             near_contact_speed_m_s=.0001,loading_speed_limit_m_s=.00005,
             backoff_speed_m_s=.0005,cut_authorized=False,force_limit_guaranteed=False)
+        self.receipt.update(dwell_feedback=self.dwell_feedback,control_load_n=control_load,
+            control_load_statistic='minimum_last_seven_consecutive_contact_samples' if self.dwell_feedback else 'latest_sample',
+            control_load_sample_count=len(self.loads) if self.dwell_feedback else 1,
+            minimum_contact_load_target_n=.22 if self.dwell_feedback else None,
+            release_evidence_filtered=False)
         return (self.offset-self.start)/(self.end-self.start)

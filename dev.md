@@ -6469,3 +6469,47 @@ No hardware, collection, tuning, review, split or training-export changes.
   reject before stepping). Evidence is retained. Native spring/root handling
   and support-capable grasp geometry remain under investigation; do not launch
   collection/training or advertise reliable physical cutting from these runs.
+
+### 2026-09-13: Independent strain audit and bounded contact diagnostics
+
+- Added `sim_physics/rod_strain.py`: rest-relative body-frame rotation, bending
+  surface strain and torsional shear estimates, independent of native joint-q.
+  These are small-strain/quadratic engineering diagnostics, NOT tissue damage
+  calibration or a complete energy balance. Native163 frame energy agrees with
+  the scalar estimate: 0.000672 J at3.5 s, 0.436331 J at18 s and0.212153 J just
+  before cut. Maximum estimated torsional shear reaches0.202278 at18 s, while
+  maximum bending strain is0.022717. Small grasp translation hides substantial
+  torsional wind-up. Post-release retention remains unqualified.
+- Added owned three-link unit-conditioning runner/helpers `coupon_units*.py`.
+  Metre/centimetre conversions preserve SI geometry, mass, inertia, native
+  force-based K/C, contact material and guards. Native drive type, coefficients,
+  targets and zero external actuation are read back; source assets are hashed.
+  Native168(metre),169(centimetre),170(metre/zero authored CFM) ALL fail the held
+  coupon: residuals about0.00251 N.m and joint-speed RMS0.0186..0.0193 rad/s.
+  Native171 centimetre FREE planar coupon passes, with decaying modeled energy
+  and speed RMS2.31e-14 rad/s. This is NOT a held/full-plant qualification.
+  Unit conversion and CFM changes are not promoted to production. No native CFM
+  getter is available; the zero-CFM comparison is explicitly USD-authoring only.
+- Root coupon164 shows an externally constrained floating root and fixed root
+  can fall when their external support is disabled, but the fixed-base tensor
+  metadata remains stale: NOT a qualified topology transition. Full-chain,
+  contact-free native-spring coupon165 is unstable before release. Its original
+  post-release comparison is INVALID (weaker-layer edit did not disable the
+  composed joint); runner corrected to use session edit and bounded speed guards,
+  not rerun. Neither finding authorizes changing the production root model.
+- Native172 repeats163 without the optional2 mm pull. Native173 additionally
+  tests new opt-in `--blade-dwell-feedback`, a seven-contact-sample minimum for
+  bounded feed control ONLY. Raw signed force, direction, geometry,25 ms dwell,
+  0.5 N blade/finger caps,3 mm slip and1 mm penetration gates are unchanged.
+  Both timeout without a cut; native173 maximum slip0.638738 mm. New feedback
+  is NOT a proven repair or a new default. No timed/filtered release is used.
+- Offline compact-branch layout searches for seed19/SubStem50 and seed31/SubStem46
+  reject on exact robot limits or scene/leaf clearance; no rejected path is run.
+  No leaf, wrist camera, collider or source geometry was removed to gain a pass.
+- Evidence under `data/sim_physics/`: `frame_strain_audit_20260913_native163.log`,
+  `coupon_units_20260913_native168`..`native171`, root probes164/165,
+  `bimanual_downward_20260912_native172`/`native173`, and
+  `compact_branch_pose_search_20260913*.log`. Full regression **3,696 passed in
+  146.12 s**, `regression_20260913_strain_dwell_v1.log`. Diagnostics are not
+  training records; reviews, splits, hardware, running external jobs, Windows
+  configuration and source assets are untouched. No reboot requested.

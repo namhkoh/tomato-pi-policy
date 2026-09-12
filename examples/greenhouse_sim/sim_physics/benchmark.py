@@ -72,6 +72,8 @@ def parser():
         help='Seed the coordinated left pregrasp IK; exact target and path guards still apply')
     p.add_argument('--blade-force-feed',action='store_true',
         help='Isolated downward diagnostic: retime the screened stroke from fresh native cutting load')
+    p.add_argument('--blade-dwell-feedback',action='store_true',
+        help='Isolated compliant feed comparison: regulate the minimum of seven raw loads; release gates remain unsmoothed')
     p.add_argument('--seam-contact-compliance',action='store_true',
         help='Isolated blade feedback experiment: uncalibrated 1000 N/m local stem contact compression')
     p.add_argument('--native-spring-cut-trial',action='store_true',
@@ -175,6 +177,8 @@ def main(argv=None):
     if args.native_capsule_sphere_cover and not (args.bimanual_cut and args.native_static_clearance):
         raise ValueError('Native capsule sphere cover requires bimanual native static clearance')
     contact_trial=args.isolated_cut_contact_trial
+    if args.blade_dwell_feedback and not (contact_trial and args.blade_force_feed and args.seam_contact_compliance):
+        raise ValueError('Dwell feedback requires the complete isolated compliant blade feed')
     if args.symmetric_finger_closure and not (contact_trial and args.explicit_finger_effort
             and args.force_closure and args.finger_target_antiwindup):
         raise ValueError('Symmetric finger closure requires isolated explicit feedback and antiwindup')
