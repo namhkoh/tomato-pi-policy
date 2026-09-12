@@ -71,6 +71,8 @@ def parser():
     p.add_argument('--measured-withdrawal',action='store_true',
         help='Opt-in measured-start reverse path with fresh native geometry/hold checks; diagnostic only')
     p.add_argument('--native-static-clearance',action='store_true',help='Opt-in live native static-box refinement during the single synchronous bimanual plan')
+    p.add_argument('--native-capsule-sphere-cover',action='store_true',
+        help='Optional whole-capsule conservative native sphere union after a coarse box hit; no sampled gaps')
     p.add_argument('--native-static-planning-seconds',type=float,default=8.,
         help='Bounded synchronous diagnostic planning budget, up to 60 seconds; default 8; no physics/collision guard changes')
     p.add_argument('--cut-model',choices=('force_qualified_pre_authored_seam_release','signed_edge_load_brittle_seam_v1'),
@@ -99,6 +101,8 @@ def parser():
         help='Bimanual 240 Hz native-feedback finger closure with slower contact approach and five-second extra verification window; >=28 seconds')
     p.add_argument('--explicit-finger-effort',action='store_true',
         help='Isolated HOLD-only bounded explicit left-finger PD comparison; no native contact or force-guard change')
+    p.add_argument('--isolated-cut-contact-trial',action='store_true',
+        help='Explicit isolated flat-cylinder/effort-control cut DIAGNOSTIC; native126 hold is not tissue or greenhouse certification')
     p.add_argument('--anchored-pad-damping',action='store_true',
         help='Explicit uncalibrated pad-damping prior for an anchored shaft; no mass/stiffness/force-guard change')
     p.add_argument('--bimanual-hold-control',action='store_true',
@@ -148,12 +152,23 @@ def parser():
 
 def main(argv=None):
     args=parser().parse_args(argv)
-    if args.explicit_finger_effort and not (args.isolate_station and args.bimanual_hold_control
+    if args.native_capsule_sphere_cover and not (args.bimanual_cut and args.native_static_clearance):
+        raise ValueError('Native capsule sphere cover requires bimanual native static clearance')
+    contact_trial=args.isolated_cut_contact_trial
+    if contact_trial and not (args.scene=='package' and args.isolate_station and args.full_robot_probe
+            and args.bimanual_cut and not args.bimanual_hold_control and not args.robot_interactive
+            and args.explicit_finger_effort and args.force_closure and args.physics_hz==240
+            and args.solver=='PGS' and args.spring_mode=='implicit_effort' and args.constraint_mode=='articulation'
+            and args.stem_contact_model=='flat_cylinders_v1' and args.grasp_contact_frames=='pre_solve_pgs_v1'
+            and args.uniform_solver_iterations==[128,0] and args.force_newton==0
+            and not args.diagnostic_contact_prediction and not args.experimental_contact_springs):
+        raise ValueError('Isolated cut contact trial requires the complete explicit flat/PGS/implicit/128-0 fixture')
+    if args.explicit_finger_effort and not (args.isolate_station and (args.bimanual_hold_control or contact_trial)
             and args.bimanual_cut and args.force_closure and args.physics_hz==240
             and not args.robot_interactive and not args.experimental_contact_springs):
         raise ValueError('Explicit finger effort requires isolated 240 Hz feedback HOLD ONLY')
     if args.uniform_solver_iterations is not None and not (args.isolate_station and not args.robot_interactive
-            and args.bimanual_hold_control and args.bimanual_cut
+            and (args.bimanual_hold_control or contact_trial) and args.bimanual_cut
             and tuple(args.uniform_solver_iterations) in ((32,8),(64,0),(128,0),(128,8))):
         raise ValueError('Uniform iterations require isolated HOLD and a bounded diagnostic pair')
     native_hold=(args.spring_mode=='native' and args.isolate_station and args.bimanual_cut
@@ -161,7 +176,7 @@ def main(argv=None):
         and not args.diagnostic_contact_prediction and not args.experimental_contact_springs
         and not args.robot_interactive)
     if args.stem_contact_model=='flat_cylinders_v1' and not (
-            args.isolate_station and args.bimanual_hold_control and args.bimanual_cut and not args.robot_interactive
+            args.isolate_station and (args.bimanual_hold_control or contact_trial) and args.bimanual_cut and not args.robot_interactive
             and args.grasp_contact_frames=='pre_solve_pgs_v1'
             and not args.diagnostic_contact_prediction and not args.experimental_contact_springs):
         raise ValueError('Flat cylinder experiment requires isolated corrected-frame bimanual HOLD ONLY')
@@ -440,6 +455,7 @@ def main(argv=None):
                 robot_options['force_closure']=args.force_closure
                 robot_options['explicit_finger_effort']=args.explicit_finger_effort
                 robot_options['native_static_clearance']=getattr(args,'native_static_clearance',False)
+                robot_options['native_capsule_sphere_cover']=args.native_capsule_sphere_cover
                 robot_options['native_static_planning_seconds']=getattr(args,'native_static_planning_seconds',8.)
                 robot_options['cut_model']=getattr(args,'cut_model','force_qualified_pre_authored_seam_release')
                 robot_options['finger_actuator_limit_n']=getattr(args,'finger_actuator_limit_n',.5)

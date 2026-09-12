@@ -17,6 +17,9 @@ class BimanualRobot(FullRobotGripper):
         self.cut_style=kwargs.pop('cut_style','legacy')
         self.knife_alignment=kwargs.pop('knife_alignment','legacy')
         self.force_closure_enabled=kwargs.pop('force_closure',False)
+        self.native_capsule_sphere_cover=kwargs.pop('native_capsule_sphere_cover',False)
+        if type(self.native_capsule_sphere_cover) is not bool:
+            raise ValueError('Explicit boolean native sphere cover flag required')
         self.explicit_finger_effort=kwargs.pop('explicit_finger_effort',False)
         if type(self.explicit_finger_effort) is not bool:
             raise ValueError('Explicit boolean finger effort flag required')
@@ -509,6 +512,7 @@ class BimanualRobot(FullRobotGripper):
                 native_evidence.update(initialization_status='in_progress',
                     query_count=None,query_count_known=False)
                 query_options={}
+                if getattr(self,'native_capsule_sphere_cover',False):query_options['capsule_sphere_cover']=True
                 if getattr(self,'native_static_planning_seconds',8.)!=8.:
                     query_options['wall_limit_s']=self.native_static_planning_seconds
                 self.held_plant_screen.native_static_query=current_scene_query(
@@ -611,32 +615,46 @@ class BimanualRobot(FullRobotGripper):
                     evaluations=solution.evaluations,ik_succeeded=solution.succeeded)
                 if not solution.succeeded:
                     attempt['rejection']='endpoint_IK';continue
-                q=np.array(solution.joint_degrees)
+                family=(solution,)
                 if downward:
-                    from .downward_cut import arm_extension
-                    attempt['right_arm_extension']=arm_extension(self.body_world(left_q,q))
-                    if not .8<=attempt['right_arm_extension']<=.98:
-                        attempt['rejection']='folded_or_fully_extended_right_arm';continue
-                clearance=self.kin.inter_arm_clearance(left_q,q,self.base).clearance_m
-                attempt['interarm_clearance_m']=clearance
-                if clearance<.01: attempt['rejection']='endpoint_arm_clearance';continue
-                check=self.check_self(left_q,q)
-                attempt['self_capsule_screen']=check
-                if check['passed']:
-                    if not self.check_held_plant(left_q,q):
-                        attempt['rejection']='endpoint_held_plant'
-                        attempt['plant_screen']=self.held_plant_screen.last_failure
-                        continue
-                    clear_endpoints+=1
-                    candidate=(np.linalg.norm(q-self.right),degrees,d,q,normal_sign,wing,normal)
-                    # Check the useful path NOW. Enumerating the rest of the
-                    # grid first spent the native epoch budget after finding a
-                    # usable endpoint (native45). This is first fully checked
-                    # feasibility, not an optimal/shortest-path search.
-                    if self._try_cut_candidate(left_q,centre,axis,candidate,tilt,failures):
-                        if downward:self.plan['stroke_basis']=attempt['stroke_basis']
-                        return
-                else: attempt['rejection']='endpoint_self_collision'
+                    from itertools import chain
+                    from .redundant_ik import pose_family
+                    # One converged IK branch can intersect a held leaf while
+                    # the identical wrist pose has a clear elbow configuration.
+                    # These are proposals only: every member must pass ALL
+                    # original endpoint, stroke, transit and native checks.
+                    family=chain((solution,),pose_family(self.kin,'right',desired,
+                        np.asarray(solution.joint_degrees),self.base,
+                        steps_per_direction=32,joint_limit_margin_degrees=3.))
+                base_attempt=dict(attempt)
+                for family_index,solution in enumerate(family):
+                    if family_index:
+                        attempt=dict(base_attempt);attempts.append(attempt)
+                    q=np.array(solution.joint_degrees)
+                    attempt.update(endpoint_family_index=family_index,joint_degrees=q.tolist(),
+                        position_error_m=solution.position_error_m,orientation_error_rad=solution.orientation_error_rad,
+                        evaluations=solution.evaluations,ik_succeeded=solution.succeeded)
+                    if downward:
+                        from .downward_cut import arm_extension
+                        attempt['right_arm_extension']=arm_extension(self.body_world(left_q,q))
+                        if not .8<=attempt['right_arm_extension']<=.98:
+                            attempt['rejection']='folded_or_fully_extended_right_arm';continue
+                    clearance=self.kin.inter_arm_clearance(left_q,q,self.base).clearance_m
+                    attempt['interarm_clearance_m']=clearance
+                    if clearance<.01: attempt['rejection']='endpoint_arm_clearance';continue
+                    check=self.check_self(left_q,q)
+                    attempt['self_capsule_screen']=check
+                    if check['passed']:
+                        if not self.check_held_plant(left_q,q):
+                            attempt['rejection']='endpoint_held_plant'
+                            attempt['plant_screen']=self.held_plant_screen.last_failure
+                            continue
+                        clear_endpoints+=1
+                        candidate=(np.linalg.norm(q-self.right),degrees,d,q,normal_sign,wing,normal)
+                        if self._try_cut_candidate(left_q,centre,axis,candidate,tilt,failures):
+                            if downward:self.plan['stroke_basis']=attempt['stroke_basis']
+                            return
+                    else: attempt['rejection']='endpoint_self_collision'
         ik=sum(a['ik_succeeded'] for a in attempts)
         raise RuntimeError(f'No bimanual arm-clearance path: endpoints={len(attempts)}, '
             f'IK_attempted={sum(a["ik_attempted"] for a in attempts)}, IK_converged={ik}, '

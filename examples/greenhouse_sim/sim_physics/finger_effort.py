@@ -1,8 +1,9 @@
-"""Isolated HOLD-only explicit left-finger PD comparison, not a grasp sensor.
+"""Isolated explicit left-finger PD comparison, not a grasp sensor.
 
 Uses the same 200 N/m, 5 N s/m controller and bounded drive/gravity budget.
 Only two native finger drives are disabled; physical contacts remain native.
 Submitted efforts are logged separately from unknown actual internal forces.
+Cut diagnostics require the separate complete isolated fixture CLI opt-in.
 """
 import numpy as np
 

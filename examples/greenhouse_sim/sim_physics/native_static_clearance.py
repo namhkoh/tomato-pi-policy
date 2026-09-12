@@ -1,6 +1,8 @@
 """Bounded synchronous native refinement of conservative static-scene boxes.
 
 The proposed tool remains its enclosing box, expanded by the full margin.
+Arm capsules optionally use a complete conservative sphere union after a box
+hit; this tightens the planning bound, never the native collision geometry.
 Only an exact static collider's coarse rejection can be cleared. No cached
 convex, source visual mesh, new collider, dynamic-body assumption or force
 filter substitutes for the live native overlap query. Close after ONE plan.
@@ -36,7 +38,7 @@ def capsule_enclosing_box(start,end,radius):
 
 class NativeStaticClearance:
     def __init__(self, query, records, *, guard=lambda:None, max_queries=20000, wall_limit_s=8.,
-                 close_guard=None, epoch_report=None, lazy_coverage=False):
+                 close_guard=None, epoch_report=None, lazy_coverage=False, sphere_query=None):
         if (type(max_queries) is not int or not 0 < max_queries <= 20000
                 or type(lazy_coverage) is not bool
                 or isinstance(wall_limit_s,(bool,np.bool_))
@@ -47,6 +49,8 @@ class NativeStaticClearance:
         self.started=time.perf_counter();self.wall_limit_s=wall_limit_s
         self.active=True;self.calls=0;self.clearances=0;self.blocked=0
         self.capsule_box_attempts=0
+        if sphere_query is not None and not callable(sphere_query):raise ValueError('Callable native sphere query required')
+        self.sphere_query=sphere_query;self.sphere_calls=0;self.sphere_covered=set();self.sphere_used=set()
         self.covered=set();self.coverage_failed=[];self.errors=[]
         self.used_paths=set();self.coverage_boxes={};self.final_coverage=[]
         self.validation_passed=False;self.closed=False
@@ -144,7 +148,36 @@ class NativeStaticClearance:
     def clear_capsule_checked(self,path,start,end,radius,margin):
         centre,axes,half=capsule_enclosing_box(start,end,radius)
         self.capsule_box_attempts+=1
-        return self.clear_box_checked(path,centre,axes,half,margin)
+        clear=self.clear_box_checked(path,centre,axes,half,margin)
+        if clear or self.sphere_query is None:return clear
+        if not self._ensure_coverage(path):return False
+        try:
+            if path not in self.sphere_covered:
+                self._sphere_control(path);self.sphere_covered.add(path)
+            from .capsule_sphere_cover import cover
+            centres,covered_radius=cover(start,end,radius,margin)
+            for point in centres:
+                if self._sphere_overlap(path,point,covered_radius):return False
+            self._check();self.used_paths.add(path);self.sphere_used.add(path)
+            self.clearances+=1;self.blocked-=1
+            return True
+        except Exception as exc:
+            self._invalidate(type(exc).__name__+': '+str(exc))
+            raise RuntimeError('Native sphere cover unavailable; clearance not determined: '+str(exc)) from exc
+
+    def _sphere_overlap(self,path,centre,radius):
+        self._check(request=True);self.calls+=1;self.sphere_calls+=1
+        hit=self.sphere_query(path,np.asarray(centre,float),float(radius))
+        self._check()
+        if type(hit) is not bool:raise RuntimeError('Native sphere overlap must return explicit bool')
+        return hit
+
+    def _sphere_control(self,path):
+        centre,axes,half=self.coverage_boxes[path]
+        point=np.asarray(centre,dtype=np.float32).astype(float)
+        radius=float(np.nextafter(np.float32(np.linalg.norm(half)+np.linalg.norm(point-centre)+1e-6),np.float32(np.inf)))
+        if not self._sphere_overlap(path,point,radius):
+            raise RuntimeError('Native sphere actor positive control missing: '+path)
 
     def validate(self):
         """Acceptance gate: invalidate earlier clearances on ANY epoch failure."""
@@ -155,6 +188,7 @@ class NativeStaticClearance:
                 if self._overlap(path,*self.coverage_boxes[path]) is not True:
                     raise RuntimeError('Final native actor coverage missing: '+path)
                 self.final_coverage.append(path)
+                if path in self.sphere_used:self._sphere_control(path)
             self._check()
             self.validation_passed=True
         except Exception as exc:
@@ -182,6 +216,9 @@ class NativeStaticClearance:
                     query_count=self.calls,coarse_rejections_cleared=self.clearances,
                     capsule_enclosing_box_attempts=self.capsule_box_attempts,
                     capsule_query='whole_capsule_plus_margin_contained_not_tessellated_samples',
+                    capsule_sphere_cover_enabled=self.sphere_query is not None,
+                    sphere_query_count=self.sphere_calls,sphere_positive_controlled_paths=sorted(self.sphere_covered),
+                    sphere_cover_cleared_paths=sorted(self.sphere_used),
                     retained_rejections=self.blocked,covered_static_colliders=sorted(self.covered),
                     coverage_mode='lazy_before_exact_actor_refinement' if self.lazy_coverage else 'eager',
                     unchecked_static_colliders=sorted(set(self.coverage_boxes)-self.covered-set(self.coverage_failed)),
@@ -270,7 +307,7 @@ class _SceneQueryEpoch:
                     physics_pre_step_subscribed=True)
 
 
-def current_scene_query(stage, records, *, wall_limit_s=8., max_queries=20000, lazy_coverage=False):
+def current_scene_query(stage, records, *, wall_limit_s=8., max_queries=20000, lazy_coverage=False,capsule_sphere_cover=False):
     """Create only during native planning after fetched physics; never load/step."""
     import omni.usd
     import omni.timeline
@@ -279,6 +316,7 @@ def current_scene_query(stage, records, *, wall_limit_s=8., max_queries=20000, l
     from pxr import UsdGeom,UsdPhysics
     if UsdGeom.GetStageMetersPerUnit(stage)!=1.:
         raise ValueError('Native static clearance requires a metre-unit stage')
+    if type(capsule_sphere_cover) is not bool:raise ValueError('Explicit sphere-cover option required')
     timeline=omni.timeline.get_timeline_interface()
     epoch=_SceneQueryEpoch(stage,omni.usd.get_context(),timeline,get_physx_interface())
     def query(path,centre,axes,half):
@@ -290,6 +328,17 @@ def current_scene_query(stage, records, *, wall_limit_s=8., max_queries=20000, l
             return True
         reported=native.overlap_box(tuple(half),tuple(centre),tuple(Rotation.from_matrix(axes).as_quat()),collect,False)
         if reported!=count:raise RuntimeError('Incomplete native overlap callback coverage')
+        return bool(matched)
+    def sphere_query(path,centre,radius):
+        # Documented native API; no query mesh, actor or pose is authored.
+        # https://docs.omniverse.nvidia.com/kit/docs/omni_physics/107.3/extensions/runtime/source/omni.physx/docs/api/python.html
+        count=0;matched=False
+        def collect(hit):
+            nonlocal count,matched
+            count+=1;matched |= hit.collision==path
+            return True
+        reported=native.overlap_sphere(radius,tuple(centre),collect,False)
+        if reported!=count:raise RuntimeError('Incomplete native sphere callback coverage')
         return bool(matched)
     try:
         eligible=[]
@@ -310,7 +359,8 @@ def current_scene_query(stage, records, *, wall_limit_s=8., max_queries=20000, l
         native=get_physx_scene_query_interface()
         result=NativeStaticClearance(query,eligible,guard=epoch.check,
             close_guard=epoch.close,epoch_report=epoch.report,wall_limit_s=wall_limit_s,
-            max_queries=max_queries,lazy_coverage=lazy_coverage)
+            max_queries=max_queries,lazy_coverage=lazy_coverage,
+            sphere_query=sphere_query if capsule_sphere_cover else None)
         epoch.check()
         return result
     except BaseException as exc:

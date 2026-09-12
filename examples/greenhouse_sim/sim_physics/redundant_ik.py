@@ -6,7 +6,7 @@ solve can miss. Every result still needs full collision/path/native validation.
 import numpy as np
 
 
-def pose_family(kin,side,desired,seed,base,*,steps_per_direction=16,step_degrees=4.):
+def pose_family(kin,side,desired,seed,base,*,steps_per_direction=16,step_degrees=4.,joint_limit_margin_degrees=0.):
     """Trace the local 7-DOF self-motion family, keeping the same tool pose.
 
     Predictor/corrector continuation avoids fixing a shoulder joint that may
@@ -16,6 +16,11 @@ def pose_family(kin,side,desired,seed,base,*,steps_per_direction=16,step_degrees
     from scipy.spatial.transform import Rotation
     desired=np.asarray(desired,float);seed=np.asarray(seed,float)
     lower,upper=kin.arm_limits_degrees(side)
+    margin=joint_limit_margin_degrees
+    if isinstance(margin,(bool,np.bool_)) or not np.isscalar(margin) or not np.isfinite(margin) or margin<0:
+        raise ValueError('Finite nonnegative pose-family joint reserve required')
+    lower,upper=np.asarray(lower)+margin,np.asarray(upper)-margin
+    if np.any(lower>=upper):raise ValueError('Pose-family reserve leaves no joint interval')
     if (desired.shape!=(4,4) or seed.shape!=(7,) or not np.isfinite(desired).all()
             or not np.isfinite(seed).all() or type(steps_per_direction) is not int
             or not 1<=steps_per_direction<=32 or not np.isfinite(step_degrees)
@@ -47,7 +52,8 @@ def pose_family(kin,side,desired,seed,base,*,steps_per_direction=16,step_degrees
             elif np.dot(tangent,previous)<0: tangent=-tangent
             prediction=q+step_degrees*tangent
             if np.any(prediction<=lower+.001) or np.any(prediction>=upper-.001): break
-            result=kin.solve_pose(side,desired,prediction,base,maximum_evaluations=100)
+            options={'joint_limit_margin_degrees':margin} if margin else {}
+            result=kin.solve_pose(side,desired,prediction,base,maximum_evaluations=100,**options)
             candidate=np.asarray(result.joint_degrees)
             if (not result.succeeded or not np.isfinite(candidate).all()
                     or np.any(candidate<=lower) or np.any(candidate>=upper)

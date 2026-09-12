@@ -6016,3 +6016,81 @@ No hardware, collection, tuning, review, split or training-export changes.
   125.19 s**, `data/sim_physics/regression_20260913_finger_effort_v1.log`.
   Focused controller/configuration checks44+58 passed. No experimental option
   was promoted to a default, cutting permission, GUI preset or dataset approval.
+
+### 2026-09-13: Flat-side hold and collision-aware downward endpoint search
+
+- Native125 changes124 velocity iterations0->8: grasp is acquired, but lost
+  at11.279167 s. It does not qualify the controller. Native126 instead changes
+  only124's overlapping capsules to the explicit flat cylinders. It completes
+  7,200 ticks/30 s: grasp verifies8.166667 s, maximum slip0.175265 mm and maximum
+  per-finger all-contact upper bound0.165512 N. No cut/right motion occurs.
+  The generic full-cut result remains failed because those stages were deliberately
+  absent; bounded/completed/left-grasp gates are true, not full-cut qualification.
+-126's final2 s have max|q|0.104411 rad, coordinate span0.00078325 rad and
+  quadratic coordinate energy approximately9.53 mJ, unlike124's opposite
+  half-turn growth. HOWEVER native carried joint-velocity RMS is0.769893 rad/s
+  while poses barely change. Thus this is a bounded contact-hold result, NOT
+  validated constitutive dynamics or realistic tissue behavior. Headless tick
+  time76.3376 s for30 simulated seconds (RTF0.393); no real-time/GUI FPS claim.
+- Added separate `--isolated-cut-contact-trial`, requiring the complete explicit
+  flat-cylinder/PGS240 Hz/implicit-spring/128-0/feedback fixture. This authorizes
+  only a guarded isolated diagnostic, not automatic seam release. Original
+  signed blade load/direction/dwell, source identity, native bilateral grasp,
+  slip, full robot contact and clearance guards remain. Defaults and full
+  greenhouse settings are unchanged; native126 is not a tissue certificate.
+- Native127 reproduces the grasp then rejects cutting BEFORE right motion:
+  two IK-converged blade poses intersect the held Leaf002 near the right
+  shoulder.398 other rigid tool corridors reject before IK. No leaf/camera
+  collider is removed to resolve this. This is geometric rejection, not a cut.
+- Downward planning now reuses bounded local seven-DOF pose-family continuation
+  after a converged but blocked IK endpoint (initially16 steps in either direction;
+  subsequently32, still stopping at joint bounds or failed correction).
+  Added explicit3-degree reserve to predictor and corrector. Every alternative
+  retains endpoint arm/self/held-plant checks, full sampled stroke and separate
+  transit checks. Legacy behavior stays single-branch. Unit tests cover rejecting
+  the first colliding solution, screening the alternative, and refusing all
+  alternatives when the obstacle persists. This is not collision-free IK by fiat.
+- Native128 examines34 converged configurations; all remain blocked by held
+  foliage/stem. No right movement or cut. A bounded offline nearby-station search
+  uses the recorded held-plant frames and original source assets; it finds
+  endpoint-only proposals, NOT native/full-stroke/transit clearance. Evidence:
+  `data/sim_physics/held_station_search_20260913.py` / `.log`. Native129 checks
+  one80 mm lateral base proposal through the real startup/grasp/path guards;
+  its outcome is recorded below. The plant is not moved/removed.
+- Focused cut-config/shape/controller checks98 passed; planner/IK61 passed,
+  then29 passed including the two new real-planner/synthetic-geometry regressions.
+  Full regression is running separately. No dataset, training or hardware changes.
+
+### 2026-09-13: Native capsule refinement and nearby-grasp checks (not a cut success)
+
+- Native129's80 mm lateral station preserves the grasp but all34 converged
+  endpoints still collide with held foliage. Native130 extends bounded local
+  pose-family continuation to32 steps/direction:55 converged endpoints, no
+  full path. Later family poses reach static MainStem27 near right forearm link5.
+- Added opt-in `--native-capsule-sphere-cover`, requiring native static queries.
+  After an enclosing-box hit, a finite sphere UNION covers the ENTIRE proposed
+  arm capsule plus the unchanged >=1 mm margin. Radius >=sqrt((r+margin)^2+(h/2)^2),
+  endpoint caps, float32 centre error and upward radius rounding prevent gaps.
+  This is not sparse point testing. Exact-actor positive controls are required
+  for both native box and sphere queries, including final epoch validation.
+  Errors, stale scenes and bounded query/time-budget exhaustion fail closed.
+  No native geometry, self/held-plant checks, force limits or visuals change.
+- Native131 uses that refinement:67 sphere queries, one coarse static rejection
+  cleared, no query errors. All55 endpoints nevertheless reject; no right motion
+  or cut occurs. The original source plant and wrist cameras stay present.
+- Native132 proposes grasp75 mm from the attachment with cut20 mm: startup
+  rejects an open-finger/Leaf000 overlap before physics. Native133 instead uses
+  grasp65 mm: native bilateral grasp verifies5.508333 s, but all83 converged
+  endpoints reject before cutting. Some late poses intersect another branch's
+  Leaf028 near the forearm. These are recorded failures, not successful cuts.
+- Offline grasp/approach searches in `data/sim_physics/grasp_cut_clearance_search_20260913*`
+  propose only source-startup and rigid wrist-tool clearance, not full robot
+  paths or native grasp. Invalid165/195-degree grasp-roll proposals were rejected;
+  subsequent search uses the supported roll, approach tilt and jaw-skew controls.
+- Full physics regression: **3,359 passed in120.54 s**, evidence
+  `data/sim_physics/regression_20260913_sphere_cover_v1.log` (includes new capsule
+  cover containment/error tests, native-query controls and isolated-trial guards).
+  Reliable grasp-cut-withdraw-retain remains UNQUALIFIED. Native126's30 s hold
+  is the bounded positive result; deposit and calibrated tissue fracture remain
+  unsupported. No labels/splits, training, hardware, source assets or OS settings
+  changed. Windows was not restarted.

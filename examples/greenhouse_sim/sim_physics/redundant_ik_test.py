@@ -45,3 +45,25 @@ def test_fixed_shoulder_uses_exact_fk_and_preserves_joint_limits():
     target[:3,3]+=10
     assert not solve_fixed_joint(kin,'right',target,q,base,joint_degrees=-50).succeeded
     with pytest.raises(ValueError): solve_fixed_joint(kin,'right',target,q,base,joint_degrees=180)
+
+
+def test_pose_family_preserves_explicit_three_degree_reserve():
+    from greenhouse_sim.robot_kinematics import Rby1Kinematics
+    from sim_physics.redundant_ik import pose_family
+    kin=Rby1Kinematics();q=np.array([-35.,-50,20,-75,15,60,10]);base=np.eye(4)
+    results=list(pose_family(kin,'right',kin.forward('right',q,base),q,base,
+        steps_per_direction=4,joint_limit_margin_degrees=3.))
+    assert results
+    low,high=kin.arm_limits_degrees('right')
+    for result in results:
+        assert np.all(np.array(result.joint_degrees)>low+3.)
+        assert np.all(np.array(result.joint_degrees)<high-3.)
+
+
+@pytest.mark.parametrize('margin',[True,-1,float('nan'),1000])
+def test_pose_family_bad_reserve_fails(margin):
+    from greenhouse_sim.robot_kinematics import Rby1Kinematics
+    from sim_physics.redundant_ik import pose_family
+    kin=Rby1Kinematics();q=np.array([-35.,-50,20,-75,15,60,10]);base=np.eye(4)
+    with pytest.raises(ValueError):
+        list(pose_family(kin,'right',kin.forward('right',q,base),q,base,joint_limit_margin_degrees=margin))
