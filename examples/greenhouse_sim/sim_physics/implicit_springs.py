@@ -66,7 +66,10 @@ After release all six root DOFs participate in the coupled mass solve.
         if not self.fixed_base and not root_constrained:
             if np.any(effort[:6]!=0): raise RuntimeError('Passive springs must not actuate the root')
             effort=effort[6:]
-        a.set_dof_actuation_forces(effort[None,:].astype(np.float32),self.indices)
+        return self._submit(effort)
+
+    def _submit(self, effort):
+        self.articulation.set_dof_actuation_forces(effort[None,:].astype(np.float32),self.indices)
         return effort
 
 

@@ -40,6 +40,8 @@ def parser():
     p.add_argument('--constraint-mode',choices=('articulation','maximal','fixed_articulation'),default='articulation')
     p.add_argument('--attached-only',action='store_true')
     p.add_argument('--spring-mode',choices=('native','implicit_effort'),default='native')
+    p.add_argument('--native-torsion-trial',action='store_true',
+        help='Isolated comparison: original native torsional drives, coupled implicit bending; not production qualified')
     p.add_argument('--force-newton',type=float,default=.02)
     p.add_argument('--physics-threads',type=int,choices=(1,2,4,8,16))
     p.add_argument('--fabric',action='store_true')
@@ -177,6 +179,9 @@ def main(argv=None):
     if args.native_capsule_sphere_cover and not (args.bimanual_cut and args.native_static_clearance):
         raise ValueError('Native capsule sphere cover requires bimanual native static clearance')
     contact_trial=args.isolated_cut_contact_trial
+    if args.native_torsion_trial and not (contact_trial and args.spring_mode=='implicit_effort'
+            and not args.native_spring_cut_trial and args.diagnostic_grasp_dynamics):
+        raise ValueError('Native torsion comparison requires complete isolated implicit trial and dynamics telemetry')
     if args.blade_dwell_feedback and not (contact_trial and args.blade_force_feed and args.seam_contact_compliance):
         raise ValueError('Dwell feedback requires the complete isolated compliant blade feed')
     if args.symmetric_finger_closure and not (contact_trial and args.explicit_finger_effort
@@ -616,7 +621,12 @@ def main(argv=None):
                 drive_work_measured=False,cutting_qualified=False)
         if args.spring_mode=='implicit_effort':
             from .implicit_springs import ImplicitJointSprings,NativeBodyLoads
-            springs=ImplicitJointSprings(runtime.articulation)
+            if args.native_torsion_trial:
+                from .split_springs import SplitJointSprings
+                springs=SplitJointSprings(runtime.articulation)
+                report['spring_control']=dict(springs.receipt)
+            else:
+                springs=ImplicitJointSprings(runtime.articulation)
             loads=NativeBodyLoads(runtime.articulation,[0,0,-args.gravity]) if args.force_newton else None
             if loads:
                 report['force_mapping']=dict(reference=loads.reference,gravity_relative_errors=loads.reference_errors)

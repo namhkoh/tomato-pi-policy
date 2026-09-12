@@ -6513,3 +6513,22 @@ No hardware, collection, tuning, review, split or training-export changes.
   146.12 s**, `regression_20260913_strain_dwell_v1.log`. Diagnostics are not
   training records; reviews, splits, hardware, running external jobs, Windows
   configuration and source assets are untouched. No reboot requested.
+
+### 2026-09-13: Native torsion / implicit bending comparison rejected
+
+- Added default-OFF `--native-torsion-trial`, restricted to the complete isolated
+  diagnostic. Full original K/C remain in the predictor, but only bending
+  efforts are submitted; original native torsional drives participate in the
+  PhysX contact solve. Exact joint triples, force-drive type, zero rest targets,
+  native coefficients/caps and zero external torsional actuation are checked.
+  No root force, mass/inertia inflation or source/geometry change is introduced.
+  Spring-work reporting excludes unmeasured native torsional work explicitly.
+- Native174 repeats163 with this split and FAILS before grasp at0.029167 s
+  (seven recorded steps): maximum body speed76.832 m/s triggers the unchanged
+  guard. Zero blade contacts. This split is REJECTED as a physics repair; do not
+  enable it for demos, production or training. Default springs remain unchanged.
+- Evidence: `data/sim_physics/bimanual_downward_20260912_native174/`.
+  Focused tests50 passed; full regression **3,718 passed in138.77 s** in
+  `regression_20260913_split_springs_v1.log`. These code tests do not override
+  the native failure. The installed fixed-tendon schema excludes spherical
+  joints, so that alternative is not being silently substituted either.

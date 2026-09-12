@@ -324,7 +324,9 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         if getattr(args,'diagnostic_grasp_dynamics',False) and spring_snapshot is not None:
             from .spring_work import finish as spring_finish
             spring_work=spring_finish(spring_snapshot,runtime.articulation,
-                springs.k,step=stamp.step,dt=dt)
+                getattr(springs,'work_stiffness',springs.k),step=stamp.step,dt=dt)
+            if hasattr(springs,'work_stiffness'):
+                spring_work['scope']='explicit_bending_only_native_torsion_work_unmeasured'
         try:
             c=fixture.contact_with_frames(dt,frames,step_id=stamp.step)
         except Exception as exc:
