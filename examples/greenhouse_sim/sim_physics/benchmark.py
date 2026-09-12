@@ -282,6 +282,17 @@ def main(argv=None):
     if not 4<=args.seconds<=30 or not .005<=args.max_segment_m<=.05:
         raise ValueError('Qualification must be bounded to 4-30 seconds and 5-50 mm segments')
     output.mkdir(parents=True)
+    report=dict(state='initializing',started_utc=datetime.now(timezone.utc).isoformat(),
+                configuration=report_configuration(args,output),training_eligible=False)
+    if args.full_robot_probe and args.scene=='package':
+        from .host_memory import preflight
+        report['host_memory_preflight']=preflight()
+        if not report['host_memory_preflight']['allowed']:
+            report.update(state='blocked_host_memory',simulation_started=False,
+                error='Host memory reserve unavailable; inspect report before restarting the full greenhouse')
+            (output/'report.json').write_text(json.dumps(report,indent=2,allow_nan=False),encoding='utf-8')
+            print('PHYSICS_HOST_MEMORY_BLOCKED '+json.dumps(report),flush=True)
+            return 2
     from isaacsim import SimulationApp
     app=SimulationApp({'headless':not args.gui,'width':1280 if args.interactive else 848,'height':720 if args.interactive else 408,'multi_gpu':False,
                        'sync_loads':False,'renderer':'RaytracedLighting'})
@@ -294,8 +305,6 @@ def main(argv=None):
     if args.no_physics_profiler: process_settings.set_bool(profiler_setting,False)
     if args.physics_threads is not None:
         process_settings.set_int(thread_setting,args.physics_threads)
-    report=dict(state='initializing',started_utc=datetime.now(timezone.utc).isoformat(),
-                configuration=report_configuration(args,output),training_eligible=False)
     try:
         import numpy as np
         import omni.usd

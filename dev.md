@@ -5642,3 +5642,78 @@ No hardware, collection, tuning, review, split or training-export changes.
   `data/sim_physics/regression_20260912_left_clearance_v3.log`.
   `git diff --check` passes. This is CPU/USD validation, not native cutting
   qualification; the8 mm-standoff native90 trial is still in progress.
+
+### 2026-09-12: Native retry, qualified closer HOLD and launch-memory preflight
+
+- Checkpoint `8881c17` commits the preceding guarded posture/contact diagnostics,
+  bounded-memory source hashing, tests and documentation. Experimental force
+  closure/damping remain default OFF. No training data or source assets enter
+  this commit; the tracked worktree was clean immediately afterward.
+- Native90 failed during full-context construction, before physics: even the
+  1 MiB streaming read could not allocate memory. Windows then reported340.62 GB
+  committed of350.36 GB,254.46 GB paged pool. The streaming change removes the
+  unnecessary whole-file allocation but cannot fix exhausted system commit.
+  The responsible process/driver is unidentified; no restart or app termination
+  was performed. Evidence: native90 `report.json` and sibling log.
+- Added `sim_physics.host_memory`: read-only Windows GetPerformanceInfo counters
+  converted from pages to bytes, with explicit timestamps. The full-package
+  robot benchmark records them before importing SimulationApp. It refuses
+  startup if counters fail or reserve is below16 GiB commit headroom /4 GiB
+  available RAM, saves a `blocked_host_memory` report, exits2 and never creates
+  a simulator. Those limits are conservative launch policy after observed
+  failures, NOT a measured peak requirement or capacity guarantee. No package
+  download, persistent setting, process or pagefile modification is involved.
+  Unsupported OSes are explicitly not checked.70 targeted tests pass, including
+  installed Windows counter reads and proof of no Isaac import when blocked.
+  API reference: https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-performance_information
+- Host commit headroom later recovered without agent intervention. Native91
+  starts with20.69 GB reserve, completes full scene loading, verifies the54 mm
+  grasp, then rejects all350 tested8 mm-standoff tool paths before right IK.
+  Static refinement makes421 queries, clearing227 coarse bounds with no query
+  error. Remaining first-rejection counts:108 plate/main-stem,156 left-hand/
+  tool,72 right-camera/bracket versus neighboring fruit,4 versus leaf and10
+  versus backdrop. All108 plate/main-stem conflicts are at the first waiting
+  pose. This does not establish actual collision for every enclosing-tool
+  overlap or prove global infeasibility. Source hashes match. Native91 report
+  and log retain the complete failures; no cut or right movement occurred.
+- Native92 repeats the closer underhand HOLD control for20 s/4800 ticks with
+  no exception: completed=true, bounded=true, left_grasp_verified=true and
+  source_assets_unchanged=true. Maximum slip0.00067964 mm; no right motion or
+  cut. Overall bimanual status/exit2 intentionally remains failed, not a false
+  full-sequence success. Tick wall43.104 s (real-time factor0.464); measured
+  retained timing samples have median control7.930 ms / native5.800 ms. This
+  is a headless hold measurement, not a visual FPS or established speedup.
+  Evidence: `data/sim_physics/bimanual_downward_20260912_92/report.json`.
+- A bounded offline subset search now checks the permitted10/20 mm cut arcs
+  and left approach tilt. It loads source anatomy and full robot geometry in
+  an anonymous USD stage without Kit, but deliberately has no static-scene,
+  native contact, right-IK or grasp qualification. Its results are proposals
+  only and cannot bypass full-scene/native checks. Diagnostic script/log:
+  `data/sim_physics/underhand_subset_20260912.py` / `.log` (local ignored data).
+  Final regression and any resulting native trial are recorded below.
+- Offline subset search finishes18 cases in142.13 s:10 left-IK solutions and
+  8 failed solves with the tested seed. Tilting the left approach does not
+  improve the count of locally clear tool paths at either cut arc; this is a
+  bounded seed/search result, not global IK infeasibility. Native93 therefore
+  retains the verified tilt0 underhand posture and tests20 mm cut /8 mm
+  standoff. It does NOT change the10 mm default or any annotation.
+- Final CPU/USD regression after memory-preflight integration:3567 passed,
+  2 skipped in173.23 s (`data/sim_physics/regression_20260912_host_memory_v1.log`).
+  The offline subset search overlapped part of this CPU-only regression, not
+  any native timing run. `git diff --check` passes. No training/hardware work.
+- Native93 (same54 mm grasp,20 mm seam,8 mm standoff) passes setup but stops
+  during closure at2.941667 s/706 ticks: finger2 all-contact load0.52796594 N
+  exceeds the unchanged0.5 N guard. Grasp never verifies, so right planning and
+  motion are not authorized. Full source hashes match. The cut-plane change
+  also changes preauthored shaft segmentation (selected body centre46.676 ->
+  52.926 mm while the exact material grasp stays54 mm). This trial therefore
+  is not an isolated tool-clearance comparison or evidence that20 mm cuts are
+  intrinsically unsafe. Contact/discretization sensitivity remains unqualified;
+  no causal/material claim is inferred from this single failed transient.
+  Evidence: `data/sim_physics/bimanual_downward_20260912_93/report.json` and log.
+- Current handoff: native92 qualifies the specified20-second intact HOLD only;
+  no new downward cut, withdrawal, post-cut retention or deposit pass. Next
+  investigate contact/discretization stability and a jointly clear hand/tool
+  corridor; do not enlarge force limits, remove surroundings or use the offline
+  subset results as execution permission. All native trials launched here have
+  exited; the pre-existing review Kit process130120 remains untouched.

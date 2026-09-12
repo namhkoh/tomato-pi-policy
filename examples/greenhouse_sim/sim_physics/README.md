@@ -80,9 +80,24 @@ grasp evidence. See the native88 result in `dev.md`.
 Native88 now verifies a closer54 mm underhand grasp with28 mm finger-to-cut
 clearance, but rejects all350 downward tool corridors before right motion.
 Native89 holds that grasp for20 s with maximum slip0.000680 mm, then fails its
-final integrity check on a host MemoryError. Streaming source hashing fixes
-the whole-file allocation, but a native repeat is still needed. This is not
-cut/withdraw/retain qualification and does not replace the baseline launcher.
+final integrity check on a host MemoryError. Native92 repeats the hold after
+streaming hashing, with the same maximum slip and all source hashes verified.
+Its completed/bounded/grasp gates pass; full bimanual status intentionally fails
+because no right cut occurred. Native91's shorter8 mm knife standoff still
+rejects all350 corridors. This is not cut/withdraw/retain qualification and
+does not replace the baseline launcher.
+
+Full-package robot launches now record a read-only Windows memory preflight
+before importing SimulationApp. Less than16 GiB commit headroom or4 GiB available
+physical RAM produces `blocked_host_memory` and no simulation launch. This is
+a conservative engineering reserve, not a measured runtime-capacity guarantee
+or an Isaac minimum requirement. It never changes apps, drivers or pagefiles.
+Other OSes are explicitly marked not checked. To inspect without launching:
+
+```bat
+cd examples\greenhouse_sim
+python -m sim_physics.host_memory
+```
 
 Authored joint-topology caching avoids repeated unchanged relationship reads,
 not fresh native-state checks. A smaller guarded collision workspace is an
