@@ -387,7 +387,7 @@ class BimanualRobot(FullRobotGripper):
         """
         if getattr(self,'cut_style','legacy')=='downward':
             from .downward_cut import cartesian_transit
-            return cartesian_transit(self,left_q,goal)
+            return cartesian_transit(self,left_q,goal,replan_stroke_from_endpoint=True)
         lower,upper=self.kin.arm_limits_degrees('right')
         goal=np.asarray(goal,dtype=float)
         if (goal.shape!=(7,) or not np.isfinite(goal).all()
@@ -661,13 +661,37 @@ class BimanualRobot(FullRobotGripper):
             f'arm_clear_endpoints={clear_endpoints}, path_failures={failures}')
 
     def _try_cut_candidate(self,left_q,centre,axis,candidate,tilt,failures):
-        """Full sampled stroke, then bounded transit; no endpoint-only success."""
+        """Complete transit/stroke validation; no endpoint-only success.
+
+        Downward Cartesian transit selects its own redundant-arm branch. Rebuild
+        the stroke from that exact terminal state, not a disconnected IK branch.
+        Legacy joint-space transit retains the original stroke-first protocol.
+        """
         _,angle,d,q,normal_sign,wing,normal=candidate
         failure=dict(angle=angle,plane_tilt_degrees=tilt,normal_sign=normal_sign,wing_m=wing)
-        minimum=float('inf');stroke=[];seed=q
+        minimum=float('inf');stroke=[];seed=q;transit=None
+        downward=getattr(self,'cut_style','legacy')=='downward'
+        if downward:
+            transit=self.right_transit(left_q,q)
+            if transit is None:
+                failures.append(dict(failure,rejection='bounded_transit_arm_self_or_plant_clearance'));return False
+            approach,_,_=transit
+            seed=np.asarray(approach[-1],float).copy()
         for sample_index,offset in enumerate(self.stroke_offsets):
             desired=self.knife.wrist_for_edge(centre+offset*d,d,normal,wing)
-            solution=self.solve_right_pose(desired,seed)
+            if downward and sample_index==0:
+                from scipy.spatial.transform import Rotation
+                actual=self.kin.forward('right',seed,self.base)
+                error=float(np.linalg.norm(actual[:3,3]-desired[:3,3]))
+                angle_error=float(np.linalg.norm(Rotation.from_matrix(desired[:3,:3]@actual[:3,:3].T).as_rotvec()))
+                if not np.isfinite([error,angle_error]).all() or error>.0005 or angle_error>.005:
+                    failures.append(dict(failure,rejection='transit_terminal_cut_pose',position_error_m=error,
+                        orientation_error_rad=angle_error));return False
+                # Reuse the very same joint vector: no second IK solve, snap,
+                # or unchecked interpolation at the approach-to-cut boundary.
+                from types import SimpleNamespace
+                solution=SimpleNamespace(succeeded=True,joint_degrees=seed)
+            else:solution=self.solve_right_pose(desired,seed)
             failure.update(offset_m=float(offset),rejection='stroke_IK')
             if not solution.succeeded:
                 # Exact failed solve, not the preceding sample's collision checks.
@@ -696,7 +720,7 @@ class BimanualRobot(FullRobotGripper):
             stroke.append(seed)
         if len(stroke)!=len(self.stroke_offsets):
             failures.append(failure);return False
-        transit=self.right_transit(left_q,q)
+        if transit is None:transit=self.right_transit(left_q,q)
         if transit is None:
             failures.append(dict(failure,rejection='bounded_transit_arm_self_or_plant_clearance'));return False
         approach,transit_minimum,transit_evidence=transit

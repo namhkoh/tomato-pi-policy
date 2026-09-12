@@ -62,13 +62,15 @@ def vertical_cut_frame(axis,normal_sign=1,tilt_degrees=0.):
     return direction,normal
 
 
-def cartesian_transit(robot,left,goal):
+def cartesian_transit(robot,left,goal,*,replan_stroke_from_endpoint=False):
     """Straight wrist-position transit, smooth rotation, no joint-space detour.
 
     Every <=2 mm / <=1 degree pose plus <=1 degree joint interpolation is
     screened. This is sampled geometry only; native tracking/contact guards
     and reobservation still apply. A failed path is rejected, never rerouted.
     """
+    if type(replan_stroke_from_endpoint) is not bool:
+        raise ValueError('Explicit endpoint replanning flag required')
     from scipy.spatial.transform import Rotation,Slerp
     start=robot.kin.forward('right',robot.right,robot.base)
     end=robot.kin.forward('right',goal,robot.base)
@@ -99,9 +101,20 @@ def cartesian_transit(robot,left,goal):
             if np.linalg.norm(point-closest)>.0005:return None
             minimum=min(minimum,clearance)
         path.append(q)
-    # Match the very same endpoint configuration used by the stroke solver.
-    if np.max(abs(path[-1]-goal))>.25:return None
+    # A redundant arm may reach the same pose on a different elbow branch.
+    # This is permitted ONLY for a caller that rebuilds the entire cut stroke
+    # from this exact, screened terminal configuration. Never append a joint
+    # jump to the independently proposed endpoint.
+    mismatch=float(np.max(abs(path[-1]-goal)))
+    if mismatch>.25 and not replan_stroke_from_endpoint:return None
+    actual=robot.kin.forward('right',path[-1],robot.base)
+    position_error=float(np.linalg.norm(actual[:3,3]-end[:3,3]))
+    orientation_error=float(np.linalg.norm(Rotation.from_matrix(end[:3,:3]@actual[:3,:3].T).as_rotvec()))
+    if not np.isfinite([position_error,orientation_error]).all() or position_error>.0005 or orientation_error>.005:return None
     return np.asarray(path),minimum,dict(method='straight_cartesian_no_detour',
         collision_checks=checks,maximum_cartesian_sample_step_m=.002,
         maximum_joint_sample_step_degrees=1.,maximum_line_error_m=.0005,
+        requires_stroke_replanning=replan_stroke_from_endpoint,
+        proposed_terminal_joint_difference_degrees=mismatch,
+        terminal_position_error_m=position_error,terminal_orientation_error_rad=orientation_error,
         whole_scene_certified=False)

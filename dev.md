@@ -6166,3 +6166,38 @@ No hardware, collection, tuning, review, split or training-export changes.
   `data/sim_physics/regression_20260913_native_occupancy_v1.log`;34 focused tests
   cover the new diagnostic algorithms. Main execution still uses the existing
   guarded planner; these queries are NOT silently enabled as motion permissions.
+
+### 2026-09-13: Continuous downward approach/cut IK and intact-source search
+
+- Fixed a disconnected planning assumption: Cartesian approach IK can reach the
+  same knife pose on a different redundant-arm branch from the independently
+  proposed cut endpoint. Requiring identical elbow joints unnecessarily rejected
+  that approach. Downward planning now explicitly obtains the screened approach
+  terminal and rebuilds the entire cut stroke from that exact joint vector.
+  The first stroke sample is identical to the final approach sample: no snap,
+  appended joint jump, or reuse of a stroke checked on a different branch.
+- The pose-only transit mode is explicit; the helper's default still requires
+  the original joint endpoint. Both modes verify terminal position/orientation.
+  The rebuilt stroke retains extension, inter-arm, whole self/tool and held/static
+  plant checks. Straight Cartesian approach, <=0.5 mm line error, existing joint
+  reserves, contact loads and cut gates are unchanged. Legacy planning is unchanged.
+- Synthetic redundant-arm continuity/rejection tests and the full physics suite
+  pass: **3,419 passed in120.61 s**, evidence
+  `data/sim_physics/regression_20260913_transit_v1.log`. This is code validation,
+  NOT a measured native cutting success.
+- Offline screening examined30 intact original-package petioles with the actual
+  fitted wrist tools. Six have at least one sampled source-clear tool stroke:
+  seed11/SubStem43, seed19/SubStem41, seed47/SubStem41, seed53/SubStem41,
+  seed67/SubStem43 and seed73/SubStem41 (all `*_full` plant IDs). No source leaves,
+  neighboring stems, camera hardware or native colliders are removed.
+- Paired-hand tests and coupled base/torso/arm solves remain proposals only.
+  Seed19's tested positive-normal paired-hand options require an85 mm grasp arc
+  (65 mm distal to the20 mm seam), farther than the desired close-junction grasp.
+  Many pose-reachable configurations fail whole-robot startup against the plant.
+  Source-stem/robot-capsule avoidance now guides the offline search; unchanged
+  full source/tool/path screening still decides acceptance. These candidates are
+  NOT native, greenhouse, VLM or physical-cut qualification.
+- Evidence: `data/sim_physics/source_tool_access_search_20260913.log`,
+  `paired_hand_search_*20260913*.log`, `paired_station_solve_*20260913*.log`,
+  `paired_robot_search_*20260913*.log`. No dataset, review, training, hardware,
+  running user application or Windows memory configuration is changed.
