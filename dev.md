@@ -6123,3 +6123,46 @@ No hardware, collection, tuning, review, split or training-export changes.
 - Focused98 tests pass. Full physics regression: **3,376 passed in123.48 s**,
   `data/sim_physics/regression_20260913_retraction_v1.log`. No current reliable
   downward cut, native retained deposit, or tissue-fracture calibration is claimed.
+
+### 2026-09-13: Small retained pull and native tool-clearance diagnostics
+
+- Native136 completes the requested2 mm pull and reobserves at7.008333 s:
+  measured palm displacement1.999424 mm, grasped-point displacement1.989396 mm,
+  junction displacement0.244040 mm, maximum recorded slip0.216938 mm. Bilateral
+  grasp is retained at reobservation, but all83 converged cutter endpoints still
+  reject; no right motion/cut. This qualifies neither5 mm repositioning nor a
+  long-duration/repeated retained manipulation sequence.
+- Added read-only `native_body_bounds.py`: synchronous, same-stage complete
+  native property-query inventory, callback/finite/rigid guards, and the rigid
+  countertransform identity. Native137/138 found that PhysX property queries
+  also report the two explicitly disabled legacy knife/arc boxes. They are now
+  separately audited, not accepted as active geometry; unknown responses still
+  fail closed. Native139 obtains19 active wrist records plus the selected shaft
+  and first leaf carrier without a physics step or USD epoch change. Property
+  records alone do NOT prove active actor shape identity or authorize motion.
+- `native_occupancy_clearance.py` is an unintegrated diagnostic for complete
+  volume queries, NOT sparse point sampling. Given complete enclosing bounds,
+  countertransform each occupied obstacle cell into the parked tool's frame.
+  Actual native obstacle queries prune empty cells; actual native tool queries
+  test the entire remaining cell plus margin. Gap-free subdivisions, frozen-epoch
+  occupancy caching, roundoff reserve, actor controls, budgets and retained
+  rejection at1 mm cell resolution prevent unresolved geometry becoming clear.
+  No body/collider is repositioned, removed or filtered by this algorithm.
+- Native140 checks15 pre-cut poses against the three camera/bracket actors and
+  three selected target shapes. Native141 adds the full-cell refinement, with
+  bounds enclosing both native property ranges and source vertices before the
+  independent1 mm margin.2,305 refinement queries/1,664 node visits/859 cached
+  cells resolve7 previously unresolved pairs, retain37 pair rejections; every
+  pose still has at least one unresolved camera/leaf pair. These are subset
+  diagnostics, NOT full-arm/stroke clearance or actual cutting. Right arm stays
+  parked. Final actor/epoch validation passes. Outputs:
+  `data/sim_physics/bimanual_downward_20260912_native137` through`native141`,
+  `native_tool_bounds.json` within each completed probe.
+- Geometry-only screening of other intact original-package petioles is underway
+  (`data/sim_physics/source_tool_access_search_20260913*`) to find an unobstructed
+  baseline. A source tool corridor does not establish grasp, arm IK, startup,
+  native stability or a cut. No source foliage or camera hardware is removed.
+- Full physics regression: **3,410 passed in119.71 s**, evidence
+  `data/sim_physics/regression_20260913_native_occupancy_v1.log`;34 focused tests
+  cover the new diagnostic algorithms. Main execution still uses the existing
+  guarded planner; these queries are NOT silently enabled as motion permissions.
