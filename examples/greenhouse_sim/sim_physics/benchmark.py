@@ -103,6 +103,8 @@ def parser():
         help='Isolated HOLD-only bounded explicit left-finger PD comparison; no native contact or force-guard change')
     p.add_argument('--isolated-cut-contact-trial',action='store_true',
         help='Explicit isolated flat-cylinder/effort-control cut DIAGNOSTIC; native126 hold is not tissue or greenhouse certification')
+    p.add_argument('--branch-contact-fixture',action='store_true',
+        help='CONTACT ONLY: keep original main stem and selected complete petiole/leaves; excludes other source branches in session; NOT intact-plant/greenhouse qualification')
     p.add_argument('--anchored-pad-damping',action='store_true',
         help='Explicit uncalibrated pad-damping prior for an anchored shaft; no mass/stiffness/force-guard change')
     p.add_argument('--bimanual-hold-control',action='store_true',
@@ -155,6 +157,8 @@ def main(argv=None):
     if args.native_capsule_sphere_cover and not (args.bimanual_cut and args.native_static_clearance):
         raise ValueError('Native capsule sphere cover requires bimanual native static clearance')
     contact_trial=args.isolated_cut_contact_trial
+    if args.branch_contact_fixture and not contact_trial:
+        raise ValueError('Branch-only selection requires the isolated cut contact diagnostic')
     if contact_trial and not (args.scene=='package' and args.isolate_station and args.full_robot_probe
             and args.bimanual_cut and not args.bimanual_hold_control and not args.robot_interactive
             and args.explicit_finger_effort and args.force_closure and args.physics_hz==240
@@ -426,6 +430,10 @@ def main(argv=None):
                 # Explicit test-station placement BEFORE building physics, never
                 # a running plant pose override or source-package edit.
                 UsdGeom.Xformable(stage.GetPrimAtPath('/World/Plant')).AddTranslateOp(opSuffix='testStation').Set(Gf.Vec3d(0,0,.35))
+        if args.branch_contact_fixture:
+            from .branch_contact_fixture import select_components
+            report['branch_contact_fixture']=select_components(stage,record,args.target)
+            report['isolated_station']['scope']='branch_contact_fixture_NOT_intact_source_plant'
         rig=build(stage,record,args.target,max_segment_m=args.max_segment_m,constraint_mode=args.constraint_mode,
                   cut_m=args.cut_arc_m,stem_contact_model=args.stem_contact_model)
         if args.stem_contact_model=='flat_cylinders_v1':

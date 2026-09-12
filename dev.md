@@ -6224,3 +6224,37 @@ No hardware, collection, tuning, review, split or training-export changes.
 - 29 fake-query contract tests pass; full physics regression **3,448 passed in
   120.19 s**, `data/sim_physics/regression_20260913_native_startup_v1.log`.
   Regression success is not evidence of native grasp/cut completion.
+
+### 2026-09-13: Explicit branch contact fixture and native retained-grasp test
+
+- Added opt-in `--branch-contact-fixture`, permitted only with the complete
+  isolated cut-contact diagnostic protocol. It retains the original complete
+  main stem, selected petiole and ALL that petiole's leaves. Other branch/fruit
+  components are deactivated in the diagnostic session only, with an explicit
+  inventory in the report. Source geometry, materials, transforms, target
+  mechanics, force limits and production greenhouse defaults are unchanged.
+  This fixture is NOT intact-plant access, greenhouse, damage or training proof.
+- Native146/147 exposed a source USD `/World/RBY1` override stub: it is active
+  but undefined, not a constructed robot. The preconstruction guard now rejects
+  active defined rigs, not this empty source override. Both inactive namespace
+  and undefined-override cases have regression tests. Neither failed launch
+  entered contact simulation. Native148 passes actual package construction.
+- Native148 verifies grasp at5.508333 s, completes the2 mm retained retraction
+  and reobserves at7.008333 s; maximum recorded slip0.216938 mm.23 right-arm
+  endpoints pass the endpoint checks, but all straight transits from the parked
+  arm reject. There are ZERO blade contacts, no cut and no deposit. This result
+  separates an approach-planning failure from the branch contact mechanics;
+  it does not qualify a reliable cut. Original source hashes remain unchanged.
+- Native149 uses the unchanged stop-before-motion probe for a prepositioned
+  cutter with4 mm extra upward standoff. Four coarse main-stem overlaps clear
+  through native queries; the blade/shaft and upper-arm/leaf pairs still reject.
+  Zero physics steps, no motion authorized. No validation gate was bypassed.
+- Other source-plant searches now bind each IK proposal to its own passing knife
+  facing direction and include the existing inter-arm clearance in proposal
+  costs. Seed11/67/73 offer closer hand-only candidates, but none is native
+  full-sequence qualified. A prepositioned cutter test, if successful, would
+  still not certify the normal parked-pose approach.
+- Evidence: `data/sim_physics/bimanual_downward_20260912_native146` through
+  `native149`, `paired_*20260913*.log`, `preposition_search_20260913*.log`.
+ 17 focused fixture tests; full physics regression **3,465 passed in124.55 s**,
+ `data/sim_physics/regression_20260913_branch_fixture_v2.log`.
