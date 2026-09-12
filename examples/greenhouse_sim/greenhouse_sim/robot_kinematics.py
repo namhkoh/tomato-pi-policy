@@ -1533,6 +1533,7 @@ class Rby1Kinematics:
         torso_degrees=None,
         *,
         maximum_evaluations: int = 4000,
+        joint_limit_margin_degrees: float = 0.,
     ) -> IKResult:
         """Solve a full end-effector pose while staying on the seed branch."""
         from scipy.optimize import least_squares
@@ -1544,8 +1545,14 @@ class Rby1Kinematics:
         desired = np.asarray(desired, dtype=np.float64)
         seed = np.radians(np.asarray(seed_degrees, dtype=np.float64))
         lower, upper = self.arm_limits_degrees(side)
-        lower = np.radians(lower) + 1e-5
-        upper = np.radians(upper) - 1e-5
+        margin=joint_limit_margin_degrees
+        if (isinstance(margin,(bool,np.bool_)) or not isinstance(margin,(int,float,np.integer,np.floating))
+                or not np.isfinite(margin) or margin<0
+                or np.any(np.asarray(lower)+margin>=np.asarray(upper)-margin)):
+            raise ValueError('Finite nonnegative IK joint-limit reserve within every joint range required')
+        lower = np.radians(np.asarray(lower)+margin) + 1e-5
+        upper = np.radians(np.asarray(upper)-margin) - 1e-5
+        if np.any(lower>=upper):raise ValueError('IK reserve leaves no numerical joint interval')
 
         def residual(radians: np.ndarray) -> np.ndarray:
             actual = self.forward(side, np.degrees(radians), base_matrix, torso_degrees)

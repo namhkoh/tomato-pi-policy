@@ -5895,3 +5895,32 @@ No hardware, collection, tuning, review, split or training-export changes.
   v2 proposals still collide with target Leaf004 and remain rejected. No leaf
   was removed and no native robot was moved to these proposals by this check.
   Evidence: `data/sim_physics/coordinated_spawn_check_20260912_v2.log`.
+
+### 2026-09-12: Downward IK joint-limit reserve
+
+- Offline v1 base proposals pass the27-pose straight-down wrist stroke, but the
+  unconstrained solver ends at right wrist joint5=109.999427 degrees, only
+ 0.000573 degrees below its110-degree URDF limit. These solutions were not
+  promoted or executed as a reliable cutting preset.
+- `Rby1Kinematics.solve_pose` now accepts an explicit nonnegative joint-limit
+  reserve; zero preserves the previous solver exactly. Invalid/nonfinite or
+  impossible intervals reject. Downward `BimanualRobot` IK uses a3-degree reserve
+  for initial/fallback solves, every stroke sample and Cartesian transit solve.
+  Exact URDF limits, native drives, collision/pose tolerances and other modes
+  are unchanged. This is a planning margin, not hardware validation.
+- Coordinated offline proposals limited to120 mm X/150 mm Y base displacement
+  and25 degrees yaw retain the original torso and solve BOTH stroke endpoints
+  with3-degree right-arm reserve. Four proposals pass complete source-plant
+  startup, held-finger self/tool and27-pose stroke checks. They are not full
+  greenhouse transit, native grasp or cutting certification. Evidence:
+  `data/sim_physics/coordinated_margin_station_20260912.py` / `.log` and
+  `data/sim_physics/qualified_margin_station_20260912.py` / `.log`.
+- Native112 executes only the left acquisition at the source-clear yaw-seed20
+  proposal in the full greenhouse: startup passes, but finger2 reaches
+ 0.599550 N and the original0.5 N guard stops closure before verified grasp.
+  No right motion, cut or retention; source hashes unchanged. Thus correcting
+  geometric/IK feasibility is insufficient to fix contact-model robustness.
+  No unsafe preset replaces the existing demonstration configuration.
+- Regression:4,295 passed,2 skipped,47 subtests in212.52 s
+  (`data/sim_physics/regression_20260912_joint_reserve_v1.log`);110 focused IK/
+  downward planning tests passed. Full grasp-cut-withdraw-retain still unqualified.

@@ -144,11 +144,13 @@ class BimanualRobot(FullRobotGripper):
         """
         fixed=getattr(self,'right_ik_fixed_joint',None)
         if fixed is None:
-            result=self.kin.solve_pose('right',desired,seed,self.base,maximum_evaluations=250)
+            options=({'joint_limit_margin_degrees':3.}
+                if getattr(self,'cut_style','legacy')=='downward' else {})
+            result=self.kin.solve_pose('right',desired,seed,self.base,maximum_evaluations=250,**options)
             if getattr(self,'cut_style','legacy')=='downward' and not result.succeeded:
                 for wrist in (-120.,0.,120.):
                     proposal=np.array(seed,float,copy=True);proposal[6]=wrist
-                    result=self.kin.solve_pose('right',desired,proposal,self.base,maximum_evaluations=250)
+                    result=self.kin.solve_pose('right',desired,proposal,self.base,maximum_evaluations=250,**options)
                     if result.succeeded:break
             return result
         from .redundant_ik import solve_fixed_joint
@@ -584,6 +586,7 @@ class BimanualRobot(FullRobotGripper):
                     ik_attempted=False,ik_succeeded=False,evaluations=0)
                 if downward:
                     attempt.update(stroke_basis='world_vertical' if vertical else 'stem_transverse',
+                        planned_joint_limit_reserve_degrees=3.,
                         direction_world=d.tolist(),stroke_axis_dot_stem=float(abs(d@axis)),
                         edge_axis_dot_stem=float(abs(np.cross(normal,-d)@axis)))
                 attempts.append(attempt)

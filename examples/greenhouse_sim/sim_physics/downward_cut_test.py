@@ -126,3 +126,19 @@ def test_exact_grasp_restricted_before_kit_start(tmp_path):
     with pytest.raises(ValueError,match='Exact grasp arc requires'):
         main(['--output',str(tmp_path/'none'),'--exact-grasp-arc'])
     assert not (tmp_path/'none').exists()
+
+
+@pytest.mark.parametrize('style', ['legacy','downward'])
+def test_downward_endpoint_and_all_fallback_seeds_keep_joint_reserve(style):
+    from types import SimpleNamespace as S
+    from sim_physics.bimanual import BimanualRobot
+    calls=[]
+    def solve(*args,**kwargs):
+        calls.append(kwargs)
+        return S(succeeded=False)
+    robot=BimanualRobot.__new__(BimanualRobot)
+    robot.base=np.eye(4);robot.cut_style=style;robot.right_ik_fixed_joint=None
+    robot.kin=S(solve_pose=solve)
+    robot.solve_right_pose(np.eye(4),np.zeros(7))
+    assert len(calls)==(4 if style=='downward' else 1)
+    assert all(c.get('joint_limit_margin_degrees',0.)==(3. if style=='downward' else 0.) for c in calls)

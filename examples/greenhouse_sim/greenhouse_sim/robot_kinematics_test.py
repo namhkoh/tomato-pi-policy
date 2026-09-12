@@ -13,6 +13,32 @@ BASE = robot_kinematics.base_transform((6.99114, 3.78, -0.3050817), -90.0)
 RIGHT_SAFE = (-101.724, -83.623, 34.196, -135.683, -57.431, 94.832, -74.920)
 
 
+def test_pose_ik_explicit_reserve_and_legacy_default():
+    model=robot_kinematics.Rby1Kinematics();desired=model.forward('right',RIGHT_SAFE,BASE)
+    legacy=model.solve_pose('right',desired,RIGHT_SAFE,BASE)
+    zero=model.solve_pose('right',desired,RIGHT_SAFE,BASE,joint_limit_margin_degrees=0.)
+    assert legacy==zero
+    safe=model.solve_pose('right',desired,RIGHT_SAFE,BASE,joint_limit_margin_degrees=3.)
+    low,high=model.arm_limits_degrees('right');q=np.array(safe.joint_degrees)
+    assert safe.succeeded and np.all(q>=low+3) and np.all(q<=high-3)
+
+
+def test_pose_ik_does_not_return_boundary_seed_as_reserved_solution():
+    model=robot_kinematics.Rby1Kinematics();low,high=model.arm_limits_degrees('right')
+    q=np.array(RIGHT_SAFE);q[5]=high[5]-.001
+    result=model.solve_pose('right',model.forward('right',q,BASE),q,BASE,
+        joint_limit_margin_degrees=3.,maximum_evaluations=60)
+    assert np.all(np.array(result.joint_degrees)<=high-3)
+    assert np.all(np.array(result.joint_degrees)>=low+3)
+
+
+@pytest.mark.parametrize('margin',[-1.,float('nan'),float('inf'),True,'3',[3],200])
+def test_invalid_pose_ik_reserve_rejected(margin):
+    model=robot_kinematics.Rby1Kinematics()
+    with pytest.raises(ValueError,match='joint-limit reserve'):
+        model.solve_pose('right',np.eye(4),RIGHT_SAFE,BASE,joint_limit_margin_degrees=margin)
+
+
 def test_torso_limits_match_exact_urdf_and_are_independent_arrays():
     import xml.etree.ElementTree as ET
     from greenhouse_sim.robot_model import DEFAULT_URDF
