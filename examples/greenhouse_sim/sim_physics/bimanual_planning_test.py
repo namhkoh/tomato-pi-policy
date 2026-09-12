@@ -6,15 +6,19 @@ import pytest
 from sim_physics.bimanual import BimanualRobot
 
 
-def test_complete_rigid_corridor_precedes_endpoint_ik(monkeypatch):
+@pytest.mark.parametrize('style',['legacy','downward'])
+def test_complete_rigid_corridor_precedes_endpoint_ik(monkeypatch,style):
     import sim_physics.rigid_tool_screen as module
     robot=BimanualRobot.__new__(BimanualRobot)
     robot.stage=None;robot.root='/World/R';robot.rig=S(root='/World/P')
     robot.held_plant_screen=S(workspace=[np.zeros(3),np.ones(3)],static=[],snapshot=lambda frames:None)
     robot.goal=np.eye(4);robot.goal[:3,:3]=[[1,0,0],[0,0,1],[0,-1,0]]
     robot.radius=.003;robot.right=np.zeros(7);robot.base=np.eye(4)
+    robot.cut_style=style
     robot.stroke_offsets=np.linspace(-.025,.005,61)
     robot.seam=lambda frames:(np.zeros(3),np.array([0.,0.,1.]))
+    axis=np.array([.6638,.6961,.2735]);axis/=np.linalg.norm(axis)
+    if style=='downward':robot.seam=lambda frames:(np.zeros(3),axis.copy())
     def wrist(point,*unused):
         result=np.eye(4);result[:3,3]=point;return result
     robot.knife=S(size=np.array([.002,.05,.006]),wrist_for_edge=wrist)
@@ -30,10 +34,16 @@ def test_complete_rigid_corridor_precedes_endpoint_ik(monkeypatch):
     monkeypatch.setattr(module,'RigidToolScreen',Screen)
     with pytest.raises(RuntimeError,match='IK_attempted=0'):
         robot._plan_cut([],np.zeros(7))
-    assert len(checked)==756
+    assert len(checked)==(756 if style=='legacy' else 400)
     attempts=robot.plan_diagnostics['endpoint_attempts']
     assert all(not a['ik_attempted'] and a['rejection']=='rigid_tool_corridor' for a in attempts)
     assert robot.plan is None and not robot.plan_diagnostics['whole_scene_path_certified']
+    if style=='downward':
+        assert attempts[0]['stroke_basis']=='world_vertical'
+        np.testing.assert_array_equal(attempts[0]['direction_world'],[0,0,-1])
+        assert {a['stroke_basis'] for a in attempts}=={'world_vertical','stem_transverse'}
+        assert sum(a['stroke_basis']=='world_vertical' for a in attempts)==50
+        assert all(a['stroke_axis_dot_stem']<.3 and a['edge_axis_dot_stem']<.3 for a in attempts)
 
 
 def test_final_validation_precedes_plan_acceptance_and_always_closes():

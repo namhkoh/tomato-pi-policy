@@ -36,6 +36,32 @@ def downward_angles(axis):
         <=-np.cos(np.pi/6)+1e-12)
 
 
+def vertical_cut_frame(axis,normal_sign=1,tilt_degrees=0.):
+    """True gravity stroke when it satisfies the existing measured cut angles.
+
+    The projected vector is a PLANNING plane normal, not replacement anatomy.
+    ShearGate and release_from_blade must still receive the real measured axis.
+    Return None for a valid stem whose slope/edge angle disallows this proposal.
+    No angular, contact, clearance or impulse permission is changed here.
+    """
+    from .knife import cut_plane_normal
+    axis=np.asarray(axis,float)
+    if axis.shape!=(3,) or not np.isfinite(axis).all() or abs(np.linalg.norm(axis)-1)>1e-5:
+        raise ValueError('Measured unit stem axis required')
+    if normal_sign not in (-1,1):raise ValueError('Plane normal sign must be +/-1')
+    if not np.isfinite(tilt_degrees) or abs(tilt_degrees)>15:
+        raise ValueError('Plane tilt must be finite and within 15 degrees')
+    axis=axis/np.linalg.norm(axis)
+    direction=np.array([0.,0.,-1.])
+    if abs(direction@axis)>=.3:return None
+    plane_seed=axis-direction*(direction@axis)
+    plane_seed/=np.linalg.norm(plane_seed)
+    normal=cut_plane_normal(direction,normal_sign*plane_seed,tilt_degrees)
+    edge_axis=np.cross(normal,-direction)
+    if abs(edge_axis@axis)>=.3:return None
+    return direction,normal
+
+
 def cartesian_transit(robot,left,goal):
     """Straight wrist-position transit, smooth rotation, no joint-space detour.
 

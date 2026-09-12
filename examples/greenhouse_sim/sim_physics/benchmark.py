@@ -42,6 +42,8 @@ def parser():
     p.add_argument('--render-hz',type=int,choices=(0,15,30,60),default=0)
     p.add_argument('--seconds',type=float,default=6.)
     p.add_argument('--max-segment-m',type=float,default=.025)
+    p.add_argument('--stem-contact-model',choices=('flush_capsules_v1','continuous_internal_capsules_v1'),
+        default='flush_capsules_v1',help='Explicit continuity comparison; internal capsules reach joint anchors, no seam crossing')
     p.add_argument('--gui',action='store_true')
     p.add_argument('--interactive',action='store_true',help='Keep an isolated physics demo open with pull/release/reset controls')
     p.add_argument('--gripper-probe',action='store_true',help='Bounded actual left-gripper contact fixture, not full-arm IK')
@@ -57,7 +59,7 @@ def parser():
     p.add_argument('--knife-alignment',choices=('legacy','camera'),default='legacy',
         help='Camera aligns the arc to the actual wrist camera radial side; original source asset untouched')
     p.add_argument('--cut-style',choices=('legacy','downward'),default='legacy',
-        help='Downward: extended arm, transverse gravity-aligned stroke and straight Cartesian approach; no detour fallback')
+        help='Downward: extended arm, gravity-aligned stroke within measured angular limits and straight Cartesian approach; no detour fallback')
     p.add_argument('--right-ready-degrees',type=float,nargs=7,
         help='Explicit initial right pose for a coordinated downward fixture; screened before physics, never a runtime teleport')
     p.add_argument('--left-ik-seed-degrees',type=float,nargs=7,
@@ -370,7 +372,8 @@ def main(argv=None):
                 # Explicit test-station placement BEFORE building physics, never
                 # a running plant pose override or source-package edit.
                 UsdGeom.Xformable(stage.GetPrimAtPath('/World/Plant')).AddTranslateOp(opSuffix='testStation').Set(Gf.Vec3d(0,0,.35))
-        rig=build(stage,record,args.target,max_segment_m=args.max_segment_m,constraint_mode=args.constraint_mode,cut_m=args.cut_arc_m)
+        rig=build(stage,record,args.target,max_segment_m=args.max_segment_m,constraint_mode=args.constraint_mode,
+                  cut_m=args.cut_arc_m,stem_contact_model=args.stem_contact_model)
         report['rig']=rig.report()
         fixture=None
         if args.full_robot_probe:

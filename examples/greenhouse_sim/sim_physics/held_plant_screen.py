@@ -82,6 +82,34 @@ class HeldPlantScreen:
         if not self.local or not self.shapes: raise ValueError('Missing held-plant/arm geometry')
         self.static=[];self.workspace=None
 
+    def set_physical_grasp_span(self,frames,body_world,selected,origin):
+        """Explicit current-pose replacement for the legacy +/-one-link rule.
+
+        Only contiguous exact shaft capsules on the detachable side qualify.
+        Leaves, other branches, support, palms and cameras remain obstacles.
+        No source/native filtering or contact evidence is altered.
+        """
+        from .grasp_span import connected_span,finger_interval
+        if self.arm!='left' or self.grasp_collider is None:
+            raise ValueError('Left selected grasp required')
+        shafts={i:(p,data) for p,i,kind,data in self.local
+            if kind=='capsule' and p.endswith('/StemCollider')}
+        if set(shafts)!=set(range(len(frames))) or shafts[selected][0]!=self.grasp_collider:
+            raise ValueError('Complete ordered selected source shaft required')
+        first=min(i for i in shafts if shafts[i][0] in self.seam_paths)+1
+        axis=np.asarray(frames[selected,:3,2],float)
+        interval=finger_interval(self.shapes,body_world,axis,origin)
+        capsules=[]
+        for i in range(len(frames)):
+            a,b,radius=shafts[i][1];r,t=frames[i,:3,:3],frames[i,:3,3]
+            capsules.append((r@a+t,r@b+t,radius))
+        indices=connected_span(capsules,selected,first,axis,origin,interval)
+        self.grasp_colliders={shafts[i][0] for i in indices}
+        return dict(model='physical_finger_span_contiguous_detachable_shaft_v1',
+            finger_axial_interval_m=interval.tolist(),selected_index=selected,
+            allowed_indices=sorted(indices),allowed_colliders=sorted(self.grasp_colliders),
+            native_grasp_verified=False,collision_filters_changed=False)
+
     def include_static_scene(self,stage,robot_root,target_root,centre):
         """Cache active contacts in a bounded 2 m cube around the fixed shoulder.
 

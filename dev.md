@@ -5717,3 +5717,76 @@ No hardware, collection, tuning, review, split or training-export changes.
   corridor; do not enlarge force limits, remove surroundings or use the offline
   subset results as execution permission. All native trials launched here have
   exited; the pre-existing review Kit process130120 remains untouched.
+
+### 2026-09-12: Contact-envelope, physical grasp-span and vertical-stroke qualification
+
+- Still **not a reliable full cutting sequence**. This increment does not
+  authorize training, hardware motion, dataset/review changes, forced release,
+  welds, body-pose overrides, wider force/slip limits or removal of surroundings.
+  Source knife/cameras, original greenhouse and surrounding plant visuals stay.
+- Found a geometric discretization defect: USD capsule height is its cylinder
+  length, excluding hemispheres. Shortening every segment by two radii makes
+  neighboring capsule tips meet at zero-radius internal necks. Added explicit
+  `--stem-contact-model continuous_internal_capsules_v1`: internal capsule
+  spines reach their joint anchors; physical endpoints and BOTH sides of the
+  separable seam keep flush rounded caps. No capsule crosses the seam. This
+  is not a flat wound or tissue model. Legacy `flush_capsules_v1` remains the
+  default. Correct capsule extents are authored in both modes. Reference:
+  https://openusd.org/dev/api/class_usd_geom_capsule.html
+- `stem_envelope.py` and tests verify internal coverage, seam-side separation,
+  rejection of impossible endpoint spans, unchanged source layers, body masses,
+  COM/inertia, material K/C, topology, friction and visuals. This fixes geometry;
+  it is NOT proof that all native contact instability had that single cause.
+- Native94: continuous envelope, nominal10 mm cut and exact54 mm underhand
+  grasp; HOLD completes20 s/4800 ticks with bounded/verified grasp and unchanged
+  source hashes. Maximum slip0.00093052 mm. Overall bimanual status intentionally
+  remains failed because no right motion/cut/withdrawal occurred. Native95's
+  20 mm cut still fails closure at0.51134269 N; native96 with the existing lower
+  0.25 mm compression option fails at0.50626783 N. The0.5 N guard is unchanged.
+  Evidence: `data/sim_physics/bimanual_downward_20260912_94` through `_96`.
+- The downward planner formerly proposed exactly transverse strokes only.
+  Added true world-vertical proposals when BOTH existing native angular gates
+  remain satisfied (stroke/actual-stem and edge/actual-stem absolute dot<0.3).
+  Actual anatomical axis is never replaced in ShearGate or release evidence.
+  Vertical candidates precede each existing transverse tilt fan; the same full
+  tool, arm, static-scene, contact and Cartesian transit checks still apply.
+  Native97a (10 mm cut) and98a (15 mm cut) each verify grasp then reject all400
+  tool corridors before right IK. This is a bounded-search failure, not a proof
+  of global unreachability. Source hashes match. CLI typo attempts97/98 never
+  launched Kit; their logs are not physics tests.
+- Native99:20 mm cut with finer20 mm segments initially fails the LEFT planned
+  closure against a farther segment of the same petiole. Found a second
+  discretization-dependent rule: planning allowed selected +/-one segment,
+  even when the same physical pad spans more links. The continuous-envelope
+  mode now derives a bounded axial span from both complete finger colliders at
+  the final grasp pose, then walks only contiguous source shaft capsules whose
+  current extents meet that span. No skipping a gap to a folded-back distal
+  part, support-side segments, leaves, other branches, palm or camera allowance.
+  This changes expected planning contact identity ONLY, not collision filters
+  or native grasp/contact verification. Native evidence remains stricter and
+  can still reject contacts outside its independently qualified neighborhood.
+- Matched native100 now passes that left corridor and verifies native grasp at
+  54 mm with18 mm whole-finger clearance from the20 mm seam (required10 mm).
+  Of400 cutter candidates,398 fail the full-tool corridor; TWO true vertical
+  proposals (normal sign-1, center-edge contact, plane tilt10/15 degrees) pass
+  the corridor but fail endpoint IK. No right motion or release. Source hashes
+  unchanged. Evidence: `data/sim_physics/bimanual_downward_20260912_native99`
+  and `_native100`, including reports, events and trajectory records.
+- Offline source check confirms the nominal10 mm center is outside the parent
+  source convex hull (11.24 mm separating-halfspace lower bound). The full
+  plate corridor conflict is not evidence that the cut center is inside the
+  trunk. Diagnostics remain local ignored files under `data/sim_physics/`.
+- Offline48-seed-per-pose IK search does not solve the two native100 poses at
+  the existing station. Coordinated base/dual-arm proposals can solve both ends
+  of the vertical stroke, with5-degree right joint-limit reserve, by shifting
+  the station within150 mm per horizontal axis and25 degrees yaw. Four of five
+  tested proposals pass held-finger self and local rigid-tool screening; these
+  omit full greenhouse/native contact qualification and are NOT presets or
+  permission to move a running robot. No torso or source plant change.
+- Regression at this checkpoint:4250 passed,2 skipped,47 subtests in212.31 s
+  (`data/sim_physics/regression_20260912_contact_span_v1.log`); targeted physical
+  grasp-span/native-clearance tests50 passed. No visual FPS/speedup claim: native
+  trials here were headless, and some CPU-only diagnostics overlapped regression.
+  Windows paged pool remains abnormally large (~256.7 GB at09:44 UTC); cause
+  unidentified. Read-only launch preflight remains enabled. Review Kit130120
+  untouched; no OS restart or unrelated process termination.

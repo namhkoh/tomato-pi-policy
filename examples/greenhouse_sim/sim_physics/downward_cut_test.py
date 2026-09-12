@@ -11,6 +11,34 @@ def test_downward_is_transverse_and_never_upward():
     np.testing.assert_allclose(d,downward_direction(-axis),atol=1e-12)
 
 
+@pytest.mark.parametrize('sign',[-1,1])
+@pytest.mark.parametrize('tilt',[-15,-10,0,10,15])
+def test_vertical_proposal_uses_real_stem_for_unchanged_angular_limits(sign,tilt):
+    from sim_physics.downward_cut import vertical_cut_frame
+    axis=np.array([.6638,.6961,.2735]);axis/=np.linalg.norm(axis)
+    original=axis.copy()
+    d,n=vertical_cut_frame(axis,sign,tilt)
+    np.testing.assert_array_equal(axis,original)
+    np.testing.assert_array_equal(d,[0,0,-1])
+    frame=np.column_stack([-d,np.cross(n,-d),n])
+    np.testing.assert_allclose(frame.T@frame,np.eye(3),atol=1e-12)
+    assert np.linalg.det(frame)==pytest.approx(1)
+    assert abs(d@axis)<.3 and abs(frame[:,1]@axis)<.3
+    assert abs(d@axis)>.27  # No falsely transverse, substituted anatomical axis.
+
+
+@pytest.mark.parametrize('z',[.3,-.3,.435,-.435,1.,-1.])
+def test_vertical_proposal_rejects_existing_gate_boundary_or_steeper(z):
+    from sim_physics.downward_cut import vertical_cut_frame
+    assert vertical_cut_frame([np.sqrt(1-z*z),0,z]) is None
+
+
+@pytest.mark.parametrize('axis',[[0,0,0],[1,0,1],[float('nan'),0,0],[1,0]])
+def test_vertical_proposal_rejects_invalid_anatomy(axis):
+    from sim_physics.downward_cut import vertical_cut_frame
+    with pytest.raises(ValueError):vertical_cut_frame(axis)
+
+
 @pytest.mark.parametrize('axis',[[0,0,1],[0,0,-1],[1,0,1],[0,0,0],[float('nan'),0,0]])
 def test_unsuitable_or_invalid_stem_does_not_fall_back_to_side_cut(axis):
     with pytest.raises(ValueError):downward_direction(axis)

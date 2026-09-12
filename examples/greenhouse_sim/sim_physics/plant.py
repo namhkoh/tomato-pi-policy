@@ -68,6 +68,7 @@ class PlantRig:
     constraint_mode: str='articulation'
     visuals: list=field(default_factory=list)
     cut: bool=False
+    stem_contact_model: str='flush_capsules_v1'
 
     def sync_visuals(self,frames):
         with Usd.EditContext(self.stage,self.stage.GetSessionLayer()):
@@ -159,6 +160,7 @@ class PlantRig:
     def report(self):
         return dict(source_target=self.source_target,body_count=len(self.body_paths),
                     constraint_mode=self.constraint_mode,
+                    stem_contact_model=self.stem_contact_model,
                     stem_visual_meshes=len(self.visuals),cut_material_arc_m=float(self.arcs[self.cut_index]),
                     material_calibration='engineering_prior_not_lab_calibrated',
                     parent_support='fixed_current_increment',leaves='rigid_lamina_convex_contact',
@@ -216,9 +218,11 @@ def _joint(stage,path,parent,child,anchor,frames,props,*,external):
     return joint
 
 
-def build(stage,record,component_id,*,root='/World/InteractionPhysics/Target',material=None,max_segment_m=.025,constraint_mode='articulation',cut_m=.01):
+def build(stage,record,component_id,*,root='/World/InteractionPhysics/Target',material=None,max_segment_m=.025,constraint_mode='articulation',cut_m=.01,stem_contact_model='flush_capsules_v1'):
     """Convert only a leaf-bearing native petiole; preserve package/source layers."""
     material=material or Material()
+    if stem_contact_model not in ('flush_capsules_v1','continuous_internal_capsules_v1'):
+        raise ValueError('Unknown stem contact model')
     if not np.isfinite(cut_m) or not .01<=cut_m<=.02:
         raise ValueError('Diagnostic cut must remain in the agreed 10..20 mm petiole interval')
     if constraint_mode not in ('articulation','maximal','fixed_articulation'): raise ValueError('Invalid constraint mode')
@@ -271,6 +275,16 @@ def build(stage,record,component_id,*,root='/World/InteractionPhysics/Target',ma
                 and not any(str(p.GetPath()).startswith(record['component_paths'][key]+'/') for key in leaves)]
     buffers=[(mesh,points_world(mesh,cache),mesh_uv(mesh)) for mesh in own_meshes]
     rig=PlantRig(stage,root,target['target_id'],body_paths,frames,xyz,arcs,cut_index,root+'/CutInterface',props,constraint_mode=constraint_mode)
+    rig.stem_contact_model=stem_contact_model
+    spans=[]
+    for i,length in enumerate(lengths):
+        if stem_contact_model=='continuous_internal_capsules_v1':
+            from .stem_envelope import capsule_span
+            spans.append(capsule_span(float(length),float(np.mean(chain[i:i+2,3])),
+                flush_start=i in (0,cut_index),flush_end=i in (cut_index-1,len(lengths)-1)))
+        else:
+            radius=min(float(np.mean(chain[i:i+2,3])),float(length)*.49)
+            spans.append(dict(radius_m=radius,height_m=float(length)-2*radius,center_z_m=0.))
     with Usd.EditContext(stage,stage.GetSessionLayer()):
         # The supplied art already has static colliders. Visibility does NOT
         # disable physics: remove only the replaced target's duplicate contacts.
@@ -289,8 +303,12 @@ def build(stage,record,component_id,*,root='/World/InteractionPhysics/Target',ma
                     ('physxArticulation:solverPositionIterationCount',Sdf.ValueTypeNames.Int,16),
                     ('physxArticulation:solverVelocityIterationCount',Sdf.ValueTypeNames.Int,4)])
             shape=UsdGeom.Capsule.Define(stage,path+'/StemCollider')
-            radius=min(float(np.mean(chain[i:i+2,3])),float(lengths[i])*.49)
-            shape.CreateRadiusAttr(radius);shape.CreateHeightAttr(float(lengths[i])-2*radius)
+            span=spans[i];radius=span['radius_m'];height=span['height_m']
+            shape.CreateRadiusAttr(radius);shape.CreateHeightAttr(height)
+            shape.CreateExtentAttr([Gf.Vec3f(-radius,-radius,-height/2-radius),
+                                    Gf.Vec3f(radius,radius,height/2+radius)])
+            if span['center_z_m']:
+                shape.AddTranslateOp().Set(Gf.Vec3d(0,0,span['center_z_m']))
             shape.CreateAxisAttr('Z');shape.CreatePurposeAttr('guide');_collision(shape.GetPrim())
             body.CreateAttribute('tomato:sourceTarget',Sdf.ValueTypeNames.String,custom=True).Set(target['target_id'])
             if i>=cut_index:

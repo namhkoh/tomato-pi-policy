@@ -173,6 +173,16 @@ class BimanualRobot(FullRobotGripper):
         result=dict(passed=False,training_eligible=False,native_grasp_verified=False)
         native=None;planning_error=None
         try:
+            # Internal capsule overlap and segment refinement can put more
+            # than one neighboring link beneath the SAME physical finger.
+            # Derive expected contact identity from the final pad footprint,
+            # never from an arbitrary segment count. Native guards unchanged.
+            if getattr(self.rig,'stem_contact_model','flush_capsules_v1')=='continuous_internal_capsules_v1':
+                aperture=max(0.,self.radius-self.grasp_compression)
+                self.planning_slides={'gripper_finger_l1':-aperture,'gripper_finger_l2':aperture}
+                final_q=self.path_q[int(np.argmin(abs(self.fractions-1.)))]
+                result['physical_grasp_span']=screen.set_physical_grasp_span(
+                    frames,self.body_world(final_q,self.right),self.body_index,self.grasp_point(frames))
             if getattr(self,'native_static_clearance',False):
                 if not hasattr(self,'robot'):
                     raise RuntimeError('Native grasp refinement requires an initialized robot scene')
@@ -510,7 +520,7 @@ class BimanualRobot(FullRobotGripper):
         direction=direction/direction_norm if direction_norm>1e-12 else None
         downward=getattr(self,'cut_style','legacy')=='downward'
         if downward:
-            from .downward_cut import downward_direction,downward_angles
+            from .downward_cut import downward_direction,downward_angles,vertical_cut_frame
             direction=downward_direction(axis)
             self.plan_diagnostics['downward_direction_world']=direction.tolist()
             self.plan_diagnostics['minimum_right_arm_extension']=.8
@@ -543,14 +553,22 @@ class BimanualRobot(FullRobotGripper):
                 [(a,s,w) for w in (0.,-usable_wing/2,usable_wing/2,-.9*usable_wing,.9*usable_wing,-usable_wing,usable_wing) for s in (1,-1)
                     for a in (0,15,-15,30,-30,45,-45,60,-60,90,-90,120,-120,135,-135,150,-150,180)])
             if downward:
-                proposals=[(a,s,w) for w in (0.,-usable_wing/2,usable_wing/2,-usable_wing,usable_wing)
+                wings=(0.,-usable_wing/2,usable_wing/2,-usable_wing,usable_wing)
+                # First try a true vertical stroke within the EXISTING native
+                # angular gate. The transverse fan can place the waiting
+                # plate back into the parent on an upward-sloping petiole.
+                proposals=[(None,s,w) for w in wings for s in (1,-1)
+                    if vertical_cut_frame(axis,s,tilt) is not None]
+                proposals += [(a,s,w) for w in wings
                     for s in (1,-1) for a in downward_angles(axis)]
             for degrees,normal_sign,wing in proposals:
-                if single is not None:d=single_direction.copy()
+                vertical=downward and degrees is None
+                if vertical:d,normal=vertical_cut_frame(axis,normal_sign,tilt)
+                elif single is not None:d=single_direction.copy()
                 else:
                     angle=np.radians(degrees)
                     d=direction*np.cos(angle)+np.cross(axis,direction)*np.sin(angle)
-                normal=cut_plane_normal(d,normal_sign*axis,tilt)
+                if not vertical:normal=cut_plane_normal(d,normal_sign*axis,tilt)
                 # Mounting roll is fixed on the wrist. Both signs of a
                 # transverse cutting plane are valid wrist poses; global
                 # "arc up" is not a cut-contact criterion. Scene/tool checks
@@ -558,6 +576,10 @@ class BimanualRobot(FullRobotGripper):
                 desired=self.knife.wrist_for_edge(centre+self.stroke_offsets[0]*d,d,normal,wing)
                 attempt=dict(angle=degrees,normal_sign=normal_sign,wing_m=wing,plane_tilt_degrees=tilt,
                     ik_attempted=False,ik_succeeded=False,evaluations=0)
+                if downward:
+                    attempt.update(stroke_basis='world_vertical' if vertical else 'stem_transverse',
+                        direction_world=d.tolist(),stroke_axis_dot_stem=float(abs(d@axis)),
+                        edge_axis_dot_stem=float(abs(np.cross(normal,-d)@axis)))
                 attempts.append(attempt)
                 # Constant orientation: translate the actual wrist frame for
                 # every <=0.5 mm stroke sample, including the final endpoint.
@@ -596,7 +618,9 @@ class BimanualRobot(FullRobotGripper):
                     # grid first spent the native epoch budget after finding a
                     # usable endpoint (native45). This is first fully checked
                     # feasibility, not an optimal/shortest-path search.
-                    if self._try_cut_candidate(left_q,centre,axis,candidate,tilt,failures):return
+                    if self._try_cut_candidate(left_q,centre,axis,candidate,tilt,failures):
+                        if downward:self.plan['stroke_basis']=attempt['stroke_basis']
+                        return
                 else: attempt['rejection']='endpoint_self_collision'
         ik=sum(a['ik_succeeded'] for a in attempts)
         raise RuntimeError(f'No bimanual arm-clearance path: endpoints={len(attempts)}, '
