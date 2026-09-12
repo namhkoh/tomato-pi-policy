@@ -12,6 +12,8 @@ from .contact_events import NativeNormalContact,original_order_tool_contact,NATI
 
 
 class BimanualRobot(FullRobotGripper):
+    retention_preload=False
+    symmetric_finger_closure=False
     def __init__(self,*args,**kwargs):
         self.cut_model=kwargs.pop('cut_model',LEGACY_CUT_MODEL)
         self.cut_style=kwargs.pop('cut_style','legacy')
@@ -31,6 +33,14 @@ class BimanualRobot(FullRobotGripper):
         self.explicit_finger_effort=kwargs.pop('explicit_finger_effort',False)
         if type(self.explicit_finger_effort) is not bool:
             raise ValueError('Explicit boolean finger effort flag required')
+        self.retention_preload=kwargs.pop('retention_preload',False)
+        self.symmetric_finger_closure=kwargs.pop('symmetric_finger_closure',False)
+        if (type(self.symmetric_finger_closure) is not bool or self.symmetric_finger_closure
+                and not (self.force_closure_enabled and self.explicit_finger_effort and self.finger_target_antiwindup)):
+            raise ValueError('Symmetric closure requires explicit feedback fingers and antiwindup')
+        if (type(self.retention_preload) is not bool or self.retention_preload
+                and not (self.force_closure_enabled and self.explicit_finger_effort and self.finger_target_antiwindup)):
+            raise ValueError('Retention preload requires explicit feedback fingers and antiwindup')
         self.grasp_contact_frames=kwargs.pop('grasp_contact_frames','post_fetch_legacy')
         if self.grasp_contact_frames not in ('post_fetch_legacy','pre_solve_pgs_v1'):
             raise ValueError('Unknown grasp contact frame contract')
@@ -73,7 +83,8 @@ class BimanualRobot(FullRobotGripper):
         self.rest_grasp_rotation=self.goal[:3,:3].copy()
         if self.force_closure_enabled:
             from .force_closure import ForceClosure
-            self.force_closer=ForceClosure(self.radius,self.grasp_compression)
+            self.force_closer=ForceClosure(self.radius,self.grasp_compression,retention_preload=self.retention_preload,
+                symmetric=self.symmetric_finger_closure)
         if fixed is not None:
             low,high=self.kin.arm_limits_degrees('right')
             if not low[fixed[0]]<fixed[1]<high[fixed[0]]:
@@ -258,7 +269,8 @@ class BimanualRobot(FullRobotGripper):
         super().bind(simulation_view)
         if getattr(self,'force_closure_enabled',False):
             from .force_closure import ForceClosure
-            self.force_closer=ForceClosure(self.radius,self.grasp_compression)
+            self.force_closer=ForceClosure(self.radius,self.grasp_compression,retention_preload=self.retention_preload,
+                symmetric=self.symmetric_finger_closure)
         self.right_indices=[self.names.index(f'right_arm_{i}') for i in range(7)]
         if getattr(self,'explicit_finger_effort',False):
             from .finger_effort import FingerEffort
@@ -322,7 +334,8 @@ class BimanualRobot(FullRobotGripper):
                 from .finger_target_antiwindup import project
                 gaps,receipt=project(gaps,self.robot.get_dof_positions()[0,self.finger_indices],
                     self.robot.get_dof_velocities()[0,self.finger_indices],self.force_limits[0,self.finger_indices],
-                    minimum=self.force_closer.minimum)
+                    minimum=self.force_closer.minimum,retention_preload=self.force_closer.retention_preload,
+                    symmetric=self.force_closer.symmetric)
                 self.force_closer.gaps=gaps.copy()
                 self.force_closer.receipt.update(half_gaps_m=gaps.tolist(),antiwindup=receipt)
             self.targets[0,self.finger_indices]=np.array([-1.,1.])*gaps
@@ -848,6 +861,7 @@ class BimanualRobot(FullRobotGripper):
             cut_style=getattr(self,'cut_style','legacy'),
             closure_control='native_force_closure_v1' if getattr(self,'force_closure_enabled',False) else 'geometric_compression',
             finger_target_antiwindup=getattr(self,'finger_target_antiwindup',False),
+            retention_preload=self.retention_preload,symmetric_finger_closure=self.symmetric_finger_closure,
             live_grasp_placement=getattr(self,'live_grasp_placement',None),
             cut_model=getattr(self,'cut_model',LEGACY_CUT_MODEL),
             cut_model_class='measured_contact_seam_failure_not_calibrated_tissue_cutting')

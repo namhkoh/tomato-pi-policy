@@ -78,6 +78,10 @@ def parser():
         help='Explicit isolated comparison with unchanged native spring/contact drives in all phases')
     p.add_argument('--finger-target-antiwindup',action='store_true',
         help='Isolated explicit-finger trial: bound target windup using fresh native position/velocity and existing PD caps')
+    p.add_argument('--retention-preload',action='store_true',
+        help='Isolated comparison: 0.24 N support setpoint / 0.30 N PD cap; unchanged 0.5 N native contact and 0.8 N motor guards')
+    p.add_argument('--symmetric-finger-closure',action='store_true',
+        help='Isolated feedback comparison: one aperture command with a fixed target center; no physical weld or gear constraint')
     p.add_argument('--measured-withdrawal',action='store_true',
         help='Opt-in measured-start reverse path with fresh native geometry/hold checks; diagnostic only')
     p.add_argument('--native-static-clearance',action='store_true',help='Opt-in live native static-box refinement during the single synchronous bimanual plan')
@@ -171,6 +175,13 @@ def main(argv=None):
     if args.native_capsule_sphere_cover and not (args.bimanual_cut and args.native_static_clearance):
         raise ValueError('Native capsule sphere cover requires bimanual native static clearance')
     contact_trial=args.isolated_cut_contact_trial
+    if args.symmetric_finger_closure and not (contact_trial and args.explicit_finger_effort
+            and args.force_closure and args.finger_target_antiwindup):
+        raise ValueError('Symmetric finger closure requires isolated explicit feedback and antiwindup')
+    if args.retention_preload and not (contact_trial and args.explicit_finger_effort
+            and args.force_closure and args.finger_target_antiwindup and args.compliant_fingers
+            and args.blade_force_feed and args.seam_contact_compliance):
+        raise ValueError('Retention preload requires the complete isolated compliant feedback trial')
     if args.finger_target_antiwindup and not (contact_trial and args.explicit_finger_effort and args.force_closure):
         raise ValueError('Finger antiwindup requires explicit isolated feedback cut trial')
     if args.native_spring_cut_trial and not (contact_trial and args.spring_mode=='native'):
@@ -501,6 +512,8 @@ def main(argv=None):
                 robot_options['force_closure']=args.force_closure
                 robot_options['explicit_finger_effort']=args.explicit_finger_effort
                 robot_options['finger_target_antiwindup']=args.finger_target_antiwindup
+                robot_options['retention_preload']=args.retention_preload
+                robot_options['symmetric_finger_closure']=args.symmetric_finger_closure
                 robot_options['native_static_clearance']=getattr(args,'native_static_clearance',False)
                 robot_options['native_capsule_sphere_cover']=args.native_capsule_sphere_cover
                 robot_options['native_static_planning_seconds']=getattr(args,'native_static_planning_seconds',8.)

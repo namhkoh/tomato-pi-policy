@@ -6436,3 +6436,36 @@ No hardware, collection, tuning, review, split or training-export changes.
   (`regression_20260913_grasp_capacity_v2.log`). The first run found three mocked
   report fixtures lacking the new zero-default pitch field; those fixtures were
   updated without weakening assertions or changing the physical guard limits.
+
+### 2026-09-13: Holding preload and common-aperture comparison
+
+- `--retention-preload` is an explicit isolated comparison, not a new default:
+  desired support0.12->0.24 N; non-gravity PD cap0.15->0.30 N and controller
+  backoff0.30->0.40 N. The native hard per-finger all-contact0.5 N, total motor
+ 0.8 N, blade0.5 N, slip3 mm and penetration1 mm guards are UNCHANGED. This
+  uses available actuator budget; it is not a calibrated safe plant load.
+  Explicit effort and antiwindup share the same profile, including exact
+  float32 cap representation. No hidden body/velocity/root actuation is added.
+- Native162 repeats159 with preload. Cut occurs at38.320833 s with signed
+  resistance0.200503..0.200988 N,29.167 ms dwell and tool upper0.319616 N.
+  Bilateral contact now persists after release, but slip3.020804 mm at38.375 s
+  stops the run after54.17 ms. No retention/withdrawal/deposit qualification.
+  Full regression **3,638 passed in131.22 s** (`regression_20260913_retention_preload_v1.log`).
+- Added `--symmetric-finger-closure`, also isolated/explicit/feedback-only.
+  One aperture is regulated from mean opposing support; finger load asymmetry
+  no longer commands a translating grasp center. Shared antiwindup intersects
+  both measured PD intervals with the original geometric bounds. If no common
+  interval exists, it refuses the command. This is joint-target control, NOT
+  a native gear, object weld, pose reset or substitute grasp detector. The
+  Model A v1.2 URDF has two prismatic finger joints, with no mimic relation;
+  physical mechanical coupling has not been independently calibrated here.
+- Native163 repeats162 with the common aperture. Cut at34.620833 s; bilateral
+  contact persists to failure at34.858333 s (237.5 ms), with slip3.083448 mm.
+  Final target pair remains symmetric(-1.89882,+1.89882 mm). The distal body
+  speed reaches2.29164 m/s. Thus correcting commanded center drift is useful
+  but does NOT fix plant spring/contact dynamics or establish retention.
+  Full regression **3,648 passed in131.81 s** (`regression_20260913_symmetric_closure_v1.log`).
+- All four new native comparisons160..163 remain FAILED qualifications (160/161
+  reject before stepping). Evidence is retained. Native spring/root handling
+  and support-capable grasp geometry remain under investigation; do not launch
+  collection/training or advertise reliable physical cutting from these runs.

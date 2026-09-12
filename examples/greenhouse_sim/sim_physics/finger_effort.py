@@ -8,11 +8,14 @@ Cut diagnostics require the separate complete isolated fixture CLI opt-in.
 import numpy as np
 
 
-def command(position,velocity,target,gravity,caps,*,dt):
+def command(position,velocity,target,gravity,caps,*,dt,retention_preload=False):
+    if type(retention_preload) is not bool:raise ValueError('Explicit retention-preload profile required')
+    maximum_pd_n=.30 if retention_preload else .15
+    native_cap_bound=max(maximum_pd_n+1e-8,float(np.float32(maximum_pd_n)))
     q,v,g,ff,limit=[np.asarray(x,float) for x in (position,velocity,target,gravity,caps)]
     if (any(x.shape!=(2,) or not np.isfinite(x).all() for x in (q,v,g,ff,limit))
             or isinstance(dt,(bool,np.bool_)) or not np.isfinite(dt) or abs(dt-1/240)>1e-12
-            or np.any(limit<=0) or np.any(limit>.15+1e-8) or np.any(abs(ff)>.4)
+            or np.any(limit<=0) or np.any(limit>native_cap_bound) or np.any(abs(ff)>.4)
             or np.any(abs(g)>.025+1e-8) or g[0]>0 or g[1]<0):
         raise ValueError('Finite bounded two-finger 240 Hz effort command required')
     raw=200*(g-q)-5*v
@@ -27,12 +30,16 @@ def command(position,velocity,target,gravity,caps,*,dt):
         gravity_feedforward_n=ff.tolist(),unclipped_pd_n=raw.tolist(),
         submitted_pd_n=pd.tolist(),submitted_total_n=total.tolist(),
         remaining_drive_caps_n=limit.tolist(),native_drive_gains_zero=True,
+        load_profile='retention_preload_v1' if retention_preload else 'legacy_preload_v1',
+        maximum_non_gravity_pd_n=maximum_pd_n,
         measured_contact_used_as_effort=False,actual_drive_effort_measured=False,
         grasp_verified=False,cutting_qualified=False)
 
 
 class FingerEffort:
     def __init__(self,fixture):
+        self.retention_preload=getattr(fixture,'retention_preload',False)
+        if type(self.retention_preload) is not bool:raise ValueError('Explicit retention-preload profile required')
         a=fixture.robot
         self.names=tuple(a.shared_metatype.dof_names)
         self.indices=tuple(fixture.finger_indices)
@@ -57,6 +64,8 @@ class FingerEffort:
             raise RuntimeError('Finger effort native inventory/gains changed')
 
     def apply(self,fixture,*,step,dt):
+        if getattr(fixture,'retention_preload',False) is not self.retention_preload:
+            raise RuntimeError('Finger load profile changed during the trial')
         if type(step) is not int or step!=self.last_step+1:
             raise RuntimeError('Contiguous finger effort command required')
         a=fixture.robot;self._verify(a);idx=list(self.indices)
@@ -67,7 +76,7 @@ class FingerEffort:
                 or not np.allclose(before[0,idx],fixture.finger_compensation,atol=1e-8,rtol=0)):
             raise RuntimeError('Fresh gravity-only actuation and latest targets required')
         total,receipt=command(a.get_dof_positions()[0,idx],a.get_dof_velocities()[0,idx],
-            targets[0,idx],before[0,idx],fixture.force_limits[0,idx],dt=dt)
+            targets[0,idx],before[0,idx],fixture.force_limits[0,idx],dt=dt,retention_preload=self.retention_preload)
         before[0,idx]=total
         submitted=before.astype(np.float32)
         a.set_dof_actuation_forces(submitted,fixture.index)

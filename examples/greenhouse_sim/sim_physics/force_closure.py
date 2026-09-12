@@ -10,7 +10,19 @@ class ForceClosure:
     # Drive effort excludes independently measured gravity feed-forward. The
     # original total-motor and 0.5 N all-contact budgets remain upper bounds.
     drive_limit_n = .15
-    def __init__(self, radius, compression):
+    def __init__(self, radius, compression, *, retention_preload=False, symmetric=False):
+        if type(symmetric) is not bool:raise ValueError('Explicit symmetric aperture mode required')
+        self.symmetric=symmetric
+        if type(retention_preload) is not bool:
+            raise ValueError('Explicit retention-preload profile required')
+        self.retention_preload=retention_preload
+        # Controller settings, NOT damage thresholds or contact authorization.
+        # Higher-profile upper bound .24*(1+.5)=.36 N leaves margin below the
+        # unchanged .5 N native all-contact guard. Actual friction/contact may
+        # differ; that guard still runs before every release decision.
+        self.desired_support_n=.24 if retention_preload else .12
+        self.drive_limit_n=.30 if retention_preload else .15
+        self.backoff_contact_n=.40 if retention_preload else .30
         if (not np.isfinite([radius, compression]).all() or not 0 < radius < .02
                 or not .00025 <= compression <= .001):
             raise ValueError('Finite shaft radius and bounded compression required')
@@ -33,22 +45,37 @@ class ForceClosure:
                 or not self.fraction <= fraction <= 1 or abs(dt-1/240) > 1e-12):
             raise ValueError('Monotone closure and qualified 240 Hz step required')
         scheduled = .025-fraction*(.025-self.minimum)
+        current=float(np.mean(self.gaps))
+        if self.symmetric and abs(self.gaps[0]-self.gaps[1])>1e-9:
+            raise RuntimeError('Symmetric aperture controller state lost its fixed center')
         # Fast free-space closure ends 2 mm outside the shaft. Every near-
         # contact increment is <=2.09 micrometres; measured contact on either
         # pad also forces slow motion even if the other pad is still clear.
         desired = np.full(2, scheduled)
-        for i in range(2):
-            if self.gaps[i] <= self.slow_gap+1e-12 or self.loads[i] > .01:
-                error = .12-self.support[i]
-                speed = 0. if abs(error) <= .03 else np.clip(error/.12, -1., 1.)*.0005
-                # A non-qualifying contact cannot authorize further squeeze.
-                # Back away under the same effort cap and reobserve; stable
-                # opposing contact is still required before right-arm motion.
-                if not self.geometry_valid: speed = -.005 if self.loads[i]>.01 else 0.
-                if self.loads[i] > .30: speed = -.005
-                desired[i] = max(scheduled, self.gaps[i]-speed*dt)
-            else:
-                desired[i] = max(scheduled, self.slow_gap) if self.geometry_valid else self.gaps[i]
+        if self.symmetric:
+            # Regulate one aperture, not two independent target translations.
+            # Opposite pad loads may differ when supporting an external wrench.
+            # This is a software command constraint, NOT a native gear/weld or
+            # a physical pose constraint on either finger or the held object.
+            if current<=self.slow_gap+1e-12 or np.max(self.loads)>.01:
+                error=self.desired_support_n-float(np.mean(self.support))
+                speed=0. if abs(error)<=.03 else float(np.clip(error/self.desired_support_n,-1,1))*.0005
+                if not self.geometry_valid:speed=-.005 if np.max(self.loads)>.01 else 0.
+                if np.max(self.loads)>self.backoff_contact_n:speed=-.005
+                desired_gap=max(scheduled,current-speed*dt)
+            else:desired_gap=max(scheduled,self.slow_gap) if self.geometry_valid else current
+            desired[:]=desired_gap
+        else:
+            for i in range(2):
+                if self.gaps[i] <= self.slow_gap+1e-12 or self.loads[i] > .01:
+                    error = self.desired_support_n-self.support[i]
+                    speed = 0. if abs(error) <= .03 else np.clip(error/self.desired_support_n, -1., 1.)*.0005
+                    # Non-qualifying contact cannot authorize further squeeze.
+                    if not self.geometry_valid: speed = -.005 if self.loads[i]>.01 else 0.
+                    if self.loads[i] > self.backoff_contact_n: speed = -.005
+                    desired[i] = max(scheduled, self.gaps[i]-speed*dt)
+                else:
+                    desired[i] = max(scheduled, self.slow_gap) if self.geometry_valid else self.gaps[i]
         self.gaps = np.clip(desired, self.minimum, .025)
         self.fraction = float(fraction)
         self.commanded_step = step
@@ -56,7 +83,10 @@ class ForceClosure:
             observation_step=self.observed_step, half_gaps_m=self.gaps.tolist(),
             preceding_compressive_support_n=self.support.tolist(),
             preceding_all_contact_upper_bound_n=self.loads.tolist(),
-            desired_support_n=.12, near_contact_speed_limit_m_s=.0005,
+            desired_support_n=self.desired_support_n, near_contact_speed_limit_m_s=.0005,
+            load_profile='retention_preload_v1' if self.retention_preload else 'legacy_preload_v1',
+            controller_backoff_contact_n=self.backoff_contact_n,native_hard_contact_limit_n=.5,
+            symmetric_aperture_command=self.symmetric,physical_gear_coupling_modeled=False,
             maximum_non_gravity_drive_effort_n=self.drive_limit_n,
             geometry_valid=self.geometry_valid,maximum_backoff_speed_m_s=.005,
             grasp_verified=False)
