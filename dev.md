@@ -6292,3 +6292,36 @@ No hardware, collection, tuning, review, split or training-export changes.
   rows and eligibility reasons.48 focused startup/lifecycle tests pass; full
   physics regression **3,491 passed in124.00 s**,
   `data/sim_physics/regression_20260913_native_startup_screen_v1.log`.
+
+### 2026-09-13: Bounded blade aim and fresh-contact path feed
+
+- Added opt-in axial blade aim, bounded to +/-1.5 mm in the isolated downward
+  contact fixture. This shifts only the commanded edge centre: actual seam,
+  release joint, GT annotations, 3 mm axial band and all force/dwell/grasp gates
+  stay unchanged. Both approach and stroke use the same offset; default is zero.
+- Native154 uses -1 mm aim with the native153 configuration. Load-bearing rows
+  now enter the valid leading strip and axial band. Grasp remains verified;
+  at13.804167 s total blade load jumps from0.204147 N to2.321678 N, including
+  2.113857 N against the kinematic proximal support. It stops before release.
+  Last accepted signed resistance0.135525 N is below the0.2 N threshold.
+- Added `--blade-force-feed`: isolated downward signed-seam diagnostic only,
+  240 Hz, fresh preceding guard-accepted native load, no pose overrides. It
+  retimes/reverses only the already screened stroke:2 mm/s free,0.1 mm/s near,
+  <=0.05 mm/s loaded, hold at0.22..0.28 N signed resistance and backoff above
+  0.32 N total or0.28 N signed. It is NOT a guaranteed actuator force cap.
+  Actual original release gates are unchanged. Contact acquisition times out
+  after30 s with NO release; this option permits a bounded40..60 s trial.
+  Failure-tick raw normals are copied before guards without calling cut logic.
+- Native155: same geometry/materials as154, feedback enabled. It delays and
+  reduces the spike but does NOT solve it: at35.420833 s total blade load reaches
+  0.598164 N (0.225184 N friction), above the unchanged0.5 N limit. Last accepted
+  signed resistance0.166641 N; maximum qualifying dwell only4.167 ms. Loaded
+  support and branch contact are both eligible. Maximum grasp slip0.293065 mm;
+  no release, withdrawal, retention-after-cut or deposit is qualified. Even a
+  0.078 micrometre commanded increment can precede this rigid-contact spike.
+- Evidence: native154/155 `report.json`, `bimanual_trajectory.json`;37 feedback
+  tests plus17 aim tests, full physics regression **3,545 passed in132.05 s**
+  (`data/sim_physics/regression_20260913_blade_feed_v1.log`). Source hashes stay
+  unchanged. These are isolated branch diagnostics, not greenhouse-access,
+  tissue-calibration, hardware or VLM-training approval. Next: test explicitly
+  labelled local stem contact compliance, not larger safety thresholds.

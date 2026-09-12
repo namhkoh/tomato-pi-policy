@@ -15,6 +15,11 @@ class BimanualRobot(FullRobotGripper):
     def __init__(self,*args,**kwargs):
         self.cut_model=kwargs.pop('cut_model',LEGACY_CUT_MODEL)
         self.cut_style=kwargs.pop('cut_style','legacy')
+        self.blade_axial_aim_offset_m=kwargs.pop('blade_axial_aim_offset_m',0.)
+        from .blade_aim import edge_centre
+        edge_centre(np.zeros(3),np.array([0.,0.,1.]),self.blade_axial_aim_offset_m)
+        if self.blade_axial_aim_offset_m and self.cut_style!='downward':
+            raise ValueError('Non-default blade aim requires the downward diagnostic')
         self.knife_alignment=kwargs.pop('knife_alignment','legacy')
         self.force_closure_enabled=kwargs.pop('force_closure',False)
         self.native_capsule_sphere_cover=kwargs.pop('native_capsule_sphere_cover',False)
@@ -497,6 +502,10 @@ class BimanualRobot(FullRobotGripper):
             self.plan_diagnostics['native_static_clearance']=native_evidence
         centre,axis=self.seam(frames)
         # Context plants/gutters are populated after robot construction. Cache
+        from .blade_aim import edge_centre
+        aim=edge_centre(centre,axis,getattr(self,'blade_axial_aim_offset_m',0.))
+        self.plan_diagnostics.update(actual_seam_world=centre.tolist(),blade_aim_world=aim.tolist(),
+            blade_axial_aim_offset_m=getattr(self,'blade_axial_aim_offset_m',0.),release_seam_or_tolerance_changed=False)
         # only once the complete scene exists, not in __init__.
         if self.held_plant_screen.workspace is None:
             self.held_plant_screen.include_static_scene(self.stage,self.root,self.rig.root,
@@ -593,7 +602,7 @@ class BimanualRobot(FullRobotGripper):
                 # transverse cutting plane are valid wrist poses; global
                 # "arc up" is not a cut-contact criterion. Scene/tool checks
                 # still reject the support hitting the main stem or left hand.
-                desired=self.knife.wrist_for_edge(centre+self.stroke_offsets[0]*d,d,normal,wing)
+                desired=self.knife.wrist_for_edge(aim+self.stroke_offsets[0]*d,d,normal,wing)
                 attempt=dict(angle=degrees,normal_sign=normal_sign,wing_m=wing,plane_tilt_degrees=tilt,
                     ik_attempted=False,ik_succeeded=False,evaluations=0)
                 if downward:
@@ -670,6 +679,8 @@ class BimanualRobot(FullRobotGripper):
         Legacy joint-space transit retains the original stroke-first protocol.
         """
         _,angle,d,q,normal_sign,wing,normal=candidate
+        from .blade_aim import edge_centre
+        aim=edge_centre(centre,axis,getattr(self,'blade_axial_aim_offset_m',0.))
         failure=dict(angle=angle,plane_tilt_degrees=tilt,normal_sign=normal_sign,wing_m=wing)
         minimum=float('inf');stroke=[];seed=q;transit=None
         downward=getattr(self,'cut_style','legacy')=='downward'
@@ -681,7 +692,7 @@ class BimanualRobot(FullRobotGripper):
             approach,_,_=transit
             seed=np.asarray(approach[-1],float).copy()
         for sample_index,offset in enumerate(self.stroke_offsets):
-            desired=self.knife.wrist_for_edge(centre+offset*d,d,normal,wing)
+            desired=self.knife.wrist_for_edge(aim+offset*d,d,normal,wing)
             if downward and sample_index==0:
                 from scipy.spatial.transform import Rotation
                 actual=self.kin.forward('right',seed,self.base)
@@ -730,6 +741,8 @@ class BimanualRobot(FullRobotGripper):
         minimum=min(minimum,transit_minimum)
         self.plan=dict(approach=approach,stroke=np.asarray(stroke),direction=d,
             centre=centre.copy(),axis=axis.copy(),angle=angle,normal_sign=normal_sign,wing_m=wing,
+            blade_aim_centre=aim.copy(),blade_axial_aim_offset_m=getattr(self,'blade_axial_aim_offset_m',0.),
+            release_seam_or_tolerance_changed=False,
             blade_plane_normal=normal.copy(),plane_tilt_degrees=tilt,
             stroke_offset_range_m=[float(self.stroke_offsets[0]),float(self.stroke_offsets[-1])],
             stroke_samples=len(self.stroke_offsets),stroke_end_basis='shaft_radius_plus_half_edge_strip_plus_1mm',

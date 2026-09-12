@@ -57,6 +57,8 @@ def parser():
         help='Use the requested material arc instead of snapping to a segment centre; bimanual diagnostic only')
     p.add_argument('--cut-arc-m',type=float,default=.01,
         help='Explicit diagnostic seam within agreed 10..20 mm petiole interval; original 10 mm default unchanged')
+    p.add_argument('--blade-axial-aim-offset-m',type=float,default=0.,
+        help='Isolated downward contact diagnostic: +/-1.5 mm blade aim about the SAME observed seam; no release tolerance change')
     p.add_argument('--diagnostic-detach',action='store_true')
     p.add_argument('--full-robot-probe',action='store_true',help='Full dynamic v1.2 robot with an IK-driven left arm')
     p.add_argument('--bimanual-cut',action='store_true',help='Guarded native left grasp and original right knife seam-release qualification')
@@ -68,6 +70,8 @@ def parser():
         help='Explicit initial right pose for a coordinated downward fixture; screened before physics, never a runtime teleport')
     p.add_argument('--left-ik-seed-degrees',type=float,nargs=7,
         help='Seed the coordinated left pregrasp IK; exact target and path guards still apply')
+    p.add_argument('--blade-force-feed',action='store_true',
+        help='Isolated downward diagnostic: retime the screened stroke from fresh native cutting load')
     p.add_argument('--measured-withdrawal',action='store_true',
         help='Opt-in measured-start reverse path with fresh native geometry/hold checks; diagnostic only')
     p.add_argument('--native-static-clearance',action='store_true',help='Opt-in live native static-box refinement during the single synchronous bimanual plan')
@@ -159,6 +163,12 @@ def main(argv=None):
     if args.native_capsule_sphere_cover and not (args.bimanual_cut and args.native_static_clearance):
         raise ValueError('Native capsule sphere cover requires bimanual native static clearance')
     contact_trial=args.isolated_cut_contact_trial
+    if args.blade_force_feed and not (contact_trial and args.cut_style=='downward'
+            and args.cut_model=='signed_edge_load_brittle_seam_v1' and args.seconds>=40):
+        raise ValueError('Blade feedback requires isolated downward signed-seam trial and >=40 seconds')
+    if (not math.isfinite(args.blade_axial_aim_offset_m) or abs(args.blade_axial_aim_offset_m)>.0015
+            or args.blade_axial_aim_offset_m and not (contact_trial and args.cut_style=='downward')):
+        raise ValueError('Blade aim offset requires isolated downward contact trial and finite +/-1.5 mm')
     if args.native_startup_clearance and not (contact_trial and args.native_static_clearance):
         raise ValueError('Native startup validation requires isolated cut contact and native path clearance')
     if args.branch_contact_fixture and not contact_trial:
@@ -338,8 +348,8 @@ def main(argv=None):
     output=args.output.resolve()
     if output.exists() or output.is_relative_to(DEFAULT_PACK.resolve()):
         raise ValueError('Choose a NEW output outside the source package')
-    if not 4<=args.seconds<=30 or not .005<=args.max_segment_m<=.05:
-        raise ValueError('Qualification must be bounded to 4-30 seconds and 5-50 mm segments')
+    if not 4<=args.seconds<=(60 if args.blade_force_feed else 30) or not .005<=args.max_segment_m<=.05:
+        raise ValueError('Qualification requires 4-30 seconds (feedback:40-60) and 5-50 mm segments')
     output.mkdir(parents=True)
     report=dict(state='initializing',started_utc=datetime.now(timezone.utc).isoformat(),
                 configuration=report_configuration(args,output),training_eligible=False)
@@ -461,6 +471,7 @@ def main(argv=None):
                 from .bimanual import BimanualRobot
                 robot_class=BimanualRobot
                 robot_options['cut_standoff']=args.cut_standoff_m
+                robot_options['blade_axial_aim_offset_m']=args.blade_axial_aim_offset_m
                 robot_options['knife_alignment']=args.knife_alignment
                 robot_options['cut_style']=args.cut_style
                 robot_options['grasp_compression']=args.grasp_compression_m

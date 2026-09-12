@@ -88,6 +88,12 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     records=[];events=[];captures={};fault=None;stable=0;lost=0
     grasp_local=None;goal_set=False;planned=False;grasp_verified=False;cut_time=None;cut_fraction=0.
     last_right_command=('park',0.)
+    blade_feed=None
+    if getattr(args,'blade_force_feed',False):
+        from .blade_feed import BladeFeed
+        # Radius follows the exact existing stroke endpoint construction.
+        blade_feed=BladeFeed(fixture.stroke_offsets,
+            radius=float(fixture.stroke_offsets[-1])-fixture.knife.size[0]/2-.001)
     spring_snapshot=None
     prediction_before=None;prediction_reader=None;contact_stream=None
     previous_prediction=None;contact_springs=None;spring_control_record=None
@@ -233,12 +239,14 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 # target execution following an unmodeled plant movement.
                 if cut_time is None and np.linalg.norm(fixture.seam(runtime.frames)[0]-fixture.plan['centre'])>.003:
                     raise RuntimeError('Cut target moved >3 mm since verified plan; reobserve/replan required')
+                if cut_time is None and blade_feed is not None:
+                    fraction=blade_feed.command(step=int(stamp.step),dt=dt)
             if cut_time is not None and not measured_withdrawal:
                 if t<cut_time+2:
                     phase='stroke';fraction=cut_fraction*(1-ramp(t,cut_time,cut_time+2))
                 else:
                     phase='approach';fraction=1-ramp(t,cut_time+2,cut_time+6)
-            elif cut_time is None and t>=stroke_end:
+            elif cut_time is None and t>=stroke_end and blade_feed is None:
                 raise RuntimeError('Cut stroke ended without qualified blade contact; no timed release')
         if cut_time is not None and measured_withdrawal:
             if withdrawal is None:raise RuntimeError('No measured release snapshot; withdrawal refused')
@@ -340,6 +348,11 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             joint_velocities_rad_s=plant_v.tolist(),elastic_energy_j=.5*float(np.dot(springs.k*plant_q,plant_q)),
             fastest_body=rig.body_paths[int(np.argmax(np.linalg.norm(velocity[:,:3],axis=1)))])
         records.append(record)
+        # Preserve failure-tick contact data without invoking release logic
+        # before the guards. No sensor/force evidence is manufactured here.
+        if blade_feed is not None:
+            record['blade_feed']=None if blade_feed.receipt is None else dict(blade_feed.receipt)
+            record['native_blade_normal_rows_before_guards']=[dict(r) for r in fixture.edge_contact_rows]
         if getattr(fixture,'explicit_finger_effort',False):
             record['finger_effort_control']=dict(fixture.finger_effort.receipt)
         if prediction_record is not None:record['contact_prediction']=prediction_record
@@ -373,6 +386,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         # True only here: every existing callback, robot, force, penetration,
         # support, slip and knife guard above has returned without exception.
         record['native_guards_passed']=True
+        if blade_feed is not None:
+            blade_feed.observe(record['knife'],step=int(stamp.step),guards_passed=True,released=bool(rig.cut))
         if force_closure:
             record['force_closure']=dict(fixture.force_closer.receipt)
             fixture.force_closer.observe(c,
