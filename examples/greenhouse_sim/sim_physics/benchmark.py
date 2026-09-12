@@ -74,6 +74,10 @@ def parser():
         help='Isolated downward diagnostic: retime the screened stroke from fresh native cutting load')
     p.add_argument('--seam-contact-compliance',action='store_true',
         help='Isolated blade feedback experiment: uncalibrated 1000 N/m local stem contact compression')
+    p.add_argument('--native-spring-cut-trial',action='store_true',
+        help='Explicit isolated comparison with unchanged native spring/contact drives in all phases')
+    p.add_argument('--finger-target-antiwindup',action='store_true',
+        help='Isolated explicit-finger trial: bound target windup using fresh native position/velocity and existing PD caps')
     p.add_argument('--measured-withdrawal',action='store_true',
         help='Opt-in measured-start reverse path with fresh native geometry/hold checks; diagnostic only')
     p.add_argument('--native-static-clearance',action='store_true',help='Opt-in live native static-box refinement during the single synchronous bimanual plan')
@@ -165,6 +169,10 @@ def main(argv=None):
     if args.native_capsule_sphere_cover and not (args.bimanual_cut and args.native_static_clearance):
         raise ValueError('Native capsule sphere cover requires bimanual native static clearance')
     contact_trial=args.isolated_cut_contact_trial
+    if args.finger_target_antiwindup and not (contact_trial and args.explicit_finger_effort and args.force_closure):
+        raise ValueError('Finger antiwindup requires explicit isolated feedback cut trial')
+    if args.native_spring_cut_trial and not (contact_trial and args.spring_mode=='native'):
+        raise ValueError('Native spring cut comparison requires explicit isolated native-spring trial')
     if args.seam_contact_compliance and not (contact_trial and args.blade_force_feed):
         raise ValueError('Seam contact compression requires isolated blade feedback diagnostic')
     if args.blade_force_feed and not (contact_trial and args.cut_style=='downward'
@@ -180,11 +188,12 @@ def main(argv=None):
     if contact_trial and not (args.scene=='package' and args.isolate_station and args.full_robot_probe
             and args.bimanual_cut and not args.bimanual_hold_control and not args.robot_interactive
             and args.explicit_finger_effort and args.force_closure and args.physics_hz==240
-            and args.solver=='PGS' and args.spring_mode=='implicit_effort' and args.constraint_mode=='articulation'
+            and args.solver=='PGS' and args.spring_mode==('native' if args.native_spring_cut_trial else 'implicit_effort')
+            and args.constraint_mode=='articulation'
             and args.stem_contact_model=='flat_cylinders_v1' and args.grasp_contact_frames=='pre_solve_pgs_v1'
-            and args.uniform_solver_iterations==[128,0] and args.force_newton==0
+            and args.uniform_solver_iterations in ([128,0],[128,8]) and args.force_newton==0
             and not args.diagnostic_contact_prediction and not args.experimental_contact_springs):
-        raise ValueError('Isolated cut contact trial requires the complete explicit flat/PGS/implicit/128-0 fixture')
+        raise ValueError('Isolated cut contact trial requires the complete explicit flat/PGS/spring/128-0-or-8 fixture')
     if args.explicit_finger_effort and not (args.isolate_station and (args.bimanual_hold_control or contact_trial)
             and args.bimanual_cut and args.force_closure and args.physics_hz==240
             and not args.robot_interactive and not args.experimental_contact_springs):
@@ -313,7 +322,7 @@ def main(argv=None):
         raise ValueError('Force closure requires bimanual compliant native fingers')
     if args.full_robot_probe and (args.gripper_probe or args.interactive or (args.scene=='package' and not args.sparse_contacts)
             or (args.constraint_mode!='articulation' and not (native_hold and args.constraint_mode=='fixed_articulation' and args.attached_only))
-            or (args.spring_mode!='implicit_effort' and not native_hold)
+            or (args.spring_mode!='implicit_effort' and not native_hold and not args.native_spring_cut_trial)
             or args.solver!='PGS' or args.physics_hz!=240 or args.gravity!=9.81 or args.seconds<7
             or args.diagnostic_detach or not -30<=args.approach_tilt<=30
             or not 0<=args.finger_friction<=1 or not .04<=args.grasp_arc_m<=.25):
@@ -484,6 +493,7 @@ def main(argv=None):
                 robot_options['grasp_compression']=args.grasp_compression_m
                 robot_options['force_closure']=args.force_closure
                 robot_options['explicit_finger_effort']=args.explicit_finger_effort
+                robot_options['finger_target_antiwindup']=args.finger_target_antiwindup
                 robot_options['native_static_clearance']=getattr(args,'native_static_clearance',False)
                 robot_options['native_capsule_sphere_cover']=args.native_capsule_sphere_cover
                 robot_options['native_static_planning_seconds']=getattr(args,'native_static_planning_seconds',8.)
@@ -574,10 +584,10 @@ def main(argv=None):
         runtime=PlantRuntime(rig,sim.physics_sim_view)
         report['native_drive_parameters']=runtime.drive_diagnostics
         springs=None
-        if native_hold:
+        if native_hold or args.native_spring_cut_trial:
             from .native_spring_observer import NativeSpringObserver
-            springs=NativeSpringObserver(runtime.articulation)
-            report['spring_control']=dict(mode='native_drives_isolated_hold_comparison',
+            springs=NativeSpringObserver(runtime.articulation,allow_release=args.native_spring_cut_trial)
+            report['spring_control']=dict(mode='native_drives_isolated_cut_comparison' if args.native_spring_cut_trial else 'native_drives_isolated_hold_comparison',
                 external_spring_effort_applied=False,native_drive_readback_verified=True,
                 drive_work_measured=False,cutting_qualified=False)
         if args.spring_mode=='implicit_effort':

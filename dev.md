@@ -6359,3 +6359,41 @@ No hardware, collection, tuning, review, split or training-export changes.
   in133.21 s** (`regression_20260913_seam_contact_compliance_v1.log`). Source
   hashes unchanged. Next is coupled contact/spring and retention validation;
   this one cut is not advertised as reliable grasp-cut-retain.
+
+### 2026-09-13: Repeated cuts, retained-grasp capacity remains unresolved
+
+- Added explicit `--native-spring-cut-trial` comparison: original native K/C
+  throughout, zero external spring actuation, unchanged native inventory/targets
+  checked before every step. The read-only observer may follow a real release
+  only in this opt-in; it never authorizes one. Native157 fails BEFORE grasp at
+ 0.270833 s: target Leaf002/left wrist0.529517 N plus smaller unwanted contact.
+  The native-drive alternative is therefore NOT promoted as a repair.
+- The complete isolated protocol can now explicitly compare128 position /0 or8
+  velocity iterations. Native158 repeats156 with8 velocity iterations: signed
+  seam release at37.683333 s,29.167 ms dwell, resistance0.201048..0.202053 N,
+  total upper0.279986 N. It still fails retention at37.716667 s, slip3.250057 mm.
+  This numerical comparison leaves all contact, grasp and release guards intact.
+- Added `--finger-target-antiwindup` for explicit isolated feedback only. It
+  projects target state using fresh native position/velocity into the existing
+ 200 N/m /5 N s/m PD's effort interval, subject to the original geometry limits.
+  No positions, velocities, actuator/contact caps or safety thresholds change.
+  Default behavior remains available; an unachievable target is not a grasp.
+- Native159 repeats156 with antiwindup. The second-finger target before release
+  is3.019 mm instead of14.107 mm; measured opening2.271 mm. Cut releases again
+  at37.654167 s, but the branch still slips to3.423117 mm by37.691667 s. Correcting
+  target drift alone does NOT establish retention or resolve the spring model.
+- Read-only static wrench audit (`grasp_wrench_audit_20260913_v2/v3.log`) uses
+  native159's contact points, source COMs/masses cross-checked against native
+  masses, and an8-sided mu0.5 friction cone. Detached mass8.613447 g; gravitational
+  moment about the grasp approximately9.508 mN.m. The recorded contact patch
+  cannot balance it under the0.5 N per-finger normal-plus-friction budget in
+  this fixed-patch approximation, even including recorded zero-load contacts.
+  The latter optimistic case needs about0.548/0.590 N normal load per finger.
+  These are CONDITIONAL static LP results, not proof that every possible
+  contact/grasp is infeasible. No force caps were increased. Blade-friction and
+  dynamic effects are omitted, so the audit cannot authorize execution.
+- Current blocker is not only cut triggering: select/verify a retained grasp
+  with adequate force/moment capacity and repair/qualify spring/contact dynamics.
+  All156/158/159 are FAILED full sequences despite valid native seam events.
+  Full regression **3,586 passed in132.96 s** in
+  `data/sim_physics/regression_20260913_target_antiwindup_v1.log`.

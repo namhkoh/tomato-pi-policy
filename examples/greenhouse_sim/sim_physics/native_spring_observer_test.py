@@ -23,6 +23,28 @@ def test_native_observer_never_submits_or_invents_drive_effort():
     np.testing.assert_array_equal(o.k,[.4,.5])
 
 
+def test_explicit_release_observer_preserves_all_drive_checks():
+    a=View();o=NativeSpringObserver(a,allow_release=True)
+    assert o.step(1/240,root_constrained=False) is None
+    np.testing.assert_array_equal(o.k,[.4,.5])
+    a.values['get_dof_actuation_forces'][0][0]=.01
+    with pytest.raises(RuntimeError):o.step(1/240,root_constrained=False)
+
+
+@pytest.mark.parametrize('flag',[1,None,'true'])
+def test_no_implicit_release_flag(flag):
+    with pytest.raises(ValueError):NativeSpringObserver(View(),allow_release=flag)
+
+
+@pytest.mark.parametrize('extra',[[],['--isolated-cut-contact-trial','--spring-mode','implicit_effort'],
+    ['--spring-mode','native']])
+def test_native_cut_flag_cannot_skip_complete_trial_protocol(tmp_path,extra):
+    output=tmp_path/'unused'
+    with pytest.raises(ValueError):
+        main(['--output',str(output),'--native-spring-cut-trial',*extra])
+    assert not output.exists()
+
+
 @pytest.mark.parametrize('key',list(View().values))
 def test_mutated_drive_contract_stops_before_next_native_step(key):
     a=View();o=NativeSpringObserver(a);a.values[key][0][0]+=.01

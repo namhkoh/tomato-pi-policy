@@ -22,6 +22,9 @@ class BimanualRobot(FullRobotGripper):
             raise ValueError('Non-default blade aim requires the downward diagnostic')
         self.knife_alignment=kwargs.pop('knife_alignment','legacy')
         self.force_closure_enabled=kwargs.pop('force_closure',False)
+        self.finger_target_antiwindup=kwargs.pop('finger_target_antiwindup',False)
+        if type(self.finger_target_antiwindup) is not bool or self.finger_target_antiwindup and not self.force_closure_enabled:
+            raise ValueError('Finger target antiwindup requires explicit feedback closure')
         self.native_capsule_sphere_cover=kwargs.pop('native_capsule_sphere_cover',False)
         if type(self.native_capsule_sphere_cover) is not bool:
             raise ValueError('Explicit boolean native sphere cover flag required')
@@ -315,6 +318,13 @@ class BimanualRobot(FullRobotGripper):
             self.force_limits[0,self.finger_indices]=np.minimum(
                 self.force_limits[0,self.finger_indices],self.force_closer.drive_limit_n)
             self.robot.set_dof_max_forces(self.force_limits,self.index)
+            if getattr(self,'finger_target_antiwindup',False):
+                from .finger_target_antiwindup import project
+                gaps,receipt=project(gaps,self.robot.get_dof_positions()[0,self.finger_indices],
+                    self.robot.get_dof_velocities()[0,self.finger_indices],self.force_limits[0,self.finger_indices],
+                    minimum=self.force_closer.minimum)
+                self.force_closer.gaps=gaps.copy()
+                self.force_closer.receipt.update(half_gaps_m=gaps.tolist(),antiwindup=receipt)
             self.targets[0,self.finger_indices]=np.array([-1.,1.])*gaps
             self.robot.set_dof_position_targets(self.targets,self.index)
             return
@@ -837,6 +847,7 @@ class BimanualRobot(FullRobotGripper):
             right_ik_policy='first_fully_screened_path_not_shortest_path',
             cut_style=getattr(self,'cut_style','legacy'),
             closure_control='native_force_closure_v1' if getattr(self,'force_closure_enabled',False) else 'geometric_compression',
+            finger_target_antiwindup=getattr(self,'finger_target_antiwindup',False),
             live_grasp_placement=getattr(self,'live_grasp_placement',None),
             cut_model=getattr(self,'cut_model',LEGACY_CUT_MODEL),
             cut_model_class='measured_contact_seam_failure_not_calibrated_tissue_cutting')

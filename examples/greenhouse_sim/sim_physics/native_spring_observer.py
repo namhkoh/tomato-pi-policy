@@ -1,14 +1,17 @@
-"""Read-only native drive contract for isolated hold comparisons.
+"""Read-only native drive contract for isolated comparisons.
 
 Unlike ImplicitJointSprings this does NOT disable drives or submit torques.
 PhysX owns the spring/contact solve. A returned None is explicitly NOT a
-measured drive torque or a zero-work claim. No cutting/release qualification.
+measured drive torque or a zero-work claim. Explicit release-mode observation
+does not authorize release or establish cutting/retention qualification.
 """
 import numpy as np
 
 
 class NativeSpringObserver:
-    def __init__(self,articulation):
+    def __init__(self,articulation,*,allow_release=False):
+        if type(allow_release) is not bool:raise ValueError('Explicit native release comparison flag required')
+        self.allow_release=allow_release
         if articulation.count!=1:raise ValueError('Exactly one native plant articulation required')
         self.articulation=articulation
         self.names=tuple(articulation.shared_metatype.dof_names)
@@ -23,8 +26,8 @@ class NativeSpringObserver:
 
     def step(self,dt,*,root_constrained):
         if (isinstance(dt,(bool,np.bool_)) or not np.isfinite(dt) or abs(dt-1/240)>1e-12
-                or root_constrained is not True):
-            raise ValueError('Native drive comparison is 240 Hz intact HOLD ONLY')
+                or type(root_constrained) is not bool or not root_constrained and not self.allow_release):
+            raise ValueError('Native drive comparison requires 240 Hz and explicit release diagnostic')
         a=self.articulation;n=len(self.names)
         if tuple(a.shared_metatype.dof_names)!=self.names:raise RuntimeError('Native joint inventory changed')
         for method,expected in (('get_dof_stiffnesses',self.k),('get_dof_dampings',self.c),
