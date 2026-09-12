@@ -37,6 +37,16 @@ def test_compliant_pad_parameters_are_force_based_and_reject_bad_mass():
     with pytest.raises(ValueError): finger_compliance([.03,.03],float('nan'))
 
 
+def test_anchored_damping_changes_only_the_disclosed_damping_prior():
+    from sim_physics.full_robot import finger_compliance
+    free=finger_compliance([.03,.04],.001)
+    anchored=finger_compliance([.03,.04],.001,anchored_pad_damping=True)
+    for key in ('stiffness_n_m','reduced_mass_kg','calibrated','force_based'):
+        assert free[key]==anchored[key]
+    assert anchored['damping_n_s_m']==pytest.approx(1.4*np.sqrt(1000*.04))
+    assert anchored['damping_mass_kg']==.04 and not anchored['calibrated']
+
+
 @pytest.mark.parametrize('extra',[
     [],['--diagnostic-detach'],['--physics-hz','480'],['--scene','package'],
     ['--finger-friction','nan'],['--grasp-arc-m','.001'],['--gripper-probe'],

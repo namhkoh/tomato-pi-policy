@@ -6,12 +6,12 @@ plants, v1.2 static robot and head/wrist cameras. Never takes over a running Kit
 import argparse
 from dataclasses import asdict
 from datetime import datetime,timezone
-import hashlib
 import json
 import math
 from pathlib import Path
 import time
 import traceback
+from .file_integrity import sha256_file
 
 
 def report_configuration(args,output):
@@ -58,6 +58,10 @@ def parser():
         help='Camera aligns the arc to the actual wrist camera radial side; original source asset untouched')
     p.add_argument('--cut-style',choices=('legacy','downward'),default='legacy',
         help='Downward: extended arm, transverse gravity-aligned stroke and straight Cartesian approach; no detour fallback')
+    p.add_argument('--right-ready-degrees',type=float,nargs=7,
+        help='Explicit initial right pose for a coordinated downward fixture; screened before physics, never a runtime teleport')
+    p.add_argument('--left-ik-seed-degrees',type=float,nargs=7,
+        help='Seed the coordinated left pregrasp IK; exact target and path guards still apply')
     p.add_argument('--measured-withdrawal',action='store_true',
         help='Opt-in measured-start reverse path with fresh native geometry/hold checks; diagnostic only')
     p.add_argument('--native-static-clearance',action='store_true',help='Opt-in live native static-box refinement during the single synchronous bimanual plan')
@@ -83,6 +87,10 @@ def parser():
         help='Opt-in 0..10 mm held-target pull along the checked left approach, followed by native reobservation')
     p.add_argument('--grasp-compression-m',type=float,default=.0005,
         help='Diagnostic 0.25..1 mm shaft-width closure bias; no change to effort, slip or penetration guards')
+    p.add_argument('--force-closure',action='store_true',
+        help='Bimanual 240 Hz native-feedback finger closure with slower contact approach and five-second extra verification window; >=28 seconds')
+    p.add_argument('--anchored-pad-damping',action='store_true',
+        help='Explicit uncalibrated pad-damping prior for an anchored shaft; no mass/stiffness/force-guard change')
     p.add_argument('--bimanual-hold-control',action='store_true',
         help='Negative control: hold left grasp with right arm parked; never qualifies as cutting')
     p.add_argument('--diagnostic-grasp-contacts',action='store_true',
@@ -110,12 +118,16 @@ def parser():
         help='Shaft distance from the palm within the original pads: 90..125 mm; no live base or plant override')
     p.add_argument('--torso-yaw',type=float,default=0.,
         help='Fixed initial torso_5 yaw in package robot tests, bounded to +/-45 degrees')
+    p.add_argument('--torso-degrees',type=float,nargs=6,
+        help='Explicit prephysics torso proposal for downward bimanual test; exact URDF limits and full scene screens required')
     p.add_argument('--approach-distance',type=float,default=.08,
         help='Initial palm approach distance 0.01..0.08 m; leaves the selected fixed base unchanged')
     p.add_argument('--profile',action='store_true',help='Save diagnostic Python/native call timing alongside the non-training report')
     p.add_argument('--step-profile',action='store_true',help='Time the installed physics-only step phases without bypassing physics manager events')
     p.add_argument('--no-physics-profiler',action='store_true',help='Disable optional native profiling instrumentation in this process only')
     p.add_argument('--local-wire-physics',action='store_true',help='Guarded fixed-base 4 m collision window; all wire visuals retained')
+    p.add_argument('--physics-window-half-m',type=float,default=2.,
+        help='Explicit 1..2 m fixed collision half-window; original full bounds plus 150 mm margin must fit, all visuals retained')
     p.add_argument('--context-gutters',type=int,choices=(1,3,5),help='Restore original preview planting density, with static mesh contacts near the fixed robot')
     p.add_argument('--scene-profile',action='store_true',help='Non-qualifying root-removal timing controls; never use as demo evidence')
     p.add_argument('--batch-gutter-visuals',action='store_true',help='Batch all identical static gutter visuals; retain every original gutter collider')
@@ -126,6 +138,17 @@ def parser():
 
 def main(argv=None):
     args=parser().parse_args(argv)
+    if args.torso_degrees is not None:
+        if not (args.bimanual_cut and args.cut_style=='downward' and args.scene=='package') or args.torso_yaw:
+            raise ValueError('Explicit torso requires package downward bimanual fixture and no yaw override')
+        from greenhouse_sim.robot_kinematics import Rby1Kinematics
+        lower,upper=Rby1Kinematics().torso_limits_degrees()
+        if not all(math.isfinite(v) and lo<=v<=hi for v,lo,hi in zip(args.torso_degrees,lower,upper,strict=True)):
+            raise ValueError('Explicit torso must obey exact URDF limits')
+    if args.anchored_pad_damping and not (args.force_closure and args.compliant_fingers):
+        raise ValueError('Anchored pad damping requires compliant feedback closure')
+    if (args.right_ready_degrees is not None or args.left_ik_seed_degrees is not None) and (not args.bimanual_cut or args.cut_style!='downward'):
+        raise ValueError('Coordinated right ready pose requires the downward bimanual fixture')
     if args.exact_grasp_arc and not args.bimanual_cut:
         raise ValueError('Exact grasp arc requires bimanual qualification')
     if (args.knife_alignment!='legacy' or args.cut_style!='legacy') and not args.bimanual_cut:
@@ -214,6 +237,8 @@ def main(argv=None):
         raise ValueError('Disabling robot auto-run requires robot interactive mode')
     if args.robot_interactive and (not args.full_robot_probe or not args.gui or not args.render_hz):
         raise ValueError('Robot interactive requires full-robot probe, GUI and rendering')
+    if args.force_closure and not (args.bimanual_cut and args.compliant_fingers and args.seconds>=28):
+        raise ValueError('Force closure requires bimanual compliant native fingers')
     if args.full_robot_probe and (args.gripper_probe or args.interactive or (args.scene=='package' and not args.sparse_contacts)
             or args.constraint_mode!='articulation' or args.spring_mode!='implicit_effort'
             or args.solver!='PGS' or args.physics_hz!=240 or args.gravity!=9.81 or args.seconds<7
@@ -224,6 +249,9 @@ def main(argv=None):
         raise ValueError('Robot contact/gravity/approach options require the full robot probe')
     if args.local_wire_physics and not (args.full_robot_probe and args.scene=='package'):
         raise ValueError('Local wire physics requires the fixed full robot in the supplied package')
+    if (not math.isfinite(args.physics_window_half_m) or not 1<=args.physics_window_half_m<=2
+            or args.physics_window_half_m!=2 and not args.local_wire_physics):
+        raise ValueError('Physics window requires guarded fixed workspace and finite 1..2 m half extent')
     if args.context_gutters and not args.local_wire_physics:
         raise ValueError('Dense context requires a guarded local collision window')
     if args.batch_gutter_visuals and not (args.full_robot_probe and args.scene=='package'):
@@ -281,11 +309,14 @@ def main(argv=None):
         context=omni.usd.get_context()
         manifest=DEFAULT_PACK/f'plants/components/{args.plant}/manifest.json'
         audit=audit_manifest(manifest)
-        source_hashes={manifest:hashlib.sha256(manifest.read_bytes()).hexdigest()}
+        source_hashes={manifest:sha256_file(manifest)}
         for component in audit['components'].values():
             path=manifest.parent/component['file'];source_hashes[path]=component['asset_sha256']
         robot_options=dict(sparse_contacts=args.sparse_contacts,finger_gravity=args.finger_gravity,
             exact_grasp_arc=args.exact_grasp_arc,
+            right_ready_degrees=args.right_ready_degrees,
+            left_ik_seed_degrees=args.left_ik_seed_degrees,
+            anchored_pad_damping=args.anchored_pad_damping,
             grasp_skew=args.grasp_skew,
             approach_tilt=args.approach_tilt,grasp_roll=args.grasp_roll,approach_distance=args.approach_distance,
             compliant_fingers=args.compliant_fingers,station_yaw=args.station_yaw,grasp_depth=args.grasp_depth_m)
@@ -296,19 +327,20 @@ def main(argv=None):
             from .greenhouse_scene import prepare
             from sim_data.floor_alignment import PACKAGE_FLOOR
             scene=DEFAULT_PACK/'house/green_house_base.usd'
-            source_hashes[scene]=hashlib.sha256(scene.read_bytes()).hexdigest()
+            source_hashes[scene]=sha256_file(scene)
             if not context.open_stage(str(scene),load_set=omni.usd.UsdContextInitialLoadSet.LOAD_NONE):
                 raise RuntimeError('Cannot open supplied greenhouse')
             stage=context.get_stage();stage.SetEditTarget(stage.GetSessionLayer())
             record,height,scene_report=prepare(stage,DEFAULT_PACK,args.plant,sparse_backdrop=not args.context_gutters)
             report['greenhouse']=scene_report
-            robot_options.update(ground_height=height,torso_degrees=[0.,0.,0.,0.,0.,args.torso_yaw],floor_root=PACKAGE_FLOOR)
+            torso=args.torso_degrees if args.torso_degrees is not None else [0.,0.,0.,0.,0.,args.torso_yaw]
+            robot_options.update(ground_height=height,torso_degrees=torso,floor_root=PACKAGE_FLOOR)
         elif args.scene=='package':
             from launch_sim_data import load_local_payloads,populate
             from sim_data.robot_preview import add_robot_preview,select_camera
             from sim_data.floor_alignment import PACKAGE_FLOOR
             scene=DEFAULT_PACK/'house/green_house_base.usd'
-            source_hashes[scene]=hashlib.sha256(scene.read_bytes()).hexdigest()
+            source_hashes[scene]=sha256_file(scene)
             context.open_stage(str(scene),load_set=omni.usd.UsdContextInitialLoadSet.LOAD_NONE)
             stage=context.get_stage();stage.SetEditTarget(stage.GetSessionLayer())
             load_local_payloads(stage);records=[]
@@ -342,6 +374,7 @@ def main(argv=None):
                 robot_options['knife_alignment']=args.knife_alignment
                 robot_options['cut_style']=args.cut_style
                 robot_options['grasp_compression']=args.grasp_compression_m
+                robot_options['force_closure']=args.force_closure
                 robot_options['native_static_clearance']=getattr(args,'native_static_clearance',False)
                 robot_options['native_static_planning_seconds']=getattr(args,'native_static_planning_seconds',8.)
                 robot_options['cut_model']=getattr(args,'cut_model','force_qualified_pre_authored_seam_release')
@@ -350,11 +383,11 @@ def main(argv=None):
                 robot_options['right_ik_fixed_joint']=getattr(args,'right_ik_fixed_joint',None)
                 robot_options['diagnostic_grasp_contacts']=getattr(args,'diagnostic_grasp_contacts',False)
             fixture=robot_class(stage,rig,arc=args.grasp_arc_m,friction=args.finger_friction,**robot_options)
-            source_hashes[fixture.asset]=hashlib.sha256(fixture.asset.read_bytes()).hexdigest()
+            source_hashes[fixture.asset]=sha256_file(fixture.asset)
             report['robot_probe']=fixture.report()
             if args.local_wire_physics:
                 from .collision_window import configure
-                report['collision_window']=configure(stage,fixture)
+                report['collision_window']=configure(stage,fixture,half_extent=args.physics_window_half_m)
             if args.context_gutters:
                 from .greenhouse_context import populate as populate_context
                 report['context_plants']=populate_context(stage,DEFAULT_PACK,fixture,args.context_gutters)
@@ -365,7 +398,7 @@ def main(argv=None):
         if args.gripper_probe:
             from .gripper_probe import GripperFixture
             fixture=GripperFixture(stage,rig,arc=args.grasp_arc_m,friction=args.finger_friction)
-            source_hashes[fixture.asset]=hashlib.sha256(fixture.asset.read_bytes()).hexdigest()
+            source_hashes[fixture.asset]=sha256_file(fixture.asset)
             report['gripper_fixture']=fixture.report()
         if args.bimanual_cut:
             from .startup_screen import screen
@@ -442,7 +475,7 @@ def main(argv=None):
                     finally:
                         profile.disable();profile.dump_stats(str(output/'profile.pstats'))
                 else: report.update(run(app,sim,rig,runtime,springs,fixture,args,output))
-            report['source_assets_unchanged']=all(hashlib.sha256(path.read_bytes()).hexdigest()==h for path,h in source_hashes.items())
+            report['source_assets_unchanged']=all(sha256_file(path)==h for path,h in source_hashes.items())
             if not report['source_assets_unchanged']: raise RuntimeError('Source asset changed during probe')
             (output/'report.json').write_text(json.dumps(report,indent=2,allow_nan=False),encoding='utf-8')
             print('GRIPPER_PROBE_RESULT '+json.dumps({k:report.get(k) for k in ('state','gates','measurements')}),flush=True)
@@ -452,7 +485,7 @@ def main(argv=None):
             report['state']='interactive_demo_not_qualification'
             (output/'report.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
             report['demo']=run(app,sim,rig,runtime,springs,args,output)
-            report['source_assets_unchanged']=all(hashlib.sha256(path.read_bytes()).hexdigest()==h for path,h in source_hashes.items())
+            report['source_assets_unchanged']=all(sha256_file(path)==h for path,h in source_hashes.items())
             if not report['source_assets_unchanged']: raise RuntimeError('Source asset changed during demo')
             (output/'report.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
             return 0
@@ -529,7 +562,7 @@ def main(argv=None):
                 replay_errors.append(float(np.linalg.norm(restored.tip()-tips[i])))
             report['reset_replay_tip_error_m']=max(replay_errors)
         sim.stop()
-        report['source_assets_unchanged']=all(hashlib.sha256(path.read_bytes()).hexdigest()==h for path,h in source_hashes.items())
+        report['source_assets_unchanged']=all(sha256_file(path)==h for path,h in source_hashes.items())
         report['gates']=dict(finite_bounded_motion=report['measurements']['max_speed_m_s']<20,
             fixed_support=report['measurements']['max_support_error_m']<1e-5,
             connected_before_release=report['measurements']['max_attached_anchor_gap_m']<.005,

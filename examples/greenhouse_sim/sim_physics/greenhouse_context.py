@@ -5,7 +5,7 @@ colliders in anonymous layers; distant ones stay render instances. Only the
 selected detailed petiole is compliant. No source USD or dataset is edited.
 """
 from pathlib import Path
-import hashlib
+from .file_integrity import sha256_file
 import numpy as np
 from pxr import Gf,Usd,UsdGeom,UsdPhysics
 from .collision_window import intersects_xy
@@ -53,7 +53,7 @@ def populate(stage,package,robot,rows=3):
                         bound=cache.ComputeWorldBound(source.GetDefaultPrim()).ComputeAlignedRange()
                         if bound.IsEmpty(): raise ValueError('Unbounded context plant')
                         bounds[asset]=(np.array(bound.GetMin()),np.array(bound.GetMax()))
-                        bindings[str(asset)]=hashlib.sha256(asset.read_bytes()).hexdigest()
+                        bindings[str(asset)]=sha256_file(asset)
                     pos=np.array([cx+side*.195,(i-12)*.5,.90])
                     low,high=bounds[asset]
                     contact=intersects_xy(low+pos,high+pos,**robot.window)

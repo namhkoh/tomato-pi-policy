@@ -23,7 +23,7 @@ def released_stroke_fraction(last_command):
     return float(fraction)
 
 
-def sequence_times(reposition):
+def sequence_times(reposition,force_closure=False):
     """Keep legacy times unchanged; allow one second pull +0.5 second settle.
 
     These schedule motion, never authorize a cut. Native contact, grasp and
@@ -31,7 +31,9 @@ def sequence_times(reposition):
     """
     if not np.isfinite(reposition) or not 0<=reposition<=.01:
         raise ValueError('Bounded finite reposition distance required')
-    delay=1.5 if reposition else 0.
+    if type(force_closure) is not bool: raise ValueError('Explicit force closure phase required')
+    closure_delay=5. if force_closure else 0.
+    delay=(1.5 if reposition else 0.)+closure_delay
     return dict(delay=delay,plan=3.5+delay,approach=4.+delay,stroke=8.+delay,end=14.+delay)
 
 
@@ -93,7 +95,9 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     measured_withdrawal=bool(getattr(args,'measured_withdrawal',False));withdrawal=None
     hold_control=bool(getattr(args,'bimanual_hold_control',False))
     reposition=float(getattr(args,'bimanual_reposition_m',0.))
-    times=sequence_times(reposition);delay=times['delay']
+    force_closure=bool(getattr(fixture,'force_closure_enabled',False))
+    times=sequence_times(reposition,force_closure);delay=times['delay']
+    grasp_time=3.5+(5. if force_closure else 0.)
     plan_time=times['plan'];approach_start=times['approach'];stroke_start=times['stroke'];stroke_end=times['end']
     viewport=None
     if args.render_hz:
@@ -127,7 +131,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         nonlocal contact_springs_started
         t=stamp.simulation_time_s
         if t>=.9 and not goal_set:
-            fixture.goal[:3,3]=fixture.grasp_point(runtime.frames)+fixture.grasp_depth*fixture.goal[:3,2]
+            fixture.refresh_grasp_goal(runtime.frames)
             fixture.plan_approach()
             grasp_screen=fixture.screen_grasp_scene(runtime.frames)
             events.append(dict(t=t,event='left_grasp_corridor_screened',result=grasp_screen))
@@ -136,12 +140,14 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             goal_set=True
         goal=fixture.start[:3,3]+ramp(t,1,2)*(fixture.goal[:3,3]-fixture.start[:3,3])
         if grasp_verified and reposition:
-            goal+=reposition*ramp(t,3.5,4.5)*fixture.goal[:3,2]
+            goal+=reposition*ramp(t,grasp_time,grasp_time+1)*fixture.goal[:3,2]
         # Keep the target held in place until measured knife withdrawal and a
         # fresh clearance screen authorize a separate transport/reposition.
         # A release+1 s timer cannot establish a clear blade corridor.
-        fixture.target_palm(goal);fixture.close(ramp(t,2,3))
-        if t>=3.5 and not grasp_verified:
+        fixture.target_palm(goal)
+        if force_closure: fixture.close(ramp(t,2,3),step=int(stamp.step),dt=dt)
+        else: fixture.close(ramp(t,2,3))
+        if t>=grasp_time and not grasp_verified:
             if stable<int(.1*args.physics_hz):
                 # Preserve which actual shapes blocked closure, including a
                 # neighboring leaf that cannot count as opposing shaft contact.
@@ -170,7 +176,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             (output/'bimanual_planning_snapshot.json').write_text(json.dumps(snapshot,allow_nan=False),encoding='utf-8')
             fixture.plan_cut(runtime.frames,q);planned=True
             events.append(dict(t=t,event='grasp_verified_and_right_IK_planned',plan=fixture.report()['cut_plan']))
-        if t>=4 and lost>int(.05*args.physics_hz):
+        if t>=grasp_time+.5 and lost>int(.05*args.physics_hz):
             raise RuntimeError('Left grasp lost during bimanual sequence')
         phase='park';fraction=0.
         if planned and t>=approach_start:
@@ -314,6 +320,11 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         # True only here: every existing callback, robot, force, penetration,
         # support, slip and knife guard above has returned without exception.
         record['native_guards_passed']=True
+        if force_closure:
+            record['force_closure']=dict(fixture.force_closer.receipt)
+            fixture.force_closer.observe(c,
+                [record['robot']['per_finger_contact_upper_bound_n'][p] for p in fixture.paths[1:]],
+                step=int(stamp.step),guards_passed=True)
         if rig.cut and cut_time is None:
             cut_time=stamp.simulation_time_s
             # The release timestamp is AFTER fetch; it is one step later than
@@ -359,8 +370,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 print('BIMANUAL_SECOND '+json.dumps(dict(t=latest['t'],phase=latest['phase'],
                     bilateral=latest['contact']['bilateral'],slip_m=latest['slip_m'],cut=rig.cut)),flush=True)
             if viewport and args.capture_milestones:
-                milestones=(('grasp',3.4),('hold_10s',10),('hold_20s',20)) if hold_control else (
-                    ('grasp',3.4),('knife_precontact',stroke_start-.1),('stroke_midpoint',(stroke_start+stroke_end)/2),('late_sequence',17.5+delay))
+                milestones=(('grasp',grasp_time-.1),('hold_10s',10),('hold_20s',20)) if hold_control else (
+                    ('grasp',grasp_time-.1),('knife_precontact',stroke_start-.1),('stroke_midpoint',(stroke_start+stroke_end)/2),('late_sequence',17.5+delay))
                 for name,t in milestones:
                     if clock.stamp.simulation_time_s>=t and name not in captures:
                         capture(name)
@@ -390,7 +401,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     result=dict(state='passed_bimanual_mechanism_not_robot_task' if all(gates.values()) else 'failed_bimanual_qualification',
         gates=gates,error=fault,events=events,images=captures,timing=clock.report(),robot=fixture.report(),
         measurements=dict(native_edge_contact_count=fixture.cut_contacts,cut_time_s=cut_time,
-            bilateral_contact_fraction_before_cut_plan=float(np.mean([r['contact']['bilateral'] for r in records if 3<=r['t']<=3.5])) if any(3<=r['t']<=3.5 for r in records) else None,
+            bilateral_contact_fraction_before_cut_plan=float(np.mean([r['contact']['bilateral'] for r in records if grasp_time-.5<=r['t']<=grasp_time])) if any(grasp_time-.5<=r['t']<=grasp_time for r in records) else None,
             maximum_slip_m=max((r['slip_m'] for r in records if r['slip_m'] is not None),default=None)),
         physical_cut_verified=False,tissue_fracture_calibrated=False,deposit_verified=False,
         right_withdrawal_schedule_elapsed=cut_time is not None and records[-1]['t']>=cut_time+6,

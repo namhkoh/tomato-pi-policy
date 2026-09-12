@@ -55,6 +55,41 @@ Evidence lives under `data/sim_physics/bimanual_latency_20260912_62`, `_63`,
 tests (`data/sim_physics/regression_20260912_downward_v2.log`); this is not
 native cutting qualification. See `dev.md` for limitations.
 
+### Later September 12 investigations (not working cutting presets)
+
+The exact60 mm **hold-only** control remains the demonstrated baseline. Native83
+repeats its20-second hold with0.1903 mm maximum slip. Nearer40..54 mm feedback
+closure/damping trials still fail contact qualification. `--force-closure` and
+`--anchored-pad-damping` are explicit failed/experimental comparisons, default
+off; neither is a reliable-grasp or calibrated-material claim.
+
+Downward planning now uses a gravity-bounded transverse direction fan and an
+original-vertex-enclosing slanted plate bound. Optional initial right pose,
+left IK seed and six torso angles support coordinated **prephysics** proposals;
+exact URDF limits, full-scene spawn, sampled paths and native guards still apply.
+The tested torso proposals85..87 fail camera/plant corridor checks; they are not
+launch presets. No new downward cutting success is established.
+
+With native clearance explicitly requested, the left approach can now refine
+static coarse-bound rejections using the same live PhysX query contract as the
+right planner. Full hand bounds and1 mm scene margin remain; dynamic leaves,
+unknown geometry and genuine native hits are never removed. Query/final-epoch/
+cleanup failures prevent acceptance. This does not replace opposing-contact
+grasp evidence. See the native88 result in `dev.md`.
+
+Native88 now verifies a closer54 mm underhand grasp with28 mm finger-to-cut
+clearance, but rejects all350 downward tool corridors before right motion.
+Native89 holds that grasp for20 s with maximum slip0.000680 mm, then fails its
+final integrity check on a host MemoryError. Streaming source hashing fixes
+the whole-file allocation, but a native repeat is still needed. This is not
+cut/withdraw/retain qualification and does not replace the baseline launcher.
+
+Authored joint-topology caching avoids repeated unchanged relationship reads,
+not fresh native-state checks. A smaller guarded collision workspace is an
+opt-in timing experiment, **not an established speedup**:83/84 preserve all4800
+physical trajectory rows and full visible surroundings, but84 ran slower in
+this pair. The default2 m half-window and full-detail visuals are unchanged.
+
 ## Experimental knife integration, September 11
 
 Latest checkpoint: the shared left-grasp corridor screen now checks open-jaw

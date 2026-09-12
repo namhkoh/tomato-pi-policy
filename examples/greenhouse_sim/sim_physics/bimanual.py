@@ -16,6 +16,9 @@ class BimanualRobot(FullRobotGripper):
         self.cut_model=kwargs.pop('cut_model',LEGACY_CUT_MODEL)
         self.cut_style=kwargs.pop('cut_style','legacy')
         self.knife_alignment=kwargs.pop('knife_alignment','legacy')
+        self.force_closure_enabled=kwargs.pop('force_closure',False)
+        if type(self.force_closure_enabled) is not bool:
+            raise ValueError('Explicit native force closure flag required')
         if self.cut_style not in ('legacy','downward'):
             raise ValueError('Unknown cut style')
         cut_parameters=ShearParameters(model=self.cut_model)
@@ -50,6 +53,10 @@ class BimanualRobot(FullRobotGripper):
         kwargs.setdefault('station_offset',(0.,0.))
         kwargs.setdefault('approach_side',1)
         super().__init__(*args,**kwargs)
+        self.rest_grasp_rotation=self.goal[:3,:3].copy()
+        if self.force_closure_enabled:
+            from .force_closure import ForceClosure
+            self.force_closer=ForceClosure(self.radius,self.grasp_compression)
         if fixed is not None:
             low,high=self.kin.arm_limits_degrees('right')
             if not low[fixed[0]]<fixed[1]<high[fixed[0]]:
@@ -78,7 +85,8 @@ class BimanualRobot(FullRobotGripper):
         self.plan_diagnostics=None
         self.expected_right=self.kin.forward('right',self.right,self.base)
         from .self_screen import SelfCapsuleScreen
-        self.self_screen=SelfCapsuleScreen(self.stage,self.root,include_tool_boxes=True)
+        self.self_screen=SelfCapsuleScreen(self.stage,self.root,include_tool_boxes=True,
+            fit_plate=self.cut_style=='downward')
         from .held_plant_screen import HeldPlantScreen
         self.held_plant_screen=HeldPlantScreen(self.rig,self.self_screen.shapes,self.knife.collider)
         # This includes arm-versus-torso, which an inter-arm-only check misses.
@@ -90,6 +98,16 @@ class BimanualRobot(FullRobotGripper):
         # The parent also calls this before the cached screen is constructed.
         # Later gravity-settled replans must receive the same screening.
         if hasattr(self,'self_screen'): self.check_grasp_path()
+
+    def refresh_grasp_goal(self,frames):
+        if getattr(self,'force_closure_enabled',False):
+            from .grasp_frame import align_to_axis
+            self.goal[:3,:3]=align_to_axis(self.rest_grasp_rotation,
+                self.rig.rest_frames[self.body_index,:3,2],frames[self.body_index,:3,2])
+        self.goal[:3,3]=self.grasp_point(frames)+self.grasp_depth*self.goal[:3,2]
+        from .grasp_target import finger_seam_clearance
+        centre,axis=self.seam(frames)
+        self.live_grasp_placement=finger_seam_clearance(self.stage,self.root,self.goal,centre,axis)
 
     def check_grasp_path(self):
         minimum=float('inf')
@@ -153,7 +171,17 @@ class BimanualRobot(FullRobotGripper):
         screen.snapshot(frames)
         previous=getattr(self,'planning_slides',None);checks=0
         result=dict(passed=False,training_eligible=False,native_grasp_verified=False)
+        native=None;planning_error=None
         try:
+            if getattr(self,'native_static_clearance',False):
+                if not hasattr(self,'robot'):
+                    raise RuntimeError('Native grasp refinement requires an initialized robot scene')
+                from .native_static_clearance import current_scene_query
+                result['native_static_clearance']=dict(initialization_status='in_progress',
+                    query_count=None,final_validation_passed=False)
+                native=current_scene_query(self.stage,screen.static,lazy_coverage=True,
+                    wall_limit_s=self.native_static_planning_seconds)
+                screen.native_static_query=native
             self.planning_slides=self.slides.copy()
             for fraction,q in zip(self.fractions,self.path_q):
                 if fraction>1.+1e-8: break
@@ -171,15 +199,37 @@ class BimanualRobot(FullRobotGripper):
                     return result
             result['passed']=True
             return result
+        except BaseException as exc:
+            result['passed']=False;planning_error=exc
+            raise
         finally:
-            if previous is None: del self.planning_slides
+            if previous is None:
+                if hasattr(self,'planning_slides'):del self.planning_slides
             else: self.planning_slides=previous
             result['checks']=checks
             self.grasp_scene_screen=result
+            if native is not None:
+                cleanup_errors=[]
+                if result['passed']:
+                    try:native.validate()
+                    except Exception as exc:cleanup_errors.append(exc)
+                try:native.close()
+                except Exception as exc:cleanup_errors.append(exc)
+                try:result['native_static_clearance']=native.report()
+                except Exception as exc:cleanup_errors.append(exc)
+                finally:screen.native_static_query=None
+                if cleanup_errors:
+                    result['passed']=False
+                    detail='Native grasp clearance validation/cleanup failed: '+str([str(e) for e in cleanup_errors])
+                    if planning_error is not None:planning_error.add_note(detail)
+                    else:raise RuntimeError(detail) from cleanup_errors[0]
 
     def bind(self,simulation_view):
         self.release_grasp_observer()
         super().bind(simulation_view)
+        if getattr(self,'force_closure_enabled',False):
+            from .force_closure import ForceClosure
+            self.force_closer=ForceClosure(self.radius,self.grasp_compression)
         self.right_indices=[self.names.index(f'right_arm_{i}') for i in range(7)]
         self.right_palm=simulation_view.create_rigid_body_view(self.knife.wrist_path)
         if self.right_palm.count!=1: raise RuntimeError('Missing native right wrist')
@@ -221,13 +271,21 @@ class BimanualRobot(FullRobotGripper):
         self.latest_finger_bilateral=result['bilateral']
         return result
 
-    def close(self,fraction):
+    def close(self,fraction,*,step=None,dt=None):
         # Geometry-bounded closure for this privileged shaft fixture. Driving
         # to a zero-width aperture keeps compressing a ~6 mm stem after grasp.
         # Default stop is 0.5 mm inside radius; the bounded diagnostic bias
         # can be qualified separately. Force and penetration guards
         # remain unchanged and actual opposing contact still verifies grasp.
         if not np.isfinite(fraction) or not 0<=fraction<=1: raise ValueError('Invalid finger closure')
+        if getattr(self,'force_closure_enabled',False):
+            gaps=self.force_closer.command(fraction,step=step,dt=dt)
+            self.force_limits[0,self.finger_indices]=np.minimum(
+                self.force_limits[0,self.finger_indices],self.force_closer.drive_limit_n)
+            self.robot.set_dof_max_forces(self.force_limits,self.index)
+            self.targets[0,self.finger_indices]=np.array([-1.,1.])*gaps
+            self.robot.set_dof_position_targets(self.targets,self.index)
+            return
         aperture=max(0.,self.radius-getattr(self,'grasp_compression',.0005))
         super().close(fraction*(1-aperture/.025))
 
@@ -452,7 +510,7 @@ class BimanualRobot(FullRobotGripper):
         direction=direction/direction_norm if direction_norm>1e-12 else None
         downward=getattr(self,'cut_style','legacy')=='downward'
         if downward:
-            from .downward_cut import downward_direction
+            from .downward_cut import downward_direction,downward_angles
             direction=downward_direction(axis)
             self.plan_diagnostics['downward_direction_world']=direction.tolist()
             self.plan_diagnostics['minimum_right_arm_extension']=.8
@@ -485,7 +543,8 @@ class BimanualRobot(FullRobotGripper):
                 [(a,s,w) for w in (0.,-usable_wing/2,usable_wing/2,-.9*usable_wing,.9*usable_wing,-usable_wing,usable_wing) for s in (1,-1)
                     for a in (0,15,-15,30,-30,45,-45,60,-60,90,-90,120,-120,135,-135,150,-150,180)])
             if downward:
-                proposals=[(0,s,w) for w in (0.,-usable_wing/2,usable_wing/2,-usable_wing,usable_wing) for s in (1,-1)]
+                proposals=[(a,s,w) for w in (0.,-usable_wing/2,usable_wing/2,-usable_wing,usable_wing)
+                    for s in (1,-1) for a in downward_angles(axis)]
             for degrees,normal_sign,wing in proposals:
                 if single is not None:d=single_direction.copy()
                 else:
@@ -665,8 +724,9 @@ class BimanualRobot(FullRobotGripper):
     def report(self):
         result=super().report()
         result.update(right_arm='original_fitted_knife_guarded_native_joint_drives',
-            grasp_closure=dict(mode='ground_truth_shaft_width_stop_with_native_contact_verification',
-                commanded_half_aperture_m=max(0.,self.radius-self.grasp_compression),
+            grasp_closure=dict(mode='native_force_closure_v1' if getattr(self,'force_closure_enabled',False) else 'ground_truth_shaft_width_stop_with_native_contact_verification',
+                commanded_half_aperture_m=None if getattr(self,'force_closure_enabled',False) else max(0.,self.radius-self.grasp_compression),
+                minimum_commanded_half_aperture_m=max(0.,self.radius-self.grasp_compression),
                 nominal_pad_compression_m=self.grasp_compression,material_calibrated=False),
             grasp_evidence_model='exact_connected_detached_shaft_inner_pad_normal_contacts_with_selected_tensor_crosscheck',
             diagnostic_grasp_contacts=getattr(self,'diagnostic_grasp_contacts',False),
@@ -679,6 +739,8 @@ class BimanualRobot(FullRobotGripper):
             right_ik_fixed_joint=getattr(self,'right_ik_fixed_joint',None),
             right_ik_policy='first_fully_screened_path_not_shortest_path',
             cut_style=getattr(self,'cut_style','legacy'),
+            closure_control='native_force_closure_v1' if getattr(self,'force_closure_enabled',False) else 'geometric_compression',
+            live_grasp_placement=getattr(self,'live_grasp_placement',None),
             cut_model=getattr(self,'cut_model',LEGACY_CUT_MODEL),
             cut_model_class='measured_contact_seam_failure_not_calibrated_tissue_cutting')
         if self.plan is not None:

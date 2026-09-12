@@ -20,6 +20,56 @@ def test_default_probe_includes_release_and_does_not_use_gpu():
     assert not args.solve_articulation_contact_last
     assert not args.measured_withdrawal
     assert not args.experimental_contact_springs
+    assert not args.force_closure
+    assert args.torso_degrees is None and args.physics_window_half_m==2.
+    assert args.right_ready_degrees is None and args.left_ik_seed_degrees is None
+
+
+@pytest.mark.parametrize('option',['--right-ready-degrees','--left-ik-seed-degrees'])
+def test_initial_joint_proposals_need_downward_fixture(tmp_path,option):
+    with pytest.raises(ValueError,match='downward bimanual fixture'):
+        main(['--output',str(tmp_path/'unused'),option,*['0']*7])
+    assert not (tmp_path/'unused').exists()
+
+
+@pytest.mark.parametrize('extra', [[], ['--bimanual-cut','--cut-style','downward'],
+    ['--bimanual-cut','--cut-style','downward','--scene','package','--torso-yaw','1']])
+def test_torso_proposal_cannot_override_legacy_or_yaw_fixture(tmp_path,extra):
+    with pytest.raises(ValueError,match='Explicit torso requires'):
+        main(['--output',str(tmp_path/'unused'),'--torso-degrees',*['0']*6,*extra])
+    assert not (tmp_path/'unused').exists()
+
+
+@pytest.mark.parametrize('joint,value', [(i,'nan') for i in range(6)] +
+    [(i,'10000') for i in range(6)] + [(i,'-10000') for i in range(6)])
+def test_torso_proposal_limits_fail_before_kit(tmp_path,joint,value):
+    angles=['0']*6;angles[joint]=value
+    with pytest.raises(ValueError,match='Explicit torso must obey exact URDF limits'):
+        main(['--output',str(tmp_path/'unused'),'--bimanual-cut','--cut-style','downward',
+              '--scene','package','--torso-degrees',*angles])
+    assert not (tmp_path/'unused').exists()
+
+
+def test_initial_torso_proposal_is_preserved_in_configuration():
+    angles=[-8,-4,1,3,-20,-5]
+    args=parser().parse_args(['--output','unused','--torso-degrees',*map(str,angles)])
+    assert report_configuration(args,args.output)['torso_degrees']==angles
+
+
+@pytest.mark.parametrize('extra',[[],['--bimanual-cut','--full-robot-probe',
+    '--sparse-contacts','--finger-gravity','--seconds','28'],
+    ['--bimanual-cut','--full-robot-probe','--sparse-contacts',
+     '--finger-gravity','--compliant-fingers','--seconds','20']])
+def test_force_closure_requires_compliance_and_sufficient_duration(tmp_path,extra):
+    with pytest.raises(ValueError):main(['--output',str(tmp_path/'unused'),'--force-closure',*extra])
+    assert not (tmp_path/'unused').exists()
+
+
+@pytest.mark.parametrize('value',['nan','inf','.9','2.1','1.25'])
+def test_workspace_size_cannot_silently_change_unbounded_scene(tmp_path,value):
+    with pytest.raises(ValueError,match='Physics window'):
+        main(['--output',str(tmp_path/'unused'),'--physics-window-half-m',value])
+    assert not (tmp_path/'unused').exists()
 
 
 @pytest.mark.parametrize('extra',[[],['--bimanual-cut'],['--bimanual-cut','--bimanual-hold-control'],

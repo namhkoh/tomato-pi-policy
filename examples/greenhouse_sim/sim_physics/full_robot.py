@@ -80,27 +80,35 @@ def skew_jaw_frame(rotation,degrees):
     return rotation@np.array([[c,-s,0],[s,c,0],[0,0,1]])
 
 
-def finger_compliance(finger_masses,stem_mass):
+def finger_compliance(finger_masses,stem_mass,*,anchored_pad_damping=False):
     """Experimental force-based pad compliance; engineering prior, not measured.
 
     1000 N/m gives 0.5 mm static indentation at the unchanged 0.5 N cap
-    for one contact. Damping uses the larger two-body reduced mass. Neither
-    actor mass nor the beam's material stiffness is changed.
+    for one contact. Default damping uses the larger two-body reduced mass;
+    the explicit anchored-surface experiment uses the larger finger mass.
+    Neither actor mass nor the beam's material stiffness is changed. The
+    anchored alternative has not passed native grasp qualification.
     """
     masses=np.asarray(finger_masses,dtype=float)
     if (masses.shape!=(2,) or not np.isfinite(masses).all() or np.any(masses<=0)
             or not np.isfinite(stem_mass) or stem_mass<=0):
         raise ValueError('Positive physical masses required for compliant fingers')
     reduced=float(np.max(masses*stem_mass/(masses+stem_mass)))
-    return dict(stiffness_n_m=1000.,damping_n_s_m=float(1.4*np.sqrt(1000.*reduced)),
-        reduced_mass_kg=reduced,calibrated=False,force_based=True)
+    if type(anchored_pad_damping) is not bool: raise ValueError('Explicit anchored damping prior required')
+    effective=float(max(masses)) if anchored_pad_damping else reduced
+    return dict(stiffness_n_m=1000.,damping_n_s_m=float(1.4*np.sqrt(1000.*effective)),
+        reduced_mass_kg=reduced,damping_mass_kg=effective,
+        damping_model='finger_against_anchored_surface_prior' if anchored_pad_damping else 'free_two_body_reduced_mass_prior',
+        calibrated=False,force_based=True)
 
 
 class FullRobotGripper(GripperFixture):
     finger_actuator_limit_n=.5
 
     def __init__(self,stage,rig,*,arc=.08,friction=.5,ground_height=None,
-                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None,grasp_skew=0.,finger_actuator_limit_n=.5,exact_grasp_arc=False):
+                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None,grasp_skew=0.,finger_actuator_limit_n=.5,exact_grasp_arc=False,right_ready_degrees=None,left_ik_seed_degrees=None,anchored_pad_damping=False):
+        if type(anchored_pad_damping) is not bool or anchored_pad_damping and not compliant_fingers:
+            raise ValueError('Anchored damping prior requires compliant fingers')
         self.finger_actuator_limit_n=_finger_actuator_limit(finger_actuator_limit_n)
         if self.finger_actuator_limit_n==.8 and not all(
                 flag is True for flag in (sparse_contacts,finger_gravity,compliant_fingers)):
@@ -113,7 +121,12 @@ class FullRobotGripper(GripperFixture):
         self.stage,self.rig,self.asset=stage,rig,DEFAULT_ASSET
         self.root='/World/RBY1'
         self.kin=Rby1Kinematics()
-        if torso_degrees is not None: self.kin.set_default_torso_degrees(torso_degrees)
+        if torso_degrees is not None:
+            torso=np.asarray(torso_degrees,float);lower,upper=self.kin.torso_limits_degrees()
+            if (torso.shape!=(6,) or not np.isfinite(torso).all()
+                    or np.any(torso<lower) or np.any(torso>upper)):
+                raise ValueError('Initial torso configuration must obey exact URDF limits')
+            self.kin.set_default_torso_degrees(torso)
         self.sparse_contacts=sparse_contacts;self.event_monitor=None;self.floor_root=floor_root
         self.finger_gravity=finger_gravity;self.finger_compensation=np.zeros(2)
         self.window=None
@@ -198,7 +211,21 @@ class FullRobotGripper(GripperFixture):
         self.pose=dict(SDK_READY_POSE_DEGREES)
         self.pose.update({f'torso_{i}':float(v) for i,v in enumerate(self.kin.default_torso_degrees())})
         self.right=np.array([self.pose[f'right_arm_{i}'] for i in range(7)])
-        result=self.kin.solve_pose('left',self.start,[self.pose[f'left_arm_{i}'] for i in range(7)],self.base)
+        self.right_ready_explicit=right_ready_degrees is not None
+        if self.right_ready_explicit:
+            q=np.asarray(right_ready_degrees,float)
+            low,high=self.kin.arm_limits_degrees('right')
+            if q.shape!=(7,) or not np.isfinite(q).all() or np.any(q<=low) or np.any(q>=high):
+                raise ValueError('Initial right configuration must obey exact URDF limits')
+            self.right=q.copy()
+            self.pose.update({f'right_arm_{i}':float(v) for i,v in enumerate(q)})
+        seed=np.array([self.pose[f'left_arm_{i}'] for i in range(7)])
+        if left_ik_seed_degrees is not None:
+            seed=np.asarray(left_ik_seed_degrees,float)
+            low,high=self.kin.arm_limits_degrees('left')
+            if seed.shape!=(7,) or not np.isfinite(seed).all() or np.any(seed<=low) or np.any(seed>=high):
+                raise ValueError('Left IK seed must obey exact URDF limits')
+        result=self.kin.solve_pose('left',self.start,seed,self.base)
         self.pregrasp_ik_attempts=1
         if not result.succeeded:
             # The 7-DOF arm has wrist/elbow branches. A single ready-pose seed
@@ -238,7 +265,8 @@ class FullRobotGripper(GripperFixture):
             self.finger_contact_compliance=None
             if compliant_fingers:
                 mass=lambda path:float(UsdPhysics.MassAPI(stage.GetPrimAtPath(path)).GetMassAttr().Get())
-                self.finger_contact_compliance=finger_compliance([mass(p) for p in self.paths[1:]],mass(self.grasp_path))
+                self.finger_contact_compliance=finger_compliance([mass(p) for p in self.paths[1:]],mass(self.grasp_path),
+                    anchored_pad_damping=anchored_pad_damping)
                 physics_schema(material.GetPrim(),'PhysxMaterialAPI',[
                     ('physxMaterial:compliantContactStiffness',Sdf.ValueTypeNames.Float,self.finger_contact_compliance['stiffness_n_m']),
                     ('physxMaterial:compliantContactDamping',Sdf.ValueTypeNames.Float,self.finger_contact_compliance['damping_n_s_m']),
@@ -339,8 +367,10 @@ class FullRobotGripper(GripperFixture):
         self.fractions=np.linspace(0,1.15,47)
         joints=[];seed=self.initial_q.copy();minimum=float('inf')
         delta=self.goal[:3,3]-self.start[:3,3]
+        from .grasp_frame import approach_rotation
         for fraction in self.fractions:
             desired=self.start.copy();desired[:3,3]+=fraction*delta
+            desired[:3,:3]=approach_rotation(self.start[:3,:3],self.goal[:3,:3],fraction)
             solution=self.kin.solve_pose('left',desired,seed,self.base)
             if not solution.succeeded: raise RuntimeError('Approach IK fails at '+str(fraction))
             seed=np.asarray(solution.joint_degrees)
@@ -390,6 +420,7 @@ class FullRobotGripper(GripperFixture):
                 guard_timing='post_step_before_cut_decision',overshoot_prevention_claim=False,
                 legacy_mode_available=True),
             torso_degrees=self.kin.default_torso_degrees().tolist(),floor_root=self.floor_root,
+            initial_right_pose='explicit_prephysics_screened_proposal' if getattr(self,'right_ready_explicit',False) else 'sdk_ready',
             joint_state_names=getattr(self,'names',None),
             approach_tilt_degrees=self.approach_tilt,
             grasp_roll_degrees=self.grasp_roll,

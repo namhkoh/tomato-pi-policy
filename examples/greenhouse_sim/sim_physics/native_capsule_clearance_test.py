@@ -45,10 +45,14 @@ def test_checked_native_query_retains_whole_box_and_original_margin():
     with pytest.raises(ValueError):native.clear_capsule_checked('/World/Stem',a,b,radius,.0009)
 
 
-def test_only_named_restored_arm_capsule_refines_static_bounds():
+@pytest.mark.parametrize('side',['right','left'])
+def test_only_named_restored_arm_capsule_refines_static_bounds(side):
     from sim_physics.held_plant_screen_test import fixture
     screen,rig,world=fixture()
     path,body,link,kind,data=screen.shapes[0]
+    if side=='left':
+        path,body,link=[v.replace('right','left') for v in (path,body,link)]
+        screen.arm='left';world={link:np.eye(4)}
     screen.shapes[0]=(body+'/restored_collisions/capsule_00',body,link,kind,data)
     frames=rig.rest_frames.copy();frames[1,1,3]=.5
     screen.static=[('/World/Static','box',(np.array([.1,0,0]),np.eye(3),np.full(3,.03)),

@@ -10,7 +10,7 @@ from .capsule_surface import world_capsule
 
 
 class SelfCapsuleScreen:
-    def __init__(self,stage,robot_root,*,include_tool_boxes=False):
+    def __init__(self,stage,robot_root,*,include_tool_boxes=False,fit_plate=False):
         from pxr import Usd,UsdGeom,UsdPhysics
         self.root=robot_root;self.shapes=[];self.unsupported=[];self.excluded=set();self.box_paths=[]
         cache=UsdGeom.XformCache()
@@ -36,6 +36,14 @@ class SelfCapsuleScreen:
                 self.shapes.append((path,body_path,link,'capsule',cap));continue
             if not include_tool_boxes:
                 self.unsupported.append(path);continue
+            if fit_plate and path==robot_root+'/ee_right/attachments/DeleafKnife/BladePlateContact':
+                from .tool_bounds import plate_box
+                if (not prim.IsA(UsdGeom.Mesh) or
+                        UsdPhysics.MeshCollisionAPI(prim).GetApproximationAttr().Get()!='convexHull'):
+                    raise ValueError('Source convex blade plate required')
+                value=plate_box(UsdGeom.Mesh(prim).GetPointsAttr().Get(),local)
+                self.shapes.append((path,body_path,link,'box',value));self.box_paths.append(path)
+                continue
             if not prim.IsA(UsdGeom.Boundable): raise ValueError('Unbounded tool collider: '+path)
             bound=bounds.ComputeUntransformedBound(prim).ComputeAlignedRange()
             if bound.IsEmpty(): raise ValueError('Empty tool collision bounds: '+path)

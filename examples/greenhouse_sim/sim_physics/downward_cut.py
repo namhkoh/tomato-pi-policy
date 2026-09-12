@@ -28,6 +28,14 @@ def arm_extension(frames):
     return float(np.linalg.norm(points[2]-points[0])/sum(lengths))
 
 
+def downward_angles(axis):
+    """Deterministic transverse fan, all still within 30 degrees of gravity."""
+    direction=downward_direction(axis)
+    return tuple(a for a in (0.,-10.,10.,-20.,20.,-25.,25.,-30.,30.)
+        if (direction*np.cos(np.radians(a))+np.cross(axis,direction)*np.sin(np.radians(a)))[2]
+        <=-np.cos(np.pi/6)+1e-12)
+
+
 def cartesian_transit(robot,left,goal):
     """Straight wrist-position transit, smooth rotation, no joint-space detour.
 

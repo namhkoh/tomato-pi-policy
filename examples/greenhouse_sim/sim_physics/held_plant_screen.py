@@ -230,11 +230,18 @@ class HeldPlantScreen:
                     fitted_tool=(self.arm=='right' and link=='ee_right' and body.endswith('/ee_right')
                         and path.startswith(tuple(body+'/attachments/'+name+'/'
                             for name in ('RightWristCamera','DeleafKnife'))))
-                    if (fitted_tool and kind=='box' and okind=='box' and native is not None
+                    # Left approach uses the same enclosing-shape/native-miss
+                    # contract. Only known full-robot pads, palm and camera;
+                    # unknown boxes and dynamic shaft/leaf contacts stay coarse.
+                    left_hand=(self.arm=='left' and body.endswith('/'+link) and (
+                        link in ('ee_left','ee_finger_l1','ee_finger_l2')
+                        and path==body+'/restored_collisions/contact_proxy'
+                        or link=='ee_left' and path.startswith(body+'/attachments/LeftWristCamera/')))
+                    if ((fitted_tool or left_hand) and kind=='box' and okind=='box' and native is not None
                             and native.clear_box_checked(other,centre,axes,half,margin)):
                         continue
-                    restored_arm_capsule=(self.arm=='right' and kind=='capsule'
-                        and link in tuple(f'link_right_arm_{i}' for i in range(7))
+                    restored_arm_capsule=(kind=='capsule'
+                        and link in tuple(f'link_{self.arm}_arm_{i}' for i in range(7))
                         and body.endswith('/'+link)
                         and path.startswith(body+'/restored_collisions/capsule_'))
                     if (restored_arm_capsule and okind=='box' and native is not None

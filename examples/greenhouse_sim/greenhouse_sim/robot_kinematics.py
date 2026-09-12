@@ -1177,6 +1177,11 @@ class Rby1Kinematics:
             np.degrees([joint.upper_rad for joint in joints]),
         )
 
+    def torso_limits_degrees(self) -> tuple[np.ndarray, np.ndarray]:
+        joints = [self._by_name[f"torso_{index}"] for index in range(6)]
+        return (np.degrees([joint.lower_rad for joint in joints]),
+                np.degrees([joint.upper_rad for joint in joints]))
+
     def all_link_transforms(self, joint_degrees: dict[str, float], *, prismatic_m=None) -> dict[str, np.ndarray]:
         """Exact base-relative link frames for a paused geometry/camera preview.
 

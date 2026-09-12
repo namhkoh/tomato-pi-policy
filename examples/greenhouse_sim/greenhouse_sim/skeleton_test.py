@@ -89,8 +89,13 @@ def test_curved_tube_follows_its_own_length() -> None:
 
 
 def test_arc_length_sampling_is_continuous() -> None:
-    centres = np.column_stack([np.zeros(60), np.zeros(60), np.linspace(0, 0.30, 60)])
-    fitted = skeleton.extract_skeleton(_component(*_tube(centres, radius=0.004)), np.zeros(3))
+    # Test interpolation on an exact axis, independently of surface fitting.
+    # Geodesic bins contain partial rings, so a fitted straight tube can have
+    # sub-mm lateral deviations; its endpoint chord is not its polyline.
+    fitted = skeleton.Skeleton(
+        points=np.column_stack([np.zeros(16), np.zeros(16), np.linspace(0, 0.30, 16)]),
+        radii=np.full(16, 0.004),
+    )
 
     # Interpolation, not snapping: a cut measured between nodes stays exact.
     fraction = 0.513
@@ -103,6 +108,18 @@ def test_arc_length_sampling_is_continuous() -> None:
     np.testing.assert_allclose(fitted.point_at(0.0), fitted.points[0], atol=1e-12)
     np.testing.assert_allclose(fitted.point_at(1e6), fitted.points[-1], atol=1e-12)
     assert fitted.radius_at(0.5 * fitted.length) == pytest.approx(0.004, abs=5e-4)
+
+
+def test_arc_length_sampling_follows_bends_not_endpoint_chord() -> None:
+    fitted = skeleton.Skeleton(
+        points=np.array([[0., 0., 0.], [0.03, 0., 0.], [0.03, 0.04, 0.]]),
+        radii=np.array([0.004, 0.003, 0.002]),
+    )
+    assert fitted.length == pytest.approx(0.07)
+    np.testing.assert_allclose(fitted.point_at(0.01), [0.01, 0., 0.], atol=1e-12)
+    np.testing.assert_allclose(fitted.point_at(0.03), [0.03, 0., 0.], atol=1e-12)
+    np.testing.assert_allclose(fitted.point_at(0.05), [0.03, 0.02, 0.], atol=1e-12)
+    assert fitted.radius_at(0.05) == pytest.approx(0.0025)
 
 
 def test_rejects_degenerate_organ() -> None:

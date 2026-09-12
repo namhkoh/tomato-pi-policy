@@ -13,6 +13,19 @@ BASE = robot_kinematics.base_transform((6.99114, 3.78, -0.3050817), -90.0)
 RIGHT_SAFE = (-101.724, -83.623, 34.196, -135.683, -57.431, 94.832, -74.920)
 
 
+def test_torso_limits_match_exact_urdf_and_are_independent_arrays():
+    import xml.etree.ElementTree as ET
+    from greenhouse_sim.robot_model import DEFAULT_URDF
+    model=robot_kinematics.Rby1Kinematics()
+    lower,upper=model.torso_limits_degrees()
+    source=ET.parse(DEFAULT_URDF).getroot()
+    expected=np.degrees([[float(source.find(f"joint[@name='torso_{i}']/limit").get(k))
+                         for i in range(6)] for k in ('lower','upper')])
+    np.testing.assert_array_equal([lower,upper],expected)
+    lower[:]=10000;upper[:]=-10000
+    np.testing.assert_array_equal(model.torso_limits_degrees(),expected)
+
+
 def test_forward_kinematics_matches_accepted_greenhouse_knife_root() -> None:
     model = robot_kinematics.Rby1Kinematics()
     ee = model.forward("right", RIGHT_SAFE, BASE)

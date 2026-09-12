@@ -42,6 +42,19 @@ def configure(stage,robot,half_extent=2.):
     if not root: raise ValueError('Expected supplied greenhouse wires')
     centre=robot.base[:2,3].copy()
     cache=UsdGeom.BBoxCache(Usd.TimeCode.Default(),['default','render','proxy','guide'],False,True)
+    # Verify the complete initial collision spheres before excluding anything.
+    # The same radii and 150 mm boundary margin are enforced after every step.
+    robot_radii=body_radii(stage,robot.body_paths,robot.collider_paths)
+    rig=robot.rig
+    plant_colliders=[str(p.GetPath()) for p in Usd.PrimRange(stage.GetPrimAtPath(rig.root))
+        if p.HasAPI(UsdPhysics.CollisionAPI) and UsdPhysics.CollisionAPI(p).GetCollisionEnabledAttr().Get()]
+    plant_radii=body_radii(stage,rig.body_paths,plant_colliders)
+    def positions(paths):
+        return [np.array(UsdGeom.Xformable(stage.GetPrimAtPath(path)).ComputeLocalToWorldTransform(
+            Usd.TimeCode.Default()).ExtractTranslation()) for path in paths]
+    if (not inside_window(positions(robot.body_paths),robot_radii,centre,half_extent)
+            or not inside_window(positions(rig.body_paths),plant_radii,centre,half_extent)):
+        raise ValueError('Initial complete robot/plant collision bounds exceed proposed window')
     retained=[];disabled=[];inactive_guides=[]
     with Usd.EditContext(stage,stage.GetSessionLayer()):
         for prim in Usd.PrimRange(root):
@@ -62,15 +75,13 @@ def configure(stage,robot,half_extent=2.):
                 else:
                     api.CreateCollisionEnabledAttr(False)
     robot.window=dict(centre=centre,half_extent=half_extent)
-    robot.window_robot_radii=body_radii(stage,robot.body_paths,robot.collider_paths)
-    rig=robot.rig
-    plant_colliders=[str(p.GetPath()) for p in Usd.PrimRange(stage.GetPrimAtPath(rig.root))
-        if p.HasAPI(UsdPhysics.CollisionAPI) and UsdPhysics.CollisionAPI(p).GetCollisionEnabledAttr().Get()]
-    robot.window_plant_radii=body_radii(stage,rig.body_paths,plant_colliders)
+    robot.window_robot_radii=robot_radii
+    robot.window_plant_radii=plant_radii
     return dict(centre_xy_m=centre.tolist(),half_extent_m=half_extent,boundary_margin_m=.15,
         retained_wire_colliders=len(retained),disabled_unreachable_wire_colliders=len(disabled),
         deactivated_unreachable_guide_proxies=len(inactive_guides),
         retained_paths=retained,disabled_paths=disabled,all_renderable_wire_visuals_retained=True,
         floor_gutters_building_and_target_collisions_unchanged=True,
+        initial_full_collision_bounds_checked_before_culling=True,
         guard='all_robot_and_dynamic_plant_collision_spheres_checked_each_step',
         scope='fixed_base_only_rebuild_before_any_base_relocation')

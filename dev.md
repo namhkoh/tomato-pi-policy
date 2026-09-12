@@ -5494,3 +5494,151 @@ No hardware, collection, tuning, review, split or training-export changes.
   caught two legacy coupon fixtures without cameras and three synthetic
   report fixtures without the new material-point fields; backward compatibility
   was restored, then the complete suite rerun. `git diff --check` passed.
+
+### 2026-09-12: Coordinated downward posture and closer-contact investigations
+
+- This increment is still experimental. No new downward grasp-cut-withdraw-
+  retain/deposit sequence has passed. All motion uses native joint drives;
+  no weld, body-pose override, forced release, force-cap relaxation or visual
+  simplification was used. The supplied plant, knife, cameras and surrounding
+  greenhouse remain. Dataset/review/split/training/hardware state is untouched.
+- Added source-enclosing, edge-aligned plate bounds (`tool_bounds.py`) for
+  downward planning only. All original plate vertices, full thickness and an
+  extra1 micrometre remain inside; this removes an empty bounding-box wedge,
+  not blade geometry. It is not a native-cooking certificate. The downward
+  transverse fan includes0,+/-10,+/-20,+/-25 degrees when within30 degrees of
+  gravity; upward fallback remains forbidden. Native68 still rejects all350
+  tested tool corridors before right motion (139 plate/main-stem,199 hand/tool,
+  and12 other rejections); native refinement clears78 coarse rejections from
+  297 queries. These are bounded-search results, not global unreachability.
+- Added explicit, exact-URDF-bounded initial right-arm and left-IK-seed inputs,
+  then `--torso-degrees` for six-joint coordinated posture proposals. The torso
+  option requires the package downward fixture and cannot coexist with a yaw
+  override. These set the diagnostic initial condition BEFORE physics; they
+  never teleport a running robot or certify a path. `torso_limits_degrees()`
+  reads the installed exact URDF, not remembered/model-family limits.
+- Native69 rejects open left fingers against right forearm (2.708 mm versus
+  required3 mm). Native70/71 fail full-scene spawn checks; no physical motion.
+  A37 mm request (72) fails the CLI's existing40 mm minimum before Kit; do not
+  describe it as a physical grasp test. Native73's exact40 mm original closure
+  reaches0.765296 N at2.895833 s, failing the unchanged0.5 N finger-contact cap.
+- `--force-closure` is an opt-in experimental drive-target controller, NOT a
+  new grasp detector or approved default. It requires adjacent guard-accepted
+  contact samples at240 Hz, slows near-contact closure to0.5 mm/s, targets
+  0.12 N compressive support with a0.03 N deadband, and backs away at5 mm/s
+  from excessive/unqualified contact. Non-gravity drive effort is at most
+  0.15 N inside the original gravity-reserved motor budget. No support is
+  invented from unsigned loads, and actual bilateral dwell/slip still gate
+  right motion. Failed/unsafe contact cannot reenter the controller. Feedback
+  adds5 s for closure qualification and requires >=28 s diagnostic duration.
+- Native74/75/76/77/78 still fail the contact cap: slower closure, changed
+  contact-solver ordering and smaller non-gravity drive effort did not fix the
+  close-to-root contact instability. Native75 measured an approximately0.5 mm
+  root-body displacement in one failing tick. A predictor that ignores unknown
+  contact/support reactions is still a limitation; no calibrated root cause or
+  physical material accuracy is claimed from this single measurement.
+- At0.9 s the selected shaft in75 had rotated2.112382 degrees from its rest
+  palm alignment; position-only replanning left that mismatch. Experimental
+  feedback mode now uses bounded (<10-degree) fresh segment-axis alignment and
+  orientation interpolation, with renewed whole-finger cut-plane clearance.
+  Native79/80 encounter unqualified inner-pad geometry;81 reaches0.652793 N.
+  This correction has NOT established a successful closer grasp.
+- `--anchored-pad-damping` explicitly compares damping based on finger mass
+  against the original free-two-body reduced-mass prior. K=1000 N/m, actual
+  masses, contact friction and guards stay unchanged. Damping8.075220 versus
+  1.080535 N.s/m in82 still fails at0.590560 N. Default OFF; neither prior is
+  lab calibrated. Do not promote this failed comparison as a realism fix.
+- Cached authored joint connectivity in `shaft_grasp_native.py` now invalidates
+  on joint enabled/endpoint/removal/resync notices. Cached sets are copied;
+  closed/missing notice bindings cannot reuse success. Native body frames,
+  contacts, forces and per-step evidence remain fresh and uncached.
+- Native83 repeats the exact60 mm, camera-aligned, right-parked geometric
+  closure HOLD control:4800 ticks/20 s, verified grasp, maximum slip0.19029247 mm,
+  final0.00089563 mm. Its bimanual result remains FAILED because it performs no
+  cut/withdrawal. Native84's explicitly smaller1.25 m collision half-window has
+  EXACTLY identical4800 trajectory rows; all143 surrounding plants plus the
+  detailed target remain rendered, all source hashes unchanged. Static contact
+  plants change76->50 and wire proxies14->8 only outside the guarded window.
+  Complete initial collision spheres plus150 mm margin must fit BEFORE any
+  exclusions, and the same boundary guard runs each tick. Default stays2 m.
+  This pair is NOT a speedup: median control8.41315->9.60910 ms, native step
+  6.28315->7.28655 ms, wall44.3892->49.9254 s. Regression work overlapped some84
+  execution; a quiet paired comparison is required before any latency claim.
+- Bounded CPU coordinated torso/arm searches found three self-screened endpoint
+  candidates with underhand left approach and right extension0.92..0.96. These
+  omitted full-greenhouse/native corridor qualification and are NOT presets.
+  Native85 fails open-finger/right-camera clearance2.871 mm (<3 mm). Raising
+  the waiting knife clears that self check, but86 fails23 full-scene possible
+  overlaps, including main stem and foliage. Native87 with a retracted right
+  waiting pose passes startup, then at0.9 s rejects an open-finger/main-stem
+  coarse bound during the left approach. No right motion or release occurred.
+- The left approach previously had no live native refinement of static coarse
+  bounds, although the right planner did. With `--native-static-clearance`,
+  left known palm/pad/camera boxes and restored arm capsules now use the same
+  enclosing-shape-plus-margin query contract. Exact static-actor positive
+  coverage, a single unchanged physics/USD epoch and final coverage validation
+  are required; exceptions/timeouts/cleanup faults reject acceptance. Dynamic
+  shaft/leaf geometry, unknown shapes and actual native hits stay rejected.
+  Queries close before returning; this is not contact/grasp evidence. Tests
+  cover whole-bound preservation, unknown-pad rejection, dynamic leaves,
+  geometry failure, initialization/check/validation/cleanup faults and state
+  restoration. Native88 is the matched execution test; results recorded below.
+- Intermediate complete regression:3123 passed in159.58 s in
+  `data/sim_physics/regression_20260912_feedback_v2.log` (before torso/native-left
+  additions). Targeted torso/kinematics87 tests and native-left/collision95 tests
+  pass. Native reports/logs for this increment are under
+  `data/sim_physics/bimanual_downward_20260912_68` through `_88`, except72
+  (CLI-rejection log only). Final validation is recorded separately below.
+
+### 2026-09-12: Closer underhand hold, source-hash memory fix and C-drive cleanup
+
+- Native88 passes full-scene spawn and the previously rejected left approach.
+  Twelve live static queries clear ten coarse main-stem bounds; final query
+  coverage/epoch validation passes. Exact54 mm underhand grasp verifies at3.5 s
+  after134 bilateral-contact steps, leaving28 mm whole-finger clearance from
+  the nominal10 mm cut (required10 mm). This uses geometric closure, NOT the
+  unsuccessful force-closure experiment. All350 downward tool corridors still
+  fail before right IK/motion:215 plate/main-stem,65 finger/right-camera,
+  19 finger/right-bracket and51 other rejections. No cut; source hashes match.
+  Evidence: `data/sim_physics/bimanual_downward_20260912_88/report.json`.
+- Native89 is the matching right-parked HOLD control. It finishes4800 ticks/20 s
+  with verified opposing contact, maximum slip0.00067964 mm and final slip
+  0.00018854 mm. Final whole-source hashing then raises MemoryError, so the run
+  is NOT fully qualified and must be repeated. Cut/withdrawal/retention gates
+  remain false. An independent post-shutdown check of24 context-source files
+  (188,349,947 bytes) matches but does not reconstruct the missing full final
+  inventory. Evidence: native89 `report.json`, `trajectory.json`, sibling log.
+- `file_integrity.sha256_file` now streams1 MiB blocks instead of allocating
+  entire source assets. Initial/final benchmark and context SHA-256 coverage
+  is unchanged. Tests cover empty/boundary/multiblock files, exact digests,
+  bounded read sizes and missing files.64 targeted integrity/benchmark tests
+  pass; a native repeat remains necessary.
+- Windows memory pressure is a separate unresolved host issue: after our
+  simulator exited, committed memory was338.97 GB of350.36 GB and kernel paged
+  pool254.35 GB (decimal), with7.6 GB available RAM. These are measurements,
+  not identification of the responsible driver or proof of a simulator leak.
+  No processes, review apps, drivers, pagefile settings or machine restart
+  were changed. Disk cleanup does not establish a memory/performance fix.
+- User-authorized C-drive cleanup: moved five old crash dumps (3,198,266,382
+  bytes) to `data/maintenance/c_drive_cleanup_20260912`, verified SHA-256 then
+  removed originals; they remain recoverable there. Deleted708,330,546 bytes
+  of completed stale VSCode installer archives/markers. Subsequently removed
+  82,354,219,414 bytes of six unused text-model caches: Meta-Llama-3-8B-Instruct,
+  Meta-Llama-3.1-8B-Instruct, internlm2-7b, Qwen3-8B, Qwen2.5-7B-Instruct and
+  Qwen2.5-1.5B-Instruct. Cache deletions have no local backup; upstream
+  redownload is needed. Exact roots, ages, internal links and exclusive file
+  access were checked before deleting leaves. No broad home/cache-root delete.
+  Preserved Qwen3-VL, other vision/robotics weights, credentials, active caches
+  and downloads. C reported257.01 GB free afterward; do not attribute the
+  entire change in free space to the86.26 GB of logical cleanup alone.
+- Expanded regression v2:3551 passed,2 skipped,1 failed in170.05 s. The failure
+  reproduces in isolation in the unchanged legacy skeleton implementation:
+  its interpolation test assumes an extracted centreline is perfectly straight
+  to1e-12, despite documented partial-ring fitting bias. The interpolation
+  fixture now uses an exact polyline; a separate bent-polyline test verifies
+  piecewise arc length instead of an endpoint chord. Existing mesh-fitting
+  accuracy tests and implementation are unchanged. Full rerun v3 passes3553
+  tests with2 skipped in179.52 s; evidence:
+  `data/sim_physics/regression_20260912_left_clearance_v3.log`.
+  `git diff --check` passes. This is CPU/USD validation, not native cutting
+  qualification; the8 mm-standoff native90 trial is still in progress.

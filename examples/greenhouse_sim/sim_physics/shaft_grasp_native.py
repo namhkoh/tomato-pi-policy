@@ -1,8 +1,8 @@
 """Read-only binding adapter for ShaftGraspEvidence; no policy or motion control.
 
 Construction snapshots exact authored capsules, Cube pads and joint identities.
-A passive USD notice invalidates the binding on geometry/coverage edits. Only
-cached joint enabled/body relationships are read per evaluate; there is no stage
+A passive USD notice invalidates the binding on geometry/coverage edits. Joint
+relationships/enabled states are reread when USD notices dirty their cache; no
 traversal, native subscription, SimulationApp, stepping or source authoring.
 
 Main owns the full-report stream and must call begin_step BEFORE each physics
@@ -329,6 +329,10 @@ class ShaftGraspNative:
         self._step = 0
         self._watched_bodies = (*self.body_paths, *self.finger_paths)
         self._joint_parents = {p.rsplit("/", 1)[0] for p, _, _ in self.joints}
+        self._joint_paths = {p for p, _, _ in self.joints}
+        self._joint_revision = 0
+        self._connected_revision = -1
+        self._connected_cache = ()
         self._notice = Tf.Notice.Register(Usd.Notice.ObjectsChanged, self._changed, stage)
 
     def _changed(self, notice, sender):
@@ -343,6 +347,10 @@ class ShaftGraspNative:
                 self.binding_error = "Shaft joint topology resynced; recreate adapter"
         for path in notice.GetChangedInfoOnlyPaths():
             p = str(path.GetPrimPath())
+            if p in self._joint_paths:
+                # This includes enabled, endpoints, activation, and any other
+                # joint metadata. No enabled state is inferred from a timer.
+                self._joint_revision += 1
             if p == "/" or any(b.startswith(p + "/") for b in self._watched_bodies):
                 self.binding_error = "Stage/ancestor binding changed; recreate adapter"
             elif any(p.startswith(b + "/") for b in self._watched_bodies):
@@ -558,6 +566,11 @@ class ShaftGraspNative:
         raise ValueError(self._diagnostic_error_json)
 
     def _connected(self):
+        self._healthy()
+        if self._notice is None:
+            raise ValueError('Joint cache requires a live USD notice binding')
+        if self._connected_revision == self._joint_revision:
+            return list(self._connected_cache)
         connected = []
         for path, joint, expected in self.joints:
             if not joint or not joint.GetPrim().IsActive():
@@ -570,6 +583,8 @@ class ShaftGraspNative:
                 raise ValueError("Unknown live jointEnabled state")
             if enabled:
                 connected.append(expected)
+        self._connected_cache = tuple(connected)
+        self._connected_revision = self._joint_revision
         return connected
 
     def _tensor_rows(self, i, dt):

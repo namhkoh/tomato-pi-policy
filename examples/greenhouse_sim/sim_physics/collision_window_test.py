@@ -27,3 +27,34 @@ def test_hidden_collider_radius_is_not_zero():
     box.CreatePurposeAttr('guide')
     np.testing.assert_allclose(body_radii(s,['/Body'],['/Body/Shape']),[np.sqrt(3)/2])
     np.testing.assert_allclose(body_radii(s,['/Body/Shape'],['/Body/Shape']),[np.sqrt(3)/2])
+
+
+def test_tighter_window_checks_full_initial_bounds_before_any_scene_edit():
+    from types import SimpleNamespace
+    from pxr import Usd,UsdGeom,UsdPhysics,Gf
+    from sim_physics.collision_window import configure
+    s=Usd.Stage.CreateInMemory()
+    def shape(path,x):
+        cube=UsdGeom.Cube.Define(s,path);cube.CreateSizeAttr(.2)
+        cube.AddTranslateOp().Set(Gf.Vec3d(x,0,0))
+        UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+        return cube
+    UsdGeom.Xform.Define(s,'/World/GutterWires')
+    wire=shape('/World/GutterWires/Far',3);wire.CreatePurposeAttr('guide')
+    visual=UsdGeom.Cube.Define(s,'/World/GutterWires/VisibleWire')
+    UsdGeom.Xform.Define(s,'/Robot')
+    shape('/Robot/Collision',1.4)
+    UsdGeom.Xform.Define(s,'/Plant')
+    shape('/Plant/Collision',0)
+    r=SimpleNamespace(base=np.eye(4),body_paths=['/Robot'],collider_paths=['/Robot/Collision'],
+        rig=SimpleNamespace(root='/Plant',body_paths=['/Plant']))
+    before=s.GetRootLayer().ExportToString();session=s.GetSessionLayer().ExportToString()
+    with pytest.raises(ValueError,match='Initial complete'):
+        configure(s,r,half_extent=1.)
+    assert s.GetRootLayer().ExportToString()==before
+    assert s.GetSessionLayer().ExportToString()==session
+    assert wire.GetPrim().IsActive()
+    report=configure(s,r,half_extent=2.)
+    assert report['initial_full_collision_bounds_checked_before_culling']
+    assert visual.GetPrim().IsActive() and not wire.GetPrim().IsActive()
+    assert s.GetRootLayer().ExportToString()==before
