@@ -94,7 +94,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         # Radius follows the exact existing stroke endpoint construction.
         blade_feed=BladeFeed(fixture.stroke_offsets,
             radius=float(fixture.stroke_offsets[-1])-fixture.knife.size[0]/2-.001,
-            dwell_feedback=getattr(args,'blade_dwell_feedback',False))
+            dwell_feedback=getattr(args,'blade_dwell_feedback',False),
+            compliant_rate=getattr(args,'compliant_blade_rate',False))
     strain_probe=None
     if getattr(args,'diagnostic_grasp_dynamics',False):
         from .rod_strain import RodStrain

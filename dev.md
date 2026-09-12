@@ -6532,3 +6532,38 @@ No hardware, collection, tuning, review, split or training-export changes.
   `regression_20260913_split_springs_v1.log`. These code tests do not override
   the native failure. The installed fixed-tendon schema excludes spherical
   joints, so that alternative is not being silently substituted either.
+
+### 2026-09-13: Contact-load estimate, process status and faster guarded feed
+
+- Added a small-coupon-only one-step normal+friction load estimate for the
+  implicit spring predictor. Original-order signed impulses map through the
+  native COM Jacobian; only intrinsic spring effort is submitted, never contact
+  forces or root wrench. Contiguous fixed-rate guard-accepted observations are
+  required. Native175 FREE passes720 steps and whole-run energy decay. Native176
+  HELD fails equilibrium (0.771570 mN.m residual) and velocity (0.062368 rad/s RMS).
+  It is NOT integrated into the robot or presented as a repair. Full regression
+  before subsequent changes: **3,731 passed in158.73 s**, `regression_20260913_lagged_load_v1.log`.
+- Fixed two diagnostic launchers returning zero through Kit fast shutdown even
+  when their JSON reported failure. `qualification_exit.py` requires the exact
+  pass state, affirmative assessment and no error/cleanup fault. Native177
+  repeats176: physics still fails, but now the launcher correctly exits nonzero
+  (python.bat wrapper1; requested Kit code2). Existing failed evidence is retained.
+- Added default-OFF `--compliant-blade-rate`, restricted to the existing isolated
+  1000 N/m seam-contact fixture. Loading/near speed capped at0.3 mm/s (1.25 um
+  per240 Hz tick), feedback gain0.00125 m/(N.s), original0.5 mm/s backoff and
+ 0.22..0.28 N hold band. All original raw force, direction, dwell, geometry,
+  slip, penetration and contact guards remain. This is a tested control-rate
+  comparison, NOT an analytical force-overshoot guarantee or a spring repair.
+- Native178 repeats163 with only this rate profile: contact-qualified seam event
+  at16.729167 s (163:34.620833 s), slip0.729458 mm at release. Still FAILS at
+ 16.954167 s (225 ms later), slip3.104875 mm and body speed2.221159 m/s while
+  bilateral contact persists. Elastic proxy at cut0.212265 J and maximum
+  torsional-shear estimate0.142492 remain nearly identical to163. Faster cutting
+  does not solve the underlying constitutive/contact response or retention.
+- Seed59/SubStem48 compact-branch offline proposals also reject on self/plant
+  clearance; no rejected pose is executed. Physics assets and surroundings are
+  not modified to hide obstruction. No collection/training or hardware control.
+- Evidence: `data/sim_physics/lagged_contact_20260913_native175`..`native177`,
+  `bimanual_downward_20260912_native178`, compact seed59 log. Full regression
+  **3,747 passed in139.54 s**, `regression_20260913_compliant_rate_v1.log`.
+  Reliable full grasp-cut-retain-withdraw/deposit remains NOT COMPLETE.

@@ -76,6 +76,8 @@ def parser():
         help='Isolated downward diagnostic: retime the screened stroke from fresh native cutting load')
     p.add_argument('--blade-dwell-feedback',action='store_true',
         help='Isolated compliant feed comparison: regulate the minimum of seven raw loads; release gates remain unsmoothed')
+    p.add_argument('--compliant-blade-rate',action='store_true',
+        help='Isolated 1000 N/m contact comparison: loading <=0.3 mm/s, no force/dwell/clearance changes')
     p.add_argument('--seam-contact-compliance',action='store_true',
         help='Isolated blade feedback experiment: uncalibrated 1000 N/m local stem contact compression')
     p.add_argument('--native-spring-cut-trial',action='store_true',
@@ -179,6 +181,9 @@ def main(argv=None):
     if args.native_capsule_sphere_cover and not (args.bimanual_cut and args.native_static_clearance):
         raise ValueError('Native capsule sphere cover requires bimanual native static clearance')
     contact_trial=args.isolated_cut_contact_trial
+    if args.compliant_blade_rate and not (contact_trial and args.blade_force_feed
+            and args.seam_contact_compliance and not args.native_torsion_trial and not args.native_spring_cut_trial):
+        raise ValueError('Compliant blade rate requires original implicit isolated compliant feed trial')
     if args.native_torsion_trial and not (contact_trial and args.spring_mode=='implicit_effort'
             and not args.native_spring_cut_trial and args.diagnostic_grasp_dynamics):
         raise ValueError('Native torsion comparison requires complete isolated implicit trial and dynamics telemetry')

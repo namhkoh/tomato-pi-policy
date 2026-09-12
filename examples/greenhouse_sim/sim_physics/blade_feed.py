@@ -9,7 +9,7 @@ import numpy as np
 
 
 class BladeFeed:
-    def __init__(self, offsets, *, radius, dwell_feedback=False):
+    def __init__(self, offsets, *, radius, dwell_feedback=False, compliant_rate=False):
         values=np.asarray(offsets,dtype=float)
         if (values.ndim!=1 or len(values)<2 or not np.isfinite(values).all()
                 or not np.all(np.diff(values)>0) or not -.025<=values[0]<0<values[-1]<=.02
@@ -27,6 +27,12 @@ class BladeFeed:
             raise ValueError('Explicit boolean dwell feedback required')
         self.dwell_feedback=dwell_feedback
         self.loads=deque(maxlen=7)
+        if type(compliant_rate) is not bool:
+            raise ValueError('Explicit isolated compliant-rate comparison required')
+        self.compliant_rate=compliant_rate
+        self.near_speed=.0003 if compliant_rate else .0001
+        self.loading_speed=.0003 if compliant_rate else .00005
+        self.load_gain=.00125 if compliant_rate else .0002
 
     def observe(self, knife, *, step, guards_passed, released):
         if (type(step) is not int or step!=self.observed_step+1 or guards_passed is not True
@@ -70,9 +76,9 @@ class BladeFeed:
             speed=0.;mode='hold_nonqualifying_load'
         elif self.upper>.01:
             target=.22 if self.dwell_feedback else .26
-            speed=min(.00005,max(0.,(target-control_load)*.0002));mode='load_feedback'
+            speed=min(self.loading_speed,max(0.,(target-control_load)*self.load_gain));mode='load_feedback'
         elif self.near:
-            speed=.0001;mode='near_contact'
+            speed=self.near_speed;mode='near_contact'
         else:
             speed=.002;mode='free_space'
         previous=self.offset
@@ -86,8 +92,12 @@ class BladeFeed:
             observation_step=self.observed_step,offset_m=self.offset,delta_m=self.offset-previous,
             signed_resistance_n=self.normal,all_contact_upper_bound_n=self.upper,
             desired_signed_load_n=.26,holding_load_band_n=[.22,.28],backoff_load_n=.32,
-            near_contact_speed_m_s=.0001,loading_speed_limit_m_s=.00005,
+            near_contact_speed_m_s=self.near_speed,loading_speed_limit_m_s=self.loading_speed,
             backoff_speed_m_s=.0005,cut_authorized=False,force_limit_guaranteed=False)
+        self.receipt.update(compliant_rate_comparison=self.compliant_rate,
+            loading_gain_m_per_n_s=self.load_gain,
+            maximum_loading_increment_m=self.loading_speed*dt,
+            loading_profile_qualified=False)
         self.receipt.update(dwell_feedback=self.dwell_feedback,control_load_n=control_load,
             control_load_statistic='minimum_last_seven_consecutive_contact_samples' if self.dwell_feedback else 'latest_sample',
             control_load_sample_count=len(self.loads) if self.dwell_feedback else 1,

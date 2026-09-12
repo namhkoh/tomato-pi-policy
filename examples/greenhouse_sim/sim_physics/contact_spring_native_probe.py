@@ -109,6 +109,8 @@ def main(argv=None):
     p.add_argument('--output',type=Path,required=True)
     p.add_argument('--source-report',type=Path,required=True)
     p.add_argument('--model',choices=MODELS,default='native')
+    p.add_argument('--lagged-contact-load',action='store_true',
+        help='Isolated implicit-effort comparison using last fetched native normal/friction loads in the predictor only')
     p.add_argument('--solver',choices=('PGS','TGS'),default='PGS')
     p.add_argument('--physics-hz',type=int,choices=(240,480,1920),default=240)
     p.add_argument('--iterations',choices=('16/4','32/0','128/32','128/0'),default='16/4')
@@ -126,6 +128,9 @@ def main(argv=None):
     p.add_argument('--solve-articulation-contact-last',action='store_true',
         help='Explicit pre-parse native solver-order diagnostic; no material or iteration changes')
     args=p.parse_args(argv)
+    if args.lagged_contact_load and not (args.model=='implicit_effort' and args.physics_hz==240
+            and args.solver=='PGS' and not args.zero_joint_friction):
+        raise ValueError('Lagged load comparison requires original implicit/PGS/240 Hz coupon')
     maximal=args.model in MAXIMAL_MODELS
     coupled=args.model=='coupled_contact_prediction'
     if coupled != (args.contact_law is not None):
@@ -144,10 +149,16 @@ def main(argv=None):
     coupon=from_report(args.source_report,rotation=((c,-s,0),(s,c,0),(0,0,1)),
         iterations=tuple(map(int,args.iterations.split('/'))),dt=1/args.physics_hz,solver=args.solver,
         held_contacts=not args.free_control)
+    if args.lagged_contact_load:
+        from .host_memory import preflight
+        memory = preflight()
+        if not memory['allowed']:
+            print(json.dumps(dict(state='blocked_host_memory',memory=memory)),flush=True)
+            return 2
     from isaacsim import SimulationApp
     app=SimulationApp({'headless':True,'multi_gpu':False,'sync_loads':False})
     result=dict(state='failed_small_contact_spring_coupon',configuration=coupon.report(),
-        comparison_model=args.model,training_eligible=False,error=None)
+        comparison_model=args.model,lagged_contact_load=args.lagged_contact_load,training_eligible=False,error=None)
     rows=[];monitor=None;errors=None;sim=None
     out.mkdir(parents=True)
     try:
@@ -241,6 +252,10 @@ def main(argv=None):
                 raise RuntimeError('Native joint friction readback mismatch')
         reference_frames=data['frames'].copy(); reference_step=0
         previous_contact_rows=[dict(r) for r in monitor.rows]
+        lagged=None
+        if args.lagged_contact_load:
+            from .lagged_contact_load import LaggedContactLoad
+            lagged=LaggedContactLoad(8)
         for step in range(1,int(args.seconds*args.physics_hz)+1):
             tick_started=time.perf_counter()
             if not app.is_running():raise RuntimeError('App closed before diagnostic completion')
@@ -255,6 +270,9 @@ def main(argv=None):
                     frames=frames,velocities=velocity,native_rows=previous_contact_rows,
                     reference_frames=reference_frames,step_id=step,reference_step_id=reference_step)
                 reference_frames=frames.copy(); reference_step=step
+            elif lagged is not None:
+                estimated_load,lagged_receipt=lagged.command(step=step,dt=coupon.dt)
+                commanded_effort=predictor.step(coupon.dt,external_joint_force=estimated_load,root_constrained=False)
             elif predictor is not None:
                 commanded_effort=predictor.step(coupon.dt,root_constrained=False)
             prediction_seconds=time.perf_counter()-prediction_started
@@ -288,6 +306,15 @@ def main(argv=None):
                     or max(row['per_body_contact_upper_bound_n'])>1.
                     or np.max(np.linalg.norm(np.array(row['body_velocities_world'])[:,:3],axis=1))>1.):
                 raise RuntimeError('Coupon small-angle/speed/contact qualification guard')
+            if lagged is not None:
+                state=read_prediction_state(view,velocity,qdot)
+                # This coupon independently verifies native COM offsets are zero.
+                lagged.observe(monitor.rows,step=step,dt=coupon.dt,guards_passed=True,
+                    full_normal_friction_stream=monitor.native_full_contact_reporting,
+                    collider_bodies={p+'/Collider':i for i,p in enumerate(data['body_paths'])},
+                    body_com_world=frames[:,:3,3],com_jacobians=state['body_world_com_jacobians'])
+                row['lagged_load_control']=lagged_receipt
+                row['lagged_generalized_load_estimate']=estimated_load.tolist()
             if step%args.physics_hz==0:
                 print('CONTACT_SPRING_SECOND '+json.dumps(dict(step=step,q=row['q_rad'],
                     contact_moments=row['contact_joint_moments_nm'],elastic=row['spring_kq_nm'])),flush=True)
@@ -323,8 +350,10 @@ def main(argv=None):
         (out/'trace.json').write_text(json.dumps(rows,allow_nan=False),encoding='utf-8')
         (out/'report.json').write_text(json.dumps(result,indent=2,allow_nan=False),encoding='utf-8')
         print('CONTACT_SPRING_RESULT '+json.dumps(result),flush=True)
-        app.close()
-    return 0 if result['state'].startswith('passed_') else 2
+        from .qualification_exit import exit_code
+        code=exit_code(result,passed_state='passed_small_contact_spring_coupon_not_plant')
+        app.close(exit_code=code)
+    return code
 
 
 if __name__=='__main__':raise SystemExit(main())

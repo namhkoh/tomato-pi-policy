@@ -139,8 +139,10 @@ def main(argv=None):
         (out/'report.json').write_text(json.dumps(result, indent=2, allow_nan=False), encoding='utf-8')
         print(json.dumps(dict(state=result['state'], sample_count=len(rows), error=result.get('error'),
                               assessment=result.get('assessment'))), flush=True)
-        app.close()
-    return 0 if result['state'].startswith('passed_') else 2
+        from .qualification_exit import exit_code
+        code = exit_code(result, passed_state='passed_unit_conditioning_coupon_NOT_plant')
+        app.close(exit_code=code)
+    return code
 
 
 if __name__ == '__main__':
