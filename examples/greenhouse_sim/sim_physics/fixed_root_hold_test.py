@@ -39,6 +39,12 @@ def test_fixed_hold_does_not_bypass_complete_contact_fixture():
         main(arguments())
 
 
+def test_native_hold_requires_both_explicit_comparison_and_native_mode():
+    args=parser().parse_args(arguments()+['--native-spring-cut-trial','--spring-mode','native'])
+    assert validate_fixed_root_hold(args) is True
+    assert args.attached_only and args.bimanual_hold_control
+
+
 def test_unqualified_fixed_cut_still_rejected(tmp_path):
     out=tmp_path/'must_not_create'
     with pytest.raises(ValueError,match='attached-only'):

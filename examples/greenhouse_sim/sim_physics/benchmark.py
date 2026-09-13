@@ -128,11 +128,17 @@ def parser():
     p.add_argument('--isolated-cut-contact-trial',action='store_true',
         help='Explicit isolated flat-cylinder/effort-control cut DIAGNOSTIC; native126 hold is not tissue or greenhouse certification')
     p.add_argument('--fixed-root-contact-hold',action='store_true',
-        help='Isolated fixed-root implicit grasp HOLD comparison; no blade approach, release or production qualification')
+        help='Isolated fixed-root grasp HOLD comparison; original implicit or explicit native-spring comparison, no release')
     p.add_argument('--fixed-root-cut-trial',action='store_true',
         help='Isolated fixed-root cut diagnostic with no-step checked detach; not production or tissue qualification')
     p.add_argument('--diagnostic-free-root-dynamics',action='store_true',
         help='Read-only post-release native mass/Jacobian/velocity consistency; fixed-root cut diagnostic only')
+    p.add_argument('--native-drives-after-cut',action='store_true',
+        help='Fixed-root cut diagnostic: restore original native K/C after checked release, never tune material gains')
+    p.add_argument('--rigid-pad-control',action='store_true',
+        help='Explicit isolated CONTACT-LAW comparison only; cannot qualify the compliant-pad production model')
+    p.add_argument('--require-retention-screen',action='store_true',
+        help='Isolated fixed-root trial: require current contact-patch static gravity capacity before knife planning; not a dynamic certificate')
     p.add_argument('--branch-contact-fixture',action='store_true',
         help='CONTACT ONLY: keep original main stem and selected complete petiole/leaves; excludes other source branches in session; NOT intact-plant/greenhouse qualification')
     p.add_argument('--anchored-pad-damping',action='store_true',
@@ -189,10 +195,10 @@ def validate_fixed_root_hold(args):
     enabled=args.fixed_root_contact_hold
     if enabled and not (args.isolated_cut_contact_trial and args.bimanual_hold_control
             and args.attached_only and args.constraint_mode=='fixed_articulation'
-            and args.spring_mode=='implicit_effort' and args.diagnostic_grasp_dynamics
+            and args.spring_mode==('native' if args.native_spring_cut_trial else 'implicit_effort') and args.diagnostic_grasp_dynamics
             and args.bimanual_reposition_m==0 and not args.native_torsion_trial
-            and not args.native_spring_cut_trial and not args.measured_withdrawal):
-        raise ValueError('Fixed root contact HOLD requires attached-only original implicit instrumented no-reposition isolated HOLD')
+            and not args.measured_withdrawal):
+        raise ValueError('Fixed root contact HOLD requires attached-only explicitly selected original springs, instrumented no-reposition isolated HOLD')
     return enabled
 
 
@@ -200,6 +206,12 @@ def main(argv=None):
     args=parser().parse_args(argv)
     fixed_hold=validate_fixed_root_hold(args)
     fixed_cut=args.fixed_root_cut_trial
+    if args.require_retention_screen and not (fixed_cut and args.diagnostic_grasp_dynamics and args.finger_friction==.5):
+        raise ValueError('Retention preflight requires the original isolated fixed-root contact/dynamics trial')
+    if args.rigid_pad_control and not (fixed_cut and args.compliant_fingers and args.branch_contact_fixture):
+        raise ValueError('Rigid pad control requires complete isolated fixed-root branch comparison')
+    if args.native_drives_after_cut and not fixed_cut:
+        raise ValueError('Post-cut native drives require checked fixed-root cut diagnostic')
     if args.diagnostic_free_root_dynamics and not fixed_cut:
         raise ValueError('Free root dynamics requires isolated fixed-root cut diagnostic')
     if fixed_cut and not (args.isolated_cut_contact_trial and not args.bimanual_hold_control
@@ -570,6 +582,9 @@ def main(argv=None):
                 robot_options['diagnostic_grasp_contacts']=getattr(args,'diagnostic_grasp_contacts',False)
                 robot_options['grasp_contact_frames']=args.grasp_contact_frames
             fixture=robot_class(stage,rig,arc=args.grasp_arc_m,friction=args.finger_friction,**robot_options)
+            if args.rigid_pad_control:
+                from .pad_contact_control import apply as apply_pad_control
+                report['pad_contact_control']=apply_pad_control(fixture,diagnostic_only=True)
             source_hashes[fixture.asset]=sha256_file(fixture.asset)
             report['robot_probe']=fixture.report()
             if args.local_wire_physics:

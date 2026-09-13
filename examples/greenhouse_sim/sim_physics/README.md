@@ -897,3 +897,29 @@ not establish correct held-branch mechanics. The nominal energy proxy reaches
 ~2.50 J and a spherical rotation-vector wraps near pi. Contact-coupled spring
 qualification is required before reporting reliable cutting/retention. Detailed
 evidence and the distinct command-timestamp correction are logged in `dev.md`.
+
+### Fixed-root diagnostic and retention prerequisite (2026-09-13)
+
+The complete isolated `--fixed-root-cut-trial` now supports an evidence-gated,
+no-step fixed-to-free transition. It preserves native plant/robot state and
+commands and refreshes plant tensor metadata without a global reset. Original
+material/geometry and all contact, direction, force, slip and collision gates
+remain. Repeated blade-qualified releases are recorded; **retention still
+fails**, so this is not a reliable grasp/cut/deposit demo or training source.
+
+Add `--require-retention-screen` to that existing complete diagnostic command
+to require a current native contact-patch gravity-capacity check BEFORE knife
+planning. It waits one measured tick after establishing the grasp reference,
+rejects stale/unbound data, and uses only compressive detachable-shaft contact.
+The recorded current grasp fails this prerequisite in native209, with no knife
+motion or seam release. A pass would establish only approximate static gravity
+capacity, not cutter-load tolerance, actuator feasibility or dynamic retention.
+This is source/native-state privileged diagnostics, not VLM execution from
+hidden cut coordinates. No default or GUI launch preset is changed.
+
+`--native-drives-after-cut` and `--rigid-pad-control` are isolated comparisons,
+not recommended fixes. The former restores original K/C and removes explicit
+spring effort after checked release. The latter changes the pad contact law,
+not geometry/friction/caps, and cannot qualify compliant-pad physics. Both
+comparisons still fail retention. See `dev.md` for individual failures and
+regression results; never report software test passes as physical success.

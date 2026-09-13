@@ -8,6 +8,46 @@ does not authorize release or establish cutting/retention qualification.
 import numpy as np
 
 
+def restore_after_release(springs):
+    """Opt-in diagnostic handoff, no topology edit or motion/state override.
+
+    Restore the cached original physical K/C, not tuned gains. The external
+    implicit effort is explicitly removed to avoid double spring actuation.
+    This changes the numerical integrator; it is not yet native qualification.
+    Any failure after a setter requires the caller to stop without stepping.
+    """
+    from .implicit_springs import ImplicitJointSprings
+    from .root_transition import snapshot, _FIELDS
+    if type(springs) is not ImplicitJointSprings or springs.fixed_base:
+        raise ValueError('Original implicit springs with checked free-root release required')
+    a=springs.articulation;before=snapshot(a);n=len(before['names'])
+    k=np.array(springs.k,dtype=float,copy=True);c=np.array(springs.c,dtype=float,copy=True)
+    if (before['fixed_base'] or k.shape!=(n,) or c.shape!=(n,)
+            or not np.isfinite(np.r_[k,c]).all() or np.any(k<=0) or np.any(c<0)
+            or any(np.any(before[name]) for name in ('stiffness','damping','targets','velocity_targets'))
+            or np.any(np.asarray(a.get_drive_types())!=1)):
+        raise ValueError('Exact original physical spring cache, zero native gains/rest targets and force drives required')
+    index=np.array([0],dtype=np.uint32)
+    a.set_dof_actuation_forces(np.zeros((1,n),np.float32),index)
+    a.set_dof_stiffnesses(k[None].astype(np.float32),index)
+    a.set_dof_dampings(c[None].astype(np.float32),index)
+    after=snapshot(a)
+    if (before['names']!=after['names'] or before['links']!=after['links'] or after['fixed_base']
+            or any(not np.array_equal(before[key],after[key])
+                for key in _FIELDS if key not in ('stiffness','damping','efforts'))
+            or not np.array_equal(after['stiffness'][0],k)
+            or not np.array_equal(after['damping'][0],c) or np.any(after['efforts'])):
+        raise RuntimeError('Native drive handoff changed state/material or failed exact K/C/effort readback')
+    result=NativeSpringObserver(a,allow_release=True)
+    result.handoff_receipt=dict(model='original_native_springs_after_checked_release_v1',
+        original_k_c_restored=True,explicit_spring_effort_removed=True,
+        mass_inertia_poses_velocities_targets_unchanged=True,
+        numerical_integrator_changed=True,native_contact_unchanged=True,
+        state_setters_used=False,physics_steps_during_handoff=0,
+        native_drive_effort_measured=False,physical_model_qualified=False,training_eligible=False)
+    return result
+
+
 class NativeSpringObserver:
     def __init__(self,articulation,*,allow_release=False):
         if type(allow_release) is not bool:raise ValueError('Explicit native release comparison flag required')

@@ -6733,3 +6733,68 @@ No hardware, collection, tuning, review, split or training-export changes.
   datasets/splits/reviews, training and hardware are unchanged. No reboot or
   host-memory preflight bypass. These diagnostic cuts remain simulated joint
   release, not calibrated tissue fracture or training-approved demonstrations.
+
+### 2026-09-13: Post-cut comparisons and native retention preflight
+
+- Native200's original implicit three-body held coupon at1920 Hz completes
+  but fails static moment balance (2.23937 mN.m); velocity RMS4.50814 mrad/s
+  alone is insufficient. Increasing rate is not an established physics fix.
+- Explicit original-native-drive fixed-root HOLD201 fails at0.295833s before
+  grasp on unwanted leaf/palm load0.586531 N.202's longer80mm approach is
+  rejected by the existing3mm self-clearance screen before physics. Neither
+  comparison changes the production spring or contact model.
+- Added isolated `--native-drives-after-cut`: only after a successful checked
+  fixed-root release, remove external implicit spring effort and restore the
+  cached original native K/C. Exact native state, mass/inertia and rest/velocity
+  targets must remain unchanged. No double spring actuation, new gains or
+  state setters. Native drive work is explicitly unmeasured, not zero.
+- Contact-free source-branch203 completes60 free steps with original native
+  K/C. Extended207 stops at free step123 on the5m/s diagnostic speed bound
+  (5.03500m/s, max angle0.06893rad): this is consistent with ordinary gravity
+  free fall, NOT evidence of a new spring explosion. The original60-step203
+  sampled total kinetic+gravity+quadratic-elastic proxy declines by0.6916mJ;
+  no contact/retention qualification follows from that control.
+- Full-robot204 again cuts at16.770833s, then FAILS retention after162.5ms:
+  slip3.127006mm and elastic proxy1.10832J.205's128/8 iteration comparison
+  also loses the grasp.206 adds an explicit rigid-pad CONTACT-LAW control
+  (original geometry/friction/caps, pad compliance disabled only in the owned
+  session): cut16.741667s, failure141.667ms later, slip3.196983mm and elastic
+  proxy1.15472J. This does not fix retention and cannot qualify the original
+  compliant-pad model. All options remain diagnostic/default-OFF.
+- Read-only current-patch gravity audit195/206 finds inadequate static moment
+  capacity for the8.613447g detached branch under the existing0.5N per-finger
+  normal-plus-friction budgets.195 utilization is5.518 for loaded points and
+  1.960 even including zero-load points optimistically. These are fixed-patch,
+  inscribed-eight-sided-friction-cone calculations, NOT proof that every grasp
+  or changing contact patch is infeasible. They do not explain all numerical
+  energy growth or authorize higher forces.
+- Implemented `retention_preflight.py` and default-OFF
+  `--require-retention-screen`, scoped to the original isolated fixed-root
+  diagnostic. Before knife planning, bind current post-fetch frames, timestep,
+  exact body/finger identities, native masses/COMs and guard-accepted bilateral
+  contact. Only compressive contact on the detachable shaft contributes;
+  zero/tensile, support, leaf and unrelated contacts never support approval.
+  Static gravity capacity is a prerequisite, NOT dynamic retention, cutter
+  load, actuator feasibility or calibrated-tissue certification.
+- Native208 exposed an integration timing issue: the just-established grasp
+  reference had no subsequent measured slip yet. It stopped without knife
+  motion. The new protocol now waits one actual physics tick (no fake zero
+  slip).209 correctly rejects at6.8375s, step1641, utilization5.52834, seven
+  compressive rows; zero blade contacts, no knife plan, no cut. This is a
+  successful negative-control rejection, NOT a completed bimanual sequence.
+- Offline near-junction pad-span searches retain all original geometry and
+  blade clearance checks. Releasing an unnecessary fixed-world right-ready
+  pose constraint yields more self-clear candidates, but tested65/75mm pitched
+  candidates still meet leaf/wrist or cut-corridor obstruction. Rejected paths
+  are not executed. Grasp/layout selection and spring/contact consistency both
+  remain open; no qualified retain/withdraw/deposit result is claimed.
+- Evidence: `data/sim_physics/implicit_contact_20260913_native200/`,
+  `bimanual_downward_20260912_native201/202/204/205/206/208/209` (individual
+  directories), `root_transition_20260913_native203.json` and`native207.json`,
+  `current_retention_audit_20260913.py`, and`retention_free_ready_search_20260913*.log`.
+  Focused138 tests pass. Broad regression: **4,939 passed,2 skipped,47 subtests
+  passed in187.36s**, `regression_20260913_retention_preflight_v1.log`
+  (`sim_physics`, `sim_data`, `greenhouse_sim`). Tests are not native physical
+  qualification. Dataset/splits/reviews/training, hardware, source assets and
+  production greenhouse fidelity are unchanged. No reboot or memory-check bypass.
+  Final explicit240Hz/step-clock preflight guard:139 focused tests pass in1.32s.

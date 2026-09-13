@@ -172,11 +172,20 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         nonlocal goal_set,grasp_local,planned,cut_fraction,grasp_verified,last_right_command
         nonlocal reposition_vector
         nonlocal spring_snapshot,prediction_before
+        nonlocal springs
         nonlocal free_root_snapshot,free_root_reader
         nonlocal spring_control_record
         nonlocal contact_springs_started
         nonlocal times,grasp_time,delay,plan_time,approach_start,stroke_start,stroke_end,acquisition_wait_logged
         t=stamp.simulation_time_s
+        if (rig.cut and getattr(args,'native_drives_after_cut',False)
+                and not hasattr(springs,'handoff_receipt')):
+            if fixture.cut_event is None or fixture.root_transition.receipt is None:
+                raise RuntimeError('Native spring handoff requires successful evidence-gated topology transition')
+            from .native_spring_observer import restore_after_release
+            springs=restore_after_release(springs)
+            events.append(dict(t=t,event='native_spring_handoff_after_cut',
+                step=int(stamp.step),receipt=dict(springs.handoff_receipt)))
         if t>=.9 and not goal_set:
             fixture.refresh_grasp_goal(runtime.frames)
             fixture.plan_approach()
@@ -223,6 +232,10 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 times=schedule_after_grasp(t,reposition);delay=times['delay']
                 plan_time=times['plan'];approach_start=times['approach']
                 stroke_start=times['stroke'];stroke_end=times['end']
+                if getattr(args,'require_retention_screen',False):
+                    # grasp_local is established below. Fetch one real step
+                    # before assessing its slip; never substitute a fake zero.
+                    plan_time+=1/args.physics_hz
                 events.append(dict(t=t,event='left_grasp_verified',grasp_body=fixture.grasp_path,
                     consecutive_bilateral_steps=stable))
                 palm=pose_matrices(fixture.palm.get_transforms())[0]
@@ -230,6 +243,17 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         if grasp_verified and not planned and not hold_control and t>=plan_time:
             if stable<int(.1*args.physics_hz):
                 raise RuntimeError('Held target not stable after reposition; no right-arm execution')
+            if getattr(args,'require_retention_screen',False):
+                from .retention_preflight import assess as assess_retention
+                if not records:raise RuntimeError('No current retention observation')
+                capacity=assess_retention(records[-1],step=int(stamp.step),time_s=t,
+                    body_paths=rig.body_paths,cut_index=int(rig.cut_index),
+                    masses=np.asarray(runtime.bodies.get_masses())[runtime.order],
+                    local_coms=np.asarray(runtime.bodies.get_coms())[runtime.order,:3],
+                    current_frames=runtime.frames,friction=fixture.friction)
+                events.append(dict(t=t,event='precut_static_retention_screen',result=capacity))
+                if not capacity['prerequisite_passed']:
+                    raise RuntimeError('Static retention capacity not established; knife planning/execution refused')
             events.append(dict(t=t,event='native_grasp_reobserved_before_cut_plan',
                 requested_reposition_m=reposition,grasp_body=fixture.grasp_path,
                 grasp_world_m=fixture.grasp_point(runtime.frames).tolist(),
@@ -306,6 +330,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 raise
             free_root_snapshot['kinetic_consistency']=kinetic_check(free_root_snapshot,
                 runtime.articulation.get_masses(),runtime.articulation.get_inertias())
+        spring_snapshot=None  # Native drive steps do not yield measured/explicit work.
         spring_control_record=None
         spring_phase=experimental_spring_phase(contact_springs is not None,grasp_verified,contact_springs_started)
         if spring_phase=='contact':
