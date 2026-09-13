@@ -1328,3 +1328,15 @@ blade-frame tilt. A winning proposal carries that family into fresh execution
 as candidate ordering, never inherited path/contact authority. Native350 uses
 the corrected15-degree family but still fails neighboring-foliage clearance.
 Native351/352 fail self-clearance before motion. Full-greenhouse A remains open.
+
+`--background-evidence-compression` is an explicit OFF-by-default comparison
+for full-rate streamed diagnostics. Finite JSON and all native checks remain
+on the control thread; only immutable bytes go to a bounded gzip worker.
+FIFO/backpressure and joined close preserve every sample; errors cannot count
+as a complete archive. Native355 passes all9 direct-cut gates and retains all
+40800 physical records, but is NOT faster overall (RTF0.152631 vs3490.155116).
+Keep the default synchronous path until a matched net improvement is measured.
+Do not sum overlapping worker elapsed time with main-thread elapsed time.
+
+Native354 fails approach IK;356's subsequent self-screened proposal intersects
+the gutter with torso1. Neither is a working greenhouse bimanual demonstration.

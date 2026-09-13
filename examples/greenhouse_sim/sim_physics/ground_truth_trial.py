@@ -97,6 +97,7 @@ def main(argv=None):
     p.add_argument('--through-stroke-trial',action='store_true',
         help='Experimental measured follow-through and withdrawal; 85 s, no solid-face bypass')
     p.add_argument('--stream-trajectory',action='store_true',help='Lossless full-rate compressed diagnostic evidence')
+    p.add_argument('--background-evidence-compression',action='store_true',help='Explicit bounded gzip worker comparison; all per-step guards and finite JSON checks remain')
     p.add_argument('--solver-convergence-trial',type=int,choices=(64,),default=None,help='Numerical convergence comparison, not a qualified faster default')
     p.add_argument('--joint-transit-fallback',action='store_true',help='Screened whole-arm joint search for approach only')
     p.add_argument('--postrelease-feed-m-s',type=float,default=.0003,help='Explicit post-release contact feed comparison')
@@ -183,6 +184,7 @@ def main(argv=None):
     if args.postrelease_feed_m_s!=.0003:options+=['--postrelease-feed-m-s',str(args.postrelease_feed_m_s)]
     if args.rectilinear_floor_contacts:options+=['--rectilinear-floor-contacts']
     if args.stream_trajectory or args.through_stroke_trial:options+=['--stream-trajectory']
+    if args.background_evidence_compression:options+=['--background-evidence-compression']
     if args.greenhouse_trial:
         options=[v for v in options if v not in ('--isolate-station','--branch-contact-fixture')]
         options+=['--greenhouse-cut-trial','--local-wire-physics','--context-gutters','3',

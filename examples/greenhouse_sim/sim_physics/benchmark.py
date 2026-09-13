@@ -288,6 +288,7 @@ def parser():
     p.add_argument('--profile',action='store_true',help='Save diagnostic Python/native call timing alongside the non-training report')
     p.add_argument('--step-profile',action='store_true',help='Time the installed physics-only step phases without bypassing physics manager events')
     p.add_argument('--stream-trajectory',action='store_true',help='Lossless gzip JSONL full samples; bounded diagnostic memory, all per-step guards retained')
+    p.add_argument('--background-evidence-compression',action='store_true',help='Experimental bounded gzip worker; finite JSON and all native guards stay synchronous')
     p.add_argument('--no-physics-profiler',action='store_true',help='Disable optional native profiling instrumentation in this process only')
     p.add_argument('--local-wire-physics',action='store_true',help='Guarded fixed-base 4 m collision window; all wire visuals retained')
     p.add_argument('--physics-window-half-m',type=float,default=2.,
@@ -360,6 +361,8 @@ def main(argv=None):
         raise ValueError('Post-cut egress requires the guarded material-clearance and native station profile')
     if args.rectilinear_floor_contacts and not (args.scene=='package' and args.full_robot_probe and args.bimanual_cut):
         raise ValueError('Exact floor contacts require the package full-robot cut diagnostic')
+    if args.background_evidence_compression and not args.stream_trajectory:
+        raise ValueError('Background evidence compression requires full-rate trajectory streaming')
     if args.stream_trajectory and not args.bimanual_cut:
         raise ValueError('Streaming evidence currently requires the bimanual/direct-cut probe')
     if args.through_stroke_trial and not (args.seam_contact_yield and args.cut_action_trial

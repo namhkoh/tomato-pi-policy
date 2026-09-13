@@ -120,7 +120,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     records=[];events=[];captures={};capture_receipts={};fault=None;stable=0;lost=0
     if getattr(args,'stream_trajectory',False):
         from .probe_records import ProbeRecords
-        records=ProbeRecords(output/'bimanual_trajectory.jsonl.gz')
+        records=ProbeRecords(output/'bimanual_trajectory.jsonl.gz',
+            background_compression=getattr(args,'background_evidence_compression',False))
     grasp_local=None;goal_set=False;planned=False;grasp_verified=False;cut_time=None;cut_fraction=0.
     last_right_command=('park',0.)
     through_requested=bool(getattr(args,'through_stroke_trial',False))

@@ -8352,3 +8352,45 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   with torso5; the zero-motion search ends without a proposal and with final
   native controls intact. Further kinematic proposals remain unqualified.
   No A/C completion, calibrated tissue cutting or VLM restart is claimed.
+
+### 2026-09-14 continuation: bounded evidence-compression comparison
+
+- Added explicit `--background-evidence-compression` comparison, OFF by
+  default. Main-thread finite JSON validation/encoding and every native guard
+  remain synchronous. Only immutable serialized bytes enter a two-packet
+  queue; one worker compresses/writes in order. Backpressure blocks, never
+  drops samples. Worker/disk errors remain sticky; close joins and flushes
+  before publication. The latest archive report distinguishes closed resources
+  from `archive_complete`, including final-record/trailer failures.
+- Native355 is a complete full-greenhouse RIGHT-ONLY repeat using that option:
+  all nine gates pass, cut18.71875s,3439 native edge contacts, reverse complete
+  45.177083s, passive debris2.973177N. All40800 records were compressed and the
+  worker joined without error. This native run precedes the report-only
+  archive_complete field addition, which is covered by later tests.
+- Read-back comparison against349: all40800 selected physical/guard records
+  and full plant_dynamics match; robot-joint maximum difference0. Whole JSON
+  records match40799/40800. The sole remaining difference is the final
+  withdrawal receipt's Kit timeline epoch (28.533333 vs28.566667s), not measured
+  robot/plant motion. Evidence: background_native355_comparison.log and
+  background_native355_metadata_difference.log under data/sim_physics.
+- Main-thread recording cost59.821s ->47.183s, but full tick wall547.978s ->
+  556.899s and RTF0.155116 ->0.152631. NO net speed improvement is established;
+  regression/candidate checks also ran concurrently for part of355. The
+  option remains experimental and is NOT a faster default. Worker498.590s
+  elapsed compression time overlaps control work and must not be added to
+  main-thread timing as exclusive CPU time.
+- Encoder comparison on six actual349 records, five repeats of180 encodes:
+  finite-checked orjson median68.292ms versus stdlib83.866ms, equal decoded
+  records. Retain the existing strict finite encoder. This is helper timing,
+  not simulator performance or native-sensor synchronization evidence.
+- Full v20 regression:4778 pass in221.90s. Latest focused76 tests pass under
+  both Conda and installed Isaac interpreters, including bounded queue/FIFO,
+  mutable final-fault tick, NaN rejection, worker failure and trailer failure.
+- Native354 fails the left approach IK before motion. Full-rest-path offline
+  filtering then finds additional source19/SubStem_43 candidates; these are
+  only robot self/IK proposals. Native356 rejects its tested side station:
+  torso1 versus original Gutter_31. Zero-motion final native controls pass;
+  no station proposal and no bimanual motion. Testing stations outside the
+  gutter with source-limit torso articulation; no plant/gutter relocation.
+- A and C remain open, B retains its native passes. VLM/data/training remain
+  paused. This commit is experimental infrastructure/evidence, not a freeze.
