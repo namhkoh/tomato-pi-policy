@@ -8,7 +8,7 @@ does not authorize release or establish cutting/retention qualification.
 import numpy as np
 
 
-def restore_after_release(springs):
+def restore_after_release(springs,*,physics_hz=240):
     """Opt-in diagnostic handoff, no topology edit or motion/state override.
 
     Restore the cached original physical K/C, not tuned gains. The external
@@ -16,6 +16,8 @@ def restore_after_release(springs):
     This changes the numerical integrator; it is not yet native qualification.
     Any failure after a setter requires the caller to stop without stepping.
     """
+    from .diagnostic_rate import frequency
+    hz=frequency(physics_hz)
     from .implicit_springs import ImplicitJointSprings
     from .root_transition import snapshot, _FIELDS
     if type(springs) is not ImplicitJointSprings or springs.fixed_base:
@@ -38,7 +40,7 @@ def restore_after_release(springs):
             or not np.array_equal(after['stiffness'][0],k)
             or not np.array_equal(after['damping'][0],c) or np.any(after['efforts'])):
         raise RuntimeError('Native drive handoff changed state/material or failed exact K/C/effort readback')
-    result=NativeSpringObserver(a,allow_release=True)
+    result=NativeSpringObserver(a,allow_release=True,physics_hz=hz)
     result.handoff_receipt=dict(model='original_native_springs_after_checked_release_v1',
         original_k_c_restored=True,explicit_spring_effort_removed=True,
         mass_inertia_poses_velocities_targets_unchanged=True,
@@ -49,7 +51,9 @@ def restore_after_release(springs):
 
 
 class NativeSpringObserver:
-    def __init__(self,articulation,*,allow_release=False):
+    def __init__(self,articulation,*,allow_release=False,physics_hz=240):
+        from .diagnostic_rate import frequency
+        self.physics_hz=frequency(physics_hz)
         if type(allow_release) is not bool:raise ValueError('Explicit native release comparison flag required')
         self.allow_release=allow_release
         if articulation.count!=1:raise ValueError('Exactly one native plant articulation required')
@@ -62,10 +66,10 @@ class NativeSpringObserver:
                 or not np.isfinite(np.r_[self.k,self.c]).all()
                 or np.any(self.k<=0) or np.any(self.c<0)):
             raise ValueError('Finite positive native stiffness and nonnegative damping required')
-        self.step(1/240,root_constrained=True)
+        self.step(1/self.physics_hz,root_constrained=True)
 
     def step(self,dt,*,root_constrained):
-        if (isinstance(dt,(bool,np.bool_)) or not np.isfinite(dt) or abs(dt-1/240)>1e-12
+        if (isinstance(dt,(bool,np.bool_)) or not np.isfinite(dt) or abs(dt-1/self.physics_hz)>1e-12
                 or type(root_constrained) is not bool or not root_constrained and not self.allow_release):
             raise ValueError('Native drive comparison requires 240 Hz and explicit release diagnostic')
         a=self.articulation;n=len(self.names)

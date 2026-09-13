@@ -124,7 +124,7 @@ def _screens(fixture, frames):
     return right, left
 
 
-def check(fixture, frames, step_id):
+def check(fixture, frames, step_id, *, native_station_park=False):
     """Return current endpoint/clearance diagnostics; errors never complete.
 
     An integer step_id is scoped to this synchronous call; alternatively pass
@@ -133,9 +133,19 @@ def check(fixture, frames, step_id):
     No plan, planning_slides, controller snapshot or existing query is changed.
     """
     sample, sample_basis = _sample(step_id)
+    if type(native_station_park) is not bool:
+        raise ValueError('Explicit joint-space native-station park selection required')
     actual = _wrist(fixture)
-    park = _pose(fixture.kin.forward('right', np.array(fixture.right, copy=True),
-                                    np.array(fixture.base, copy=True)))
+    station=None
+    if native_station_park:
+        from .station_park import StationPark
+        world=_robot_world(fixture)
+        if not np.allclose(actual,world['ee_right'],atol=1e-7,rtol=0):
+            raise RuntimeError('Native wrist/body views disagree before park reference')
+        station=StationPark(fixture,world);park=station.pose
+    else:
+        park = _pose(fixture.kin.forward('right', np.array(fixture.right, copy=True),
+                                        np.array(fixture.base, copy=True)))
     result = withdrawal_evidence(actual, park, clearance_verified=False,
         measured_sample_id=sample, clearance_sample_id=sample)
     result.update(checker='native_current_endpoint_bounds_v1', sample_id_basis=sample_basis,
@@ -145,6 +155,9 @@ def check(fixture, frames, step_id):
         plant_pose_source='caller_supplied_complete_post_fetch_sample',
         clearance_attempted=False, self_screen=None, right_scene=None, left_scene=None,
         native_static=None, errors=[], whole_scene_native_collision_certified=False)
+    if station is not None:
+        result['park_pose_source']='unchanged_right_joint_reference_FK_in_current_native_station'
+        result['native_station_park']=station.report()
     if not result['endpoint_attained']:
         result['reason'] = 'park_endpoint_not_attained'
         return result
@@ -157,11 +170,19 @@ def check(fixture, frames, step_id):
         right, left = _screens(fixture, frames)
         result['native_static'].update(initialization_status='in_progress',
                                        query_count=None, query_count_known=False)
-        native = current_scene_query(fixture.stage, right.static)
+        # Use the same explicitly selected conservative capsule query as the
+        # approach planner. The whole capsule AND margin remain covered; a
+        # coarse enclosing-box hit alone does not establish capsule contact.
+        sphere_cover = getattr(fixture, 'native_capsule_sphere_cover', False)
+        if type(sphere_cover) is not bool:
+            raise ValueError('Explicit native capsule sphere-cover selection required')
+        query_options = {'capsule_sphere_cover': True} if sphere_cover else {}
+        native = current_scene_query(fixture.stage, right.static, **query_options)
         result['native_static']['initialization_status'] = 'ready'
         right.native_static_query = native
         left.native_static_query = native  # Existing left screen has no native refinement allowance.
         world = _robot_world(fixture)
+        if station is not None:station.verify(world)
         # Independent native views must describe the same wrist. Never screen
         # a body set different from the one that attained the endpoint.
         if not np.allclose(actual, world['ee_right'], atol=1e-7, rtol=0):
@@ -184,9 +205,10 @@ def check(fixture, frames, step_id):
             right_clear = right.check(world, stroke=False)  # unchanged default 1 mm
             result['right_scene'] = dict(passed=right_clear, stroke_allowance=False,
                 margin_m=.001, failure=deepcopy(right.last_failure))
-            left_clear = left.check(world, grasp=True, stroke=False)
+            holding=getattr(fixture,'cut_strategy','bimanual')=='bimanual'
+            left_clear = left.check(world, grasp=holding, stroke=False)
             result['left_scene'] = dict(passed=left_clear, margin_m=.001,
-                expected_grasp_colliders=sorted(left.grasp_colliders),
+                expected_grasp_colliders=sorted(left.grasp_colliders) if holding else [],
                 failure=deepcopy(left.last_failure))
             geometry_clear = bool(self_clear and right_clear is True and left_clear is True)
             result['reason'] = 'endpoint_bounds_clear' if geometry_clear else 'endpoint_bounds_rejected'
@@ -209,6 +231,11 @@ def check(fixture, frames, step_id):
                 result['errors'].append('report: ' + type(exc).__name__ + ': ' + str(exc))
         elif result['native_static']['initialization_status'] == 'in_progress':
             result['native_static']['initialization_status'] = 'failed'
+        if station is not None:
+            try:station.verify(_robot_world(fixture))
+            except Exception as exc:
+                geometry_clear=False
+                result['errors'].append('station_snapshot: '+type(exc).__name__+': '+str(exc))
     report = result['native_static']
     epoch = report.get('epoch') or {}
     validated = (report.get('final_validation_passed') is True and report.get('closed') is True

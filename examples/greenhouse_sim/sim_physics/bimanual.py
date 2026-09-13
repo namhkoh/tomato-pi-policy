@@ -18,7 +18,12 @@ class BimanualRobot(FullRobotGripper):
     effort_bounded_grasp_target=False
     preload_force_servo=False
     staged_downward_transit=False
+    diagnostic_physics_hz=240
     def __init__(self,*args,**kwargs):
+        from .cut_strategy import mode
+        self.cut_strategy=mode(kwargs.pop('cut_strategy','bimanual'))
+        from .diagnostic_rate import frequency
+        self.diagnostic_physics_hz=frequency(kwargs.pop('diagnostic_physics_hz',240))
         self.cut_model=kwargs.pop('cut_model',LEGACY_CUT_MODEL)
         self.cut_style=kwargs.pop('cut_style','legacy')
         self.staged_downward_transit=kwargs.pop('staged_downward_transit',False)
@@ -105,7 +110,8 @@ class BimanualRobot(FullRobotGripper):
             from .force_closure import ForceClosure
             self.force_closer=ForceClosure(self.radius,self.grasp_compression,retention_preload=self.retention_preload,
                 symmetric=self.symmetric_finger_closure,pregrasp_half_aperture=self.pregrasp_half_aperture,
-                effort_bounded_target=self.effort_bounded_grasp_target,preload_force_servo=self.preload_force_servo)
+                effort_bounded_target=self.effort_bounded_grasp_target,preload_force_servo=self.preload_force_servo,
+                physics_hz=self.diagnostic_physics_hz)
         if fixed is not None:
             low,high=self.kin.arm_limits_degrees('right')
             if not low[fixed[0]]<fixed[1]<high[fixed[0]]:
@@ -127,7 +133,7 @@ class BimanualRobot(FullRobotGripper):
         radius=max(float(self.stage.GetPrimAtPath(self.rig.body_paths[i]+'/StemCollider').GetAttribute('radius').Get())
             for i in (self.rig.cut_index-1,self.rig.cut_index))
         self.stroke_offsets=transverse_stroke_offsets(radius,self.knife.size[0],standoff)
-        self.cut_gate=ShearGate(self.rig.source_target,cut_parameters)
+        self.cut_gate=ShearGate(self.rig.source_target,cut_parameters,strategy=self.cut_strategy)
         self.cut_authorized=False;self.edge_points=[];self.edge_impulses=[]
         self.edge_normals=[];self.edge_contact_rows=[];self.edge_contact_error=None
         self.cut_contacts=0;self.cut_event=None;self.plan=None
@@ -308,7 +314,8 @@ class BimanualRobot(FullRobotGripper):
             from .force_closure import ForceClosure
             self.force_closer=ForceClosure(self.radius,self.grasp_compression,retention_preload=self.retention_preload,
                 symmetric=self.symmetric_finger_closure,pregrasp_half_aperture=self.pregrasp_half_aperture,
-                effort_bounded_target=self.effort_bounded_grasp_target,preload_force_servo=self.preload_force_servo)
+                effort_bounded_target=self.effort_bounded_grasp_target,preload_force_servo=self.preload_force_servo,
+                physics_hz=self.diagnostic_physics_hz)
         self.right_indices=[self.names.index(f'right_arm_{i}') for i in range(7)]
         if getattr(self,'explicit_finger_effort',False):
             from .finger_effort import FingerEffort
@@ -323,6 +330,7 @@ class BimanualRobot(FullRobotGripper):
             if getattr(self,'diagnostic_grasp_contacts',False) else
             dict(allow_signed_native_normals=True,sensor_contract=NATIVE37_SENSOR_CONTRACT))
         if self.physical_grasp_span:evidence_options['physical_grasp_span']=True
+        if self.diagnostic_physics_hz!=240:evidence_options['physics_hz']=self.diagnostic_physics_hz
         self.grasp_observer=ShaftGraspNative(self.stage,self.rig,
             selected_index=self.body_index,finger_paths=self.paths[1:],
             contact_views=self.contact_views,**evidence_options)
@@ -855,7 +863,7 @@ class BimanualRobot(FullRobotGripper):
         self.targets[0,self.right_indices]=np.radians(q)
         self.robot.set_dof_position_targets(self.targets,self.index)
 
-    def inspect_cut(self,dt,frames,held,slip):
+    def inspect_cut(self,dt,frames,held,slip,*,cut_only_ready=False):
         from .runtime import pose_matrices
         if self.edge_contact_error is not None: raise RuntimeError(self.edge_contact_error)
         if not self.event_monitor.native_full_contact_reporting:
@@ -874,11 +882,14 @@ class BimanualRobot(FullRobotGripper):
             points=self.edge_points,impulses=self.edge_impulses,normals=self.edge_normals,
             impulse_contract=KNIFE_IMPULSE_CONTRACT,edge_contact_verified=True,
             tool_contact_upper_bound_n=loads['allowed_tool_contact_n'],
-            held=held and self.cut_authorized,slip=slip)
+            held=held and self.cut_authorized,slip=slip,
+            cut_only_ready=cut_only_ready and self.cut_authorized)
         if decision:
             transition=getattr(self,'root_transition',None)
-            self.cut_event=(self.rig.release_from_blade(decision) if transition is None else
-                self.rig.release_from_blade(decision,transition=transition))
+            options={}
+            if transition is not None:options['transition']=transition
+            if getattr(self,'cut_strategy','bimanual')=='right_only':options['strategy']='right_only'
+            self.cut_event=self.rig.release_from_blade(decision,**options)
         return dict(edge_frame=edge.tolist(),right_tracking_error_m=error,
             edge_contact_count=len(self.edge_points),edge_force_n=math.fsum(math.hypot(*v) for v in self.edge_impulses)/dt,
             edge_signed_resistance_n=self.cut_gate.signed_resistance_n,
@@ -894,7 +905,8 @@ class BimanualRobot(FullRobotGripper):
     def restore_authored_state(self):
         self.release_grasp_observer()
         super().restore_authored_state()
-        self.cut_gate=ShearGate(self.rig.source_target,ShearParameters(model=getattr(self,'cut_model',LEGACY_CUT_MODEL)))
+        self.cut_gate=ShearGate(self.rig.source_target,ShearParameters(model=getattr(self,'cut_model',LEGACY_CUT_MODEL)),
+            strategy=getattr(self,'cut_strategy','bimanual'))
         self.cut_authorized=False
         self.edge_points=[];self.edge_impulses=[];self.edge_normals=[];self.edge_contact_rows=[];self.edge_contact_error=None
         self.cut_event=None;self.plan=None;self.plan_diagnostics=None;self.cut_contacts=0

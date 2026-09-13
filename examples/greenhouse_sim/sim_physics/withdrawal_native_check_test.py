@@ -85,7 +85,8 @@ def setup(monkeypatch, *, failure=None):
     frames[:, 2, 3] = 1 + np.arange(15)/100
     def factory(stage, records, **kwargs):
         state.factory_calls += 1
-        assert stage is fixture.stage and kwargs == {}  # retain existing 8-second default
+        expected = {'capsule_sphere_cover': True} if getattr(fixture, 'native_capsule_sphere_cover', False) is True else {}
+        assert stage is fixture.stage and kwargs == expected  # unchanged 8-second default
         assert records is not fixture.held_plant_screen.static
         if state.failure == 'factory': raise RuntimeError('factory coverage unavailable')
         def guard():
@@ -235,3 +236,26 @@ def test_no_prior_success_latch_or_reuse_of_closed_query(monkeypatch):
     wrist[0, 0] = .01
     second = check(f, frames, 4801)
     assert not second['right_withdrawal_completed'] and s.factory_calls == 1
+
+
+@pytest.mark.parametrize('failure', [None, 'right', 'self', 'epoch', 'final_coverage', 'close'])
+def test_explicit_capsule_backend_propagates_without_skipping_gates(monkeypatch, failure):
+    f, frames, s, _, _ = setup(monkeypatch, failure=failure)
+    f.native_capsule_sphere_cover = True
+    r = check(f, frames, 4800)
+    assert r['right_withdrawal_completed'] is (failure is None)
+    assert s.factory_calls == s.closes == 1
+    assert r['native_static']['wall_limit_s'] == 8.
+    if r['right_scene'] is not None:
+        assert r['right_scene']['margin_m'] == .001
+    else:
+        assert failure == 'epoch' and r['errors']
+
+
+@pytest.mark.parametrize('value', [1, 'true', None])
+def test_invalid_capsule_backend_cannot_authorize_query(monkeypatch, value):
+    f, frames, s, _, _ = setup(monkeypatch)
+    f.native_capsule_sphere_cover = value
+    r = check(f, frames, 4800)
+    assert not r['right_withdrawal_completed'] and r['errors']
+    assert s.factory_calls == 0

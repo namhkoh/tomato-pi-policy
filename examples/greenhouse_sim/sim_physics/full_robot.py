@@ -504,6 +504,22 @@ class FullRobotGripper(GripperFixture):
         q=np.array([np.interp(fraction,self.fractions,self.path_q[:,i]) for i in range(7)])
         expected=self.kin.forward('left',q,self.base)
         if np.linalg.norm(expected[:3,3]-position)>.0005: raise RuntimeError('IK interpolation exceeds 0.5 mm')
+        self._command_left_drives(q,expected)
+
+    def hold_left_park(self):
+        """Keep the startup-checked left joint configuration, not an IK re-solve.
+
+        Source limits and normal native drives/gravity compensation remain.
+        This sends targets only; it never resets measured joints or body poses.
+        """
+        q=np.array(self.initial_q,dtype=float,copy=True)
+        low,high=self.kin.arm_limits_degrees('left')
+        if q.shape!=(7,) or not np.isfinite(q).all() or np.any(q<=low) or np.any(q>=high):
+            raise RuntimeError('Source-limited initial left park joints required')
+        if self.event_monitor is not None:self.event_monitor.begin_step()
+        self._command_left_drives(q,self.kin.forward('left',q,self.base))
+
+    def _command_left_drives(self,q,expected):
         self.targets[0,self.left_indices]=np.radians(q)
         self.expected_palm=expected
         self.robot.set_dof_position_targets(self.targets,self.index)

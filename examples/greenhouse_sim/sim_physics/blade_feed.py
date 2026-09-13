@@ -9,7 +9,9 @@ import numpy as np
 
 
 class BladeFeed:
-    def __init__(self, offsets, *, radius, dwell_feedback=False, compliant_rate=False, friction_budget=False):
+    def __init__(self, offsets, *, radius, dwell_feedback=False, compliant_rate=False, friction_budget=False, physics_hz=240):
+        from .diagnostic_rate import frequency
+        self.physics_hz=frequency(physics_hz)
         values=np.asarray(offsets,dtype=float)
         if (values.ndim!=1 or len(values)<2 or not np.isfinite(values).all()
                 or not np.all(np.diff(values)>0) or not -.025<=values[0]<0<values[-1]<=.02
@@ -26,7 +28,7 @@ class BladeFeed:
         if type(dwell_feedback) is not bool:
             raise ValueError('Explicit boolean dwell feedback required')
         self.dwell_feedback=dwell_feedback
-        self.loads=deque(maxlen=7)
+        self.loads=deque(maxlen=1+int(.025*self.physics_hz))
         if type(compliant_rate) is not bool:
             raise ValueError('Explicit isolated compliant-rate comparison required')
         self.compliant_rate=compliant_rate
@@ -69,8 +71,8 @@ class BladeFeed:
                 or self.commanded_step is not None and step!=self.commanded_step+1
                 or self.released):
             raise RuntimeError('Fresh preceding intact-seam native sample required for blade feed')
-        if isinstance(dt,(bool,np.bool_)) or not math.isfinite(dt) or abs(dt-1/240)>1e-12:
-            raise ValueError('Qualified 240 Hz blade feed required')
+        if isinstance(dt,(bool,np.bool_)) or not math.isfinite(dt) or abs(dt-1/self.physics_hz)>1e-12:
+            raise ValueError('Matching diagnostic blade feed step required')
         if self.started_step is None:self.started_step=step
         if (step-self.started_step)*dt>=30:
             raise RuntimeError('Blade load acquisition timed out; no timed release')
@@ -108,7 +110,9 @@ class BladeFeed:
             maximum_loading_increment_m=self.loading_speed*dt,
             loading_profile_qualified=False)
         self.receipt.update(dwell_feedback=self.dwell_feedback,control_load_n=control_load,
-            control_load_statistic='minimum_last_seven_consecutive_contact_samples' if self.dwell_feedback else 'latest_sample',
+            control_load_statistic=('minimum_last_seven_consecutive_contact_samples' if self.physics_hz==240
+                else 'minimum_consecutive_samples_spanning_25ms') if self.dwell_feedback else 'latest_sample',
+            control_window_capacity_samples=self.loads.maxlen,physics_hz=self.physics_hz,
             control_load_sample_count=len(self.loads) if self.dwell_feedback else 1,
             minimum_contact_load_target_n=.22 if self.dwell_feedback else None,
             release_evidence_filtered=False)

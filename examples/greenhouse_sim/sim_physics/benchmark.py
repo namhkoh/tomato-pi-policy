@@ -31,6 +31,10 @@ def parser():
     p.add_argument('--plant',default='seed101_full')
     p.add_argument('--target',default='SubStem_41')
     p.add_argument('--physics-hz',type=int,choices=(120,240,480,1920),default=240)
+    p.add_argument('--cut-convergence-trial',action='store_true',
+        help='Default-OFF isolated native-release comparison at480 Hz; same SI material/force limits and controller dwell durations, not production qualification')
+    p.add_argument('--native-station-park-reference',action='store_true',
+        help='Isolated endpoint check: evaluate unchanged right park joint angles in the actual measured station, not an absolute configured-world pose')
     p.add_argument('--solver',choices=('TGS','PGS'),default='TGS')
     p.add_argument('--uniform-solver-iterations',type=int,nargs=2,
         help='Isolated HOLD convergence comparison on every robot/plant body and articulation; default unchanged')
@@ -64,6 +68,8 @@ def parser():
     p.add_argument('--diagnostic-detach',action='store_true')
     p.add_argument('--full-robot-probe',action='store_true',help='Full dynamic v1.2 robot with an IK-driven left arm')
     p.add_argument('--bimanual-cut',action='store_true',help='Guarded native left grasp and original right knife seam-release qualification')
+    p.add_argument('--right-only-cut-trial',action='store_true',
+        help='Separate isolated unheld cut diagnostic: left stays parked/open, no retention or deposit credit')
     p.add_argument('--knife-alignment',choices=('legacy','camera'),default='legacy',
         help='Camera aligns the arc to the actual wrist camera radial side; original source asset untouched')
     p.add_argument('--cut-style',choices=('legacy','downward'),default='legacy',
@@ -218,8 +224,21 @@ def main(argv=None):
     args=parser().parse_args(argv)
     fixed_hold=validate_fixed_root_hold(args)
     fixed_cut=args.fixed_root_cut_trial
+    from .cut_only import validate_profile
+    cut_only=validate_profile(args)
+    if args.cut_convergence_trial and not (fixed_cut and args.physics_hz==480
+            and args.native_drives_after_cut and args.require_retention_screen
+            and args.physical_grasp_span and args.settle_retention_preload
+            and args.effort_bounded_grasp_target and args.preload_force_servo
+            and args.native_startup_clearance and args.native_static_clearance
+            and not args.gui and not args.robot_interactive and not args.measured_withdrawal):
+        raise ValueError('480 Hz convergence requires complete headless fixed-root native-release retention trial')
+    robot_rate_allowed=args.physics_hz==240 or args.cut_convergence_trial or cut_only
+    if args.native_station_park_reference and not (fixed_cut and (args.require_retention_screen or cut_only)
+            and args.native_static_clearance and not args.measured_withdrawal):
+        raise ValueError('Native-station park requires isolated joint-reference cut/retention trial')
     if args.staged_downward_transit and not (args.cut_style=='downward' and args.isolate_station
-            and args.fixed_root_cut_trial and args.require_retention_screen and args.native_static_clearance):
+            and args.fixed_root_cut_trial and (args.require_retention_screen or cut_only) and args.native_static_clearance):
         raise ValueError('Staged approach requires complete isolated downward native-retention fixture')
     if args.preload_force_servo and not args.effort_bounded_grasp_target:
         raise ValueError('Preload force servo requires the complete effort-bounded retention trial')
@@ -232,7 +251,7 @@ def main(argv=None):
     if args.physical_grasp_span and not (fixed_cut and args.require_retention_screen):
         raise ValueError('Physical grasp span requires the checked isolated fixed-root retention trial')
     if (not math.isfinite(args.pregrasp_half_aperture_m) or not 0<args.pregrasp_half_aperture_m<=.025
-            or args.pregrasp_half_aperture_m!=.025 and not (fixed_cut and args.require_retention_screen
+            or args.pregrasp_half_aperture_m!=.025 and not (fixed_cut and (args.require_retention_screen or cut_only)
                 and args.force_closure and args.explicit_finger_effort and args.finger_target_antiwindup)):
         raise ValueError('Pre-grasp opening requires the complete fixed-root feedback trial with retention preflight')
     if args.require_retention_screen and not (fixed_cut and args.diagnostic_grasp_dynamics
@@ -288,7 +307,7 @@ def main(argv=None):
         raise ValueError('Branch-only selection requires the isolated cut contact diagnostic')
     if contact_trial and not (args.scene=='package' and args.isolate_station and args.full_robot_probe
             and args.bimanual_cut and (not args.bimanual_hold_control or fixed_hold) and not args.robot_interactive
-            and args.explicit_finger_effort and args.force_closure and args.physics_hz==240
+            and args.explicit_finger_effort and args.force_closure and robot_rate_allowed
             and args.solver=='PGS' and args.spring_mode==('native' if args.native_spring_cut_trial else 'implicit_effort')
             and args.constraint_mode==('fixed_articulation' if fixed_hold or fixed_cut else 'articulation')
             and args.stem_contact_model=='flat_cylinders_v1' and args.grasp_contact_frames=='pre_solve_pgs_v1'
@@ -296,7 +315,7 @@ def main(argv=None):
             and not args.diagnostic_contact_prediction and not args.experimental_contact_springs):
         raise ValueError('Isolated cut contact trial requires the complete explicit flat/PGS/spring/128-0-or-8 fixture')
     if args.explicit_finger_effort and not (args.isolate_station and (args.bimanual_hold_control or contact_trial)
-            and args.bimanual_cut and args.force_closure and args.physics_hz==240
+            and args.bimanual_cut and args.force_closure and robot_rate_allowed
             and not args.robot_interactive and not args.experimental_contact_springs):
         raise ValueError('Explicit finger effort requires isolated 240 Hz feedback HOLD ONLY')
     if args.uniform_solver_iterations is not None and not (args.isolate_station and not args.robot_interactive
@@ -376,7 +395,7 @@ def main(argv=None):
     if getattr(args,'diagnostic_grasp_dynamics',False) and not args.bimanual_cut:
         raise ValueError('Grasp dynamics telemetry requires guarded bimanual qualification')
     if args.grasp_contact_frames=='pre_solve_pgs_v1' and not (
-            args.bimanual_cut and args.full_robot_probe and args.solver=='PGS' and args.physics_hz==240
+            args.bimanual_cut and args.full_robot_probe and args.solver=='PGS' and robot_rate_allowed
             and not args.diagnostic_grasp_contacts):
         raise ValueError('Pre-step grasp frames require synchronous 240 Hz PGS bimanual qualification')
     if getattr(args,'experimental_contact_springs',False) and not (
@@ -428,7 +447,7 @@ def main(argv=None):
     if args.full_robot_probe and (args.gripper_probe or args.interactive or (args.scene=='package' and not args.sparse_contacts)
             or (args.constraint_mode!='articulation' and not (fixed_cut or (native_hold or fixed_hold) and args.constraint_mode=='fixed_articulation' and args.attached_only))
             or (args.spring_mode!='implicit_effort' and not native_hold and not args.native_spring_cut_trial)
-            or args.solver!='PGS' or args.physics_hz!=240 or args.gravity!=9.81 or args.seconds<7
+            or args.solver!='PGS' or not robot_rate_allowed or args.gravity!=9.81 or args.seconds<7
             or args.diagnostic_detach or not -30<=args.approach_tilt<=30
             or not 0<=args.finger_friction<=1 or not .04<=args.grasp_arc_m<=.25):
         raise ValueError('Full robot probe requires implicit articulation, PGS 240 Hz, gravity, >=7 s, bounded grasp/friction, no diagnostic detach and sparse contacts for package scenes')
@@ -598,6 +617,8 @@ def main(argv=None):
                 robot_options['cut_style']=args.cut_style
                 robot_options['grasp_compression']=args.grasp_compression_m
                 robot_options['force_closure']=args.force_closure
+                if args.cut_convergence_trial or cut_only:robot_options['diagnostic_physics_hz']=args.physics_hz
+                if cut_only:robot_options['cut_strategy']='right_only'
                 robot_options['pregrasp_half_aperture']=args.pregrasp_half_aperture_m
                 robot_options['physical_grasp_span']=args.physical_grasp_span
                 robot_options['effort_bounded_grasp_target']=args.effort_bounded_grasp_target

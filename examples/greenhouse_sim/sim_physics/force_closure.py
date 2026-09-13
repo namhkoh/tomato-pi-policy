@@ -10,7 +10,9 @@ class ForceClosure:
     # Drive effort excludes independently measured gravity feed-forward. The
     # original total-motor and 0.5 N all-contact budgets remain upper bounds.
     drive_limit_n = .15
-    def __init__(self, radius, compression, *, retention_preload=False, symmetric=False, pregrasp_half_aperture=.025, effort_bounded_target=False, preload_force_servo=False):
+    def __init__(self, radius, compression, *, retention_preload=False, symmetric=False, pregrasp_half_aperture=.025, effort_bounded_target=False, preload_force_servo=False, physics_hz=240):
+        from .diagnostic_rate import frequency
+        self.physics_hz=frequency(physics_hz)
         if type(preload_force_servo) is not bool or preload_force_servo and not (retention_preload and symmetric and effort_bounded_target):
             raise ValueError('Preload force servo requires original symmetric effort-bounded retention profile')
         self.preload_force_servo=preload_force_servo
@@ -58,8 +60,8 @@ class ForceClosure:
                 or self.commanded_step is not None and step != self.commanded_step+1):
             raise RuntimeError('Fresh preceding post-fetch contact required for closure')
         if (isinstance(fraction, (bool, np.bool_)) or not np.isfinite([fraction, dt]).all()
-                or not self.fraction <= fraction <= 1 or abs(dt-1/240) > 1e-12):
-            raise ValueError('Monotone closure and qualified 240 Hz step required')
+                or not self.fraction <= fraction <= 1 or abs(dt-1/self.physics_hz) > 1e-12):
+            raise ValueError('Monotone closure and matching diagnostic step required')
         scheduled = self.opening-fraction*(self.opening-self.minimum)
         current=float(np.mean(self.gaps))
         if self.symmetric and abs(self.gaps[0]-self.gaps[1])>1e-9:

@@ -4,6 +4,31 @@ This is an opt-in engineering harness on `koh-dev/sim-vlm`, not a replacement
 for the static dataset collector, and not yet a validated robot manipulation
 environment. Do not collect training demonstrations from this harness.
 
+## September 13 checkpoint (supersedes older outcome statements below)
+
+The isolated480 Hz fixture now repeats grasp, signed-edge-load joint release
+and31.5 seconds of retention after release. It still FAILS final withdrawal
+clearance: the detached branch settles against the pre-cut waiting blade pose.
+This is not a qualified complete robot task or calibrated tissue cutting.
+
+An explicit cut-only diagnostic keeps the left arm parked/open, never invents
+grasp evidence, and does not claim retention/deposit. Its first unheld cuts
+release the branch, then correctly stop on falling-material/robot contact.
+Automatic strategy switching and safe falling-material clearance are not yet
+qualified. Anatomical left/right branch direction is only a planning hint.
+
+Reproduce these engineering tests (NOT a successful demo preset), from this
+directory's parent, using Isaac's Python and a NEW output directory:
+
+```bat
+D:\isaac-sim-6.0.1\python.bat -B -m sim_physics.ground_truth_trial --mode bimanual --output D:\research\tomato-pi-policy\data\sim_physics\my_new_trial
+```
+
+Use `--mode right_only` for the distinct unheld test. Both are headless, retain
+original source assets/guards, and do not take over a running UI or start any
+training. See `ground_truth_trial.json` for exact options and root `dev.md`
+for native247..252, test logs, remaining blockers and the requested freeze gate.
+
 ## September 12: camera-aligned knife and precise closer grasp
 
 The tested inspection launcher is **grasp-only**, not a repaired cutting demo:

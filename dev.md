@@ -7170,3 +7170,98 @@ No hardware, collection, tuning, review, split or training-export changes.
   (`data/sim_physics/regression_20260913_release_trace_v1.log`). Offline roomier
   body-pose proposals preserve both wrist goals and original plant geometry;
   these still require native zero-step and full execution checks.
+
+### 2026-09-13 - Native retained cut, endpoint audit, and explicit cut-only mode
+
+- Scope remains isolated source seed101_full/SubStem_41 with original main
+  stem, complete selected petiole/leaves, full RB-Y1 A v1.2 and original
+  camera-aligned knife. No source assets, dataset labels/splits, hardware,
+  memory policy or production/GUI defaults were changed.
+- Native246 moves the torso away while preserving the two wrist goals. No
+  torso contact is observed, but at240 Hz retention still fails at18.7 s
+  (3.140 mm slip). The earlier torso/leaf contact was not the sole cause.
+- Explicit --cut-convergence-trial propagates480 Hz through contact impulse
+  conversion, native spring handoff, finger controller, blade feedback,
+  retention timestamps and settling dwell. Original SI gains/materials,
+  force/slip/penetration limits and dwell durations are preserved. This is
+  an opt-in diagnostic, not a converged/calibrated physics claim.
+- Native247/248/249 repeat the same physical trajectory through50 s. The
+  force-qualified seam releases at18.495833 s; the branch remains held for
+ 31.504 s afterward. Maximum slip2.209229 mm, final2.190898 mm. A streamed247
+  audit finds maximum finger-contact bound0.459287 N and minimum separation
+ -0.349496 mm, below the unchanged0.5 N/1 mm guards. There are TWO separate
+  single-tick (~2.08 ms) nonbilateral samples after release; do not claim
+  perfect uninterrupted contact. All native guards pass. These deterministic
+  repeats of ONE fixture do not establish perturbation/greenhouse reliability.
+- Endpoint correction --native-station-park-reference evaluates the unchanged
+  RIGHT JOINT goal in the measured station.247 used the configured torso frame
+  and reported1.559 mm error despite nearly exact right-joint return.248's
+  measured-station endpoint error is0.497 micrometres. No actual wrist is used
+  as its own goal and the0.5 mm/0.005 rad tolerances are unchanged.
+-249 also propagates the explicitly selected complete capsule sphere-cover
+  query into the final clearance check (same1 mm margin, positive controls,
+  fresh epoch, budget and cleanup). This clears the coarse arm/main-stem
+  rejection, but exposes a retained-branch/BladePlateContact overlap at the
+  final waiting pose. Withdrawal STILL FAILS. A new checked retreat is needed;
+  returning to the pre-cut ready pose is not enough once the plant has moved.
+- User revised the task to allow right-only cutting when left grasp obstructs
+  the tool. Added a separate --right-only-cut-trial engineering mode. It uses
+  exact signed edge contact, original load/dwell/direction/location gates and
+  the same checked topology release, but NEVER fabricates held=True or zero
+  grasp slip. Release independently checks matching strategy evidence.
+  The left must be parked/open/unloaded with current native readback. Its
+  final screen has NO intended-grasp collision allowance. Retention/deposit
+  are explicitly not expected or credited; dropped material is expected.
+- The pure strategy selector prefers a clear bimanual plan, permits cut-only
+  only with a clear independent right-only plan and allowed drop, and inspects
+  or skips unknown/blocked cases. It is NOT integrated as automatic GUI retry.
+  A runtime collision/sensor fault does not authorize fallback through contact.
+- Native250 executes an unheld force-qualified cut at13.272917 s, then stops
+  because falling material reaches the nearby inactive left hand.251 moves
+  the initial left park from20 to80 mm clearance but rejects a mismatched
+  park command on the first step: the grasp-path IK's first node was not the
+  exact original park reference. Added hold_left_park using original checked
+  joint targets and existing gravity/native-drive code, without state setters.
+- Native252 repeats the80 mm parked case with that correction. Cut occurs
+  at13.254167 s without grasp; then the detached Leaf_004 contacts torso_4
+  with1.144307 N normal-plus-friction, exceeding the existing0.5 N guard.
+  It stops. This is NOT a successful cut-only sequence or a verified drop.
+  Unheld fall clearance remains a separate physical blocker.
+- Regression:4,106 passed after clock changes;4,115 after station reference;
+ 4,160 passed in151.67 s with cut-only mode, and4,161 passed in156.17 s after
+  exact park-command correction. Full logs are
+  data/sim_physics/regression_20260913_{rate_all_v2,station_park_all_v1,
+  cut_only_all_v1,cut_only_all_v2}.log. Focused suites overlap these counts.
+- Durable isolated replay: from examples/greenhouse_sim, Isaac Python
+  -B -m sim_physics.ground_truth_trial --mode bimanual --output NEW_DIRECTORY
+  (or --mode right_only). Source profile ground_truth_trial.json records the
+  exact fixture/options; these are FAILED qualification reproducers, not a
+  recommended successful demo preset. New output directories are mandatory.
+- Current physical model remains articulated rigid beam/leaf contacts plus
+  force-qualified preauthored seam release. Tissue-fracture calibration,
+  continuous collision certification, full forward slicing, autonomous deposit
+  and hardware safety are NOT established. No VLM action-training data is
+  approved by any of these runs.
+
+### 2026-09-13 - Freeze gate requested before returning to VLM integration
+
+- Immediate priority: complete the accessible ground-truth bimanual
+  grasp -> cut -> retain -> clear withdrawal baseline. Cut-only is a separately
+  scored fallback and additionally needs unobstructed falling-material space.
+- Before a manipulation freeze: (1) one complete native sequence with fresh
+  final clearance; (2) a recorded repeat/perturbation matrix covering multiple
+  reachable target configurations with no safety-limit breaches; (3) repeat
+  in the actual visible greenhouse with original surroundings/contact fidelity;
+  (4) verify reset/retry cannot reuse stale plans or cut/grasp evidence.
+  Unit tests, a released joint, or one successful pose are insufficient.
+- Proposed first qualification matrix:10 trials each on3 explicitly chosen
+  reachable configurations, including bounded placement/initial-state
+  variations. This is an engineering acceptance set, NOT proof of universal
+  reliability. Inspect/skip must remain distinct from successful completion.
+- A qualified grasp/cut/retention release must clearly exclude any unverified
+  autonomous deposit, calibrated tissue mechanics, general VLM control and
+  hardware operation. Continue the separate deposit goal later; do not call a
+  limited manipulation freeze the complete deleafing task.
+- Save engineering checkpoints independently of a frozen release. The user's
+  today deadline does not change collision, force, contact, provenance or
+  repeatability requirements. No reliable completion ETA is established yet.

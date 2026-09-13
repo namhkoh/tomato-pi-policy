@@ -8,13 +8,15 @@ Cut diagnostics require the separate complete isolated fixture CLI opt-in.
 import numpy as np
 
 
-def command(position,velocity,target,gravity,caps,*,dt,retention_preload=False):
+def command(position,velocity,target,gravity,caps,*,dt,retention_preload=False,physics_hz=240):
+    from .diagnostic_rate import frequency
+    hz=frequency(physics_hz)
     if type(retention_preload) is not bool:raise ValueError('Explicit retention-preload profile required')
     maximum_pd_n=.30 if retention_preload else .15
     native_cap_bound=max(maximum_pd_n+1e-8,float(np.float32(maximum_pd_n)))
     q,v,g,ff,limit=[np.asarray(x,float) for x in (position,velocity,target,gravity,caps)]
     if (any(x.shape!=(2,) or not np.isfinite(x).all() for x in (q,v,g,ff,limit))
-            or isinstance(dt,(bool,np.bool_)) or not np.isfinite(dt) or abs(dt-1/240)>1e-12
+            or isinstance(dt,(bool,np.bool_)) or not np.isfinite(dt) or abs(dt-1/hz)>1e-12
             or np.any(limit<=0) or np.any(limit>native_cap_bound) or np.any(abs(ff)>.4)
             or np.any(abs(g)>.025+1e-8) or g[0]>0 or g[1]<0):
         raise ValueError('Finite bounded two-finger 240 Hz effort command required')
@@ -38,6 +40,8 @@ def command(position,velocity,target,gravity,caps,*,dt,retention_preload=False):
 
 class FingerEffort:
     def __init__(self,fixture):
+        from .diagnostic_rate import frequency
+        self.physics_hz=frequency(getattr(fixture,'diagnostic_physics_hz',240))
         self.retention_preload=getattr(fixture,'retention_preload',False)
         if type(self.retention_preload) is not bool:raise ValueError('Explicit retention-preload profile required')
         a=fixture.robot
@@ -76,7 +80,8 @@ class FingerEffort:
                 or not np.allclose(before[0,idx],fixture.finger_compensation,atol=1e-8,rtol=0)):
             raise RuntimeError('Fresh gravity-only actuation and latest targets required')
         total,receipt=command(a.get_dof_positions()[0,idx],a.get_dof_velocities()[0,idx],
-            targets[0,idx],before[0,idx],fixture.force_limits[0,idx],dt=dt,retention_preload=self.retention_preload)
+            targets[0,idx],before[0,idx],fixture.force_limits[0,idx],dt=dt,retention_preload=self.retention_preload,
+            physics_hz=self.physics_hz)
         before[0,idx]=total
         submitted=before.astype(np.float32)
         a.set_dof_actuation_forces(submitted,fixture.index)

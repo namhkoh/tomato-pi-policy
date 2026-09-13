@@ -243,7 +243,9 @@ def transverse_stroke_offsets(stem_radius,edge_width,standoff=.025):
 
 
 class ShearGate:
-    def __init__(self,target,parameters=None):
+    def __init__(self,target,parameters=None,*,strategy='bimanual'):
+        from .cut_strategy import mode
+        self.strategy=mode(strategy)
         self.target=target;self.parameters=parameters or ShearParameters()
         self.completed=False;self.reset_window();self.diagnostic=None
 
@@ -257,7 +259,7 @@ class ShearGate:
 
     def observe(self,*,dt,edge,centre,axis,points,impulses,held,slip,
                 normals=None,impulse_contract=None,edge_contact_verified=False,
-                tool_contact_upper_bound_n=None):
+                tool_contact_upper_bound_n=None,cut_only_ready=False):
         """Signed resistance qualifies; noncancelling magnitudes only cap load.
 
         The caller must establish exact edge/collider provenance. An unsigned
@@ -298,8 +300,9 @@ class ShearGate:
         axial=max((abs(float(np.dot(point-centre,axis))) for point in points),default=0.)
         edge_dot=abs(float(np.dot(edge[:3,1],axis)));direction_dot=abs(float(np.dot(direction,axis)))
         normal_cosine=min((float(np.dot(n,-direction)/math.hypot(*direction)) for n in unit_normals),default=-1.)
-        valid=bool(not self.completed and held and slip is not None and np.isfinite(slip)
-            and 0<=slip<p.maximum_grasp_slip_m and len(points)>0 and edge_contact_verified is True
+        from .cut_strategy import support_ready
+        support=support_ready(self.strategy,held,slip,cut_only_ready,maximum_slip=p.maximum_grasp_slip_m)
+        valid=bool(not self.completed and support and len(points)>0 and edge_contact_verified is True
             and resistance>=p.force_n and force<=p.maximum_force_n and upper<=p.maximum_force_n
             and normal_cosine>=np.cos(np.pi/6) and edge_dot<.3 and direction_dot<.3
             and step>=-1e-6 and axial<=p.axial_tolerance_m)
@@ -311,6 +314,9 @@ class ShearGate:
             full_load_cap=upper<=p.maximum_force_n,leading_normal=normal_cosine>=np.cos(np.pi/6),
             edge_alignment=edge_dot<.3,stroke_alignment=direction_dot<.3,
             nonreversing_relative_step=step>=-1e-6,axial_contact=axial<=p.axial_tolerance_m)
+        if self.strategy=='right_only':
+            checks.pop('stable_grasp');checks.pop('grasp_slip')
+            checks['cut_only_park_and_current_plan']=support
         self.diagnostic=dict(state='qualifying_contact' if valid else 'rejected_contact',
             failed_conditions=[key for key,ok in checks.items() if not ok],
             signed_resistance_n=resistance,full_load_upper_n=upper,relative_step_m=step,
@@ -359,5 +365,7 @@ class ShearGate:
             loading_travel_requirement_met=True if travel_required else None,
             measured_travel_is_tissue_work=False,fracture_energy_used_as_evidence=False,
             engineering_approximation=True,
-            stable_left_grasp=True,grasp_slip_m=float(slip),flat_edge_contact_verified=True,
+            cut_strategy=self.strategy,cut_only_ready=self.strategy=='right_only',
+            stable_left_grasp=self.strategy=='bimanual',
+            grasp_slip_m=float(slip) if self.strategy=='bimanual' else None,flat_edge_contact_verified=True,
             commanded_motion_used_as_evidence=False,tissue_fracture_calibrated=False)

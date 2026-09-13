@@ -79,7 +79,12 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     if (getattr(fixture,'diagnostic_grasp_contacts',False)
             and not getattr(args,'bimanual_hold_control',False)):
         raise ValueError('Raw contact diagnostic is restricted to a right-parked hold control')
+    if getattr(fixture,'diagnostic_physics_hz',240)!=args.physics_hz:
+        raise ValueError('Robot control/sensing clock must match the physics clock')
     fixture.bind(sim.physics_sim_view)
+    cut_only=bool(getattr(args,'right_only_cut_trial',False))
+    if getattr(fixture,'cut_strategy','bimanual')!=('right_only' if cut_only else 'bimanual'):
+        raise ValueError('Fixture and execution cut strategy disagree')
     if getattr(args,'fixed_root_cut_trial',False):
         from .root_transition import FixedRootTransition
         fixture.root_transition=FixedRootTransition(runtime,springs,fixture)
@@ -99,7 +104,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             radius=float(fixture.stroke_offsets[-1])-fixture.knife.size[0]/2-.001,
             dwell_feedback=getattr(args,'blade_dwell_feedback',False),
             compliant_rate=getattr(args,'compliant_blade_rate',False),
-            friction_budget=getattr(args,'blade_friction_budget',False))
+            friction_budget=getattr(args,'blade_friction_budget',False),physics_hz=args.physics_hz)
     strain_probe=None
     if getattr(args,'diagnostic_grasp_dynamics',False):
         from .rod_strain import RodStrain
@@ -151,7 +156,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 and fixture.retention_preload and fixture.symmetric_finger_closure and reposition==0.):
             raise ValueError('Preload settling requires original no-reposition feedback retention trial')
         from .retention_settle import PreloadSettle
-        preload_settle=PreloadSettle()
+        preload_settle=PreloadSettle(physics_hz=args.physics_hz)
     times=sequence_times(reposition);delay=times['delay']
     grasp_time=3.5;acquisition_wait_logged=False
     plan_time=times['plan'];approach_start=times['approach'];stroke_start=times['stroke'];stroke_end=times['end']
@@ -196,28 +201,29 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             if fixture.cut_event is None or fixture.root_transition.receipt is None:
                 raise RuntimeError('Native spring handoff requires successful evidence-gated topology transition')
             from .native_spring_observer import restore_after_release
-            springs=restore_after_release(springs)
+            springs=restore_after_release(springs,physics_hz=args.physics_hz)
             events.append(dict(t=t,event='native_spring_handoff_after_cut',
                 step=int(stamp.step),receipt=dict(springs.handoff_receipt)))
         if t>=.9 and not goal_set:
-            fixture.refresh_grasp_goal(runtime.frames)
+            if not cut_only:fixture.refresh_grasp_goal(runtime.frames)
             fixture.plan_approach()
-            grasp_screen=fixture.screen_grasp_scene(runtime.frames)
-            events.append(dict(t=t,event='left_grasp_corridor_screened',result=grasp_screen))
-            if not grasp_screen['passed']:
+            grasp_screen=fixture.screen_grasp_scene(runtime.frames) if not cut_only else None
+            events.append(dict(t=t,event='left_park_maintained_no_grasp_approach' if cut_only else 'left_grasp_corridor_screened',result=grasp_screen))
+            if grasp_screen is not None and not grasp_screen['passed']:
                 raise RuntimeError('Left grasp corridor intersects unintended plant geometry')
             goal_set=True
-        goal=fixture.start[:3,3]+ramp(t,1,2)*(fixture.goal[:3,3]-fixture.start[:3,3])
+        goal=fixture.start[:3,3]+(0. if cut_only else ramp(t,1,2))*(fixture.goal[:3,3]-fixture.start[:3,3])
         if grasp_verified and reposition:
             if reposition_vector is None:raise RuntimeError('Missing checked retraction vector')
             goal+=ramp(t,grasp_time,grasp_time+1)*reposition_vector
         # Keep the target held in place until measured knife withdrawal and a
         # fresh clearance screen authorize a separate transport/reposition.
         # A release+1 s timer cannot establish a clear blade corridor.
-        fixture.target_palm(goal)
-        if force_closure: fixture.close(ramp(t,2,3),step=int(stamp.step),dt=dt)
+        if cut_only:fixture.hold_left_park()
+        else:fixture.target_palm(goal)
+        if force_closure: fixture.close(0. if cut_only else ramp(t,2,3),step=int(stamp.step),dt=dt)
         else: fixture.close(ramp(t,2,3))
-        if t>=3.5 and not grasp_verified:
+        if t>=3.5 and not grasp_verified and not cut_only:
             acquisition=grasp_acquisition_state(t,stable,args.physics_hz,force_closure)
             if acquisition=='timeout':
                 # Preserve which actual shapes blocked closure, including a
@@ -267,9 +273,14 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 times=schedule_after_grasp(t,0.)
                 plan_time=t;approach_start=times['approach']
                 stroke_start=times['stroke'];stroke_end=times['end']
-        if grasp_verified and not planned and not hold_control and t>=plan_time:
-            if stable<int(.1*args.physics_hz):
+        if (grasp_verified or cut_only) and not planned and not hold_control and t>=plan_time:
+            if not cut_only and stable<int(.1*args.physics_hz):
                 raise RuntimeError('Held target not stable after reposition; no right-arm execution')
+            if cut_only:
+                from .cut_only import parked_left
+                if not records or records[-1].get('native_guards_passed') is not True:
+                    raise RuntimeError('Cut-only requires preceding complete native guards')
+                parked_left(fixture,records[-1],step=int(stamp.step),physics_hz=args.physics_hz)
             if getattr(args,'require_retention_screen',False):
                 from .retention_preflight import assess as assess_retention
                 if not records:raise RuntimeError('No current retention observation')
@@ -277,11 +288,11 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                     body_paths=rig.body_paths,cut_index=int(rig.cut_index),
                     masses=np.asarray(runtime.bodies.get_masses())[runtime.order],
                     local_coms=np.asarray(runtime.bodies.get_coms())[runtime.order,:3],
-                    current_frames=runtime.frames,friction=fixture.friction)
+                    current_frames=runtime.frames,friction=fixture.friction,physics_hz=args.physics_hz)
                 events.append(dict(t=t,event='precut_static_retention_screen',result=capacity))
                 if not capacity['prerequisite_passed']:
                     raise RuntimeError('Static retention capacity not established; knife planning/execution refused')
-            events.append(dict(t=t,event='native_grasp_reobserved_before_cut_plan',
+            events.append(dict(t=t,event='unheld_target_reobserved_before_cut_plan' if cut_only else 'native_grasp_reobserved_before_cut_plan',
                 requested_reposition_m=reposition,grasp_body=fixture.grasp_path,
                 grasp_world_m=fixture.grasp_point(runtime.frames).tolist(),
                 seam_world_m=fixture.seam(runtime.frames)[0].tolist()))
@@ -292,7 +303,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 simulation_time_s=t,target=rig.source_target,training_eligible=False)
             (output/'bimanual_planning_snapshot.json').write_text(json.dumps(snapshot,allow_nan=False),encoding='utf-8')
             fixture.plan_cut(runtime.frames,q);planned=True
-            events.append(dict(t=t,event='grasp_verified_and_right_IK_planned',plan=fixture.report()['cut_plan']))
+            events.append(dict(t=t,event='parked_left_and_right_IK_planned' if cut_only else 'grasp_verified_and_right_IK_planned',plan=fixture.report()['cut_plan']))
         if grasp_verified and t>=grasp_time+.5 and lost>int(.05*args.physics_hz):
             raise RuntimeError('Left grasp lost during bimanual sequence')
         phase='park';fraction=0.
@@ -478,12 +489,18 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             raise RuntimeError('Native shaft grasp callback/tensor force reconciliation failed')
         fixture.check_plant_window(frames)
         record['robot']=fixture.check(dt,palm)
-        if (speed>20 or total>3 or support>1e-5 or c['min_separation']<-.001
-                or record['robot']['allowed_tool_contact_n']>.5
-                or record['robot']['minimum_tool_separation_m']<-.001
-                or (slip is not None and slip>.003)):
-            raise RuntimeError('Bimanual force/slip/penetration/support guard')
-        record['knife']=fixture.inspect_cut(dt,frames,stable>=int(.025*args.physics_hz),slip)
+        from .bimanual_limits import violations
+        failures=violations(record)
+        if failures:
+            record['execution_limit_failures']=failures
+            events.append(dict(t=stamp.simulation_time_s,event='native_execution_limit',failures=failures))
+            raise RuntimeError('Bimanual execution limit: '+json.dumps(failures,allow_nan=False))
+        if cut_only:
+            from .cut_only import parked_left
+            record['cut_only_park']=parked_left(fixture,record,step=int(stamp.step),physics_hz=args.physics_hz)
+            record['knife']=fixture.inspect_cut(dt,frames,False,None,cut_only_ready=planned)
+        else:
+            record['knife']=fixture.inspect_cut(dt,frames,stable>=int(.025*args.physics_hz),slip)
         record['cut']=rig.cut
         # True only here: every existing callback, robot, force, penetration,
         # support, slip and knife guard above has returned without exception.
@@ -514,10 +531,12 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 raise
         if rig.cut and stamp.step==int(args.seconds*args.physics_hz):
             from .withdrawal_native_check import check as check_withdrawal
-            record['withdrawal']=check_withdrawal(fixture,frames,stamp.step)
+            options={}
+            if getattr(args,'native_station_park_reference',False):options['native_station_park']=True
+            record['withdrawal']=check_withdrawal(fixture,frames,stamp.step,**options)
             events.append(dict(t=stamp.simulation_time_s,event='final_native_withdrawal_endpoint',
                 evidence=record['withdrawal']))
-        record['phase']='Left hold negative control' if hold_control else 'Retain / withdraw' if rig.cut else 'Blade stroke' if planned and stamp.simulation_time_s>=stroke_start else 'Right approach' if planned and stamp.simulation_time_s>=approach_start else 'Held target reposition / reobserve' if grasp_verified and reposition else 'Left grasp'
+        record['phase']='Cut-only / withdraw' if cut_only and rig.cut else 'Left parked / right cut' if cut_only else 'Left hold negative control' if hold_control else 'Retain / withdraw' if rig.cut else 'Blade stroke' if planned and stamp.simulation_time_s>=stroke_start else 'Right approach' if planned and stamp.simulation_time_s>=approach_start else 'Held target reposition / reobserve' if grasp_verified and reposition else 'Left grasp'
         fixture.on_sample(record)
 
     def render_state(_):
@@ -568,7 +587,13 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         right_withdrawal_completed=bool(records
             and records[-1].get('withdrawal',{}).get('right_withdrawal_completed') is True
             and (not measured_withdrawal or helper_complete)))
-    result=dict(state='passed_bimanual_mechanism_not_robot_task' if all(gates.values()) else 'failed_bimanual_qualification',
+    if cut_only:
+        gates.pop('left_grasp_verified');gates.pop('native_retention')
+        gates['left_parked_open_unloaded']=bool(records) and all('cut_only_park' in r for r in records)
+    passed_state='passed_cut_only_mechanism_not_robot_task' if cut_only else 'passed_bimanual_mechanism_not_robot_task'
+    result=dict(state=passed_state if all(gates.values()) else 'failed_cut_only_qualification' if cut_only else 'failed_bimanual_qualification',
+        cut_strategy='right_only' if cut_only else 'bimanual',left_grasp_verified=grasp_verified,
+        retention_expected=not cut_only,dropped_material_expected=cut_only,drop_corridor_certified=False,
         gates=gates,error=fault,events=events,images=captures,timing=clock.report(),robot=fixture.report(),
         measurements=dict(native_edge_contact_count=fixture.cut_contacts,cut_time_s=cut_time,
             bilateral_contact_fraction_before_cut_plan=float(np.mean([r['contact']['bilateral'] for r in records if grasp_time-.5<=r['t']<=grasp_time])) if any(grasp_time-.5<=r['t']<=grasp_time for r in records) else None,

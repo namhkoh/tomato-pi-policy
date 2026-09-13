@@ -89,17 +89,18 @@ class PlantRig:
                     material_arc_m=float(self.arcs[self.cut_index]),
                     physical_cut_verified=False,training_eligible=False)
 
-    def release_from_blade(self,evidence,*,transition=None):
+    def release_from_blade(self,evidence,*,transition=None,strategy='bimanual'):
         """Internal mechanism API: validate evidence before changing topology."""
         from .knife import ShearParameters,CUT_MODELS,LEGACY_CUT_MODEL,KNIFE_IMPULSE_CONTRACT
         if not isinstance(evidence,dict) or evidence.get('model') not in CUT_MODELS:
             raise ValueError('Unknown explicit blade release model')
+        from .cut_strategy import validate_evidence
+        validate_evidence(evidence,strategy)
         p=ShearParameters(model=evidence['model'])
         travel_required=p.model==LEGACY_CUT_MODEL
         if (evidence.get('target')!=self.source_target
                 or evidence.get('force_contract')!=KNIFE_IMPULSE_CONTRACT
                 or evidence.get('signed_resistance_definition')!='minus_sum_impulse_on_knife_dot_stroke_direction_over_dt'
-                or evidence.get('stable_left_grasp') is not True
                 or evidence.get('flat_edge_contact_verified') is not True
                 or evidence.get('commanded_motion_used_as_evidence') is not False
                 or evidence.get('tissue_fracture_calibrated') is not False
@@ -112,7 +113,7 @@ class PlantRig:
                 or type(evidence.get('contact_steps')) is not int or evidence['contact_steps']<1):
             raise ValueError('Missing blade/grasp evidence for seam release')
         keys=('force_threshold_n','peak_force_n','contact_dwell_s','measured_relative_loading_travel_m',
-            'grasp_slip_m','minimum_signed_resistance_n','peak_signed_resistance_n',
+            'minimum_signed_resistance_n','peak_signed_resistance_n',
             'peak_tool_contact_upper_bound_n','maximum_axial_contact_distance_m',
             'maximum_edge_axis_dot_stem','maximum_stroke_axis_dot_stem','minimum_relative_step_m',
             'minimum_leading_normal_cosine')
@@ -122,7 +123,6 @@ class PlantRig:
                 or v['force_threshold_n']!=p.force_n
                 or not p.force_n<=v['minimum_signed_resistance_n']<=v['peak_signed_resistance_n']<=v['peak_force_n']<=v['peak_tool_contact_upper_bound_n']<=p.maximum_force_n
                 or v['contact_dwell_s']<p.dwell_s or v['measured_relative_loading_travel_m']<0
-                or not 0<=v['grasp_slip_m']<p.maximum_grasp_slip_m
                 or not 0<=v['maximum_axial_contact_distance_m']<=p.axial_tolerance_m
                 or not 0<=v['maximum_edge_axis_dot_stem']<.3
                 or not 0<=v['maximum_stroke_axis_dot_stem']<.3

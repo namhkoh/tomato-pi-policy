@@ -191,8 +191,10 @@ class ShaftGraspNative:
     def __init__(self, stage, rig, *, selected_index, finger_paths, contact_views,
                  pad_paths=None, pad_faces=((0, -1), (0, -1)), max_rows=256,
                  diagnostic_noncompressive_report=False, allow_signed_native_normals=False,
-                 sensor_contract=STRICT_SENSOR_CONTRACT, physical_grasp_span=False):
+                 sensor_contract=STRICT_SENSOR_CONTRACT, physical_grasp_span=False, physics_hz=240):
         from pxr import Tf, Usd, UsdGeom, UsdPhysics
+        from .diagnostic_rate import frequency
+        self.physics_hz=frequency(physics_hz)
 
         if type(diagnostic_noncompressive_report) is not bool:
             raise ValueError("Explicit boolean diagnostic_noncompressive_report required")
@@ -750,7 +752,7 @@ class ShaftGraspNative:
                 raise ValueError('Explicit pre-step contract required')
             if require_pre_step_frames:
                 if (self._contact_frames is None or self._contact_frames[0]+1!=self._step
-                        or frames_step_id is None or abs(float(dt)-1/240)>1e-12):
+                        or frames_step_id is None or abs(float(dt)-1/getattr(self,'physics_hz',240))>1e-12):
                     raise ValueError('Missing qualified adjacent pre-step native frames')
                 contact_options=dict(contact_frames_step_id=self._contact_frames[0],
                     contact_body_frames=self._contact_frames[1])

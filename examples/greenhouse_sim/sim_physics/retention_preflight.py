@@ -9,13 +9,15 @@ from .grasp_wrench import gravity_wrench, static_capacity
 
 
 def assess(record, *, step, time_s, body_paths, cut_index, masses, local_coms,
-           current_frames, friction=.5):
+           current_frames, friction=.5, physics_hz=240):
     """Caller binds this record to its current native fetch, before motion.
 
     Hidden source geometry is used only for this privileged fixture's load
     estimate, not as a newly observed grasp or cut target. Failure of this
     fixed-patch approximation is not proof that all possible grasps fail.
     """
+    from .diagnostic_rate import frequency
+    hz=frequency(physics_hz)
     paths=tuple(body_paths);n=len(paths)
     if (not paths or len(set(paths))!=n or type(cut_index) is not int
             or not 0<=cut_index<n or type(step) is not int or step<1
@@ -26,7 +28,7 @@ def assess(record, *, step, time_s, body_paths, cut_index, masses, local_coms,
             or record.get('contact',{}).get('adapter_valid') is not True
             or record.get('contact',{}).get('bilateral') is not True
             or telemetry.get('step_id')!=step or record.get('t')!=time_s
-            or telemetry.get('dt_s')!=1/240 or abs(time_s-step/240)>1e-10
+            or telemetry.get('dt_s')!=1/hz or abs(time_s-step/hz)>1e-10
             or telemetry.get('model')!='grasp_dynamics_post_fetch_telemetry_v1'
             or telemetry.get('contact_row_contract')!='shaft_grasp_core_oriented_signed_normal_rows_v1'
             or tuple(telemetry.get('body_paths',()))!=paths):
