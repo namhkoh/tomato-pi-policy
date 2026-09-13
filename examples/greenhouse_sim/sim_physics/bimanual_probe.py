@@ -113,8 +113,14 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     render_options={'wall_render_hz':15} if getattr(args,'watch_cut_trial',False) else {}
     clock=PhysicsClock(step_context,physics_hz=args.physics_hz,render_hz=args.render_hz,**render_options)
     records=[];events=[];captures={};capture_receipts={};fault=None;stable=0;lost=0
+    if getattr(args,'stream_trajectory',False):
+        from .probe_records import ProbeRecords
+        records=ProbeRecords(output/'bimanual_trajectory.jsonl.gz')
     grasp_local=None;goal_set=False;planned=False;grasp_verified=False;cut_time=None;cut_fraction=0.
     last_right_command=('park',0.)
+    through_requested=bool(getattr(args,'through_stroke_trial',False))
+    through=None;through_time=None;through_fraction=None;section_binding=None
+    retraction=None;retraction_time=None
     blade_feed=None
     seam_yield=None
     if getattr(args,'seam_contact_yield',False):
@@ -352,10 +358,20 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 if cut_time is None and blade_feed is not None:
                     fraction=blade_feed.command(step=int(stamp.step),dt=dt)
             if cut_time is not None and not measured_withdrawal:
-                if t<cut_time+2:
-                    phase='stroke';fraction=cut_fraction*(1-ramp(t,cut_time,cut_time+2))
+                reverse_time=cut_time if not through_requested else through_time
+                if through_requested and through_time is None:
+                    if through is None:raise RuntimeError('No measured through-stroke release binding')
+                    phase='stroke';fraction=through.command(step=int(stamp.step),dt=dt)
+                elif getattr(args,'material_clearance_trial',False):
+                    if retraction is None:raise RuntimeError('Missing guarded post-severance retraction')
+                    if retraction_time is None:
+                        phase='stroke';fraction=retraction.command(step=int(stamp.step),dt=dt)
+                    else:
+                        phase='approach';fraction=1-ramp(t,retraction_time,retraction_time+4)
+                elif t<reverse_time+2:
+                    phase='stroke';fraction=(through_fraction if through_requested else cut_fraction)*(1-ramp(t,reverse_time,reverse_time+2))
                 else:
-                    phase='approach';fraction=1-ramp(t,cut_time+2,cut_time+6)
+                    phase='approach';fraction=1-ramp(t,reverse_time+2,reverse_time+6)
             elif cut_time is None and t>=stroke_end and blade_feed is None:
                 raise RuntimeError('Cut stroke ended without qualified blade contact; no timed release')
         if cut_time is not None and measured_withdrawal:
@@ -430,6 +446,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
 
     def after(stamp,dt):
         nonlocal stable,lost,cut_time,cut_fraction,withdrawal
+        nonlocal through,through_time,through_fraction,section_binding
+        nonlocal retraction,retraction_time
         nonlocal previous_prediction
         frames,velocity=runtime.sample();frame=frames[fixture.body_index]
         prediction_record=None
@@ -571,6 +589,58 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 record['withdrawal_failure']=dict(error=type(exc).__name__+': '+str(exc),
                     native_receipt=withdrawal.adapter.last_receipt)
                 raise
+        if rig.cut and through_requested and through_time is None:
+            from .through_stroke import ThroughStroke
+            if through is None:
+                if fixture.cut_event is None or fixture.root_transition.receipt is None:
+                    raise RuntimeError('Through-stroke requires validated native release transition')
+                endpoint=fixture.knife.frame(fixture.kin.forward('right',fixture.plan['stroke'][-1],fixture.base))[:3,3]
+                options={}
+                if getattr(args,'material_clearance_trial',False):
+                    parent_index=rig.cut_index-1
+                    centre,axis=fixture.seam(frames)
+                    parent=frames[parent_index]
+                    section_binding=(parent_index,(centre-parent[:3,3])@parent[:3,:3],axis@parent[:3,:3])
+                    faces=[rig.body_paths[i]+'/StemCollider' for i in (parent_index,rig.cut_index)]
+                    radius=max(float(rig.stage.GetPrimAtPath(p).GetAttribute('radius').Get()) for p in faces)
+                    options['material_section']=dict(radius=radius,tip_offset=float(fixture.knife.size[0]/2),
+                        half_span=float(fixture.knife.size[1]/2),knife=fixture.knife.collider,faces=faces)
+                    events.append(dict(t=stamp.simulation_time_s,event='proximal_material_section_bound',
+                        body=rig.body_paths[parent_index],source_target=rig.source_target,
+                        reference='current_post_fetch_proximal_body_not_falling_detached_branch',
+                        section=options['material_section'],fracture_calibrated=False))
+                through=ThroughStroke(fixture.stroke_offsets,fraction=cut_fraction,endpoint=endpoint,
+                    direction=fixture.plan['direction'],physics_hz=args.physics_hz,step=int(stamp.step),**options)
+            support=bool(c['bilateral'] and slip is not None and slip<.003) if not cut_only else 'cut_only_park' in record
+            actual=pose_matrices(fixture.right_palm.get_transforms())[0]
+            options={}
+            if section_binding is not None:
+                i,local_centre,local_axis=section_binding;parent=frames[i]
+                options['section_pose']=dict(centre=parent[:3,3]+parent[:3,:3]@local_centre,
+                    axis=parent[:3,:3]@local_axis)
+            try:
+                record['through_stroke']=through.observe(record,step=int(stamp.step),
+                    arc_up=fixture.knife.arc_up(actual),support_ready=support,**options)
+            except Exception as exc:
+                record['through_stroke_failure']=dict(error=type(exc).__name__+': '+str(exc),
+                    endpoint_world_m=through.endpoint.tolist(),direction_world=through.direction.tolist(),
+                    edge_frame=record['knife']['edge_frame'],arc_up=fixture.knife.arc_up(actual).tolist())
+                raise
+            if through.complete:
+                through_time=stamp.simulation_time_s
+                through_fraction=released_stroke_fraction(last_right_command)
+                events.append(dict(t=through_time,event='measured_forward_stroke_complete',evidence=dict(through.receipt)))
+        if through_time is not None and getattr(args,'material_clearance_trial',False) and retraction_time is None:
+            from .cut_retraction import CutRetraction
+            if retraction is None:
+                endpoint=fixture.knife.frame(fixture.kin.forward('right',fixture.plan['stroke'][0],fixture.base))[:3,3]
+                retraction=CutRetraction(fixture.stroke_offsets,fraction=through_fraction,endpoint=endpoint,
+                    direction=fixture.plan['direction'],step=int(stamp.step),section=through.material_section)
+            support=bool(c['bilateral'] and slip is not None and slip<.003) if not cut_only else 'cut_only_park' in record
+            record['cut_retraction']=retraction.observe(record,step=int(stamp.step),support_ready=support)
+            if retraction.complete:
+                retraction_time=stamp.simulation_time_s
+                events.append(dict(t=retraction_time,event='measured_stroke_retraction_unloaded',evidence=dict(retraction.receipt)))
         if rig.cut and stamp.step==int(args.seconds*args.physics_hz):
             from .withdrawal_native_check import check as check_withdrawal
             options={}
@@ -579,6 +649,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             events.append(dict(t=stamp.simulation_time_s,event='final_native_withdrawal_endpoint',
                 evidence=record['withdrawal']))
         record['phase']='Cut-only / withdraw' if cut_only and rig.cut else 'Left parked / right cut' if cut_only else 'Left hold negative control' if hold_control else 'Retain / withdraw' if rig.cut else 'Blade stroke' if planned and stamp.simulation_time_s>=stroke_start else 'Right approach' if planned and stamp.simulation_time_s>=approach_start else 'Held target reposition / reobserve' if grasp_verified and reposition else 'Left grasp'
+        if rig.cut and through_requested and through_time is None:record['phase']='Measured downward follow-through'
         fixture.on_sample(record)
 
     def render_state(_):
@@ -605,6 +676,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                         seam_stiffness_n_m=latest['seam_yield']['applied_stiffness_n_m'],
                         edge_resistance_n=latest['knife']['edge_signed_resistance_n'],
                         qualified_travel_m=latest['knife']['gate_travel_m'])
+                if latest.get('through_stroke') is not None:status['through_stroke']=latest['through_stroke']
                 print('BIMANUAL_SECOND '+json.dumps(status),flush=True)
             if viewport and args.capture_milestones:
                 milestones=diagnostic_milestones(grasp_verified=grasp_verified,grasp_time=grasp_time,
@@ -625,6 +697,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         if viewport and app.is_running():
             try: capture('stopped_on_fault')
             except Exception as error: captures['fault_capture_error']=str(error)
+    finally:
+        if getattr(args,'stream_trajectory',False):records.close()
     retained=[r for r in records if cut_time is not None and r['t']>=cut_time+2]
     from .withdrawal_controller import measured_completion
     helper_complete=bool(records and measured_completion(records[-1],
@@ -639,6 +713,9 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     if cut_only:
         gates.pop('left_grasp_verified');gates.pop('native_retention')
         gates['left_parked_open_unloaded']=bool(records) and all('cut_only_park' in r for r in records)
+    if through_requested:gates['full_forward_cut_stroke_verified']=through_time is not None
+    if getattr(args,'material_clearance_trial',False):
+        gates['contact_paced_retraction_unloaded']=retraction_time is not None
     passed_state='passed_cut_only_mechanism_not_robot_task' if cut_only else 'passed_bimanual_mechanism_not_robot_task'
     result=dict(state=passed_state if all(gates.values()) else 'failed_cut_only_qualification' if cut_only else 'failed_bimanual_qualification',
         cut_strategy='right_only' if cut_only else 'bimanual',left_grasp_verified=grasp_verified,
@@ -649,9 +726,14 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             bilateral_contact_fraction_before_cut_plan=float(np.mean([r['contact']['bilateral'] for r in records if grasp_time-.5<=r['t']<=grasp_time])) if any(grasp_time-.5<=r['t']<=grasp_time for r in records) else None,
             maximum_slip_m=max((r['slip_m'] for r in records if r['slip_m'] is not None),default=None)),
         physical_cut_verified=False,tissue_fracture_calibrated=False,deposit_verified=False,
-        right_withdrawal_schedule_elapsed=cut_time is not None and records[-1]['t']>=cut_time+6,
+        right_withdrawal_schedule_elapsed=(through_time if through_requested else cut_time) is not None
+            and records[-1]['t']>=(through_time if through_requested else cut_time)+6,
         right_withdrawal_verification='final_post_fetch_native_endpoint_and_fresh_clearance_not_elapsed_time',
-        full_forward_cut_stroke_verified=False,
+        full_forward_cut_stroke_verified=through_time is not None,
+        through_stroke_requested=through_requested,
+        through_stroke=None if through is None or through.receipt is None else dict(through.receipt),
+        contact_paced_retraction=None if retraction is None or retraction.receipt is None else dict(retraction.receipt),
+        contact_paced_retraction_completed_time_s=retraction_time,
         measured_withdrawal_requested=measured_withdrawal,
         measured_withdrawal_completed=helper_complete,
         negative_control_no_right_motion=hold_control,
@@ -661,6 +743,9 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             required_native_bilateral_dwell_s=.1,verified_time_s=grasp_time if grasp_verified else None,
             sequence_schedule=times if grasp_verified else None),
         target_source='privileged_test_fixture_not_perception_verified',training_eligible=False)
+    if getattr(args,'material_clearance_trial',False):
+        result['right_withdrawal_schedule_elapsed']=bool(retraction_time is not None
+            and records and records[-1]['t']>=retraction_time+4)
     if step_context is not sim: result['step_profile']=step_context.report()
     if getattr(args,'cut_action_trial',False):
         from .cut_action import assess
@@ -670,9 +755,13 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         result['full_sequence_qualified']=all(gates.values())
         result['cut_action']=action
         result['state']='passed_cut_action_not_complete_robot_task' if action['passed'] else 'failed_cut_action'
+        if through_requested and not all(gates.values()):result['state']='failed_through_stroke_qualification'
         result['measurements']['maximum_released_debris_contact_n']=max(
             (r.get('robot',{}).get('released_debris_contact_n',0.) for r in records),default=0.)
-    (output/'bimanual_trajectory.json').write_text(json.dumps(records,allow_nan=False),encoding='utf-8')
+    if getattr(args,'stream_trajectory',False):
+        records.close();result['trajectory_storage']=records.report()
+    else:
+        (output/'bimanual_trajectory.json').write_text(json.dumps(records,allow_nan=False),encoding='utf-8')
     if contact_stream is not None:fixture.event_monitor.full_contact_observer=None
     fixture.release_grasp_observer()
     if getattr(args,'watch_cut_trial',False):sim.pause()

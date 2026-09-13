@@ -891,8 +891,13 @@ class BimanualRobot(FullRobotGripper):
         if not self.event_monitor.native_full_contact_reporting:
             raise RuntimeError('Full original-order native contact stream required for blade evidence')
         loads=self.event_monitor.measurements(dt)
-        if loads['allowed_tool_contact_n']>.5:
+        from .knife_load import physical_load
+        physical=physical_load(self.event_monitor.pairs,self.edge_contact_rows,root=self.knife.root,dt=dt)
+        tool_upper=max(loads['allowed_tool_contact_n'],physical['upper_bound_n'])
+        if tool_upper>.5:
             raise RuntimeError('Unsigned normal-plus-friction tool load exceeds 0.5 N')
+        if physical['minimum_separation_m']<-.001:
+            raise RuntimeError('Physical knife penetration exceeds 1 mm, including noncutting contacts')
         actual=pose_matrices(self.right_palm.get_transforms())[0]
         error=float(np.linalg.norm(actual[:3,3]-self.expected_right[:3,3]))
         if error>.012: raise RuntimeError(f'Right wrist tracking error {error:.5f} m')
@@ -906,7 +911,7 @@ class BimanualRobot(FullRobotGripper):
         decision=self.cut_gate.observe(dt=dt,edge=edge,centre=centre,axis=axis,
             points=self.edge_points,impulses=self.edge_impulses,normals=self.edge_normals,
             impulse_contract=KNIFE_IMPULSE_CONTRACT,edge_contact_verified=True,
-            tool_contact_upper_bound_n=loads['allowed_tool_contact_n'],
+            tool_contact_upper_bound_n=tool_upper,
             held=held and self.cut_authorized,slip=slip,
             cut_only_ready=cut_only_ready and self.cut_authorized,**orientation)
         if decision:
@@ -919,7 +924,7 @@ class BimanualRobot(FullRobotGripper):
             edge_contact_count=len(self.edge_points),edge_force_n=math.fsum(math.hypot(*v) for v in self.edge_impulses)/dt,
             edge_signed_resistance_n=self.cut_gate.signed_resistance_n,
             edge_unsigned_projection_n=self.cut_gate.unsigned_projection_n,
-            tool_contact_upper_bound_n=loads['allowed_tool_contact_n'],
+            tool_contact_upper_bound_n=tool_upper,physical_knife_contact=physical,
             force_contract=KNIFE_IMPULSE_CONTRACT,raw_normal_rows=[dict(r) for r in self.edge_contact_rows],
             raw_normal_row_limit=256,raw_normal_rows_complete=True,
             cut_model=self.cut_gate.parameters.model,

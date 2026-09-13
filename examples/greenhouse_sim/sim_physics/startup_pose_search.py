@@ -9,6 +9,11 @@ import numpy as np
 
 
 def search(robot,backend,guard):
+    if getattr(robot,'startup_station_search',False):
+        from .startup_station_search import search as station_search
+        return station_search(robot,backend,guard)
+    if getattr(robot,'startup_heading_search',False):return heading_start_search(robot,backend,guard)
+    if getattr(robot,'startup_approach_search',False):return approach_start_search(robot,backend,guard)
     from .redundant_ik import pose_family
     seed=np.array(robot.right,float,copy=True)
     desired=robot.kin.forward('right',seed,robot.base)
@@ -62,3 +67,103 @@ def search(robot,backend,guard):
         proposed_right_ready_degrees=candidate,maximum_candidates=24,
         original_spawn_unchanged=True,relaunch_required=True,physics_steps=0,
         motion_authorized=False,whole_path_certified=False,grasp_or_cut_verified=False)
+
+
+def approach_start_search(robot,backend,guard):
+    """Bounded higher/lateral waiting poses; no teleport or path authorization.
+
+Keep the corrected blade orientation. These are proposed new INITIAL poses,
+not commands on the current running robot. Every original dense left self-path
+and complete native robot/scene startup screen must pass. A subsequent launch
+must still plan and verify the entire right approach and cutting sequence.
+"""
+    initial=np.array(robot.right,float,copy=True)
+    base_pose=robot.kin.forward('right',initial,robot.base)
+    offsets=[(0.,0.,z) for z in (.01,.02,.03,.05)]
+    offsets += [(x,y,z) for z in (.01,.03) for x,y in
+                ((.03,0.),(-.03,0.),(0.,.03),(0.,-.03),(.05,0.),(0.,-.05))]
+    # A 10--50 mm perturbation can leave the entire forearm in the SAME
+    # neighboring leaf. Include visibly withdrawn waiting poses; these still
+    # must clear every original shape and are NEVER commands on a live robot.
+    offsets += [(0.,0.,z) for z in (.08,.12,.16,.20)]
+    offsets += [(x,y,.06) for x,y in ((.10,0.),(-.10,0.),(0.,.10),(0.,-.10))]
+    started=time.monotonic();rows=[];candidate=None;selected=None
+    for offset in offsets:
+        guard()
+        if time.monotonic()-started>=30:break
+        desired=base_pose.copy();desired[:3,3]+=offset
+        solved=robot.kin.solve_pose('right',desired,initial,robot.base,
+            maximum_evaluations=200,joint_limit_margin_degrees=3.)
+        row=dict(wrist_offset_world_m=list(offset),ik_succeeded=bool(solved.succeeded),
+            native_startup_clear=False,left_self_path_clear=False,motion_authorized=False)
+        rows.append(row)
+        if not solved.succeeded:continue
+        q=np.asarray(solved.joint_degrees,float);row['right_ready_degrees']=q.tolist()
+        for left in robot.path_q:
+            guard()
+            clearance=robot.kin.inter_arm_clearance(left,q,robot.base).clearance_m
+            check=robot.check_self(left,q)
+            if clearance<.01 or not check['passed']:
+                row.update(rejection='left_self_path',interarm_m=float(clearance),self_screen=check);break
+        else:
+            row['left_self_path_clear']=True
+            geometry=backend.check(robot.body_world(robot.initial_q,q),robot.self_screen.shapes)
+            row['native_startup_geometry']=geometry;row['native_startup_clear']=geometry['passed'] is True
+            if geometry['passed']:
+                candidate=q.tolist();selected=list(offset);break
+    guard()
+    return dict(model='frozen_native_approach_start_search_v1',candidates=rows,
+        proposed_right_ready_degrees=candidate,proposed_wrist_offset_world_m=selected,
+        maximum_candidates=len(offsets),maximum_translation_m=max(float(np.linalg.norm(o)) for o in offsets),
+        original_spawn_unchanged=True,orientation_changed=False,relaunch_required=True,
+        physics_steps=0,motion_authorized=False,whole_path_certified=False,grasp_or_cut_verified=False)
+
+
+def heading_start_search(robot,backend,guard):
+    """Different camera-aligned knife headings at a fixed edge station.
+
+The mounted assembly is NEVER edited. Rotate the entire proposed wrist/tool
+around world up, preserving arc-up; the later approach must independently
+align with the stem. This can place the forearm on another side of a leaf
+where same-wrist elbow/translation searches cannot. No live pose writes.
+"""
+    from scipy.spatial.transform import Rotation
+    from .blade_contacts import CROSSBAR_EDGE
+    if robot.knife.edge_mode!=CROSSBAR_EDGE:raise ValueError('Actual source crossbar required')
+    initial=np.array(robot.right,float,copy=True)
+    wrist=robot.kin.forward('right',initial,robot.base);edge=robot.knife.frame(wrist)
+    if robot.knife.arc_up(wrist)[2]<np.cos(np.radians(5)):
+        raise ValueError('Initial source arc must already be up; no mounting repair')
+    low,high=robot.kin.arm_limits_degrees('right');rng=np.random.default_rng(288)
+    started=time.monotonic();rows=[];candidate=None;selected=None
+    for height in (.03,.08):
+        for yaw in (180.,90.,-90.,45.,-45.):
+            target=edge.copy();target[:3,:3]=Rotation.from_euler('z',yaw,degrees=True).as_matrix()@edge[:3,:3]
+            target[2,3]+=height;desired=target@np.linalg.inv(robot.knife.local)
+            for seed in (initial,rng.uniform(np.asarray(low)+10,np.asarray(high)-10)):
+                guard()
+                if time.monotonic()-started>=30:break
+                solved=robot.kin.solve_pose('right',desired,seed,robot.base,
+                    maximum_evaluations=200,joint_limit_margin_degrees=3.)
+                row=dict(tool_heading_change_degrees=yaw,edge_height_offset_m=height,
+                    ik_succeeded=bool(solved.succeeded),native_startup_clear=False,motion_authorized=False)
+                rows.append(row)
+                if not solved.succeeded:continue
+                q=np.asarray(solved.joint_degrees,float);row['right_ready_degrees']=q.tolist()
+                for left in robot.path_q:
+                    guard();arm=robot.kin.inter_arm_clearance(left,q,robot.base).clearance_m
+                    check=robot.check_self(left,q)
+                    if arm<.01 or not check['passed']:
+                        row.update(rejection='left_self_path',interarm_m=float(arm),self_screen=check);break
+                else:
+                    geometry=backend.check(robot.body_world(robot.initial_q,q),robot.self_screen.shapes)
+                    row['native_startup_geometry']=geometry;row['native_startup_clear']=geometry['passed'] is True
+                    if geometry['passed']:
+                        candidate=q.tolist();selected=dict(yaw_degrees=yaw,edge_height_offset_m=height);break
+            if candidate is not None or time.monotonic()-started>=30:break
+        if candidate is not None or time.monotonic()-started>=30:break
+    guard()
+    return dict(model='frozen_native_tool_heading_search_v1',candidates=rows,
+        proposed_right_ready_degrees=candidate,proposed_heading=selected,maximum_candidates=20,
+        original_spawn_unchanged=True,mounting_changed=False,arc_up_preserved=True,
+        relaunch_required=True,physics_steps=0,motion_authorized=False,whole_path_certified=False)

@@ -5,7 +5,7 @@ import numpy as np
 def validate_profile(args):
     if not getattr(args,'right_only_cut_trial',False):
         return False
-    if not (args.fixed_root_cut_trial and args.branch_contact_fixture
+    if not (args.fixed_root_cut_trial and (args.branch_contact_fixture or getattr(args,'greenhouse_cut_trial',False))
             and args.native_startup_clearance and args.native_static_clearance
             and args.native_drives_after_cut and args.physics_hz==480
             and args.blade_force_feed and args.cut_style=='downward'

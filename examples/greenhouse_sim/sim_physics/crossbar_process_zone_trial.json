@@ -1,6 +1,6 @@
 {
   "schema": "experimental_crossbar_process_zone_trial_v1",
-  "qualification": "isolated_single_case_only_not_reliable_or_greenhouse_qualified",
+  "qualification": "experimental_not_currently_qualified_prior_passes_predate_all_knife_load_fix",
   "source": "seed101_full/SubStem_41",
   "base_profile": "ground_truth_trial.json",
   "right_ready_degrees": [120.23685010553707, -161.124813251896, -96.97368468565253, -69.9616456805615, -33.70774718454816, -86.99942705395642, 34.35870931456847],

@@ -73,3 +73,88 @@ def test_cli_requires_complete_native_diagnostic_before_output_creation(tmp_path
     with pytest.raises(ValueError,match='Startup pose search'):
         main(['--output',str(out),'--native-startup-pose-search'])
     assert not out.exists()
+
+
+def test_approach_proposals_change_only_desired_initial_translation():
+    from .startup_pose_search import search
+    q=np.arange(7,dtype=float);requested=[];checks=[];guard_calls=[]
+    def solve(arm,pose,seed,base,**kwargs):
+        assert kwargs['joint_limit_margin_degrees']==3.
+        np.testing.assert_array_equal(pose[:3,:3],np.eye(3))
+        requested.append(pose.copy());return S(succeeded=True,joint_degrees=q+len(requested))
+    robot=S(startup_approach_search=True,right=q.copy(),base=np.eye(4),initial_q=q.copy(),path_q=[q,q],
+        kin=S(forward=lambda *a:np.eye(4),solve_pose=solve,inter_arm_clearance=lambda *a:S(clearance_m=.02)),
+        check_self=lambda *a:dict(passed=True),body_world=lambda *a:{},self_screen=S(shapes=['all']))
+    def check(world,shapes):
+        assert shapes==['all'];checks.append(world);return dict(passed=len(checks)==2)
+    result=search(robot,S(check=check),lambda:guard_calls.append(1))
+    assert result['proposed_wrist_offset_world_m']==[0.,0.,.02]
+    np.testing.assert_array_equal(robot.right,q)
+    assert not result['motion_authorized'] and not result['whole_path_certified']
+    assert result['physics_steps']==0 and result['relaunch_required']
+    assert len(guard_calls)>=6
+
+
+def test_approach_search_never_accepts_self_collision():
+    from .startup_pose_search import approach_start_search
+    q=np.zeros(7)
+    robot=S(right=q,base=np.eye(4),initial_q=q,path_q=[q],
+        kin=S(forward=lambda *a:np.eye(4),solve_pose=lambda *a,**k:S(succeeded=True,joint_degrees=q),
+            inter_arm_clearance=lambda *a:S(clearance_m=.005)),
+        check_self=lambda *a:dict(passed=True))
+    out=approach_start_search(robot,S(),lambda:None)
+    assert out['proposed_right_ready_degrees'] is None and len(out['candidates'])==24
+    assert out['maximum_translation_m']==pytest.approx(.2)
+
+
+def test_farther_waiting_proposal_still_gets_every_native_shape_check():
+    from .startup_pose_search import approach_start_search
+    q=np.zeros(7);poses=[];checks=[]
+    def solve(arm,pose,seed,base,**kwargs):
+        poses.append(pose.copy());return S(succeeded=True,joint_degrees=q+len(poses))
+    robot=S(right=q.copy(),base=np.eye(4),initial_q=q,path_q=[q],
+        kin=S(forward=lambda *a:np.eye(4),solve_pose=solve,
+            inter_arm_clearance=lambda *a:S(clearance_m=.02)),
+        check_self=lambda *a:dict(passed=True),body_world=lambda *a:{},self_screen=S(shapes=['all']))
+    def check(world,shapes):
+        assert shapes==['all'];checks.append(1);return dict(passed=len(checks)==17)
+    out=approach_start_search(robot,S(check=check),lambda:None)
+    assert out['proposed_wrist_offset_world_m']==[0.,0.,.08]
+    assert len(checks)==17 and out['physics_steps']==0
+    assert not out['motion_authorized'] and out['original_spawn_unchanged']
+    np.testing.assert_array_equal(robot.right,q)
+
+
+def test_heading_search_rotates_whole_proposed_tool_never_mount_or_live_pose():
+    from .startup_pose_search import search
+    from .blade_contacts import CROSSBAR_EDGE
+    q=np.zeros(7);poses=[];shapes=[];local=np.eye(4)
+    def solve(arm,pose,seed,base,**kwargs):
+        poses.append(pose.copy());return S(succeeded=True,joint_degrees=q+1)
+    r=S(startup_heading_search=True,right=q.copy(),base=np.eye(4),initial_q=q,path_q=[q],
+        knife=S(edge_mode=CROSSBAR_EDGE,local=local,frame=lambda f:f.copy(),arc_up=lambda f:np.array([0,0,1.])),
+        kin=S(forward=lambda *a:np.eye(4),solve_pose=solve,
+            arm_limits_degrees=lambda *a:(np.full(7,-180.),np.full(7,180.)),
+            inter_arm_clearance=lambda *a:S(clearance_m=.02)),
+        check_self=lambda *a:dict(passed=True),body_world=lambda *a:{},self_screen=S(shapes=['all']))
+    def check(world,ss):shapes.append(ss);return dict(passed=True)
+    result=search(r,S(check=check),lambda:None)
+    assert shapes==[['all']]
+    np.testing.assert_allclose(poses[0][:3,:3],np.diag([-1,-1,1]),atol=1e-15)
+    np.testing.assert_allclose(poses[0][:3,3],[0,0,.03])
+    np.testing.assert_array_equal(r.right,q);np.testing.assert_array_equal(r.knife.local,local)
+    assert result['proposed_right_ready_degrees']==[1.]*7
+    assert not result['motion_authorized'] and not result['mounting_changed']
+    assert result['relaunch_required'] and result['physics_steps']==0
+
+
+def test_heading_profile_is_explicit_and_mutually_exclusive(tmp_path,monkeypatch):
+    from pathlib import Path
+    from .ground_truth_trial import main
+    class Validated(Exception):pass
+    def stop(*a,**k):raise Validated()
+    monkeypatch.setattr(Path,'mkdir',stop)
+    args=['--output',str(tmp_path/'new'),'--mode','bimanual','--milestone','cut_action',
+        '--process-zone-trial','--greenhouse-trial','--screen-tool-heading']
+    with pytest.raises(Validated):main(args)
+    with pytest.raises(SystemExit):main(args+['--screen-ready-pose'])

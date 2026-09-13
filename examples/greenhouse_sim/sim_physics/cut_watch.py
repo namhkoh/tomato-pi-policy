@@ -11,7 +11,8 @@ import numpy as np
 def validate(args):
     if not getattr(args,'watch_cut_trial',False):return
     if not (args.cut_action_trial and args.fixed_root_cut_trial and args.bimanual_cut
-            and args.full_robot_probe and args.isolate_station and args.branch_contact_fixture
+            and args.full_robot_probe and ((args.isolate_station and args.branch_contact_fixture)
+                or getattr(args,'greenhouse_cut_trial',False))
             and args.physics_hz==480 and args.render_hz==15
             and not args.gui and not args.robot_interactive and not args.interactive
             and not args.profile and not args.scene_profile):
@@ -60,21 +61,21 @@ def watch(app,sim,rig,runtime,springs,fixture,args,output,run):
     window=ui.Window('Cut action watch - '+mode,width=430,height=650)
     with window.frame:
         with ui.VStack(spacing=5):
-            ui.Label('FULL RB-Y1 A v1.2 - ISOLATED ORIGINAL BRANCH',word_wrap=True,height=38)
+            ui.Label('FULL RB-Y1 A v1.2 - '+('INTACT GREENHOUSE' if getattr(args,'greenhouse_cut_trial',False) else 'ISOLATED ORIGINAL BRANCH'),word_wrap=True,height=38)
             ui.Label('Live native physics, not recorded playback. Diagnostic only: no tissue calibration or greenhouse qualification.',word_wrap=True,height=48)
             status=ui.Label('Ready. Choose a view, then Run once. Use this panel, not the timeline controls.',word_wrap=True,height=70)
             start=ui.Button('Run once: right-only cut' if args.right_only_cut_trial else 'Run once: left grasp + right cut',height=32,clicked_fn=control.request)
             ui.Button('Stop trial (relaunch required)',height=26,clicked_fn=lambda:setattr(fixture,'stop_requested',True))
             for name in fixture.views:
                 ui.Button(name,height=23,clicked_fn=lambda n=name:fixture.select_view(n))
-            ui.Label('Known limit: bimanual final blade clearance fails; right-only falling material may contact torso. Reset/replay disabled.',word_wrap=True,height=58)
-            ui.Label('50 simulated seconds takes several minutes. Close Isaac to end. Do not transform the robot or plant.',word_wrap=True,height=44)
+            ui.Label('Experimental isolated fixture. Full through-stroke requires its separate measured trial. Falling material may contact torso; reset/replay disabled.',word_wrap=True,height=58)
+            ui.Label(f'{args.seconds:g} simulated seconds may take several minutes. Close Isaac to end. Do not transform the robot or plant.',word_wrap=True,height=44)
     def on_sample(record):
         nonlocal last_update
         now=time.monotonic()
         if now-last_update<.25:return
         last_update=now;slip=record['slip_m']
-        status.text=(f"{record['phase']} | {record['t']:.2f} / 50 s\n"
+        status.text=(f"{record['phase']} | {record['t']:.2f} / {args.seconds:g} s\n"
             f"Bilateral contact: {record['contact']['bilateral']} | Cut: {record['cut']}\n"
             f"Slip: {'n/a' if slip is None else format(slip*1000,'.2f')+' mm'}")
         publish(dict(state='running',strategy=mode,t=record['t'],cut=record['cut'],

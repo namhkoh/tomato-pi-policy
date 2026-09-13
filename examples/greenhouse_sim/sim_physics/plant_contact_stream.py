@@ -8,7 +8,6 @@ friction anchor has no inferred normal or separation. Impulses are trace-only;
 no contact law, classification, load gate or actuation is implemented here.
 """
 from collections.abc import Mapping
-from copy import deepcopy
 from itertools import islice
 import math
 from numbers import Real
@@ -67,7 +66,13 @@ class PlantContactStream:
     def error(self):return self._error
 
     @property
-    def rows(self):return deepcopy(self._rows)
+    def rows(self):
+        # add_contact owns a fixed flat schema: strings/floats and numeric
+        # vectors only. Copy the dictionaries and each vector, preserving full
+        # snapshot isolation without recursive deepcopy dispatch per scalar.
+        # No row, sign, precision or per-step validation is removed.
+        return [{key:value.copy() if isinstance(value,list) else value
+                 for key,value in row.items()} for row in self._rows]
 
     def invalidate(self,error):
         if self._error is None:

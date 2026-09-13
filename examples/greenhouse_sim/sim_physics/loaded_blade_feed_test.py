@@ -60,6 +60,22 @@ def test_low_force_can_be_acquired_only_with_current_valid_geometry():
     assert f.receipt['state']=='load_feedback'
 
 
+def test_acquisition_setpoint_is_inside_band_not_an_asymptotic_entry_boundary():
+    f=fixture();f.offset=-.004;start=f.offset
+    for _ in range(480):step(f,.219945,.33,True)
+    assert f.offset-start==pytest.approx((.25-.219945)*.00125)
+    assert f.receipt['desired_signed_load_n']==.25
+    assert f.receipt['holding_load_band_n']==[.22,.28]
+    assert f.receipt['backoff_load_n']==.40 and f.receipt['hard_full_contact_guard_n']==.5
+    assert not f.receipt['cut_authorized']
+
+
+def test_midband_acquisition_still_refuses_unsafe_or_nonleading_loading():
+    f=fixture();start=f.offset;step(f,.219945,.33,False)
+    assert f.offset==start
+    with pytest.raises(RuntimeError):step(f,.219945,.501,True)
+
+
 def test_free_approach_does_not_require_a_contact_before_contact_exists():
     f=fixture();start=f.offset;step(f,0.,0.,False)
     assert f.offset>start and f.receipt['state']=='free_space'

@@ -27,7 +27,7 @@ def collision_prototype(asset):
     return stage,count
 
 
-def populate(stage,package,robot,rows=3):
+def populate(stage,package,robot,rows=3,*,detailed_neighbor_manifest=None):
     if rows not in (1,3,5): raise ValueError('Select 1, 3 or 5 context gutters')
     if robot.window is None: raise ValueError('Context requires a guarded fixed collision window')
     if stage.GetPrimAtPath('/World/PhysicsBackdrop'):
@@ -40,7 +40,7 @@ def populate(stage,package,robot,rows=3):
     selected=stations[max(0,center-rows//2):center+rows//2+1]
     assets=sorted((package/'plants/backdrop').glob('backdrop_*.usd'))
     if not assets: raise ValueError('Missing source backdrop plants')
-    bounds={};layers={};near=far=0;bindings={};instances=[]
+    bounds={};layers={};near=far=0;bindings={};instances=[];detailed=0
     with Usd.EditContext(stage,stage.GetSessionLayer()):
         UsdGeom.Xform.Define(stage,'/World/PhysicsBackdrop')
         for gi,(cx,_) in enumerate(selected):
@@ -60,6 +60,21 @@ def populate(stage,package,robot,rows=3):
                     path=f'/World/PhysicsBackdrop/Gutter{gi}_Side{side+1}_{i:03d}'
                     prim=UsdGeom.Xform.Define(stage,path)
                     prim.AddTranslateOp().Set(Gf.Vec3d(*pos))
+                    if detailed_neighbor_manifest is not None and cx==stations[center][0] and side==1 and i==13:
+                        from sim_data.audit import audit_manifest
+                        from sim_data.geometry import assemble_plant
+                        manifest=Path(detailed_neighbor_manifest)
+                        audit=audit_manifest(manifest)
+                        paths=assemble_plant(stage,path,audit)
+                        # Retain the preview's second complete component plant,
+                        # including its source static colliders. No backdrop
+                        # substitution, shape simplification or new dynamics.
+                        bindings[str(manifest)]=sha256_file(manifest)
+                        for c in audit['components'].values():
+                            bindings[str(manifest.parent/c['file'])]=c['asset_sha256']
+                        instances.append(dict(path=path,source=str(manifest),position_m=pos.tolist(),
+                            static_contact=True,detailed_components=len(paths)))
+                        detailed+=1;continue
                     if contact:
                         if asset not in layers: layers[asset]=collision_prototype(asset)
                         prim.GetPrim().GetReferences().AddReference(layers[asset][0].GetRootLayer().identifier)
@@ -71,8 +86,8 @@ def populate(stage,package,robot,rows=3):
                         static_contact=contact))
     # Keep anonymous referenced layers alive for the whole diagnostic.
     robot.context_layers=[v[0] for v in layers.values()]
-    return dict(populated_gutters=len(selected),context_plants=near+far,
-        detailed_target_plants=1,static_contact_plants=near,render_only_distant_plants=far,
+    return dict(populated_gutters=len(selected),context_plants=near+far+detailed,
+        detailed_target_plants=1,detailed_neighbor_plants=detailed,static_contact_plants=near+detailed,render_only_distant_plants=far,
         source_layout='same_0.5m_spacing_and_two_sides_as_launch_sim_data.populate',
         compliance='selected_petiole_only_context_is_static',
         source_sha256=bindings,instances=instances,training_eligible=False)

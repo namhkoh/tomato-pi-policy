@@ -1075,3 +1075,83 @@ retention. No complete retain/withdraw/deposit sequence is qualified. The fixed
 root instrumented cut profile now also records passive full-plant contact rows,
 including plant/support pairs omitted by robot-only summaries. Raw recording
 does not establish callback completeness, contact work or tissue calibration.
+
+### Current guarded crossbar trials (2026-09-13)
+
+These are experimental diagnostics, **not a frozen reliable cutting system**.
+Use the actual sharpened source crossbar, never the legacy component called
+`Blade` (that was the mounting plate). Native274..276 passed limited isolated
+mechanisms before the full-knife load-accounting correction; those passes do
+not qualify the current controller. Latest results and limitations are in
+the corresponding dated section of repository-root `dev.md`.
+
+From `examples/greenhouse_sim`, using Isaac's Python and a NEW output directory:
+
+```powershell
+$env:PYTHONPATH=(Get-Location).Path
+$env:OPENBLAS_NUM_THREADS='1'
+& D:\isaac-sim-6.0.1\python.bat -B -m sim_physics.ground_truth_trial --output D:\research\tomato-pi-policy\data\sim_physics\NEW_TRIAL --mode bimanual --milestone cut_action --process-zone-trial --stream-trajectory
+```
+
+- `--mode right_only`: left remains open/unloaded; no grasp/retention claim.
+- `--through-stroke-trial`: 85 s bounded trial, requires measured actual full
+  forward stroke before reversal; a seam release alone is not a pass. No kerf,
+  collision removal, increased load limit or calibrated tissue model is added.
+- `--greenhouse-trial`: retains the intact source plant, provided greenhouse,
+  three-gutter preview planting and both detailed plants. Native startup and
+  path checks must pass anew. The current saved pose is blocked by a neighboring
+  leaf in native280, so this is NOT yet an executable greenhouse demonstration.
+  Nearby context plants are static colliders; only the selected petiole flexes.
+- `--screen-ready-pose`: zero-motion same-wrist elbow proposal search.
+- `--screen-approach-start`: zero-motion higher/lateral waiting-pose search.
+  The two searches are mutually exclusive; both preserve the stopped scene and
+  stop before physics. Native281/282 found no clear candidate in their bounded
+  families. An eventual proposal still needs a new full native sequence test.
+- `--capture`: paused milestone PNGs, not synchronized RGB-D training frames.
+- `--watch`: separate one-shot visible panel, no automatic run or reset; cannot
+  combine with a zero-motion search. A blocked startup never becomes a GUI run.
+
+`--stream-trajectory` preserves full per-step JSON records in
+`bimanual_trajectory.jsonl.gz`, including failure-tick evidence, and keeps small
+result summaries plus the latest full row in memory. Read it with `gzip.open`
+and `json.loads` one line at a time. Default historical output remains a JSON
+array. Reports include archive counts, size and serialization timing; storage
+optimization does not skip native checks or certify real-time performance.
+
+The corrected knife load signal includes normal and friction loads from ALL
+knife contacts, even when their face/direction cannot authorize cutting. This
+prevents rejected contact from looking like free space to the feed controller.
+The original 0.5 N load and 1 mm available-contact penetration guards remain.
+Native278's full stroke fails on seam-face contact; corrected-accounting
+right-only native279 stops short of release. Physically consistent cut-face
+deformation/separation, new A/B passes and full-greenhouse performance remain
+open. Do not turn these diagnostic outputs into training-approved episodes.
+
+### Current measured section/withdrawal trials (2026-09-14)
+
+Native293 passes the current **isolated right-only** sequence. Bimanual289/291
+lose retention after release, so the milestone is NOT complete. Full source
+greenhouse startup has a clear proposal (294), not yet a complete motion pass.
+See `dev.md` for exact failures/results and remaining fidelity limitations.
+
+```powershell
+& D:\isaac-sim-6.0.1\python.bat -B -m sim_physics.ground_truth_trial --output D:\research\tomato-pi-policy\data\sim_physics\NEW_TRIAL --mode right_only --milestone cut_action --process-zone-trial --through-stroke-trial --material-clearance-trial --blade-aim-offset-m .0015 --rectilinear-floor-contacts --physics-threads 1
+```
+
+- `--material-clearance-trial`: fresh measured sharp-edge clearance of the
+  entire shaft/blade-plane section, then measured unloaded withdrawal. Only
+  after guarded release may exact cut-face side contacts support bounded
+  sliding; wrong-face contact can never authorize a cut.
+- `--rectilinear-floor-contacts`: exact solid decomposition of the original
+  source floor, including raised strips, with unchanged rendered mesh.
+- `--grasp-arc-m .09`: explicit bimanual placement proposal; not an approved
+  preset (native290 rejects this location because of an attached leaf).
+- `--screen-station`: zero-step base/two-arm startup proposals. Mutually
+  exclusive with other searches; always revalidate in a separate fresh trial.
+- `--station-proposal-report PATH`: explicitly load an initial-pose proposal
+  for `--greenhouse-trial`. Requires matching task and final-controlled report;
+  full native startup/approach/grasp/cut checks run anew, no path replay.
+
+The cut remains an uncalibrated force/direction-qualified seam-release model,
+not tissue fracture/kerf or a measured clean-cut quality model. Native293
+headless rate is0.26x real time; visual full-scene responsiveness remains open.

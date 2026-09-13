@@ -7634,3 +7634,229 @@ No hardware, collection, tuning, review, split or training-export changes.
   integration/context/yield/launcher tests pass. Final full `sim_physics` rerun:
   4,325 passed in 209.27 s (`regression_20260913_process_zone_v2.log`).
   Save this as an experimental, reproducible checkpoint, NOT the A/B/C freeze.
+
+### 2026-09-13 - Full-knife load correction, measured follow-through and intact greenhouse (IN PROGRESS)
+
+- A/B/C is **not complete or frozen**. The earlier native274..276 mechanism
+  passes used the earlier contact accounting and cannot qualify the corrected
+  controller below. No VLM collection/training, hardware commands, source-asset
+  edits, review changes, reboot or OS memory-setting changes were performed.
+- Implemented explicit `--through-stroke-trial`: follows the already screened
+  downward stroke after an evidence-validated native seam release. Completion
+  requires actual edge position beyond the shaft, unloaded endpoint dwell,
+  current support, actual arc-up/edge-down orientation and unchanged native
+  force/penetration/collision checks. Time or sent joint targets cannot count
+  as completion. Withdrawal reverses the last actually sent stroke fraction,
+  not an inferred extra forward increment. It stops on load/corridor limits
+  or bounded timeout; it creates no kerf and disables no collisions.
+- Native277 exposed a new report-generation bug: an empty follow-through receipt
+  masked the original fault and the diagnostic gzip lacked its closing footer.
+  **Do not use native277 as qualified evidence.** Fixed failure preservation,
+  unconditional trace closure and null-receipt handling. The initial new 1 mm
+  lateral check was also inconsistent with the existing trial's 3 mm target
+  envelope; retained that original envelope plus 0.25 mm endpoint progress
+  tolerance. All original force, collision and penetration bounds remain.
+- Native278: actual-edge bimanual release again occurs at 33.5125 s. Following
+  down instead of immediately reversing reaches only 0.06193 mm additional
+  measured travel before a 34.46875 s native guard stop. There is still
+  7.32396 mm to the planned endpoint. Max grasp slip 2.67444 mm (<3 mm).
+  The crossbar contacts the seam's solid support/branch faces; unwanted full
+  normal-plus-friction contact rises to 0.50958 N. **No through-stroke pass.**
+- This exposed a real controller accounting defect: rejected/noncutting knife
+  contacts could make `allowed_tool_contact_n` zero while the knife still
+  carried physical load. Added `knife_load.py`: sum every native pair involving
+  the exact knife assembly, normal PLUS friction, independent of edge
+  eligibility. The feed and 0.5 N knife cap now see this full bound; wrong
+  faces/normals still never become cutting evidence. Available rejected tool
+  normal rows also retain the 1 mm penetration bound. Self-pair separation
+  is not available in that callback; its full load is nevertheless counted.
+  No reclassification or removal of unwanted contacts was used to get a pass.
+- Native279 RIGHT ONLY with corrected full-knife accounting stops without
+  release at the unchanged 30 s load-acquisition deadline (38 s episode).
+  Qualified travel reaches about 0.23267 mm, below the required 0.3 mm.
+  This invalidates promotion of the old right-only pass to the new controller.
+  A physically consistent cut-face/local deformation treatment and renewed
+  native A/B qualification remain necessary, not a higher force limit.
+- Added opt-in lossless `--stream-trajectory`: every full diagnostic sample is
+  written to `bimanual_trajectory.jsonl.gz`; only the current full sample and
+  small per-step result summaries stay in RAM. Current/failure samples retain
+  late annotations. No physics/sensing guard is decimated. Native278 saved
+  16,545 complete rows in 349,508,948 bytes, serialization 19.6951 s total,
+  max 2.779 ms per row. Native279 saved 18,240 rows in 273,916,441 bytes,
+  serialization 15.5396 s, max 1.734 ms. This reduces diagnostic retention,
+  but is **not a measured matched FPS improvement**. RTFs 0.19805 (278) and
+  0.31343 (279) differ in mode/contact work; neither is real-time.
+- Added explicit `--greenhouse-trial` to the public launcher. It cannot select
+  isolation or remove other target-plant components. It restores the provided
+  three-gutter preview planting, including BOTH detailed component plants
+  (not substituting a backdrop for the second one), original source meshes,
+  full greenhouse/gutter visuals and nearby static plant collisions. Existing
+  source-preserving gutter instancing and guarded distant-wire optimization
+  are reused. Only the selected petiole is deformable; context is static.
+- Native280 loaded the intact greenhouse: all 404 target-plant components,
+  143 context plants (one detailed neighbor), 84 static-contact context plants,
+  59 distant render instances. The existing bounded robot/plant window retains
+  14 local wire colliders and excludes 7,036 unreachable wire proxies, with
+  their renderable wires preserved. Native startup stops at ZERO physics steps:
+  right forearm `link_right_arm_4` intersects original `SubStem_44/Leaf_028`.
+  All 71 robot actor positive controls pass before/after; no motion authorized.
+- Native281: 20 converged same-wrist elbow candidates checked (12 local family
+  solutions, 16 global IK attempts), no fully clear start. Native282: expanded
+  read-only 16 higher/lateral waiting-pose proposals, same blade orientation,
+  no fully clear start. Both retain final native controls and zero physics
+  steps. These bounded failures do not prove global unreachability. A different
+  stance/tool corridor or target is needed; do not delete the neighboring leaf.
+- Public diagnostic switches: `--screen-ready-pose` (same-wrist elbow search)
+  and `--screen-approach-start` (higher/lateral start search). Both stop before
+  physics, preserve the authored scene, and produce proposals only. Even a
+  clear proposal requires a fresh launch and full approach/action checks.
+- Validation: 4,377 `sim_physics` tests passed in 211.74 s
+  (`regression_20260913_follow_through_v1.log`). Later approach-search/reporting
+  changes passed 74 focused tests. A focused-only test-import ordering issue
+  was fixed by loading its USD helper before the native callback mock, not by
+  weakening runtime checks. The full final rerun is recorded below when done.
+- Native283 completed the limited isolated bimanual recheck with corrected
+  full-knife accounting: stable grasp, but acquisition timeout and NO cut.
+  Maximum consecutive qualified travel was 0.247321 mm, below 0.3 mm.
+  Remaining: physically traversable cut faces, successful full A/B strokes,
+  feasible full-scene approach, measured greenhouse performance and calibrated
+  damage/partial-cut behavior. Native274's material-index warning remains
+  unresolved. Do not resume VLM tasks or describe this as reliable tissue cutting.
+
+### 2026-09-14 - Actual edge traversal, post-cut load transfer and exact floor contacts (IN PROGRESS)
+
+Milestone A/B/C is still ACTIVE, not frozen; the requested evening deadline
+passed without full greenhouse qualification. VLM collection/training remains
+paused. All trials below use the source knife crossbar, arc up, world-down
+stroke, 0.2 N minimum signed resistance, 0.5 N ALL-knife hard load limit,
+fresh native guards and the original source meshes. No timed seam release,
+grasp weld, hidden collision removal or relaxed slip limit was introduced.
+
+- Added explicit `--blade-aim-offset-m` comparison, constrained to the existing
+  +/-1.5 mm proposal range. Moving the aim from -1 to +1.5 mm along the petiole
+  avoids the prior proximal-face wedge at initial loading. This moves only the
+  commanded contact proposal, NOT the preauthored release seam or its 3 mm
+  native axial tolerance. It still needs native checks per target.
+- Native284 (`bimanual_downward_20260913_native284`): right-only release and
+  4.932809 mm measured post-release downward travel. The old through controller
+  stalled on 0.101497 N side contact / 0.123405 mm indentation, with 2.411845 mm
+  remaining to an arbitrary overshoot waypoint. It correctly failed that old
+  requested qualification. This exposed a post-release controller issue, not
+  permission to treat side contact as cutting evidence.
+- Added `cut_section.py` and opt-in `--material-clearance-trial`. Analytically
+  intersect the current blade plane with the shaft cylinder and bound the full
+  elliptical cross-section. Require the measured SOURCE sharp edge to clear it
+  by 0.5 mm, adequate edge-end span and the entire section inside the original
+  3 mm seam envelope, plus 25 ms dwell and >0.3 mm actual downward travel.
+  Geometry matches dense cylinder/plane intersections in tests. Section pose is
+  bound to the freshly sampled proximal body, not a falling detached target.
+- After verified release ONLY, allow bounded side-face sliding on the exact
+  crossbar and the two seam shaft colliders. All other knife-part/scene pairs,
+  missing contact provenance, unknown separation, over-force or lost support
+  withhold advance. Broad-side contact still CANNOT authorize a new cut.
+  A loaded blade face after edge traversal is not an unloaded withdrawal;
+  the latter is checked separately. Original full-waypoint trial remains
+  available without this explicit mode.
+- Native286: first current ALL-knife guarded **right-only isolated pass**.
+  Release 22.377083 s; full shaft-section clearance 42.266667 s, after
+  5.962313 mm actual post-release downward travel; edge clearance 0.506796 mm,
+  maximum section axial distance 2.752769 mm, full knife load 0.305440 N at
+  clearance. Final fresh native withdrawal endpoint passed at 85 s. This is
+  ONE case, with the older timed withdrawal and original triangle floor;
+  material-index warnings persisted. Not general reliability or tissue proof.
+- Native287: bimanual grasp, release at 33.766667 s and full section traversal
+  at 54.583333 s passed, but the subsequent two-second reverse dragged the
+  retained stem: 3.002639 mm material-point slip at 57.75625 s stopped execution.
+  Therefore this is NOT a complete A pass. The trace contains a real axial
+  displacement (~2.746 mm), not merely normal pad compression; the 3 mm guard
+  has NOT been reclassified or loosened to make it pass.
+- Added `cut_retraction.py`: same screened reverse stroke, limited to 0.3 mm/s
+  while the blade is loaded, 2 mm/s when unloaded, same 0.4 N controller stop
+  and 0.5 N hard limit. Requires fresh support/exact cut-face contact provenance,
+  actual reverse motion and unloaded precontact endpoint dwell before reversing
+  the approach path. Commands and elapsed time cannot complete retraction.
+  Integrated only into explicit material-clearance trials; final qualification
+  now requires this extra measured retraction gate.
+- Fixed a load-acquisition boundary problem in `BladeFeed`: the setpoint was
+  the SAME 0.22 N value as the loaded-state entry boundary. Native287 lingered
+  at ~0.219945 N before quantization eventually crossed it. Loaded-downward
+  acquisition now targets 0.25 N, INSIDE the unchanged 0.22..0.28 N control band.
+  Other historical feed modes and all release/force limits are unchanged.
+- Added opt-in `--rectilinear-floor-contacts`. The original floor's 44 triangles
+  form a closed rectilinear solid exactly represented by THREE boxes, including
+  both raised strips. `floor_contacts.py` verifies manifold winding, grid-cell
+  parity, source/union volume and exposed area BEFORE editing only session
+  collision opinions. Rendering, floor height, holes/steps and material are
+  preserved; unsupported or previously approximated geometry is rejected.
+  This addresses the suspected floor material-index path, not by suppressing
+  logs. Native287 used it, but held debris did not reach the floor; a falling
+  right-only repeat is still required before claiming warning resolution.
+- Native285: all 24 bounded waiting-pose translations (up to 200 mm) failed
+  complete greenhouse startup clearance. Native288: 20 new complete-tool
+  heading/multistart proposals also failed. All final native controls passed,
+  source poses were unchanged, and zero physics steps executed. The new
+  `--screen-tool-heading` rotates proposed wrist/tool frames, not the knife
+  mounting. These bounded searches do NOT prove the target globally unreachable;
+  a different stance or target/corridor is required without deleting neighbors.
+- Validation: 33 startup/CLI tests, 39 section/through tests, 27 floor/section
+  tests, 120 feed/startup/CLI tests, 10 expanded startup tests and 24 new
+  retraction/section tests passed in focused runs (overlapping sets).
+  Full suite `regression_20260914_material_clearance_v1.log`: 4425 passed.
+- Native289 tested the bimanual sequence with midpoint acquisition,
+  contact-paced retraction and exact floor contacts: release at 23.570833 s,
+  then 3.002063 mm grasp slip at 39.677083 s, BEFORE withdrawal started.
+  Thus retraction pacing alone does not solve retention; no complete A pass.
+  The full regression overlaps this diagnostic; do NOT use its elapsed timing
+  as a matched performance comparison. A dedicated performance run is needed.
+- Still not implemented/qualified: complete A with retention/withdrawal,
+  A/B in the intact greenhouse, visibly extended right-arm approach, measured
+  responsive full-scene operation, material-calibrated fracture/kerf/partial
+  damage, and broader repeat/reset coverage. This remains a preauthored
+  force-qualified seam-release approximation, NOT calibrated tomato tissue.
+
+### 2026-09-14 - Fresh greenhouse stance and current right-only withdrawal (IN PROGRESS)
+
+- Native290 tested an explicit 90 mm grasp (instead of 80 mm). An original
+  attached leaf intersects the finger approach; rejected at 0.9 s before grasp.
+  Native291 tested centered blade aim rather than +1.5 mm: release at
+  23.564583 s, then 3.013083 mm material-point slip at 24.429167 s. Both fail;
+  neither leaf collisions nor the original 3 mm slip guard were relaxed.
+- Native293 is a CURRENT right-only isolated pass, including the NEW measured
+  section traversal and contact-paced retraction. Release 18.135417 s;
+  unloaded reverse endpoint at 47.683333 s after 10.938336 mm measured reverse
+  travel, zero knife load and 25 ms unloaded dwell; final trial passes at85 s.
+  All requested cut/clearance/withdrawal/open-left guards pass. Debris/torso
+  landing remains deferred per user (observed peak released-debris contact
+  5.779724 N); this is not a safe-deposit or calibrated tissue result.
+  Exact three-box source floor enabled; ZERO material-index warning messages
+  in this run. 85 simulated seconds /327.005 s tick wall time =0.259935 RTF,
+  headless/no renders. NOT real-time and NOT full-greenhouse evidence.
+- Added explicit public grasp-location and CPU worker-count comparisons.
+  Native293 used ONE worker, unchanged480 Hz/128PGS iterations, all source
+  geometry/materials/guards. It also used optimized snapshot copying and a
+  different controller from historical runs; do not attribute its aggregate
+  timing improvement to thread count alone. Matched repeat needed.
+- Replaced recursive deepcopy of the validated flat native-contact schema
+  with independently copied dictionaries/vectors. All rows, signed impulses,
+  precision, validation and snapshot mutation isolation are retained. A128-row
+  local microbenchmark: 0.594743 ms recursive versus0.061962 ms schema copy
+  (~9.6x for this COPY ONLY, not simulator FPS). 52 overlapping contact tests
+  passed. No contact sensor or physics step was decimated.
+- Added bounded zero-step two-arm/base proposals with complete native startup
+  controls and left-path self/interarm checks. Native292: original15 translated
+  stance/near-tool proposals fail. Expanded search includes the SDK withdrawn
+  right-arm pose. Native294 finds a proposal with all initial/final71 robot
+  controls passing, unchanged scene and ZERO physics steps:
+  station=[0.31459792940322134,0.984160534448182,-147.10477763841965],
+  right=[0,-5,0,-120,0,70,0]. Full proposal and left seed are in its report.
+  This is not a base driving path, grasp, right approach or cut qualification.
+- Added `--station-proposal-report` for a NEW intact-greenhouse launch. It
+  checks task identity and final native controls, records the report SHA256,
+  imports ONLY initial base/arm proposals, and reruns native startup and all
+  execution/path checks. Stored paths and prior motion authority are never
+  replayed. Any final-control failure revokes all proposed base/arm fields.
+  Native295 is running this fresh greenhouse recheck; result pending.
+- Validation: `regression_20260914_station_contact_v2.log`:4437 passed in
+  190.96 s (before the fresh-proposal adapter was added); the adapter plus
+  stance/comparison focused tests:19 passed. These suites overlap. VLM tasks
+  remain paused, and this is an engineering checkpoint, NOT an A/B/C freeze.

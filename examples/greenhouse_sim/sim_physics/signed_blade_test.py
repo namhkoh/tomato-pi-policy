@@ -20,6 +20,7 @@ def fixture(monkeypatch,model=BRITTLE_CUT_MODEL):
     r=object.__new__(BimanualRobot);r.cut_model=model;r.cut_authorized=True
     r.knife=object.__new__(KnifeGeometry);r.knife.local=np.eye(4);r.knife.size=np.array([.002,.05,.006])
     r.knife.collider='/World/R/knife/plate'
+    r.knife.root='/World/R/knife'
     r.rig=S(source_target='petiole',body_paths=['/World/T/Segment_000','/World/T/Segment_001'],cut_index=1)
     r.releases=[]
     r.rig.release_from_blade=lambda e:r.releases.append(e) or e

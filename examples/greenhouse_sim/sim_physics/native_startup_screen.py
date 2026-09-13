@@ -132,6 +132,10 @@ def _screen(stage, robot, context, timeline, physx, query, epoch_factory):
                 and result.get('maximum_authored_pose_change_during_queries')==0
                 and result['initial_robot_actor_controls']==result['final_robot_actor_controls'])
             result['right_pose_search']['final_native_controls_passed']=controls_ok
-            if not controls_ok:result['right_pose_search']['proposed_right_ready_degrees']=None
+            if not controls_ok:
+                # A stance proposal owns both arms AND the base. Revoke all
+                # provisional command fields on any final-control failure.
+                for key in tuple(result['right_pose_search']):
+                    if key.startswith('proposed_'):result['right_pose_search'][key]=None
         result.update(physics_steps=counter[0],native_query_calls=calls,wall_s=time.perf_counter()-began)
     return result

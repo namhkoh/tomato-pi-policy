@@ -29,6 +29,9 @@ def report_exit_code(report,args):
     execution/contact/support gates must still be present and true. Never
     upgrade a full-sequence request or accept a success label by itself.
     """
+    if getattr(args,'through_stroke_trial',False):
+        if (report.get('full_forward_cut_stroke_verified') is not True
+                or report.get('full_sequence_qualified') is not True):return 2
     if getattr(args,'cut_action_trial',False):
         action=report.get('cut_action') or {}
         gates=action.get('gates') or {}
@@ -68,6 +71,7 @@ def parser():
     p.add_argument('--scene',choices=('isolated','package'),default='isolated')
     p.add_argument('--isolate-station',action='store_true',
         help='Matched package station with complete source plant/floor/robot, no surroundings; NOT greenhouse qualification')
+    p.add_argument('--greenhouse-cut-trial',action='store_true',help='Explicit intact greenhouse diagnostic with all original target-plant components and guarded preview context')
     p.add_argument('--plant',default='seed101_full')
     p.add_argument('--target',default='SubStem_41')
     p.add_argument('--physics-hz',type=int,choices=(120,240,480,1920),default=240)
@@ -134,6 +138,12 @@ def parser():
         help='Isolated blade feedback experiment: uncalibrated 1000 N/m local stem contact compression')
     p.add_argument('--seam-contact-yield',action='store_true',
         help='Experimental isolated crossbar process-zone softening from qualified measured loaded advance; uncalibrated')
+    p.add_argument('--through-stroke-trial',action='store_true',
+        help='Explicit measured post-release follow-through; no collision/force bypass, can fail on solid cut faces')
+    p.add_argument('--material-clearance-trial',action='store_true',
+        help='Experimental measured sharp-edge section clearance and bounded post-release cut-face sliding')
+    p.add_argument('--rectilinear-floor-contacts',action='store_true',
+        help='Exact source-solid native box contacts for the package floor; original rendering preserved')
     p.add_argument('--native-spring-cut-trial',action='store_true',
         help='Explicit isolated comparison with unchanged native spring/contact drives in all phases')
     p.add_argument('--finger-target-antiwindup',action='store_true',
@@ -145,10 +155,18 @@ def parser():
     p.add_argument('--measured-withdrawal',action='store_true',
         help='Opt-in measured-start reverse path with fresh native geometry/hold checks; diagnostic only')
     p.add_argument('--native-static-clearance',action='store_true',help='Opt-in live native static-box refinement during the single synchronous bimanual plan')
+    p.add_argument('--native-startup-approach-search',action='store_true',
+        help='Zero-motion higher/lateral waiting-pose proposals with unchanged blade orientation; no path approval')
     p.add_argument('--native-startup-pose-search',action='store_true',
         help='Read-only frozen-scene elbow proposals; always stops before any physics motion')
+    p.add_argument('--native-startup-heading-search',action='store_true',
+        help='Zero-motion source knife heading proposals, preserving arc-up and the complete mounted tool')
     p.add_argument('--native-startup-clearance',action='store_true',
         help='Isolated contact diagnostic: full native collider/actor validation before FIRST step; no path/contact guard is bypassed')
+    p.add_argument('--native-startup-station-search',action='store_true',
+        help='Zero-motion base and both-arm proposals; same world grasp, complete native startup controls')
+    p.add_argument('--station-proposal-report',type=Path,
+        help='Reinitialize from a previously controlled station proposal, never replay its path or inherit its checks')
     p.add_argument('--native-capsule-sphere-cover',action='store_true',
         help='Optional whole-capsule conservative native sphere union after a coarse box hit; no sampled gaps')
     p.add_argument('--native-static-planning-seconds',type=float,default=8.,
@@ -247,6 +265,7 @@ def parser():
         help='Initial palm approach distance 0.01..0.08 m; leaves the selected fixed base unchanged')
     p.add_argument('--profile',action='store_true',help='Save diagnostic Python/native call timing alongside the non-training report')
     p.add_argument('--step-profile',action='store_true',help='Time the installed physics-only step phases without bypassing physics manager events')
+    p.add_argument('--stream-trajectory',action='store_true',help='Lossless gzip JSONL full samples; bounded diagnostic memory, all per-step guards retained')
     p.add_argument('--no-physics-profiler',action='store_true',help='Disable optional native profiling instrumentation in this process only')
     p.add_argument('--local-wire-physics',action='store_true',help='Guarded fixed-base 4 m collision window; all wire visuals retained')
     p.add_argument('--physics-window-half-m',type=float,default=2.,
@@ -273,14 +292,30 @@ def validate_fixed_root_hold(args):
 
 def main(argv=None):
     args=parser().parse_args(argv)
+    proposal_receipt=None
+    if args.station_proposal_report is not None:
+        from .station_proposal import apply_to_arguments
+        proposal_receipt=apply_to_arguments(args)
     fixed_hold=validate_fixed_root_hold(args)
     fixed_cut=args.fixed_root_cut_trial
+    from .greenhouse_cut import validate as validate_greenhouse
+    greenhouse_trial=validate_greenhouse(args)
+    contact_scope=args.isolate_station or greenhouse_trial
     from .cut_only import validate_profile
     cut_only=validate_profile(args)
     from .cut_watch import validate as validate_watch
     validate_watch(args)
+    if args.material_clearance_trial and not args.through_stroke_trial:
+        raise ValueError('Material-clearance trial requires guarded through-stroke profile')
+    if args.rectilinear_floor_contacts and not (args.scene=='package' and args.full_robot_probe and args.bimanual_cut):
+        raise ValueError('Exact floor contacts require the package full-robot cut diagnostic')
+    if args.stream_trajectory and not args.bimanual_cut:
+        raise ValueError('Streaming evidence currently requires the bimanual/direct-cut probe')
+    if args.through_stroke_trial and not (args.seam_contact_yield and args.cut_action_trial
+            and args.seconds>=80 and not args.measured_withdrawal):
+        raise ValueError('Through-stroke requires complete process-zone cut-action trial and >=80 seconds')
     if args.cut_action_trial and not (fixed_cut and args.native_drives_after_cut
-            and args.branch_contact_fixture and args.native_startup_clearance
+            and (args.branch_contact_fixture or greenhouse_trial) and args.native_startup_clearance
             and args.native_static_clearance and not args.gui and not args.robot_interactive
             and not args.measured_withdrawal):
         raise ValueError('Cut action milestone requires explicit native-release diagnostic without interactive reset')
@@ -295,7 +330,7 @@ def main(argv=None):
     if args.native_station_park_reference and not (fixed_cut and (args.require_retention_screen or cut_only)
             and args.native_static_clearance and not args.measured_withdrawal):
         raise ValueError('Native-station park requires isolated joint-reference cut/retention trial')
-    if args.staged_downward_transit and not (args.cut_style=='downward' and args.isolate_station
+    if args.staged_downward_transit and not (args.cut_style=='downward' and contact_scope
             and args.fixed_root_cut_trial and (args.require_retention_screen or cut_only) and args.native_static_clearance):
         raise ValueError('Staged approach requires complete isolated downward native-retention fixture')
     if args.preload_force_servo and not args.effort_bounded_grasp_target:
@@ -359,7 +394,10 @@ def main(argv=None):
             and args.cut_model=='loaded_downward_lower_rim_seam_v1'):
         raise ValueError('Seam yielding requires complete isolated 480 Hz crossbar feedback diagnostics')
     lower_rim=args.knife_edge_mode in ('source_lower_rim_v1','source_crossbar_edge_v1')
-    if args.native_startup_pose_search and not (args.native_startup_clearance and
+    startup_search=any((args.native_startup_pose_search,args.native_startup_approach_search,args.native_startup_heading_search,args.native_startup_station_search))
+    if sum((args.native_startup_pose_search,args.native_startup_approach_search,args.native_startup_heading_search,args.native_startup_station_search))>1:
+        raise ValueError('Select one zero-motion startup search mode')
+    if startup_search and not (args.native_startup_clearance and
             contact_trial and args.knife_edge_mode=='source_crossbar_edge_v1'):
         raise ValueError('Startup pose search requires isolated native crossbar diagnostics')
     if args.source_wrist_contacts and not (contact_trial and lower_rim):
@@ -377,7 +415,7 @@ def main(argv=None):
         raise ValueError('Native startup validation requires isolated cut contact and native path clearance')
     if args.branch_contact_fixture and not contact_trial:
         raise ValueError('Branch-only selection requires the isolated cut contact diagnostic')
-    if contact_trial and not (args.scene=='package' and args.isolate_station and args.full_robot_probe
+    if contact_trial and not (args.scene=='package' and contact_scope and args.full_robot_probe
             and args.bimanual_cut and (not args.bimanual_hold_control or fixed_hold) and not args.robot_interactive
             and args.explicit_finger_effort and args.force_closure and robot_rate_allowed
             and args.solver=='PGS' and args.spring_mode==('native' if args.native_spring_cut_trial else 'implicit_effort')
@@ -386,11 +424,11 @@ def main(argv=None):
             and args.uniform_solver_iterations in ([128,0],[128,8]) and args.force_newton==0
             and not args.diagnostic_contact_prediction and not args.experimental_contact_springs):
         raise ValueError('Isolated cut contact trial requires the complete explicit flat/PGS/spring/128-0-or-8 fixture')
-    if args.explicit_finger_effort and not (args.isolate_station and (args.bimanual_hold_control or contact_trial)
+    if args.explicit_finger_effort and not (contact_scope and (args.bimanual_hold_control or contact_trial)
             and args.bimanual_cut and args.force_closure and robot_rate_allowed
             and not args.robot_interactive and not args.experimental_contact_springs):
         raise ValueError('Explicit finger effort requires isolated 240 Hz feedback HOLD ONLY')
-    if args.uniform_solver_iterations is not None and not (args.isolate_station and not args.robot_interactive
+    if args.uniform_solver_iterations is not None and not (contact_scope and not args.robot_interactive
             and (args.bimanual_hold_control or contact_trial) and args.bimanual_cut
             and tuple(args.uniform_solver_iterations) in ((32,8),(64,0),(128,0),(128,8))):
         raise ValueError('Uniform iterations require isolated HOLD and a bounded diagnostic pair')
@@ -399,7 +437,7 @@ def main(argv=None):
         and not args.diagnostic_contact_prediction and not args.experimental_contact_springs
         and not args.robot_interactive)
     if args.stem_contact_model=='flat_cylinders_v1' and not (
-            args.isolate_station and (args.bimanual_hold_control or contact_trial) and args.bimanual_cut and not args.robot_interactive
+            contact_scope and (args.bimanual_hold_control or contact_trial) and args.bimanual_cut and not args.robot_interactive
             and args.grasp_contact_frames=='pre_solve_pgs_v1'
             and not args.diagnostic_contact_prediction and not args.experimental_contact_springs):
         raise ValueError('Flat cylinder experiment requires isolated corrected-frame bimanual HOLD ONLY')
@@ -557,8 +595,8 @@ def main(argv=None):
     output=args.output.resolve()
     if output.exists() or output.is_relative_to(DEFAULT_PACK.resolve()):
         raise ValueError('Choose a NEW output outside the source package')
-    if not 4<=args.seconds<=(60 if args.blade_force_feed else 30) or not .005<=args.max_segment_m<=.05:
-        raise ValueError('Qualification requires 4-30 seconds (feedback:40-60) and 5-50 mm segments')
+    if not 4<=args.seconds<=(90 if args.through_stroke_trial else 60 if args.blade_force_feed else 30) or not .005<=args.max_segment_m<=.05:
+        raise ValueError('Qualification requires 4-30 seconds (feedback:40-60; through-stroke:80-90) and 5-50 mm segments')
     output.mkdir(parents=True)
     report=dict(state='initializing',started_utc=datetime.now(timezone.utc).isoformat(),
                 configuration=report_configuration(args,output),training_eligible=False)
@@ -611,6 +649,7 @@ def main(argv=None):
             compliant_fingers=args.compliant_fingers,station_yaw=args.station_yaw,grasp_depth=args.grasp_depth_m)
         if args.station_offset is not None: robot_options['station_offset']=args.station_offset
         if args.station_pose is not None: robot_options['station_pose']=args.station_pose
+        if proposal_receipt is not None:report['startup_station_proposal']=proposal_receipt
         if args.approach_vector is not None: robot_options['approach_vector']=args.approach_vector
         if args.scene=='package' and args.full_robot_probe:
             from .greenhouse_scene import prepare
@@ -622,6 +661,9 @@ def main(argv=None):
             stage=context.get_stage();stage.SetEditTarget(stage.GetSessionLayer())
             record,height,scene_report=prepare(stage,DEFAULT_PACK,args.plant,sparse_backdrop=not args.context_gutters)
             report['greenhouse']=scene_report
+            if args.rectilinear_floor_contacts:
+                from .floor_contacts import apply as apply_floor_contacts
+                report['floor_contact_geometry']=apply_floor_contacts(stage,PACKAGE_FLOOR)
             if args.isolate_station:
                 from .isolated_station import isolate
                 report['isolated_station']=isolate(stage,floor_root=PACKAGE_FLOOR)
@@ -658,6 +700,10 @@ def main(argv=None):
             from .branch_contact_fixture import select_components
             report['branch_contact_fixture']=select_components(stage,record,args.target)
             report['isolated_station']['scope']='branch_contact_fixture_NOT_intact_source_plant'
+        if greenhouse_trial:
+            from .greenhouse_cut import intact_plant
+            report['greenhouse_cut_scope']=intact_plant(stage,record)
+            report['greenhouse']['full_environment_present']=True
         rig=build(stage,record,args.target,max_segment_m=args.max_segment_m,constraint_mode=args.constraint_mode,
                   cut_m=args.cut_arc_m,stem_contact_model=args.stem_contact_model)
         if args.seam_contact_compliance:
@@ -722,7 +768,15 @@ def main(argv=None):
                 report['collision_window']=configure(stage,fixture,half_extent=args.physics_window_half_m)
             if args.context_gutters:
                 from .greenhouse_context import populate as populate_context
-                report['context_plants']=populate_context(stage,DEFAULT_PACK,fixture,args.context_gutters)
+                context_options={}
+                if greenhouse_trial:
+                    # Match launch_sim_data.populate's ordered second detailed
+                    # plant, not a lower-detail backdrop at the adjacent station.
+                    candidates=sorted((DEFAULT_PACK/'plants/components').glob('*/manifest.json'))
+                    neighbors=[p for p in candidates if p.parent.name!=args.plant]
+                    if not neighbors:raise ValueError('Preview detailed neighbor is missing')
+                    context_options['detailed_neighbor_manifest']=neighbors[0]
+                report['context_plants']=populate_context(stage,DEFAULT_PACK,fixture,args.context_gutters,**context_options)
                 source_hashes.update({Path(p):h for p,h in report['context_plants']['source_sha256'].items()})
             if args.batch_gutter_visuals:
                 from .gutter_instances import batch
@@ -752,9 +806,12 @@ def main(argv=None):
             enabled=getattr(args,'solve_articulation_contact_last',False))
         if args.native_startup_clearance:
             from .native_startup_screen import screen as native_startup_screen
-            if args.native_startup_pose_search:fixture.startup_right_pose_search=True
+            if startup_search:fixture.startup_right_pose_search=True
+            if args.native_startup_approach_search:fixture.startup_approach_search=True
+            if args.native_startup_heading_search:fixture.startup_heading_search=True
+            if args.native_startup_station_search:fixture.startup_station_search=True
             report['native_startup_collision_screen']=native_startup_screen(stage,fixture)
-            if args.native_startup_pose_search:
+            if startup_search:
                 raise RuntimeError('Read-only startup pose search completed; relaunch and revalidate before motion')
             if not report['native_startup_collision_screen']['passed']:
                 raise RuntimeError('Complete native startup geometry not verified; no physics motion allowed')

@@ -1,0 +1,43 @@
+import json
+from types import SimpleNamespace as S
+import pytest
+from .station_proposal import apply_to_arguments
+
+
+def fixture(tmp_path):
+    task=dict(plant='seed101_full',target='SubStem_41',grasp_arc_m=.08,grasp_roll=0,
+        grasp_pitch=20.,grasp_depth_m=.125,torso_degrees=[0.]*6,cut_arc_m=.02,
+        knife_edge_mode='source_crossbar_edge_v1',knife_alignment='camera',stem_contact_model='flat_cylinders_v1')
+    args=S(**task,station_proposal_report=tmp_path/'report.json',greenhouse_cut_trial=True,
+        native_startup_clearance=True,native_static_clearance=True,station_pose=[9,9,9],
+        right_ready_degrees=[1]*7,left_ik_seed_degrees=[2]*7)
+    search=dict(model='frozen_native_two_arm_station_search_v1',final_native_controls_passed=True,
+        physics_steps=0,original_spawn_unchanged=True,motion_authorized=False,
+        proposed_station=dict(station_pose=[.5,0.,0.],right_ready_degrees=[0.]*7,
+            left_ik_seed_degrees=[.1]*7,left_path_degrees=['not_replayed']))
+    report=dict(configuration=task,native_startup_collision_screen=dict(physics_steps=0,right_pose_search=search))
+    return args,report,search
+
+
+def test_new_launch_uses_only_initial_values_never_replays_path(tmp_path):
+    args,report,_=fixture(tmp_path);args.station_proposal_report.write_text(json.dumps(report))
+    receipt=apply_to_arguments(args)
+    assert args.station_pose==[.5,0.,0.] and args.left_ik_seed_degrees==[.1]*7
+    assert not hasattr(args,'left_path_degrees') and not receipt['prior_path_replayed']
+    assert not receipt['prior_native_checks_inherited'] and not receipt['motion_authorized']
+    assert len(receipt['source_sha256'])==64
+
+
+@pytest.mark.parametrize('change',['final_control','steps','target','pose_nan','missing_pose','wrong_scene','another_search'])
+def test_bad_proposal_cannot_change_arguments(tmp_path,change):
+    args,report,search=fixture(tmp_path)
+    if change=='final_control':search['final_native_controls_passed']=False
+    elif change=='steps':search['physics_steps']=1
+    elif change=='target':report['configuration']['target']='other'
+    elif change=='pose_nan':search['proposed_station']['right_ready_degrees'][0]=float('nan')
+    elif change=='missing_pose':del search['proposed_station']['left_ik_seed_degrees']
+    elif change=='wrong_scene':args.greenhouse_cut_trial=False
+    elif change=='another_search':args.native_startup_station_search=True
+    args.station_proposal_report.write_text(json.dumps(report))
+    with pytest.raises(ValueError):apply_to_arguments(args)
+    assert args.station_pose==[9,9,9] and args.right_ready_degrees==[1]*7

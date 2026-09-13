@@ -46,6 +46,11 @@ class BladeFeed:
         # Commanded progress is not measured penetration or fracture work.
         # Half the existing near-contact speed; no load threshold/cap increase.
         self.loaded_speed=.00015 if loaded_advance else 0.
+        # A controller setpoint equal to the .22 N entry boundary approaches
+        # that boundary asymptotically and can get stuck below it after native
+        # float32 quantization (native287: .219945 N). Aim INSIDE the existing
+        # band. This changes only feed, never measured cut or hard-force gates.
+        self.acquisition_target=.25 if loaded_advance else .22 if dwell_feedback else .26
         # Contact upper bound includes friction; it is not the signed normal
         # load tested by the cut gate. At mu=.5, .26 N normal may require
         # .39 N total. .40 N is a CONTROL backoff, not a raised .50 N guard.
@@ -103,8 +108,7 @@ class BladeFeed:
         elif self.upper>.10 and self.normal<.01:
             speed=0.;mode='hold_nonqualifying_load'
         elif self.upper>.01:
-            target=.22 if self.dwell_feedback else .26
-            speed=min(self.loading_speed,max(0.,(target-control_load)*self.load_gain));mode='load_feedback'
+            speed=min(self.loading_speed,max(0.,(self.acquisition_target-control_load)*self.load_gain));mode='load_feedback'
         elif self.near:
             speed=self.near_speed;mode='near_contact'
         else:
@@ -119,7 +123,7 @@ class BladeFeed:
         self.receipt=dict(mode='native_blade_feed_v1',state=mode,command_step=step,
             observation_step=self.observed_step,offset_m=self.offset,delta_m=self.offset-previous,
             signed_resistance_n=self.normal,all_contact_upper_bound_n=self.upper,
-            desired_signed_load_n=.26,holding_load_band_n=[.22,.28],backoff_load_n=self.backoff_load,
+            desired_signed_load_n=self.acquisition_target,holding_load_band_n=[.22,.28],backoff_load_n=self.backoff_load,
             near_contact_speed_m_s=self.near_speed,loading_speed_limit_m_s=self.loading_speed,
             backoff_speed_m_s=.0005,cut_authorized=False,force_limit_guaranteed=False)
         self.receipt.update(compliant_rate_comparison=self.compliant_rate,
@@ -135,6 +139,6 @@ class BladeFeed:
                 else 'minimum_consecutive_samples_spanning_25ms') if self.dwell_feedback else 'latest_sample',
             control_window_capacity_samples=self.loads.maxlen,physics_hz=self.physics_hz,
             control_load_sample_count=len(self.loads) if self.dwell_feedback else 1,
-            minimum_contact_load_target_n=.22 if self.dwell_feedback else None,
+            minimum_contact_load_target_n=self.acquisition_target if self.dwell_feedback else None,
             release_evidence_filtered=False)
         return (self.offset-self.start)/(self.end-self.start)
