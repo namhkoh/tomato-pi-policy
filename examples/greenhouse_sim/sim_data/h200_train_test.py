@@ -39,7 +39,7 @@ def test_collator_keeps_exact_existing_adapter_contract(monkeypatch):
     monkeypatch.setattr(adapter,'encode_supervised',lambda *a,**k:calls.append((a,k)) or {'encoded':True})
     collator=SingleImageCollator('release','processor');row=records()[0]
     assert collator([row])=={'encoded':True}
-    assert calls==[((row,'release','processor'),{'maximum_tokens':2048,'coordinates':'normalized_1000'})]
+    assert calls==[((row,'release','processor'),{'maximum_tokens':2048,'coordinates':'normalized_1000','decimals':None,'depth_input':False})]
     with pytest.raises(ValueError):collator([row,row])
 
 

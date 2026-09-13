@@ -12,11 +12,13 @@ from .dataset_review import read_json,require,safe_file,write_json
 from .depth_preview import sha256
 from .training_export import read_jsonl
 from .training_contract import SYSTEM_PROMPT,validate_answer
-from .qwen_coordinates import adapt_messages,answer_to_pixels,COORDINATE_ADAPTER
+from .qwen_coordinates import adapt_messages,answer_to_pixels,COORDINATE_ADAPTER,adapter_name
 
 
-def audit(root):
+def audit(root,decimals=None):
     root=Path(root).resolve();manifest=read_json(root/'manifest.json')
+    # Full precision must roundtrip exactly; fixed decimals may move a label by at most half a step (in pixels).
+    tolerance=1e-9 if decimals is None else .5*10.**-decimals*848./1000.+1e-9
     require(manifest.get('state')=='complete_visible_occluded_baseline_release'
         and manifest.get('release_profile')=='visible_occluded_v1','Expected completed narrowed baseline')
     counts={};seen=set();maximum_error=0.
@@ -35,19 +37,19 @@ def audit(root):
             text_messages=[dict(role='system',content=[dict(type='text',text=turns[0]['content'])]),
                 dict(role='user',content=[dict(type='image',image=images[0]),dict(type='text',text=turns[1]['content'][8:])]),
                 dict(role='assistant',content=[dict(type='text',text=turns[2]['content'])])]
-            normalized=adapt_messages(text_messages)
-            require(adapt_messages(text_messages[:2])==normalized[:2],'Training/inference prompts diverge')
+            normalized=adapt_messages(text_messages,decimals=decimals)
+            require(adapt_messages(text_messages[:2],decimals=decimals)==normalized[:2],'Training/inference prompts diverge')
             decoded=answer_to_pixels(json.loads(normalized[-1]['content'][0]['text']))
             require(all(decoded[k]==canonical[k] for k in ('status','visibility','next_action')),'Answer semantics changed')
             if canonical['status']=='localized':
                 error=max(abs(a-b) for a,b in zip(decoded['cut_point_uv'],canonical['cut_point_uv']))
-                maximum_error=max(maximum_error,error);require(error<1e-9,'Coordinate roundtrip changed labels')
+                maximum_error=max(maximum_error,error);require(error<tolerance,'Coordinate roundtrip changed labels')
             else:require(decoded['cut_point_uv'] is None,'Hidden cut leaked into abstention')
             result['rows']+=1;result[canonical['status']]+=1
         require(result['rows']==manifest['acceptance']['rows'][split],'Frozen split count changed')
         counts[split]=result
     return dict(state='passed_qwen_chat_coordinate_audit_not_model_runtime_validation',
-        coordinate_adapter=COORDINATE_ADAPTER,manifest_sha256=sha256(root/'manifest.json'),
+        coordinate_adapter=adapter_name(decimals),coordinate_decimals=decimals,roundtrip_tolerance_px=tolerance,manifest_sha256=sha256(root/'manifest.json'),
         files_sha256={p.name:sha256(p) for p in (Path(__file__),Path(__file__).with_name('qwen_coordinates.py'),Path(__file__).with_name('qwen_adapter.py'))},
         counts=counts,maximum_pixel_roundtrip_error=maximum_error,
         canonical_release_changed=False,images_transformed=False,model_input_is_RGB_only=True,
@@ -59,10 +61,11 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dataset',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--coordinate-decimals',type=int,default=None,help='Audit the fixed-decimal text convention instead of full precision')
     args=parser.parse_args(argv)
     require(not args.output.resolve().is_relative_to(args.dataset.resolve()),'Keep audit outside immutable dataset')
     require(not args.output.exists(),'Choose a new audit output')
-    result=audit(args.dataset);write_json(args.output,result);print(json.dumps(result,indent=2),flush=True)
+    result=audit(args.dataset,decimals=args.coordinate_decimals);write_json(args.output,result);print(json.dumps(result,indent=2),flush=True)
 
 
 if __name__=='__main__': main()
