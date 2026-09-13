@@ -62,7 +62,7 @@ def vertical_cut_frame(axis,normal_sign=1,tilt_degrees=0.):
     return direction,normal
 
 
-def cartesian_transit(robot,left,goal,*,replan_stroke_from_endpoint=False,diagnostics=None):
+def cartesian_transit(robot,left,goal,*,replan_stroke_from_endpoint=False,diagnostics=None,mode='simultaneous'):
     """Straight wrist-position transit, smooth rotation, no joint-space detour.
 
     Every <=2 mm / <=1 degree pose plus <=1 degree joint interpolation is
@@ -78,18 +78,14 @@ def cartesian_transit(robot,left,goal,*,replan_stroke_from_endpoint=False,diagno
         if diagnostics is not None:
             diagnostics.update(reason=reason,**details,motion_authorized=False)
         return None
-    from scipy.spatial.transform import Rotation,Slerp
+    from scipy.spatial.transform import Rotation
+    from .wrist_transit import frames as wrist_frames
     start=robot.kin.forward('right',robot.right,robot.base)
     end=robot.kin.forward('right',goal,robot.base)
-    rotation=Rotation.from_matrix(np.array([start[:3,:3],end[:3,:3]]))
-    angle=np.linalg.norm((rotation[1]*rotation[0].inv()).as_rotvec())
-    count=max(2,int(np.ceil(np.linalg.norm(end[:3,3]-start[:3,3])/.002))+1,
-        int(np.ceil(np.degrees(angle)))+1)
-    fractions=np.linspace(0,1,count);rotations=Slerp([0,1],rotation)(fractions).as_matrix()
+    desired_frames=wrist_frames(start,end,mode=mode)
+    fractions=np.linspace(0,1,len(desired_frames))
     path=[robot.right.copy()];minimum=float('inf');checks=0
-    for alpha,rot in zip(fractions[1:],rotations[1:]):
-        desired=np.eye(4);desired[:3,:3]=rot
-        desired[:3,3]=(1-alpha)*start[:3,3]+alpha*end[:3,3]
+    for alpha,previous_desired,desired in zip(fractions[1:],desired_frames[:-1],desired_frames[1:]):
         solved=robot.solve_right_pose(desired,path[-1])
         if not solved.succeeded:return reject('cartesian_IK',fraction=float(alpha))
         q=np.asarray(solved.joint_degrees)
@@ -106,11 +102,13 @@ def cartesian_transit(robot,left,goal,*,replan_stroke_from_endpoint=False,diagno
             if not robot.check_held_plant(left,row):return reject('plant_or_scene_clearance',
                 fraction=float(alpha),check_index=checks,
                 detail=getattr(getattr(robot,'held_plant_screen',None),'last_failure',None))
-            # Linear joint interpolation must stay close to the Cartesian line.
+            # Linear joint interpolation must stay near THIS checked Cartesian
+            # segment, including a rotation-only phase or clearance waypoint.
             point=robot.kin.forward('right',row,robot.base)[:3,3]
-            delta=end[:3,3]-start[:3,3];length2=float(delta@delta)
-            t=float((point-start[:3,3])@delta/length2) if length2>1e-16 else 0.
-            closest=start[:3,3]+np.clip(t,0,1)*delta
+            segment_start=previous_desired[:3,3]
+            delta=desired[:3,3]-segment_start;length2=float(delta@delta)
+            t=float((point-segment_start)@delta/length2) if length2>1e-16 else 0.
+            closest=segment_start+np.clip(t,0,1)*delta
             if np.linalg.norm(point-closest)>.0005:return reject('joint_interpolation_off_line',
                 fraction=float(alpha),check_index=checks,line_error_m=float(np.linalg.norm(point-closest)),required_m=.0005)
             minimum=min(minimum,clearance)
@@ -128,7 +126,11 @@ def cartesian_transit(robot,left,goal,*,replan_stroke_from_endpoint=False,diagno
     if not np.isfinite([position_error,orientation_error]).all() or position_error>.0005 or orientation_error>.005:
         return reject('terminal_pose',position_error_m=position_error if np.isfinite(position_error) else None,
             orientation_error_rad=orientation_error if np.isfinite(orientation_error) else None)
-    return np.asarray(path),minimum,dict(method='straight_cartesian_no_detour',
+    method=('straight_cartesian_no_detour' if mode=='simultaneous' else
+            'orient_then_straight_cartesian_no_detour' if mode=='orient_then_translate' else
+            'orient_then_checked_clearance_waypoint')
+    return np.asarray(path),minimum,dict(method=method,
+        wrist_schedule=mode,
         collision_checks=checks,maximum_cartesian_sample_step_m=.002,
         maximum_joint_sample_step_degrees=1.,maximum_line_error_m=.0005,
         requires_stroke_replanning=replan_stroke_from_endpoint,

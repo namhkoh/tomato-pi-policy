@@ -26,7 +26,8 @@ class RigidToolScreen:
             raise ValueError('Current plant snapshot and fitted right tool required')
         self.world=robot.body_world(left,robot.right)
 
-    def check(self,wrist_frames):
+    def check(self,wrist_frames,*,stroke=True):
+        if type(stroke) is not bool:raise ValueError('Explicit stroke allowance required')
         frames=np.asarray(wrist_frames,float)
         if frames.ndim!=3 or frames.shape[1:]!=(4,4) or not len(frames) or not np.isfinite(frames).all():
             raise ValueError('Nonempty finite wrist-frame sequence required')
@@ -42,7 +43,7 @@ class RigidToolScreen:
                 return result
             # First pose must be free of seam contact too; later contact with
             # the intended seam is only a planning allowance, not a cut.
-            if not self.plant_screen.check(world,stroke=i>0):
+            if not self.plant_screen.check(world,stroke=stroke and i>0):
                 result.update(reason='rigid_tool_scene_interference',sample=i,detail=self.plant_screen.last_failure)
                 return result
         result.update(passed=True,reason='required_subset_clear_not_full_path')

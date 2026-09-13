@@ -7075,3 +7075,98 @@ No hardware, collection, tuning, review, split or training-export changes.
   `native235`; native235 includes `native_local_hand_tool.json`. Offline proposal
   logs `compact_branch_free_ready_20260913_v19..v22` and
   `coupled_grasp_access_20260913_v9..v10` remain diagnostics, not training data.
+
+### 2026-09-13 ? Grasp depth and checked right-wrist approach schedules
+
+- Native236 (80 mm/pitch20/roll0/depth110 mm) passes setup but never verifies
+  grasp.151 loaded rows are beyond a flat cylinder's side extent; repeated
+  existing backoff keeps opposing support near16 mN, below20 mN. These are
+  NONZERO impulses, not stale zero-load points. No geometry/force gate relaxed.
+- Native237 changes the commanded depth to125 mm with a newly solved initial
+  left posture. Grasp and static retention prerequisite PASS (utilization
+  0.852996); attached maximum slip0.023368 mm. A native-screened vertical cut
+  corridor at15-degree plane tilt exists. The right arm's simultaneous rotation
+  and translation approach, however, sweeps the knife arc into MainStem_26.
+  The planner repeats effectively identical Cartesian transits for redundant
+  endpoint elbow guesses, exhausting its60-second WALL budget (549 queries,
+  below20,000 query-count cap). No right motion/cut was authorized.
+- FIX, default-OFF `--staged-downward-transit`: same native retention fixture
+  can screen nominal complete right-tool transits BEFORE arm IK. Transit NEVER
+  inherits the cutting stroke's intended-seam contact allowance. Current options
+  include simultaneous, orient-then-straight, bounded60/120 mm side waypoints,
+  and30/60/90 mm above-endpoint waypoints. Each uses <=2 mm/1-degree wrist samples.
+  Full arm IK/inter-arm/self/plant checks remain at <=1-degree joint samples;
+  interpolation must stay within0.5 mm of its own checked Cartesian segment.
+  Via-waypoint approaches are NOT described as one straight approach; the actual
+  cut remains straight/downward with the original extension and angular gates.
+  The initial endpoint IK is only a pose seed. Staged mode solves transit from
+  the actual configured parked branch, then rebuilds and screens the ENTIRE
+  cut stroke from its exact terminal joint vector. It does not repeat a fixed
+  wrist sweep for unrelated endpoint guesses or skip actual-arm path checks.
+- Native238 repeats237 with the first two schedules: same grasp, blocked approach
+  rejected in2.225 s instead of timing out.239 adds above waypoints (4.174 s),
+  240 adds side waypoints (6.604 s). All tested approaches reject before arm IK:
+  original main stems, held plant or left hand remain in the way. These are
+  measured planning-latency improvements on a REJECTED case, not successful cuts
+  or a full-greenhouse frame-rate claim. No force/collision threshold changed.
+- A task-ready initial right pose is being evaluated separately to isolate
+  contact/retention from the difficult neutral-pose approach. Native241 tests
+  a15-degree-plane ready pose10 mm above the pre-cut endpoint. Its offline
+  left self/target preview passes but native zero-step startup rejects the
+  blade plate versus MainStem_27. No physics motion.242 is a subsequent candidate
+  at the previously screened pre-cut endpoint; not qualified in this entry.
+  Initial-pose proposals do not solve general approach planning or authorize
+  runtime pose snaps. `near_ready_pose_search_20260913_v1.log` is a failed file-
+  lookup diagnostic;v2 contains the actual source-preserving pose proposals.
+- Regression: **4,033 physics tests passed in151.60 s** in
+  `regression_20260913_staged_transit_v1.log`; **640 sim_data tests plus47 subtests
+  passed in42.69 s** in`regression_20260913_sim_data_unchanged_v1.log`.
+  Focused113-test wrist/planning suite also passes; counts overlap.
+  Reliable physical cut/retain/withdraw/deposit remains open. No source assets,
+  dataset decisions, production/GUI defaults, hardware or host OS settings changed.
+
+### 2026-09-13 - Task-ready grasp/cut achieved; released-branch retention still fails
+
+- Native242 uses the original source101/SubStem_41,80 mm grasp,pitch20,roll0,
+  depth125 mm,20 mm cut and independently startup-checked right pre-cut pose.
+  Native grasp, preload and cut planning pass. Planning takes1.763 s, without
+  an arbitrary-neutral-start approach. Measured blade-load joint release occurs
+  at18.720833 s. This is the signed-edge brittle-seam proxy, NOT calibrated
+  tissue cutting (measured loading travel only0.359 micrometres).
+- At18.904167 s,242 stops on1.378 mm finger penetration (>1 mm), with1.894 mm
+  slip (<3 mm), finger contact upper bound0.363 N (<0.5 N). The frame-based
+  elastic-energy estimate rises from0.001676 J at release to0.331324 J.
+  It agrees with joint-coordinate strain, so this is not just a q-readout
+  artifact. Explicit spring work accounting reports an apparent constitutive
+  energy source~0.329 J after18.7 s; it is NOT complete native energy balance.
+- Native243 changes only the existing original-K/C native-drive post-release
+  comparator. Same grasp/cut time; failure at18.920833 s on3.052 mm slip.
+  Frame-based energy estimate0.484580 J. Native drive torque/work is unmeasured;
+  no zero-work or calibrated-energy claim. Restoring native drives alone fails.
+- Native244 repeats243 with the already supported128 position/8 velocity
+  solver iterations. Cut18.7375 s, maximum slip3.058 mm, retention fails again.
+  These are negative controlled comparisons, not promoted physics defaults.
+- Passive diagnostic improvement: instrumented fixed-root cut trials record
+  original signed normal/friction rows for all observed target contacts BEFORE
+  robot-only load classification, including plant/support contacts. Existing
+  source bodies already have zero-threshold native reporting; no geometry,
+  filtering, material, force, timing or execution gate is changed. Replayed/gap
+  snapshots and callback faults fail; an empty stream does not certify absence.
+  Native245 repeats243 with this instrumentation to investigate released loads.
+  Focused passive recorder/contact suite:118 passed (0.40 s).
+- Solver investigation follows NVIDIA's articulation stability guidance:
+  https://docs.omniverse.nvidia.com/kit/docs/omni_physics/latest/dev_guide/guides/articulation_stability_guide.html
+  and https://nvidia-omniverse.github.io/PhysX/physx/5.6.1/docs/Articulations.html .
+  These document competing contact/drive constraints; they do not establish
+  the root cause of this particular failure. Original safety thresholds remain.
+- Native245 matches243's cut time and failure slip exactly with passive tracing.
+  The trace includes a distal Leaf_004 / link_torso_5 contact peaking0.109313 N
+  at18.766667 s. It is below the existing0.5 N unwanted-contact stop threshold,
+  but is not desired target manipulation and attached startup clearance does
+  not guarantee post-release clearance. No observed non-robot support impulse
+  explains the failure; callback completeness remains unproven. The torso
+  contact may contribute, not yet a demonstrated sole root cause.
+- Full physics regression after trace integration: **4,042 passed in148.60 s**
+  (`data/sim_physics/regression_20260913_release_trace_v1.log`). Offline roomier
+  body-pose proposals preserve both wrist goals and original plant geometry;
+  these still require native zero-step and full execution checks.

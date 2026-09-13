@@ -66,6 +66,35 @@ def test_final_validation_precedes_plan_acceptance_and_always_closes():
     assert robot.plan_diagnostics['native_static_clearance']['final_validation_passed']
 
 
+def test_blocked_nominal_tool_transits_never_reach_redundant_arm_ik(monkeypatch):
+    import sim_physics.rigid_tool_screen as module
+    robot=BimanualRobot.__new__(BimanualRobot)
+    robot.staged_downward_transit=True;robot.cut_style='downward'
+    robot.stage=None;robot.root='/World/R';robot.rig=S(root='/World/P')
+    robot.held_plant_screen=S(workspace=[np.zeros(3),np.ones(3)],static=[],snapshot=lambda frames:None)
+    robot.goal=np.eye(4);robot.radius=.003;robot.right=np.zeros(7);robot.base=np.eye(4)
+    robot.stroke_offsets=np.linspace(-.025,.005,61)
+    axis=np.array([.6638,.6961,.2735]);axis/=np.linalg.norm(axis)
+    robot.seam=lambda frames:(np.zeros(3),axis.copy())
+    def wrist(point,*unused):
+        f=np.eye(4);f[:3,3]=point;return f
+    robot.knife=S(size=np.array([.002,.05,.006]),wrist_for_edge=wrist)
+    robot.solve_right_pose=lambda *a:pytest.fail('Blocked wrist sweep reached arm IK')
+    robot.kin=S(forward=lambda *a:np.eye(4));checks=[]
+    class Screen:
+        def __init__(self,*a):pass
+        def check(self,path,*,stroke=True):
+            checks.append(stroke)
+            return dict(passed=stroke,reason='synthetic_transit_obstacle',motion_authorized=False)
+    monkeypatch.setattr(module,'RigidToolScreen',Screen)
+    with pytest.raises(RuntimeError,match='IK_attempted=0'):robot._plan_cut([],np.zeros(7))
+    attempts=robot.plan_diagnostics['endpoint_attempts']
+    from sim_physics.wrist_transit import MODES
+    assert len(attempts)==400 and checks.count(False)==400*len(MODES)
+    assert all(a['rejection']=='rigid_tool_transit' for a in attempts)
+    assert robot.screened_transit_modes==() and robot.plan is None
+
+
 @pytest.mark.parametrize('failure',['step','missing_actor','budget'])
 def test_finalization_invalidates_earlier_clearances_and_discards_plan(failure,monkeypatch):
     from .native_static_clearance import NativeStaticClearance

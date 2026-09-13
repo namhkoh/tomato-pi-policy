@@ -47,3 +47,14 @@ def test_scene_rejection_and_invalid_frames_are_not_hidden():
     assert robot.held_plant_screen.last_failure is None
     for bad in (np.empty((0,4,4)),np.full((1,4,4),np.nan),np.eye(3)[None]):
         with pytest.raises(ValueError): screen.check(bad)
+
+
+def test_transit_never_inherits_stroke_seam_contact_allowance():
+    screen,robot,_=fixture();frames=np.repeat(np.eye(4)[None],3,axis=0)
+    frames[:,0,3]=1.;seen=[]
+    screen.plant_screen.check=lambda world,*,stroke:seen.append(stroke) or True
+    assert screen.check(frames,stroke=False)['passed']
+    assert seen==[False,False,False]
+    seen.clear();assert screen.check(frames)['passed']
+    assert seen==[False,True,True]
+    with pytest.raises(ValueError):screen.check(frames,stroke=1)

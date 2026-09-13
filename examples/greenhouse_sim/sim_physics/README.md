@@ -975,3 +975,19 @@ established bilateral grasp after the span correction.220 completed measured
 preload dwell but failed static retention capacity (~2.077 budget utilization),
 so the knife stayed parked. Neither software test counts nor stable ATTACHED
 grasp establish a retained cut, withdrawal, deposit or calibrated tissue model.
+
+`--staged-downward-transit` is another default-OFF isolated retention diagnostic.
+It screens bounded wrist staging routes before expensive full-arm IK, without
+giving transit the cutting stroke's seam-contact allowance. The actual joint
+transit and rebuilt cut stroke still require full collision checks. Native240
+rejects the blocked approach in6.604 s versus native237's60-second planning
+timeout; this is not a successful arbitrary-start approach or a frame-rate claim.
+
+Native242/243 use a separately checked task-ready initial right pose: both
+establish a native grasp and trigger blade-load-qualified joint release at
+18.720833 s.242 then exceeds1 mm finger penetration;243 restores original native
+spring drives but exceeds3 mm slip.244 adds velocity iterations and still loses
+retention. No complete retain/withdraw/deposit sequence is qualified. The fixed
+root instrumented cut profile now also records passive full-plant contact rows,
+including plant/support pairs omitted by robot-only summaries. Raw recording
+does not establish callback completeness, contact work or tissue calibration.

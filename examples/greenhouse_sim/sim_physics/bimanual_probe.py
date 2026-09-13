@@ -135,6 +135,11 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 binding_sha256=fixture.grasp_observer.binding_sha256,sha256=contact_binding['sha256'])
             contact_springs=FreshHoldSprings(springs,bound,runtime.drive_diagnostics,
                 experimental_hold_only=True)
+    release_contacts=None
+    if getattr(args,'fixed_root_cut_trial',False) and getattr(args,'diagnostic_grasp_dynamics',False):
+        from .release_contact_trace import ReleaseContactTrace
+        release_contacts=ReleaseContactTrace(fixture.event_monitor,
+            [v[0] for v in fixture.held_plant_screen.local])
     measured_withdrawal=bool(getattr(args,'measured_withdrawal',False));withdrawal=None
     hold_control=bool(getattr(args,'bimanual_hold_control',False))
     reposition=float(getattr(args,'bimanual_reposition_m',0.))
@@ -439,6 +444,9 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             joint_velocities_rad_s=plant_v.tolist(),elastic_energy_j=.5*float(np.dot(springs.k*plant_q,plant_q)),
             fastest_body=rig.body_paths[int(np.argmax(np.linalg.norm(velocity[:,:3],axis=1)))])
         records.append(record)
+        if release_contacts is not None:
+            record['release_contacts']=release_contacts.measured_snapshot(
+                step=int(stamp.step),dt=dt,cut=bool(rig.cut))
         if free_root_snapshot is not None:
             record['free_root_prediction_before_step']=free_root_snapshot
         # Preserve failure-tick contact data without invoking release logic

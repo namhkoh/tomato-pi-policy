@@ -17,9 +17,14 @@ class BimanualRobot(FullRobotGripper):
     physical_grasp_span=False
     effort_bounded_grasp_target=False
     preload_force_servo=False
+    staged_downward_transit=False
     def __init__(self,*args,**kwargs):
         self.cut_model=kwargs.pop('cut_model',LEGACY_CUT_MODEL)
         self.cut_style=kwargs.pop('cut_style','legacy')
+        self.staged_downward_transit=kwargs.pop('staged_downward_transit',False)
+        self.screened_transit_modes=()
+        if type(self.staged_downward_transit) is not bool or self.staged_downward_transit and self.cut_style!='downward':
+            raise ValueError('Staged wrist approach requires explicit downward policy')
         self.blade_axial_aim_offset_m=kwargs.pop('blade_axial_aim_offset_m',0.)
         from .blade_aim import edge_centre
         edge_centre(np.zeros(3),np.array([0.,0.,1.]),self.blade_axial_aim_offset_m)
@@ -450,6 +455,18 @@ class BimanualRobot(FullRobotGripper):
         if getattr(self,'cut_style','legacy')=='downward':
             from .downward_cut import cartesian_transit
             self.last_transit_rejection={}
+            if self.staged_downward_transit:
+                modes=getattr(self,'screened_transit_modes',())
+                if not modes:raise RuntimeError('No current screened wrist transit schedule')
+                failures=[]
+                for mode in modes:
+                    detail={}
+                    result=cartesian_transit(self,left_q,goal,replan_stroke_from_endpoint=True,
+                        diagnostics=detail,mode=mode)
+                    if result is not None:return result
+                    failures.append(dict(mode=mode,detail=detail))
+                self.last_transit_rejection=dict(reason='screened_wrist_schedules_failed_full_arm_path',attempts=failures)
+                return None
             return cartesian_transit(self,left_q,goal,replan_stroke_from_endpoint=True,
                 diagnostics=self.last_transit_rejection)
         lower,upper=self.kin.arm_limits_degrees('right')
@@ -677,12 +694,33 @@ class BimanualRobot(FullRobotGripper):
                 attempt['rigid_tool_corridor']=subset
                 if not subset['passed']:
                     attempt['rejection']='rigid_tool_corridor';continue
+                if self.staged_downward_transit:
+                    from .wrist_transit import screen_modes
+                    self.screened_transit_modes=()
+                    start=self.kin.forward('right',self.right,self.base)
+                    modes,detail=screen_modes(rigid_screen,start,desired)
+                    attempt['rigid_tool_transits']=detail
+                    if not modes:
+                        attempt['rejection']='rigid_tool_transit';continue
+                    self.screened_transit_modes=modes
                 solution=self.solve_right_pose(desired,self.right)
                 attempt.update(ik_attempted=True,
                     position_error_m=solution.position_error_m,orientation_error_rad=solution.orientation_error_rad,
                     evaluations=solution.evaluations,ik_succeeded=solution.succeeded)
                 if not solution.succeeded:
                     attempt['rejection']='endpoint_IK';continue
+                if self.staged_downward_transit:
+                    # The initial IK supplies a wrist POSE, not an accepted
+                    # elbow branch. Cartesian transit starts at the parked arm
+                    # and rebuilds the stroke from its actual terminal joints.
+                    # Repeating the same transit for redundant endpoint guesses
+                    # cannot repair a blocked wrist sweep and wastes the budget.
+                    attempt['endpoint_is_pose_seed_only']=True
+                    candidate=(float(np.linalg.norm(np.asarray(solution.joint_degrees)-self.right)),
+                        degrees,d,np.asarray(solution.joint_degrees),normal_sign,wing,normal)
+                    if self._try_cut_candidate(left_q,centre,axis,candidate,tilt,failures):
+                        self.plan['stroke_basis']=attempt['stroke_basis'];return
+                    attempt['rejection']='actual_transit_or_rebuilt_stroke';continue
                 family=(solution,)
                 if downward:
                     from itertools import chain
@@ -860,6 +898,7 @@ class BimanualRobot(FullRobotGripper):
         self.cut_authorized=False
         self.edge_points=[];self.edge_impulses=[];self.edge_normals=[];self.edge_contact_rows=[];self.edge_contact_error=None
         self.cut_event=None;self.plan=None;self.plan_diagnostics=None;self.cut_contacts=0
+        self.screened_transit_modes=()
         self.planning_wall_seconds=None
         self.held_plant_screen.workspace=None;self.held_plant_screen.static=[]
         if hasattr(self,'planning_slides'): del self.planning_slides
@@ -880,6 +919,7 @@ class BimanualRobot(FullRobotGripper):
 
     def report(self):
         result=super().report()
+        result['staged_downward_transit']=self.staged_downward_transit
         result.update(right_arm='original_fitted_knife_guarded_native_joint_drives',
             grasp_closure=dict(mode='native_force_closure_v1' if getattr(self,'force_closure_enabled',False) else 'ground_truth_shaft_width_stop_with_native_contact_verification',
                 commanded_half_aperture_m=None if getattr(self,'force_closure_enabled',False) else max(0.,self.radius-self.grasp_compression),
