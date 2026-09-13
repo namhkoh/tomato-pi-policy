@@ -6929,3 +6929,62 @@ No hardware, collection, tuning, review, split or training-export changes.
   within the existing30-degree downward cone. No knife motion, cut or free
   retention is claimed. Direction/target feasibility must also pass; the
   source13 successful attached grasp is NOT a completed cutting benchmark.
+
+### 2026-09-13: Preload convergence and coupled grasp/tool access
+
+- Further ORIGINAL-asset diagnostics, with all physical/collision gates intact:
+  native222 returns to seed101_full/SubStem_41,65 mm grasp. Bilateral contact
+  6.545833 s, preload12.0125 s, but static retention utilization5.507846 fails;
+  maximum attached slip0.150163 mm. Native223's rotated/pitched candidate is
+  rejected at zero-step startup for torso5 against distal target leaves.
+  Native224 keeps the previously tested base/torso and changes only the grasp
+  proposal: native startup/approach pass, grasp6.641667 s, preload12.191667 s,
+  retention utilization3.383998 fails; maximum attached slip0.248194 mm.
+  None of these trials reaches knife motion or cuts.
+- Selected original seed41_full/SubStem_41 (shallow enough for the unchanged
+  downward cutting cone). Native225:55 mm grasp,20 mm cut,8 mm pre-grasp
+  half-opening,-45 degree radial approach,roll180. Native startup and the
+  left approach pass; bilateral grasp6.625 s; maximum attached slip0.027971 mm.
+  Preload times out at13.5 s with support0.208739/0.215352 N and only two of
+  48 required consecutive ready ticks. The old force controller stops at the
+  same +/-0.03 N boundary used for readiness, and small force fluctuations
+  repeatedly reset the independent dwell. No cut planning in225.
+- Added default-OFF `--preload-force-servo`, requiring the complete existing
+  effort-bounded explicit-finger/antiwindup/static-retention diagnostic.
+  The symmetric mean-force controller uses a tighter +/-0.01 N deadband and
+  nominal0.5 s force-error-to-reference-velocity time constant at the existing
+  200 N/m PD gain. Closing speed stays <=0.5 mm/s. Same0.24 N desired support,
+  0.30 N PD,0.8 N total actuator,0.5 N all-contact and1 mm actual penetration
+  limits; same geometry/freshness rejection and5 mm/s emergency backoff.
+  This is a controller hypothesis validated below, not hardware calibration.
+- Native226 is the SAME source/initial pose as225 with only that servo enabled.
+  Bilateral contact verified6.6125 s; preload ready8.954167 s with48 measured
+  ticks and support0.212011/0.218740 N. Maximum attached slip0.028183 mm.
+  Current static retention prerequisite PASSES: utilization0.902101,
+  12 compressive rows,7.585276 g detached inventory. It assumes fixed patch,
+  friction0.5 and force redistribution; it does NOT certify actuator feasibility,
+  cutter loading or dynamic retention. No force limits were raised.
+-226 then reaches cut planning, but all400 candidate tool corridors reject
+  before arm IK: primarily right camera versus left fingers, or fitted knife/
+  camera versus the original main stem. Tools/plant are not removed, resized
+  or repositioned to hide the conflicts. No knife motion or seam release.
+  Small source-preserving grasp-station/orientation proposals are being
+  screened jointly with tool access, not judged by attached grasp alone.
+- Evidence: `data/sim_physics/bimanual_downward_20260912_native222` through
+  `native226` reports/trajectories; `current_patch_orientation_20260913_native226.log`
+  and `coupled_grasp_access_20260913_v1.log` are OFFLINE proposal diagnostics,
+  not measured new contacts or full-robot path certificates.
+  Initial servo/controller/CLI regression:133 passed in0.99 s. Broad suite:
+  **5,023 passed,2 skipped,47 subtests in203.71 s**
+  (`regression_20260913_preload_servo_v1.log`). Reliable retained cut/withdrawal/
+  deposit remains open; software regression is not physical qualification.
+  Production presets, source assets/fidelity, datasets/reviews/splits/training
+  and hardware remain unchanged. No reboot or host memory-check bypass.
+- Native227 keeps that source/approach but places the grasp65 mm from the
+  junction (cut remains20 mm). Full native startup/approach pass; verified
+  grasp6.729167 s; preload9.033333 s at0.213629/0.218442 N; static retention
+  prerequisite passes with utilization0.814660. Maximum attached slip0.067946 mm.
+  All400 fitted-tool corridors still reject before IK; no right motion/cut.
+  Offline60..70 mm station comparisons likewise find no coarse-clear complete
+  tool stroke. Further station proposals must retain full native validation;
+  do not alter the fixed cut point or remove camera/plant collision geometry.

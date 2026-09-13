@@ -951,6 +951,14 @@ Additional **default-OFF isolated diagnostics**:
   0.24 N desired support,0.30 N PD cap,0.8 N total actuator and0.5 N per-finger
   all-contact budgets remain. Requires explicit effort/antiwindup, physical
   span, preload settling and retention preflight; not a production preset.
+- `--preload-force-servo`: requires the complete effort-bounded trial. Uses
+  a +/-0.01 N control deadband INSIDE the unchanged +/-0.03 N readiness band,
+  with a nominal 0.5 s outer force loop and the same 0.5 mm/s closing limit.
+  Original force, actual penetration, freshness and safety-backoff checks
+  remain. This is an uncalibrated controller setting, not tissue physics.
+  Native226 passes measured preload dwell and the static retention prerequisite
+  on the same source/pose that timed out in225; fitted tool/camera interference
+  then rejects all cut corridors. No retained cut or production qualification.
 
 Native216 exposed an identity mismatch and stopped without a grasp.217
 established bilateral grasp after the span correction.220 completed measured

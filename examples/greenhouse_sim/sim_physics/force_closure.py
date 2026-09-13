@@ -10,7 +10,10 @@ class ForceClosure:
     # Drive effort excludes independently measured gravity feed-forward. The
     # original total-motor and 0.5 N all-contact budgets remain upper bounds.
     drive_limit_n = .15
-    def __init__(self, radius, compression, *, retention_preload=False, symmetric=False, pregrasp_half_aperture=.025, effort_bounded_target=False):
+    def __init__(self, radius, compression, *, retention_preload=False, symmetric=False, pregrasp_half_aperture=.025, effort_bounded_target=False, preload_force_servo=False):
+        if type(preload_force_servo) is not bool or preload_force_servo and not (retention_preload and symmetric and effort_bounded_target):
+            raise ValueError('Preload force servo requires original symmetric effort-bounded retention profile')
+        self.preload_force_servo=preload_force_servo
         if type(effort_bounded_target) is not bool or effort_bounded_target and not (retention_preload and symmetric):
             raise ValueError('Effort-bounded target requires original symmetric retention profile')
         self.effort_bounded_target=effort_bounded_target
@@ -73,6 +76,15 @@ class ForceClosure:
             if current<=self.slow_gap+1e-12 or np.max(self.loads)>.01:
                 error=self.desired_support_n-float(np.mean(self.support))
                 speed=0. if abs(error)<=.03 else float(np.clip(error/self.desired_support_n,-1,1))*.0005
+                if self.preload_force_servo:
+                    # Keep the control deadband INSIDE the independent +/-0.03 N
+                    # readiness band. The old controller parks on that boundary
+                    # and contact noise repeatedly resets the required dwell.
+                    # A 0.5 s nominal outer-loop time constant with the existing
+                    # 200 N/m PD gives a force-error-to-reference-velocity gain.
+                    # This is a controller hypothesis, not a tissue calibration.
+                    # Same 0.5 mm/s rate, effort caps and actual penetration guard.
+                    speed=0. if abs(error)<=.01 else float(np.clip(error/(200*.5),-.0005,.0005))
                 if not self.geometry_valid:speed=-.005 if np.max(self.loads)>.01 else 0.
                 if np.max(self.loads)>self.backoff_contact_n:speed=-.005
                 desired_gap=max(scheduled,current-speed*dt)
@@ -93,6 +105,9 @@ class ForceClosure:
         self.fraction = float(fraction)
         self.commanded_step = step
         self.receipt = dict(mode='native_force_closure_v1', command_step=step,
+            preload_force_servo=self.preload_force_servo,
+            control_deadband_n=.01 if self.preload_force_servo else .03,
+            nominal_outer_time_constant_s=.5 if self.preload_force_servo else None,
             effort_bounded_position_reference=self.effort_bounded_target,
             maximum_nominal_target_bias_m=self.nominal_target_bias,
             actual_native_penetration_guard_m=.001,

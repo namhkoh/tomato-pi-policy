@@ -145,6 +145,8 @@ def parser():
         help='Isolated retention trial: derive connected shaft identity from measured full pad footprint; original contact geometry/force verification remains mandatory')
     p.add_argument('--settle-retention-preload',action='store_true',
         help='Isolated retention trial: wait bounded 0.2 s measured original-preload dwell before static capacity audit; no force-limit increase')
+    p.add_argument('--preload-force-servo',action='store_true',
+        help='Isolated retention trial only: narrower force-control deadband and bounded 0.5 s outer loop; unchanged physical limits')
     p.add_argument('--effort-bounded-grasp-target',action='store_true',
         help='Isolated retention trial: bound nominal position-reference bias by original PD effort/Kp; actual native penetration/force guards unchanged')
     p.add_argument('--branch-contact-fixture',action='store_true',
@@ -214,6 +216,8 @@ def main(argv=None):
     args=parser().parse_args(argv)
     fixed_hold=validate_fixed_root_hold(args)
     fixed_cut=args.fixed_root_cut_trial
+    if args.preload_force_servo and not args.effort_bounded_grasp_target:
+        raise ValueError('Preload force servo requires the complete effort-bounded retention trial')
     if args.effort_bounded_grasp_target and not (args.settle_retention_preload and args.require_retention_screen
             and args.physical_grasp_span and args.explicit_finger_effort and args.finger_target_antiwindup):
         raise ValueError('Effort-bounded target requires the full explicit settled physical-span retention trial')
@@ -592,6 +596,7 @@ def main(argv=None):
                 robot_options['pregrasp_half_aperture']=args.pregrasp_half_aperture_m
                 robot_options['physical_grasp_span']=args.physical_grasp_span
                 robot_options['effort_bounded_grasp_target']=args.effort_bounded_grasp_target
+                robot_options['preload_force_servo']=args.preload_force_servo
                 robot_options['explicit_finger_effort']=args.explicit_finger_effort
                 robot_options['finger_target_antiwindup']=args.finger_target_antiwindup
                 robot_options['retention_preload']=args.retention_preload
