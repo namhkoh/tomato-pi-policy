@@ -62,7 +62,8 @@ def test_antiwindup_preserves_opening_and_refuses_infeasible_symmetric_effort():
         project([.008,.008],[-.02,.02],[0,0],[.3,.3],**kw)
 
 
-def test_collision_screen_covers_approach_and_entire_actual_closure(monkeypatch):
+@pytest.mark.parametrize('effort_reference',[False,True])
+def test_collision_screen_covers_approach_and_entire_actual_closure(monkeypatch,effort_reference):
     from . import held_plant_screen
     seen=[]
     class Screen:
@@ -73,6 +74,7 @@ def test_collision_screen_covers_approach_and_entire_actual_closure(monkeypatch)
             assert grasp;seen.append(bodies);return True
     monkeypatch.setattr(held_plant_screen,'HeldPlantScreen',Screen)
     r=object.__new__(BimanualRobot);r.pregrasp_half_aperture=.008
+    r.effort_bounded_grasp_target=effort_reference;r.force_closer=S(minimum=.0015)
     r.slides={'gripper_finger_l1':-.008,'gripper_finger_l2':.008}
     r.held_plant_screen=S(workspace={},static=[],static_indices=[])
     r.rig=S(stem_contact_model='flush_capsules_v1');r.self_screen=S(shapes=[])
@@ -82,7 +84,7 @@ def test_collision_screen_covers_approach_and_entire_actual_closure(monkeypatch)
     result=r.screen_grasp_scene(np.eye(4)[None])
     assert result['passed'] and not result['native_grasp_verified']
     assert seen[:3]==[r.slides]*3
-    np.testing.assert_array_equal([x['gripper_finger_l2'] for x in seen[3:]],closure_samples(.008,.0025))
+    np.testing.assert_array_equal([x['gripper_finger_l2'] for x in seen[3:]],closure_samples(.008,.0015 if effort_reference else .0025))
     assert max(abs(np.diff([x['gripper_finger_l2'] for x in seen[3:]])))<=.001
     assert not hasattr(r,'planning_slides')
 

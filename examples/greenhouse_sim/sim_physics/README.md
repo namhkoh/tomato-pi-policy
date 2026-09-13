@@ -933,3 +933,27 @@ actuator/contact budgets, collision margins and cut gates are unchanged; the
 default remains 25 mm per side. Native213 passes zero-step startup but rejects
 the approach against an original target leaf. This is not a successful grasp
 or evidence that narrower pre-shaping alone solves access or retention.
+
+Additional **default-OFF isolated diagnostics**:
+
+- `--physical-grasp-span`: connected exact shaft identities under the current
+  native finger footprint, instead of a fixed +/-one-segment list. Broken
+  connections, support, leaves and other branches remain excluded. Full raw
+  normal-row geometry/sign checks and selected-tensor reconciliation remain.
+- `--settle-retention-preload`: require 0.2 s of measured preload dwell within
+  the original13.5 s acquisition budget before static capacity assessment.
+  It checks the existing symmetric controller's mean support target/deadband,
+  both compressive fingers, low speed, current telemetry and bounded slip.
+  Knife timing is rebuilt only after readiness; no elapsed-time stroke jump.
+- `--effort-bounded-grasp-target`: distinguish nominal PD reference bias from
+  actual measured penetration. The original0.30 N/200 N/m bounds the reference
+  bias to1.5 mm; actual native penetration remains limited to1 mm. Original
+  0.24 N desired support,0.30 N PD cap,0.8 N total actuator and0.5 N per-finger
+  all-contact budgets remain. Requires explicit effort/antiwindup, physical
+  span, preload settling and retention preflight; not a production preset.
+
+Native216 exposed an identity mismatch and stopped without a grasp.217
+established bilateral grasp after the span correction.220 completed measured
+preload dwell but failed static retention capacity (~2.077 budget utilization),
+so the knife stayed parked. Neither software test counts nor stable ATTACHED
+grasp establish a retained cut, withdrawal, deposit or calibrated tissue model.

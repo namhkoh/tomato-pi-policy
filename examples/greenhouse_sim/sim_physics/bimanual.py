@@ -14,6 +14,8 @@ from .contact_events import NativeNormalContact,original_order_tool_contact,NATI
 class BimanualRobot(FullRobotGripper):
     retention_preload=False
     symmetric_finger_closure=False
+    physical_grasp_span=False
+    effort_bounded_grasp_target=False
     def __init__(self,*args,**kwargs):
         self.cut_model=kwargs.pop('cut_model',LEGACY_CUT_MODEL)
         self.cut_style=kwargs.pop('cut_style','legacy')
@@ -24,6 +26,12 @@ class BimanualRobot(FullRobotGripper):
             raise ValueError('Non-default blade aim requires the downward diagnostic')
         self.knife_alignment=kwargs.pop('knife_alignment','legacy')
         self.force_closure_enabled=kwargs.pop('force_closure',False)
+        self.physical_grasp_span=kwargs.pop('physical_grasp_span',False)
+        self.effort_bounded_grasp_target=kwargs.pop('effort_bounded_grasp_target',False)
+        if type(self.effort_bounded_grasp_target) is not bool:
+            raise ValueError('Explicit effort-bounded grasp target required')
+        if type(self.physical_grasp_span) is not bool:
+            raise ValueError('Explicit physical grasp-span mode required')
         self.finger_target_antiwindup=kwargs.pop('finger_target_antiwindup',False)
         if type(self.finger_target_antiwindup) is not bool or self.finger_target_antiwindup and not self.force_closure_enabled:
             raise ValueError('Finger target antiwindup requires explicit feedback closure')
@@ -42,6 +50,9 @@ class BimanualRobot(FullRobotGripper):
                 and not (self.force_closure_enabled and self.explicit_finger_effort and self.finger_target_antiwindup)):
             raise ValueError('Retention preload requires explicit feedback fingers and antiwindup')
         self.grasp_contact_frames=kwargs.pop('grasp_contact_frames','post_fetch_legacy')
+        if self.effort_bounded_grasp_target and not (self.force_closure_enabled and self.retention_preload
+                and self.symmetric_finger_closure and self.explicit_finger_effort and self.finger_target_antiwindup):
+            raise ValueError('Effort-bounded reference requires unchanged explicit symmetric feedback with antiwindup')
         if self.grasp_contact_frames not in ('post_fetch_legacy','pre_solve_pgs_v1'):
             raise ValueError('Unknown grasp contact frame contract')
         if type(self.force_closure_enabled) is not bool:
@@ -84,7 +95,8 @@ class BimanualRobot(FullRobotGripper):
         if self.force_closure_enabled:
             from .force_closure import ForceClosure
             self.force_closer=ForceClosure(self.radius,self.grasp_compression,retention_preload=self.retention_preload,
-                symmetric=self.symmetric_finger_closure,pregrasp_half_aperture=self.pregrasp_half_aperture)
+                symmetric=self.symmetric_finger_closure,pregrasp_half_aperture=self.pregrasp_half_aperture,
+                effort_bounded_target=self.effort_bounded_grasp_target)
         if fixed is not None:
             low,high=self.kin.arm_limits_degrees('right')
             if not low[fixed[0]]<fixed[1]<high[fixed[0]]:
@@ -232,6 +244,7 @@ class BimanualRobot(FullRobotGripper):
             q=self.path_q[int(np.argmin(abs(self.fractions-1.)))]
             aperture=max(0.,self.radius-self.grasp_compression)
             from .pregrasp_aperture import closure_samples
+            if self.effort_bounded_grasp_target:aperture=self.force_closer.minimum
             for gap in closure_samples(self.pregrasp_half_aperture,aperture):
                 self.planning_slides={'gripper_finger_l1':-gap,'gripper_finger_l2':gap}
                 checks+=1
@@ -271,7 +284,8 @@ class BimanualRobot(FullRobotGripper):
         if getattr(self,'force_closure_enabled',False):
             from .force_closure import ForceClosure
             self.force_closer=ForceClosure(self.radius,self.grasp_compression,retention_preload=self.retention_preload,
-                symmetric=self.symmetric_finger_closure,pregrasp_half_aperture=self.pregrasp_half_aperture)
+                symmetric=self.symmetric_finger_closure,pregrasp_half_aperture=self.pregrasp_half_aperture,
+                effort_bounded_target=self.effort_bounded_grasp_target)
         self.right_indices=[self.names.index(f'right_arm_{i}') for i in range(7)]
         if getattr(self,'explicit_finger_effort',False):
             from .finger_effort import FingerEffort
@@ -285,6 +299,7 @@ class BimanualRobot(FullRobotGripper):
         evidence_options=(dict(diagnostic_noncompressive_report=True)
             if getattr(self,'diagnostic_grasp_contacts',False) else
             dict(allow_signed_native_normals=True,sensor_contract=NATIVE37_SENSOR_CONTRACT))
+        if self.physical_grasp_span:evidence_options['physical_grasp_span']=True
         self.grasp_observer=ShaftGraspNative(self.stage,self.rig,
             selected_index=self.body_index,finger_paths=self.paths[1:],
             contact_views=self.contact_views,**evidence_options)
@@ -850,9 +865,13 @@ class BimanualRobot(FullRobotGripper):
         result.update(right_arm='original_fitted_knife_guarded_native_joint_drives',
             grasp_closure=dict(mode='native_force_closure_v1' if getattr(self,'force_closure_enabled',False) else 'ground_truth_shaft_width_stop_with_native_contact_verification',
                 commanded_half_aperture_m=None if getattr(self,'force_closure_enabled',False) else max(0.,self.radius-self.grasp_compression),
-                minimum_commanded_half_aperture_m=max(0.,self.radius-self.grasp_compression),
-                nominal_pad_compression_m=self.grasp_compression,material_calibrated=False),
+                minimum_commanded_half_aperture_m=self.force_closer.minimum if getattr(self,'force_closure_enabled',False) else max(0.,self.radius-self.grasp_compression),
+                nominal_pad_compression_m=self.grasp_compression,
+                maximum_nominal_target_bias_m=self.force_closer.nominal_target_bias if getattr(self,'force_closure_enabled',False) else self.grasp_compression,
+                effort_bounded_position_reference=self.effort_bounded_grasp_target,
+                actual_native_penetration_guard_m=.001,material_calibrated=False),
             grasp_evidence_model='exact_connected_detached_shaft_inner_pad_normal_contacts_with_selected_tensor_crosscheck',
+            physical_grasp_span=self.physical_grasp_span,
             diagnostic_grasp_contacts=getattr(self,'diagnostic_grasp_contacts',False),
             minimum_grasp_self_capsule_clearance_m=self.minimum_grasp_self_clearance,
             knife_mount=self.knife_mount,

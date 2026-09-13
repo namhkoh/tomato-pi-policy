@@ -191,7 +191,7 @@ class ShaftGraspNative:
     def __init__(self, stage, rig, *, selected_index, finger_paths, contact_views,
                  pad_paths=None, pad_faces=((0, -1), (0, -1)), max_rows=256,
                  diagnostic_noncompressive_report=False, allow_signed_native_normals=False,
-                 sensor_contract=STRICT_SENSOR_CONTRACT):
+                 sensor_contract=STRICT_SENSOR_CONTRACT, physical_grasp_span=False):
         from pxr import Tf, Usd, UsdGeom, UsdPhysics
 
         if type(diagnostic_noncompressive_report) is not bool:
@@ -290,7 +290,7 @@ class ShaftGraspNative:
 
         self.core = ShaftGraspEvidence(chain, pads, selected_index=self.selected_index,
             cut_index=self.cut_index, source_target=self.source_target, max_rows=max_rows,
-            allow_signed_native_normals=allow_signed_native_normals)
+            allow_signed_native_normals=allow_signed_native_normals,physical_grasp_span=physical_grasp_span)
         self.joints = []
         expected = self.core.links
         seen = set()
@@ -327,6 +327,7 @@ class ShaftGraspNative:
             selected_body=self.selected_body, selected_collider=self.selected_collider)
         if getattr(rig,'stem_contact_model',None)=='flat_cylinders_v1':
             binding['shaft_surface']='flat_cylinder_zero_margin_v1'
+        if physical_grasp_span:binding['candidate_identity']='current_connected_physical_pad_span_v1'
         if allow_signed_native_normals:
             binding.update(allow_signed_native_normals=True,
                            sensor_contract=_sensor_contract_record(sensor_contract))

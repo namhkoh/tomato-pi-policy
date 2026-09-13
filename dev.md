@@ -6848,3 +6848,84 @@ No hardware, collection, tuning, review, split or training-export changes.
   of the path. No grasp/cut follows. Final scalar/type validation regression:
   **223 focused tests pass in9.21s**. This includes invalid text, boolean,
   complex and nonfinite opening rejection before physical commands.
+
+### 2026-09-13: Physical shaft identity, preload and bounded reference correction
+
+- Native215's more side-on seed37 proposal passes offline left-arm screening
+  but full zero-step native startup rejects torso5 against target Leaf_026.
+  No physical motion. Offline checking of one arm is not whole-robot clearance.
+- Selected another ORIGINAL source target, seed13_full/SubStem_43, with its
+  original six leaves/main-stem context in the existing isolated branch fixture.
+ 50mm grasp arc,20mm cut arc,8mm pre-grasp half-opening. Native216 passes
+  startup and full left approach/closure planning, but never acquires a grasp:
+  the evidence core hardcodes selected+/-one shaft segment while the collision
+  planner uses the real finger span. Segment004 under the same fingers is
+  incorrectly classified as outside the connected target; zero-load proximity
+  from that segment keeps `stem_only=False` and prevents further closure.
+- Added explicit `--physical-grasp-span`: compute candidate identities from
+  CURRENT native pad/collider poses and authored contact offsets, walking
+  every contiguous currently enabled adjacent shaft connection. Stop at a
+  missing link or outside-span segment; do not jump to a folded-back limb.
+  Protected support, leaves, body aggregates and other branches are excluded.
+  Exact inner-face/material-side witnesses, impulse signs,20mN support,
+  selected-tensor crosschecks, native all-contact/slip/penetration guards and
+  topology invalidation remain. Mode is in the binding hash/telemetry.
+  USD connectivity still cannot prove an unreflected native joint break.
+- Native217 acquires a verified bilateral grasp at6.7625s after that correction.
+  The immediate retention audit rejects at6.766667s (four compressive rows,
+  static utilization30.504). Initial measured supports are only0.03787/0.02803N,
+  not the controller's intended0.24N preload. No knife planning or cut occurs.
+- Added `--settle-retention-preload`: original symmetric mean-support target
+ 0.24N and existing+/-0.03N deadband, both fingers compressive, <=2mm/s finger
+  speed, current guard-accepted telemetry, slip<3mm,48 consecutive240Hz steps.
+  Readiness does NOT certify retention. Preserve full subsequent approach/
+  stroke durations; do not jump into cutting after waiting.218's initial3s
+  timer expires while preload is still growing; use the existing13.5s absolute
+  acquisition budget instead, without extending it.219 still times out:
+  supports0.20707/0.19101N; attached grasp remains bilateral and maximum slip
+  is4.109 micrometres. Both trials keep the right arm parked.
+- Diagnosed a separate controller-reference inconsistency: with200N/m PD,
+  the legacy1mm nominal target bias can request only about0.2N at the nominal
+  shaft surface.219 reaches its minimum command gap1.997514mm while measured
+  gaps are3.011462/2.955121mm; reconstructed PD is0.204586/-0.191407N.
+  This is NOT the same quantity as measured physical shaft penetration.
+- Added explicit `--effort-bounded-grasp-target` with original0.30N/200N/m
+  reference-bias bound1.5mm, slow contact approach and existing antiwindup.
+  No increase to desired support, PD/total actuator/all-contact limits, or the
+  actual native1mm penetration guard. Screen the entire resulting commanded
+  closure. Reports separate actual reference floor/bias from legacy geometric
+  compression configuration. Native220's per-step force_closure records contain
+  the actual1.5mm bias; its older robot summary minimum-field formatting was
+  corrected afterward (not a retrospective edit to that run).
+- Native220 passes native preload dwell at12.85s: support0.223288/0.206976N,
+  bilateral grasp verified6.733333s, maximum slip4.18513 micrometres. Static
+  retention then rejects with10 compressive rows, detached mass8.22748g and
+  utilization2.07694 against original0.5N normal-plus-friction budgets. This
+  is a stable ATTACHED grasp, not proof of free-branch retention or cutting.
+- A read-only rotated-current-patch proposal predicts utilization0.90152 at
+  -45degrees and0.92269 at-30degrees. This assumes the rotated patch can form;
+  it is neither a measured new grasp nor dynamic/collision authorization.
+  A source-preserving-45degree approach passes offline left collision checks
+  and is submitted as native221 for full native validation.
+- Evidence: native215 through220 individual report/trajectory directories,
+  `compact_branch_free_ready_20260913_v7.log`, `v8.log`, and
+  `current_patch_orientation_20260913_native220.log` in`data/sim_physics`.
+  Span regression:4,980 passed,2 skipped,47 subtests in183.98s. Preload stage:
+ 5,001 passed,2 skipped,47 subtests in191.16s. Effort-reference broad regression:
+  **5,010 passed,2 skipped,47 subtests in186.66s**
+  (`regression_20260913_effort_reference_v1.log`). Final report-field and
+  integration subset: **435 passed in5.48s**. Test passes are NOT physics
+  qualification. All new options remain opt-in diagnostics/default-OFF.
+- Reliable retained cut/withdrawal/deposit and full-greenhouse qualification
+  remain open. No material/source-asset edits, production fidelity reduction,
+  dataset/review/split/training or hardware changes. No reboot, unrelated
+  process stop, or memory-check bypass. Every native test used the launch guard.
+- Native221 tests the-45degree proposal: full native startup and grasp corridor
+  pass; bilateral grasp6.695833s; preload dwell11.866667s at0.209410/0.210852N;
+  current static retention prerequisite **passes**, utilization0.862586 with
+  12 compressive rows. Maximum attached slip6.33772 micrometres. This improves
+  measured grasp-load feasibility without increasing physical force limits.
+  Knife planning then rejects the source branch: a transverse cut cannot be
+  within the existing30-degree downward cone. No knife motion, cut or free
+  retention is claimed. Direction/target feasibility must also pass; the
+  source13 successful attached grasp is NOT a completed cutting benchmark.

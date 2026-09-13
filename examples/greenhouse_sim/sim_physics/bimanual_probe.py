@@ -140,6 +140,13 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     reposition=float(getattr(args,'bimanual_reposition_m',0.))
     reposition_vector=None
     force_closure=bool(getattr(fixture,'force_closure_enabled',False))
+    preload_settle=None;preload_wait_logged=False
+    if getattr(args,'settle_retention_preload',False):
+        if not (getattr(args,'require_retention_screen',False) and force_closure
+                and fixture.retention_preload and fixture.symmetric_finger_closure and reposition==0.):
+            raise ValueError('Preload settling requires original no-reposition feedback retention trial')
+        from .retention_settle import PreloadSettle
+        preload_settle=PreloadSettle()
     times=sequence_times(reposition);delay=times['delay']
     grasp_time=3.5;acquisition_wait_logged=False
     plan_time=times['plan'];approach_start=times['approach'];stroke_start=times['stroke'];stroke_end=times['end']
@@ -171,6 +178,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     def before(stamp,dt):
         nonlocal goal_set,grasp_local,planned,cut_fraction,grasp_verified,last_right_command
         nonlocal reposition_vector
+        nonlocal preload_wait_logged
         nonlocal spring_snapshot,prediction_before
         nonlocal springs
         nonlocal free_root_snapshot,free_root_reader
@@ -240,6 +248,20 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                     consecutive_bilateral_steps=stable))
                 palm=pose_matrices(fixture.palm.get_transforms())[0]
                 grasp_local=(fixture.grasp_point(runtime.frames)-palm[:3,3])@palm[:3,:3]
+        if grasp_verified and not planned and preload_settle is not None and t+1e-10>=plan_time:
+            settled=preload_settle.observe(records[-1],step=int(stamp.step),time_s=t,start_time_s=grasp_time)
+            if settled['state']!='waiting' or not preload_wait_logged:
+                events.append(dict(t=t,event='native_preload_settle',result=settled))
+                preload_wait_logged=True
+            if settled['state']=='timeout':
+                raise RuntimeError('Original preload did not settle within bounded hold; no knife motion')
+            if settled['state']=='waiting':plan_time=(int(stamp.step)+1)/args.physics_hz
+            else:
+                # Preserve the entire original approach/stroke duration. A
+                # delayed grasp must never jump forward into the cut schedule.
+                times=schedule_after_grasp(t,0.)
+                plan_time=t;approach_start=times['approach']
+                stroke_start=times['stroke'];stroke_end=times['end']
         if grasp_verified and not planned and not hold_control and t>=plan_time:
             if stable<int(.1*args.physics_hz):
                 raise RuntimeError('Held target not stable after reposition; no right-arm execution')

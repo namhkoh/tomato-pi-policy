@@ -141,6 +141,12 @@ def parser():
         help='Isolated fixed-root trial: require current contact-patch static gravity capacity before knife planning; not a dynamic certificate')
     p.add_argument('--pregrasp-half-aperture-m',type=float,default=.025,
         help='Isolated fixed-root trial only: commanded initial jaw half-opening, at least shaft radius +2 mm; original geometry/limits/guards unchanged')
+    p.add_argument('--physical-grasp-span',action='store_true',
+        help='Isolated retention trial: derive connected shaft identity from measured full pad footprint; original contact geometry/force verification remains mandatory')
+    p.add_argument('--settle-retention-preload',action='store_true',
+        help='Isolated retention trial: wait bounded 0.2 s measured original-preload dwell before static capacity audit; no force-limit increase')
+    p.add_argument('--effort-bounded-grasp-target',action='store_true',
+        help='Isolated retention trial: bound nominal position-reference bias by original PD effort/Kp; actual native penetration/force guards unchanged')
     p.add_argument('--branch-contact-fixture',action='store_true',
         help='CONTACT ONLY: keep original main stem and selected complete petiole/leaves; excludes other source branches in session; NOT intact-plant/greenhouse qualification')
     p.add_argument('--anchored-pad-damping',action='store_true',
@@ -208,6 +214,14 @@ def main(argv=None):
     args=parser().parse_args(argv)
     fixed_hold=validate_fixed_root_hold(args)
     fixed_cut=args.fixed_root_cut_trial
+    if args.effort_bounded_grasp_target and not (args.settle_retention_preload and args.require_retention_screen
+            and args.physical_grasp_span and args.explicit_finger_effort and args.finger_target_antiwindup):
+        raise ValueError('Effort-bounded target requires the full explicit settled physical-span retention trial')
+    if args.settle_retention_preload and not (args.require_retention_screen and args.retention_preload
+            and args.symmetric_finger_closure and args.force_closure):
+        raise ValueError('Preload settling requires original symmetric feedback and retention preflight')
+    if args.physical_grasp_span and not (fixed_cut and args.require_retention_screen):
+        raise ValueError('Physical grasp span requires the checked isolated fixed-root retention trial')
     if (not math.isfinite(args.pregrasp_half_aperture_m) or not 0<args.pregrasp_half_aperture_m<=.025
             or args.pregrasp_half_aperture_m!=.025 and not (fixed_cut and args.require_retention_screen
                 and args.force_closure and args.explicit_finger_effort and args.finger_target_antiwindup)):
@@ -576,6 +590,8 @@ def main(argv=None):
                 robot_options['grasp_compression']=args.grasp_compression_m
                 robot_options['force_closure']=args.force_closure
                 robot_options['pregrasp_half_aperture']=args.pregrasp_half_aperture_m
+                robot_options['physical_grasp_span']=args.physical_grasp_span
+                robot_options['effort_bounded_grasp_target']=args.effort_bounded_grasp_target
                 robot_options['explicit_finger_effort']=args.explicit_finger_effort
                 robot_options['finger_target_antiwindup']=args.finger_target_antiwindup
                 robot_options['retention_preload']=args.retention_preload

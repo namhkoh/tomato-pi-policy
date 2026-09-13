@@ -10,7 +10,10 @@ class ForceClosure:
     # Drive effort excludes independently measured gravity feed-forward. The
     # original total-motor and 0.5 N all-contact budgets remain upper bounds.
     drive_limit_n = .15
-    def __init__(self, radius, compression, *, retention_preload=False, symmetric=False, pregrasp_half_aperture=.025):
+    def __init__(self, radius, compression, *, retention_preload=False, symmetric=False, pregrasp_half_aperture=.025, effort_bounded_target=False):
+        if type(effort_bounded_target) is not bool or effort_bounded_target and not (retention_preload and symmetric):
+            raise ValueError('Effort-bounded target requires original symmetric retention profile')
+        self.effort_bounded_target=effort_bounded_target
         if type(symmetric) is not bool:raise ValueError('Explicit symmetric aperture mode required')
         self.symmetric=symmetric
         if type(retention_preload) is not bool:
@@ -26,7 +29,15 @@ class ForceClosure:
         if (not np.isfinite([radius, compression]).all() or not 0 < radius < .02
                 or not .00025 <= compression <= .001):
             raise ValueError('Finite shaft radius and bounded compression required')
-        self.minimum = max(0., radius-compression)
+        # A drive reference inside a contact is NOT measured penetration.
+        # With Kp=200, a 1 mm nominal reference bias can request only ~0.2 N
+        # at the nominal shaft surface, below the existing 0.24 N target.
+        # This opt-in permits only the existing 0.30 N / 200 N/m bias.
+        # Actual native 1 mm penetration and all-contact guards are unchanged.
+        self.nominal_target_bias=self.drive_limit_n/200 if effort_bounded_target else compression
+        if effort_bounded_target and radius<=self.nominal_target_bias:
+            raise ValueError('Effort-bounded reference cannot cross the zero-aperture joint limit')
+        self.minimum = max(0., radius-self.nominal_target_bias)
         from .pregrasp_aperture import validate
         self.opening = validate(radius, pregrasp_half_aperture)
         self.slow_gap = min(self.opening, radius+.002)
@@ -82,6 +93,9 @@ class ForceClosure:
         self.fraction = float(fraction)
         self.commanded_step = step
         self.receipt = dict(mode='native_force_closure_v1', command_step=step,
+            effort_bounded_position_reference=self.effort_bounded_target,
+            maximum_nominal_target_bias_m=self.nominal_target_bias,
+            actual_native_penetration_guard_m=.001,
             commanded_pregrasp_half_aperture_m=self.opening,changes_physical_joint_limits=False,
             observation_step=self.observed_step, half_gaps_m=self.gaps.tolist(),
             preceding_compressive_support_n=self.support.tolist(),

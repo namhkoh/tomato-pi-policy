@@ -137,6 +137,7 @@ def binding_robot(monkeypatch,*,factory_error=None,diagnostic=False):
         assert new_monitor.normal_contact_observer is None
         evidence=(dict(diagnostic_noncompressive_report=True) if diagnostic else
             dict(allow_signed_native_normals=True,sensor_contract=module.NATIVE37_SENSOR_CONTRACT))
+        if robot.physical_grasp_span:evidence['physical_grasp_span']=True
         assert kwargs==dict(selected_index=3,finger_paths=robot.paths[1:],contact_views=robot.contact_views,**evidence)
         events.append('new_adapter')
         if factory_error is not None:raise factory_error

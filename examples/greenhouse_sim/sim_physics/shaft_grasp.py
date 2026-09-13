@@ -127,7 +127,10 @@ class ShaftGraspEvidence:
     chain is the authored ordered shaft, INCLUDING support bodies before
     cut_index, not a list of all colliders carried by its articulation. Pads are
     ordered finger1, finger2. Only selected +/- one, on the detachable side,
-    linked to selected through supplied live connected_pairs, can qualify.
+    linked to selected through supplied live connected_pairs, can qualify by
+    default. Explicit physical_grasp_span instead walks contiguous live links
+    inside the current measured pad footprint. It never admits support, leaves
+    or disconnected distal segments and never replaces per-row force/geometry.
     Callbacks must propagate errors; faults stay latched until the next step.
 
     allow_signed_native_normals is a constructor-only diagnostic opt-in for
@@ -137,7 +140,10 @@ class ShaftGraspEvidence:
     requires each resultant's reaction into its measured pad to reach 20 mN.
     """
     def __init__(self, chain, pads, *, selected_index, cut_index, source_target, max_rows=256,
-                 allow_signed_native_normals=False):
+                 allow_signed_native_normals=False, physical_grasp_span=False):
+        if type(physical_grasp_span) is not bool:
+            raise ValueError('Explicit physical grasp-span mode required')
+        self.physical_grasp_span=physical_grasp_span
         if type(allow_signed_native_normals) is not bool:
             raise ValueError('Explicit boolean signed-native normal opt-in required')
         self._allow_signed_native_normals = allow_signed_native_normals
@@ -157,7 +163,8 @@ class ShaftGraspEvidence:
                 or any(s.body.rsplit('/', 1)[0] != branch for s in self.chain[self.cut_index:])):
             raise ValueError('Unique bodies from one detachable shaft branch required')
         self.source_target = source_target
-        self.candidates = self.chain[max(self.cut_index, self.selected_index - 1):self.selected_index + 2]
+        self.candidates = (self.chain[self.cut_index:] if physical_grasp_span else
+            self.chain[max(self.cut_index, self.selected_index - 1):self.selected_index + 2])
         self.by_collider = {s.collider: s for s in self.candidates}
         self.links = {frozenset((a.body, b.body)) for a, b in zip(self.chain[self.cut_index:], self.chain[self.cut_index + 1:])}
         self.step_id = None; self.rows = []; self.error = None; self.evaluated = False
@@ -250,6 +257,10 @@ class ShaftGraspEvidence:
         frames=_poses([body_frames[s.body] for s in shapes])
         colliders=_poses(frames@np.array([s.local_frame for s in shapes]))
         world = {s.collider:m for s,m in zip(shapes,colliders,strict=True)}
+        span=None
+        if self.physical_grasp_span:
+            from .shaft_contact_span import eligible_span
+            eligible,span=eligible_span(self.chain,self.pads,world,links,self.selected_index,self.cut_index)
         contact_world=world
         if contact_body_frames is not None:
             prior=_poses([contact_body_frames[s.body] for s in shapes])
@@ -348,6 +359,7 @@ class ShaftGraspEvidence:
         for pair in pairs.values():
             pair['force_n'] = pair['force_n'].tolist()
         return dict(step_id=self.step_id, source_target=self.source_target,
+            physical_grasp_span=span,
             selected_body=selected, eligible_colliders=sorted(eligible), forces=forces.tolist(),
             counts=counts, points=points, min_separation=min(separations, default=0.),
             normal_load_upper_n=loads.tolist(), pairs=list(pairs.values()), rejected=rejected,
