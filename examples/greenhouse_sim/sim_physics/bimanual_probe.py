@@ -116,6 +116,10 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     grasp_local=None;goal_set=False;planned=False;grasp_verified=False;cut_time=None;cut_fraction=0.
     last_right_command=('park',0.)
     blade_feed=None
+    seam_yield=None
+    if getattr(args,'seam_contact_yield',False):
+        from .seam_yield import NativeEdgeYield
+        seam_yield=NativeEdgeYield(rig,fixture)
     if getattr(args,'blade_force_feed',False):
         from .blade_feed import BladeFeed
         from .knife import DOWNWARD_CUT_MODEL
@@ -225,6 +229,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         if getattr(args,'watch_cut_trial',False) and not sim.is_playing():
             raise RuntimeError('Timeline changed during watched trial; close and relaunch, no stale-step continuation')
         t=stamp.simulation_time_s
+        if seam_yield is not None:seam_yield.apply(step=int(stamp.step))
         if (rig.cut and getattr(args,'native_drives_after_cut',False)
                 and not hasattr(springs,'handoff_receipt')):
             if fixture.cut_event is None or fixture.root_transition.receipt is None:
@@ -534,6 +539,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         # True only here: every existing callback, robot, force, penetration,
         # support, slip and knife guard above has returned without exception.
         record['native_guards_passed']=True
+        if seam_yield is not None:seam_yield.observe(record,step=int(stamp.step))
         if blade_feed is not None:
             blade_feed.observe(record['knife'],step=int(stamp.step),guards_passed=True,released=bool(rig.cut))
         if force_closure:
@@ -592,8 +598,14 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             clock.tick(before=before,after=after,before_render=render_state)
             if clock.stamp.step%args.physics_hz==0 and records:
                 latest=records[-1]
-                print('BIMANUAL_SECOND '+json.dumps(dict(t=latest['t'],phase=latest['phase'],
-                    bilateral=latest['contact']['bilateral'],slip_m=latest['slip_m'],cut=rig.cut)),flush=True)
+                status=dict(t=latest['t'],phase=latest['phase'],
+                    bilateral=latest['contact']['bilateral'],slip_m=latest['slip_m'],cut=rig.cut)
+                if seam_yield is not None:
+                    status.update(yield_state=latest['seam_yield']['state'],
+                        seam_stiffness_n_m=latest['seam_yield']['applied_stiffness_n_m'],
+                        edge_resistance_n=latest['knife']['edge_signed_resistance_n'],
+                        qualified_travel_m=latest['knife']['gate_travel_m'])
+                print('BIMANUAL_SECOND '+json.dumps(status),flush=True)
             if viewport and args.capture_milestones:
                 milestones=diagnostic_milestones(grasp_verified=grasp_verified,grasp_time=grasp_time,
                     hold_control=hold_control,stroke_start=stroke_start,stroke_end=stroke_end,

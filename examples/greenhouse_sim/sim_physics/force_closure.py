@@ -140,7 +140,16 @@ class ForceClosure:
                 or np.any(loads < 0) or np.any(loads >= .5)
                 or type(contact.get('stem_only')) is not bool):
             raise RuntimeError('Invalid or unsafe finger contact; closure refused')
-        self.geometry_valid = contact['stem_only']
+        geometry=contact.get('grasp_contact_geometry_valid',contact['stem_only'])
+        if type(geometry) is not bool:raise RuntimeError('Explicit grasp contact geometry result required')
+        if geometry and not contact['stem_only']:
+            context=contact.get('released_leaf_contact_classification',{})
+            if (context.get('model')!='exact_released_leaf_incidental_not_grasp_evidence_v1'
+                    or context.get('validated_release') is not True
+                    or context.get('eligible_shaft_bilateral') is not True
+                    or context.get('leaf_force_used_for_grasp') is not False):
+                raise RuntimeError('Non-shaft closure needs exact released-leaf context and native shaft support')
+        self.geometry_valid = geometry
         self.support = support.copy() if self.geometry_valid else np.zeros(2)
         self.loads = loads.copy()
         self.observed_step = step

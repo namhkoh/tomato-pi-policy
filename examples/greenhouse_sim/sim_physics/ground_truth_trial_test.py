@@ -39,3 +39,22 @@ def test_public_launcher_never_silently_uses_the_wrong_physical_edge(monkeypatch
     assert captured[0].knife_edge_mode==(SIDE_EDGE if historical else CROSSBAR_EDGE)
     assert captured[0].cut_model==(BRITTLE_CUT_MODEL if historical else DOWNWARD_CUT_MODEL)
     assert captured[0].source_wrist_contacts is (not historical)
+
+
+@pytest.mark.parametrize('mode',['bimanual','right_only'])
+def test_process_zone_is_explicit_and_reaches_complete_validation(monkeypatch,tmp_path,mode):
+    from . import benchmark,ground_truth_trial
+    captured=[]
+    def capture(options):captured.extend(options)
+    monkeypatch.setattr(benchmark,'main',capture)
+    ground_truth_trial.main(['--output',str(tmp_path/'new'),'--mode',mode,'--milestone','cut_action','--process-zone-trial'])
+    a=benchmark.parser().parse_args(captured)
+    assert a.seam_contact_yield and a.right_ready_degrees[0]==pytest.approx(120.23685010553707)
+    assert not benchmark.parser().parse_args(arguments('old',mode,'cut_action')).seam_contact_yield
+
+
+def test_process_zone_cannot_use_wrong_physical_edge(tmp_path):
+    from .ground_truth_trial import main
+    with pytest.raises(SystemExit):main(['--output',str(tmp_path/'none'),'--mode','bimanual',
+        '--process-zone-trial','--historical-mounting-plate'])
+    assert not (tmp_path/'none').exists()

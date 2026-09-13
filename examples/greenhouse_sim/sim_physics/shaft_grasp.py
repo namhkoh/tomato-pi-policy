@@ -358,6 +358,10 @@ class ShaftGraspEvidence:
         cosine = float(np.dot(forces[0] / norms[0], forces[1] / norms[1])) if np.all(norms > 0) else None
         for pair in pairs.values():
             pair['force_n'] = pair['force_n'].tolist()
+        shaft_bilateral=bool(all(r['reason']=='not_connected_detachable_shaft' for r in rejected)
+            and all(p['passed'] or not p['carries_nonzero_impulse'] for p in current_pairs.values())
+            and np.all(norms>=.02) and cosine is not None and cosine<-.5
+            and (not self.allow_signed_native_normals or support_passed))
         return dict(step_id=self.step_id, source_target=self.source_target,
             physical_grasp_span=span,
             selected_body=selected, eligible_colliders=sorted(eligible), forces=forces.tolist(),
@@ -372,6 +376,7 @@ class ShaftGraspEvidence:
             compressive_support_passed=support_passed,
             forces_scope='eligible_identity_normal_rows_including_geometry_rejections',
             stem_only=not rejected, opposition_cosine=cosine,
+            eligible_shaft_bilateral=shaft_bilateral,
             contact_geometry_basis='caller_pre_step_PGS' if contact_body_frames is not None else 'caller_post_fetch',
             contact_geometry_step_id=contact_frames_step_id if contact_body_frames is not None else self.step_id,
             current_contact_proximity=list(current_pairs.values()),

@@ -1,0 +1,15 @@
+{
+  "schema": "experimental_crossbar_process_zone_trial_v1",
+  "qualification": "isolated_single_case_only_not_reliable_or_greenhouse_qualified",
+  "source": "seed101_full/SubStem_41",
+  "base_profile": "ground_truth_trial.json",
+  "right_ready_degrees": [120.23685010553707, -161.124813251896, -96.97368468565253, -69.9616456805615, -33.70774718454816, -86.99942705395642, 34.35870931456847],
+  "ready_scope": "precontact_pose_not_extended_visible_approach",
+  "contact_law": "qualified_edge_secant_softening_v1_uncalibrated",
+  "cut_edge": "source_crossbar_edge_v1",
+  "native_evidence": {
+    "bimanual_first_cut": "bimanual_downward_20260912_native273; post-cut retention failed",
+    "bimanual_first_pass": "bimanual_downward_20260912_native275; retained through 50 s trial",
+    "right_only_first_pass": "bimanual_downward_20260912_native274; material-index warnings remain"
+  }
+}

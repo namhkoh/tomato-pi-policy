@@ -326,6 +326,7 @@ class BimanualRobot(FullRobotGripper):
 
     def bind(self,simulation_view):
         self.release_grasp_observer()
+        self._released_grasp_contacts=None
         super().bind(simulation_view)
         if getattr(self,'force_closure_enabled',False):
             from .force_closure import ForceClosure
@@ -379,6 +380,11 @@ class BimanualRobot(FullRobotGripper):
         if getattr(self,'grasp_contact_frames','post_fetch_legacy')=='pre_solve_pgs_v1':
             options['require_pre_step_frames']=True
         result=self.grasp_observer.evaluate(dt,frames,fingers,frames_step_id=step_id,**options)
+        if self.rig.cut and getattr(self,'cut_strategy','bimanual')=='bimanual':
+            if getattr(self,'_released_grasp_contacts',None) is None:
+                from .released_grasp import ReleasedGraspContacts
+                self._released_grasp_contacts=ReleasedGraspContacts(self)
+            result=self._released_grasp_contacts.classify(result)
         self.latest_finger_bilateral=result['bilateral']
         return result
 
@@ -923,6 +929,7 @@ class BimanualRobot(FullRobotGripper):
             gate_dwell_s=self.cut_gate.dwell,gate_travel_m=self.cut_gate.travel,cut_event=self.cut_event)
 
     def restore_authored_state(self):
+        self._released_grasp_contacts=None
         self.release_grasp_observer()
         super().restore_authored_state()
         self.cut_gate=ShearGate(self.rig.source_target,ShearParameters(model=getattr(self,'cut_model',LEGACY_CUT_MODEL)),

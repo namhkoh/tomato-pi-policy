@@ -7546,3 +7546,91 @@ No hardware, collection, tuning, review, split or training-export changes.
   at the 50 mm raised start; native271's lateral start hit MainStem_27 instead.
   All three stopped at zero physics steps. Native272 is testing the lower,
   pre-contact elbow-up pose; completion and an extended approach remain pending.
+
+- Native272 clears the original scene at startup, verifies the left grasp and
+  completes right Cartesian/stroke planning with the corrected crossbar. It
+  reaches actual eligible edge contact but times out without release. Peak
+  signed resistance 0.2552 N, peak full contact bound 0.4397 N; qualifying load
+  persists for 21.65 s, but net loaded travel reaches only 0.06185 mm of the
+  required 0.3 mm. Max grasp slip 0.02664 mm. Arc-up/downward/alignment checks
+  pass during loaded contact. This exposes a contact-model incompatibility,
+  not a missing contact callback: a linear 1000 N/m elastic obstacle stalls
+  inside the unchanged force envelope instead of yielding to a blade.
+- Added OFF-BY-DEFAULT `--seam-contact-yield` for isolated, 480 Hz corrected
+  crossbar trials only. This uncalibrated process-zone experiment starts at
+  measured 0.23 N qualified edge load; source indentation sets the origin.
+  Positive nonincreasing secant stiffness follows measured net world AND
+  relative downward travel. No time/jitter/desired-motion credit, no healing,
+  no geometry/pose/joint changes, and no release or force-threshold override.
+  Wrong alignment, lost support, excessive force and foreign camera/finger
+  contact prevent updates. All original native guard and release gates remain.
+  Only the already-bound two seam shaft surfaces change; material updates use
+  the installed Isaac compliant-contact USD backend, NOT a claimed native
+  material readback. This is NOT volumetric fracture, partial mesh incision,
+  a calibrated force law, or proof of clean tissue-cut quality.
+- Fifteen yield negative/positive/ownership tests pass; the 12 original
+  material tests also passed before two added negative cases. A broad prior
+  `sim_physics` regression passes 4,296 tests in 225.19 s, before yield changes
+  (`regression_20260913_crossbar_v2.log`; different scope from the earlier full
+  greenhouse regression). Native273 is the first yield/material-response test;
+  its result and native A/B qualification are pending.
+- Native272 headless timing: 0.20975 real-time factor, median native step
+  5.46 ms and post-fetch checks 3.48 ms at 480 Hz. This is NOT real-time. The
+  full diagnostic trace is 1.51 GB for 20,831 steps; telemetry/memory overhead
+  also needs optimization without skipping guards or reducing scene fidelity.
+
+- Native273 is the FIRST measured release with the actual sharpened crossbar:
+  t=33.5125 s, 0.30004 mm net loaded downward advance, signed resistance
+  0.20014..0.23183 N, peak full load 0.41105 N. Grasp slip at release is
+  0.02452 mm. It fails after 1.79 s of post-cut observation because a leaf of
+  the retained branch touches a finger: the old stem-only flag commanded
+  opening despite continuing opposing shaft support. This is not a success
+  for the whole sequence. Native273 predates the extra yield angle sanity
+  check/post-release foreign-contact exemption; no thresholds were changed.
+- Fixed the retention/contact classification: after a verified exact disabled
+  seam/event ONLY, incidental mesh-leaf contacts on that same detached branch
+  are separated from eligible shaft support. Leaves supply NO grasp force,
+  `stem_only=False` and rejected raw rows remain in the log. Opposing shaft
+  loads, current pad proximity/penetration, slip and all native contact caps
+  remain mandatory. Foreign leaves, parent/support, camera or stem errors are
+  not exempt. No pre-cut behavior or collision filtering changes. The aperture
+  controller needs the explicit released-leaf context to accept this case.
+  Focused grasp/native-adapter/controller/cut/yield tests passed 308/308; the
+  expanded launcher/context/yield/controller selection then passed 56/56.
+- Native274 RIGHT ONLY: full bounded 50 s diagnostic passes, cut at 27.075 s,
+  actual world/relative loaded advance 0.30002 mm, withdrawal verified, left
+  parked/open/unloaded throughout. Passive released-target landing reaches
+  4.23081 N (recorded under the user-authorized deferred landing policy).
+  Native275 BIMANUAL: full bounded 50 s diagnostic passes, cut at 33.5125 s,
+  opposing shaft grasp retained through the end, max slip 2.61124 mm (<3 mm),
+  right withdrawal verified. Each is ONE source fixture, not general reliability.
+  Native276 is the no-render repeat; result pending. Native milestone PNGs are
+  in native273..275; they are paused diagnostic views, not synchronized RGB-D.
+- Reproducible explicit experiment (from examples/greenhouse_sim with Isaac's
+  Python): `-B -m sim_physics.ground_truth_trial --output NEW_DIRECTORY --mode
+  bimanual --milestone cut_action --process-zone-trial`; use `right_only` for B,
+  and optional `--capture` or `--watch`. Source station/robot/grasp are unchanged;
+  the corrected elbow-up precontact pose is in `crossbar_process_zone_trial.json`.
+  Public linear-contact and explicit historical recipes remain separately
+  reproducible. This is not a stable/frozen production profile.
+- Remaining important limitations: short precontact start (not yet the extended
+  visible approach), reversal at release instead of completed through-stroke,
+  prescribed seam release rather than tissue fracture/kerf or cut-surface quality,
+  greenhouse/intact-plant integration and performance requalification. Native274
+  also emits a large post-fall `getMaterialFromInternalFaceIndex(0xFFFFFFFF)`
+  warning stream; it is NOT hidden or treated as resolved. Native274 RTF 0.27555
+  differs in mode/contact/render workload from native272, not a matched speedup.
+  Existing cohesive-interface/coupon modules remain separate and unintegrated:
+  the new contact-compression experiment is not their material fracture law.
+  No VLM/data/hardware work, source visual deletion, OS setting change or full
+  greenhouse A/B/C completion is claimed.
+
+- Native276 repeats native275 WITHOUT rendering: same 33.5125 s cut, same
+  2.61123 mm max slip, all bounded cut/retention/withdrawal gates pass through
+  50 simulated seconds. This is two matched bimanual passes plus one right-only
+  pass on ONE isolated source branch, not arbitrary-target reliability. The
+  first new full regression found four legacy test doubles missing an explicit
+  intact-rig state; fixed the fixtures, not the runtime gate. All 58 affected
+  integration/context/yield/launcher tests pass. Final full `sim_physics` rerun:
+  4,325 passed in 209.27 s (`regression_20260913_process_zone_v2.log`).
+  Save this as an experimental, reproducible checkpoint, NOT the A/B/C freeze.

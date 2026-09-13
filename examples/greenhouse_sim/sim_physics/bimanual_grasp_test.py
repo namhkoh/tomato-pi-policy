@@ -21,6 +21,7 @@ def monitor():
 
 def contact_robot(*,bilateral=True,adapter_valid=True):
     robot=object.__new__(BimanualRobot);calls=[]
+    robot.rig=S(cut=False)  # Explicit intact state: released-leaf context is unavailable.
     # Native view order deliberately differs from authored finger order, with
     # different rotations as well as translations to catch position-only use.
     poses=np.array([[7.,8.,9.,0.,0.,1.,0.],[1.,2.,3.,0.,0.,0.,1.]])
@@ -229,6 +230,7 @@ def test_probe_records_crosscheck_before_hard_stop_and_releases_before_stop(monk
     runtime.sample=sample
     rig=S(cut=False,cut_index=1,rest_frames=frames.copy(),chain_world=np.zeros((5,3)),
         body_paths=[f'/T/Branch/Segment_{i:03d}' for i in range(len(frames))])
+    robot.rig=rig
     robot.body_index=2;robot.start=np.eye(4);robot.goal=np.eye(4)
     robot.stop_requested=False;robot.cut_contacts=0
     robot.bind=lambda view:events.append('bind')

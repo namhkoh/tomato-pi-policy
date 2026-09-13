@@ -17,6 +17,11 @@ mounting-plate contact recipe is available only with the explicit
 --historical-mounting-plate comparison flag; it is not intended-blade evidence.
 No hardware, training, automatic fallback, existing-GUI takeover, arbitrary
 target selection, reset/replay qualification or OS changes.
+
+--process-zone-trial explicitly selects the experimental actual-crossbar
+precontact pose and local yielding contact law. Native274 direct cut and
+native275 bimanual cut/retention/withdrawal passed this isolated single case.
+This is not extended-approach, full-through-stroke, tissue or greenhouse proof.
 """
 import argparse
 import json
@@ -68,13 +73,22 @@ def main(argv=None):
     p.add_argument('--watch',action='store_true',help='Open a visible Run-once panel; no automatic run, reset or hardware commands')
     p.add_argument('--historical-mounting-plate',action='store_true',
         help='Reproduce the superseded mounting-plate contact test, NOT the physical knife edge')
+    p.add_argument('--process-zone-trial',action='store_true',
+        help='Explicit experimental corrected-edge/yielding contact recipe; isolated only, not frozen')
     args=p.parse_args(argv)
+    if args.process_zone_trial and args.historical_mounting_plate:
+        p.error('Process-zone trial cannot use the historical mounting plate')
     from .benchmark import main as run
     options=arguments(args.output,args.mode,args.milestone,args.capture,args.watch)
     if not args.historical_mounting_plate:
         from .blade_contacts import CROSSBAR_EDGE
         from .knife import DOWNWARD_CUT_MODEL
         options+=['--knife-edge-mode',CROSSBAR_EDGE,'--cut-model',DOWNWARD_CUT_MODEL,'--source-wrist-contacts']
+    if args.process_zone_trial:
+        recipe=json.loads(PROFILE.with_name('crossbar_process_zone_trial.json').read_text(encoding='utf-8'))
+        if recipe.get('schema')!='experimental_crossbar_process_zone_trial_v1':
+            raise ValueError('Unknown explicit process-zone recipe')
+        options+=['--seam-contact-yield','--right-ready-degrees',*map(str,recipe['right_ready_degrees'])]
     return run(options)
 
 

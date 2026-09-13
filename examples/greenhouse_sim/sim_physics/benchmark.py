@@ -132,6 +132,8 @@ def parser():
         help='Isolated feed comparison: 0.40 N full-contact backoff, unchanged 0.50 N hard guard and raw cut gates')
     p.add_argument('--seam-contact-compliance',action='store_true',
         help='Isolated blade feedback experiment: uncalibrated 1000 N/m local stem contact compression')
+    p.add_argument('--seam-contact-yield',action='store_true',
+        help='Experimental isolated crossbar process-zone softening from qualified measured loaded advance; uncalibrated')
     p.add_argument('--native-spring-cut-trial',action='store_true',
         help='Explicit isolated comparison with unchanged native spring/contact drives in all phases')
     p.add_argument('--finger-target-antiwindup',action='store_true',
@@ -351,6 +353,11 @@ def main(argv=None):
         raise ValueError('Native spring cut comparison requires explicit isolated native-spring trial')
     if args.seam_contact_compliance and not (contact_trial and args.blade_force_feed):
         raise ValueError('Seam contact compression requires isolated blade feedback diagnostic')
+    if args.seam_contact_yield and not (contact_trial and args.seam_contact_compliance
+            and args.blade_friction_budget and args.physics_hz==480
+            and args.knife_edge_mode=='source_crossbar_edge_v1'
+            and args.cut_model=='loaded_downward_lower_rim_seam_v1'):
+        raise ValueError('Seam yielding requires complete isolated 480 Hz crossbar feedback diagnostics')
     lower_rim=args.knife_edge_mode in ('source_lower_rim_v1','source_crossbar_edge_v1')
     if args.native_startup_pose_search and not (args.native_startup_clearance and
             contact_trial and args.knife_edge_mode=='source_crossbar_edge_v1'):
