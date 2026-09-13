@@ -31,23 +31,35 @@ def partitions(points,counts,indices):
     return pieces
 
 
-def refine_arc_contacts(stage,robot_root):
+def refine_arc_contacts(stage,robot_root,*,crossbar_edge=False):
     from pxr import Sdf,Usd,UsdGeom,UsdPhysics,Vt
     from .plant import _collision
     root=robot_root+'/ee_right/attachments/DeleafKnife'
+    if type(crossbar_edge) is not bool:raise ValueError('Explicit crossbar edge mode required')
+    if stage.GetPrimAtPath(root+'/CrossbarContact'):
+        raise ValueError('Crossbar configuration already authored; rebuild the diagnostic stage')
+    if crossbar_edge and stage.GetPrimAtPath(root+'/ArcContacts'):
+        raise ValueError('Select crossbar geometry before authoring arc contacts')
     source=UsdGeom.Mesh.Get(stage,root+'/Arc')
     if not source: raise ValueError('Missing supplied arc')
     cache=UsdGeom.XformCache()
     matrix=np.linalg.inv(np.asarray(cache.GetLocalToWorldTransform(stage.GetPrimAtPath(root))).T)@np.asarray(cache.GetLocalToWorldTransform(source.GetPrim())).T
     p=np.asarray(source.GetPointsAttr().Get(),float)@matrix[:3,:3].T+matrix[:3,3]
     counts=np.asarray(source.GetFaceVertexCountsAttr().Get(),int);indices=np.asarray(source.GetFaceVertexIndicesAttr().Get(),int)
-    pieces=partitions(p,counts,indices);paths=[]
+    profile=None
+    if crossbar_edge:
+        from .crossbar_contacts import geometry
+        profile=geometry(p,counts,indices);pieces=profile['support']
+    else:pieces=partitions(p,counts,indices)
+    paths=[]
     with Usd.EditContext(stage,stage.GetSessionLayer()):
         group=UsdGeom.Scope.Define(stage,root+'/ArcContacts').GetPrim()
         group.CreateAttribute('tomato:contactPartCount',Sdf.ValueTypeNames.Int,custom=True).Set(len(pieces))
         UsdPhysics.CollisionAPI(stage.GetPrimAtPath(root+'/ArcCollision')).CreateCollisionEnabledAttr(False)
-        for i,vertices in enumerate(pieces):
-            path=root+f'/ArcContacts/Part_{i:02d}';mesh=UsdGeom.Mesh.Define(stage,path)
+        named=[(root+f'/ArcContacts/Part_{i:02d}',vertices) for i,vertices in enumerate(pieces)]
+        if profile is not None:named.append((root+'/CrossbarContact',profile['bar']))
+        for path,vertices in named:
+            mesh=UsdGeom.Mesh.Define(stage,path)
             mesh.CreatePointsAttr(Vt.Vec3fArray.FromNumpy(vertices.astype(np.float32)))
             mesh.CreateFaceVertexCountsAttr(Vt.IntArray.FromNumpy(np.full(len(vertices)//3,3,dtype=np.int32)))
             mesh.CreateFaceVertexIndicesAttr(Vt.IntArray.FromNumpy(np.arange(len(vertices),dtype=np.int32)))
@@ -55,5 +67,17 @@ def refine_arc_contacts(stage,robot_root):
             mesh.CreatePurposeAttr('guide');mesh.CreateVisibilityAttr('invisible')
             _collision(mesh.GetPrim());UsdPhysics.MeshCollisionAPI.Apply(mesh.GetPrim()).CreateApproximationAttr('convexHull')
             paths.append(path)
-    return dict(model='source_triangle_arc_spatial_convex_partitions',collider_paths=paths,
+        if profile is not None:
+            from .blade_contacts import CROSSBAR_EDGE
+            from .plant import matrix_attr
+            edge=UsdGeom.Cube.Get(stage,root+'/CuttingEdge')
+            transform=profile['edge_frame'].copy()
+            transform[:3,:3]*=profile['edge_size_m']/float(edge.GetSizeAttr().Get())
+            matrix_attr(edge.GetPrim(),transform)
+            edge.GetPrim().CreateAttribute('tomato:edgeMode',Sdf.ValueTypeNames.Token).Set(CROSSBAR_EDGE)
+    result=dict(model='source_triangle_arc_spatial_convex_partitions',collider_paths=paths,
         source_visual_edited=False,source_asset_edited=False)
+    if profile is not None:
+        result.update(model='source_crossbar_and_curved_support_convex_partitions',
+            **{k:(v.tolist() if isinstance(v,np.ndarray) else v) for k,v in profile.items() if k not in ('support','bar')})
+    return result

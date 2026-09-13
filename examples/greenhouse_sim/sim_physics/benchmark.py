@@ -149,7 +149,7 @@ def parser():
         help='Optional whole-capsule conservative native sphere union after a coarse box hit; no sampled gaps')
     p.add_argument('--native-static-planning-seconds',type=float,default=8.,
         help='Bounded synchronous diagnostic planning budget, up to 60 seconds; default 8; no physics/collision guard changes')
-    p.add_argument('--knife-edge-mode',choices=('source_side_edge_v1','source_lower_rim_v1'),default='source_side_edge_v1',
+    p.add_argument('--knife-edge-mode',choices=('source_side_edge_v1','source_lower_rim_v1','source_crossbar_edge_v1'),default='source_side_edge_v1',
         help='Source lower rim requires arc-up, measured downward load/travel; original mesh unchanged')
     p.add_argument('--source-wrist-contacts',action='store_true',help='Isolated comparison: source-complete bracket hulls shared by native and planner')
     p.add_argument('--cut-model',choices=('force_qualified_pre_authored_seam_release','signed_edge_load_brittle_seam_v1','loaded_downward_lower_rim_seam_v1'),
@@ -349,7 +349,7 @@ def main(argv=None):
         raise ValueError('Native spring cut comparison requires explicit isolated native-spring trial')
     if args.seam_contact_compliance and not (contact_trial and args.blade_force_feed):
         raise ValueError('Seam contact compression requires isolated blade feedback diagnostic')
-    lower_rim=args.knife_edge_mode=='source_lower_rim_v1'
+    lower_rim=args.knife_edge_mode in ('source_lower_rim_v1','source_crossbar_edge_v1')
     if args.source_wrist_contacts and not (contact_trial and lower_rim):
         raise ValueError('Wrist contact comparison requires the isolated lower-rim trial')
     if (lower_rim!=(args.cut_model=='loaded_downward_lower_rim_seam_v1')

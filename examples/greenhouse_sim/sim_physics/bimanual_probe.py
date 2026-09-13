@@ -118,12 +118,15 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     blade_feed=None
     if getattr(args,'blade_force_feed',False):
         from .blade_feed import BladeFeed
+        from .knife import DOWNWARD_CUT_MODEL
+        feed_options=({'loaded_advance':True}
+            if getattr(fixture,'cut_model',None)==DOWNWARD_CUT_MODEL else {})
         # Radius follows the exact existing stroke endpoint construction.
         blade_feed=BladeFeed(fixture.stroke_offsets,
             radius=float(fixture.stroke_offsets[-1])-fixture.knife.size[0]/2-.001,
             dwell_feedback=getattr(args,'blade_dwell_feedback',False),
             compliant_rate=getattr(args,'compliant_blade_rate',False),
-            friction_budget=getattr(args,'blade_friction_budget',False),physics_hz=args.physics_hz)
+            friction_budget=getattr(args,'blade_friction_budget',False),physics_hz=args.physics_hz,**feed_options)
     strain_probe=None
     if getattr(args,'diagnostic_grasp_dynamics',False):
         from .rod_strain import RodStrain

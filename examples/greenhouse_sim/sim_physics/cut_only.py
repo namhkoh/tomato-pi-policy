@@ -11,7 +11,8 @@ def validate_profile(args):
             and args.blade_force_feed and args.cut_style=='downward'
             and (args.cut_model,getattr(args,'knife_edge_mode','source_side_edge_v1')) in (
                 ('signed_edge_load_brittle_seam_v1','source_side_edge_v1'),
-                ('loaded_downward_lower_rim_seam_v1','source_lower_rim_v1'))
+                ('loaded_downward_lower_rim_seam_v1','source_lower_rim_v1'),
+                ('loaded_downward_lower_rim_seam_v1','source_crossbar_edge_v1'))
             and args.bimanual_reposition_m==0 and not args.bimanual_hold_control
             and not args.cut_convergence_trial and not args.require_retention_screen
             and not args.physical_grasp_span and not args.settle_retention_preload

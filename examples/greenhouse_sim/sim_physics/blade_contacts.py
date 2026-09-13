@@ -1,4 +1,9 @@
-"""Source-derived knife contact partitions; never alter the supplied visible STL.
+"""Legacy 'Blade' mounting-plate partitions; never alter the visible STL.
+
+Geometry audit on 2026-09-13 identified the actual beveled knife in the lower
+straight crossbar of the legacy 'Arc' component. Use crossbar_contacts for it.
+Historical side/lower plate edge modes remain for reproducing old diagnostics,
+not as evidence that the intended physical blade performed those cuts.
 
 The mounting end is thicker than the long plate. A single enclosing box fills
 empty space above the plate and puts the old semantic edge in that empty space.
@@ -9,7 +14,9 @@ import numpy as np
 
 SIDE_EDGE='source_side_edge_v1'
 LOWER_EDGE='source_lower_rim_v1'
-EDGE_MODES=(SIDE_EDGE,LOWER_EDGE)
+CROSSBAR_EDGE='source_crossbar_edge_v1'
+DOWNWARD_EDGES=(LOWER_EDGE,CROSSBAR_EDGE)
+EDGE_MODES=(SIDE_EDGE,*DOWNWARD_EDGES)
 
 
 def section_points(triangles,y):
@@ -22,7 +29,7 @@ def section_points(triangles,y):
 
 
 def plate_profile(points,triangles,*,edge_mode=SIDE_EDGE):
-    if edge_mode not in EDGE_MODES: raise ValueError('Unknown source knife edge mode')
+    if edge_mode not in (SIDE_EDGE,LOWER_EDGE): raise ValueError('Unknown mounting-plate edge mode; crossbar is in Arc')
     points=np.asarray(points,float);triangles=np.asarray(triangles,float)
     if (points.ndim!=2 or points.shape[1:]!=(3,) or triangles.ndim!=3
             or triangles.shape[1:]!=(3,3) or not np.isfinite(points).all()

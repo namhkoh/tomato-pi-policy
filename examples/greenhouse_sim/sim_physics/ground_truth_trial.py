@@ -11,6 +11,10 @@ event-bound native diagnostic PNGs (not synchronized training observations).
 
 Both modes retain original assets/guards and default to headless. --watch opens
 a separate visible Run-once panel and keeps the result paused for inspection.
+The public launcher uses the actual source crossbar and measured downward
+travel law. Its corrected approach is NOT yet qualified end to end. The old
+mounting-plate contact recipe is available only with the explicit
+--historical-mounting-plate comparison flag; it is not intended-blade evidence.
 No hardware, training, automatic fallback, existing-GUI takeover, arbitrary
 target selection, reset/replay qualification or OS changes.
 """
@@ -23,6 +27,11 @@ PROFILE = Path(__file__).with_name('ground_truth_trial.json')
 
 
 def arguments(output, mode, milestone='full_sequence', capture=False, watch=False):
+    """Historical recipe vector for reproducible comparisons.
+
+    The public CLI upgrades this vector to the corrected source crossbar.
+    Keep the base vector stable for prior recorded diagnostic reproduction.
+    """
     if mode not in ('bimanual','right_only'):
         raise ValueError('Explicit diagnostic mode required')
     if milestone not in ('full_sequence','cut_action'):
@@ -57,9 +66,16 @@ def main(argv=None):
     p.add_argument('--milestone',choices=('full_sequence','cut_action'),default='full_sequence')
     p.add_argument('--capture',action='store_true',help='Paused native milestone PNGs; headless, not synchronized training RGB-D')
     p.add_argument('--watch',action='store_true',help='Open a visible Run-once panel; no automatic run, reset or hardware commands')
+    p.add_argument('--historical-mounting-plate',action='store_true',
+        help='Reproduce the superseded mounting-plate contact test, NOT the physical knife edge')
     args=p.parse_args(argv)
     from .benchmark import main as run
-    return run(arguments(args.output,args.mode,args.milestone,args.capture,args.watch))
+    options=arguments(args.output,args.mode,args.milestone,args.capture,args.watch)
+    if not args.historical_mounting_plate:
+        from .blade_contacts import CROSSBAR_EDGE
+        from .knife import DOWNWARD_CUT_MODEL
+        options+=['--knife-edge-mode',CROSSBAR_EDGE,'--cut-model',DOWNWARD_CUT_MODEL,'--source-wrist-contacts']
+    return run(options)
 
 
 if __name__=='__main__':

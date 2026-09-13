@@ -44,7 +44,8 @@ class SelfCapsuleScreen:
                 value=plate_box(UsdGeom.Mesh(prim).GetPointsAttr().Get(),local)
                 self.shapes.append((path,body_path,link,'box',value));self.box_paths.append(path)
                 continue
-            if fit_plate and path.startswith(robot_root+'/ee_right/attachments/DeleafKnife/ArcContacts/Part_'):
+            if fit_plate and (path.startswith(robot_root+'/ee_right/attachments/DeleafKnife/ArcContacts/Part_')
+                    or path==robot_root+'/ee_right/attachments/DeleafKnife/CrossbarContact'):
                 from .tool_bounds import arc_box
                 if (not prim.IsA(UsdGeom.Mesh) or
                         UsdPhysics.MeshCollisionAPI(prim).GetApproximationAttr().Get()!='convexHull'):

@@ -25,14 +25,14 @@ class BimanualRobot(FullRobotGripper):
         from .diagnostic_rate import frequency
         self.diagnostic_physics_hz=frequency(kwargs.pop('diagnostic_physics_hz',240))
         self.cut_model=kwargs.pop('cut_model',LEGACY_CUT_MODEL)
-        from .blade_contacts import SIDE_EDGE,LOWER_EDGE,EDGE_MODES
+        from .blade_contacts import SIDE_EDGE,LOWER_EDGE,CROSSBAR_EDGE,DOWNWARD_EDGES,EDGE_MODES
         self.knife_edge_mode=kwargs.pop('knife_edge_mode',SIDE_EDGE)
         source_wrist_contacts=kwargs.pop('source_wrist_contacts',False)
         if type(source_wrist_contacts) is not bool:raise ValueError('Explicit wrist partition option required')
         self.cut_style=kwargs.pop('cut_style','legacy')
         if (self.knife_edge_mode not in EDGE_MODES or
-                (self.knife_edge_mode==LOWER_EDGE)!=(self.cut_model==DOWNWARD_CUT_MODEL) or
-                self.knife_edge_mode==LOWER_EDGE and self.cut_style!='downward'):
+                (self.knife_edge_mode in DOWNWARD_EDGES)!=(self.cut_model==DOWNWARD_CUT_MODEL) or
+                self.knife_edge_mode in DOWNWARD_EDGES and self.cut_style!='downward'):
             raise ValueError('Lower rim requires the measured downward motion model and downward planner')
         self.staged_downward_transit=kwargs.pop('staged_downward_transit',False)
         self.screened_transit_modes=()
@@ -129,11 +129,15 @@ class BimanualRobot(FullRobotGripper):
         if not self.sparse_contacts: raise ValueError('Bimanual test requires sparse native contacts')
         self.knife_mount=mount_forward(self.stage,self.root,alignment=self.knife_alignment)
         from .blade_contacts import refine_blade_contacts
-        self.blade_contacts=refine_blade_contacts(self.stage,self.root,edge_mode=self.knife_edge_mode)
+        self.blade_contacts=refine_blade_contacts(self.stage,self.root,
+            edge_mode=LOWER_EDGE if self.knife_edge_mode==CROSSBAR_EDGE else self.knife_edge_mode)
         old=self.root+'/ee_right/attachments/DeleafKnife/BladeCollision'
         self.collider_paths=[p for p in self.collider_paths if p!=old]+self.blade_contacts['collider_paths']
         from .arc_contacts import refine_arc_contacts
-        self.arc_contacts=refine_arc_contacts(self.stage,self.root)
+        arc_options={'crossbar_edge':True} if self.knife_edge_mode==CROSSBAR_EDGE else {}
+        self.arc_contacts=refine_arc_contacts(self.stage,self.root,**arc_options)
+        if self.knife_edge_mode==CROSSBAR_EDGE:
+            self.blade_contacts['physical_role']='mounting_plate_not_cutting_edge'
         old_arc=self.root+'/ee_right/attachments/DeleafKnife/ArcCollision'
         self.collider_paths=[p for p in self.collider_paths if p!=old_arc]+self.arc_contacts['collider_paths']
         self.knife=KnifeGeometry(self.stage,self.root)
@@ -913,6 +917,7 @@ class BimanualRobot(FullRobotGripper):
             force_contract=KNIFE_IMPULSE_CONTRACT,raw_normal_rows=[dict(r) for r in self.edge_contact_rows],
             raw_normal_row_limit=256,raw_normal_rows_complete=True,
             cut_model=self.cut_gate.parameters.model,
+            loading_geometry_verified=self.cut_gate.diagnostic.get('loading_geometry_verified',False),
             loading_travel_required=self.cut_gate.parameters.travel_required,
             gate_diagnostic=dict(self.cut_gate.diagnostic),
             gate_dwell_s=self.cut_gate.dwell,gate_travel_m=self.cut_gate.travel,cut_event=self.cut_event)

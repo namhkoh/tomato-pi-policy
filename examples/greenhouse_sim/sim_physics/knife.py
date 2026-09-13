@@ -174,9 +174,10 @@ class KnifeGeometry:
             if not prim or not prim.IsActive(): raise ValueError('Missing active knife '+name)
             return prim,inverse@np.asarray(cache.GetLocalToWorldTransform(prim)).T
         edge,matrix=local('CuttingEdge')
-        from .blade_contacts import SIDE_EDGE,LOWER_EDGE,EDGE_MODES
+        from .blade_contacts import SIDE_EDGE,LOWER_EDGE,CROSSBAR_EDGE,EDGE_MODES
         self.edge_mode=edge.GetAttribute('tomato:edgeMode').Get() or SIDE_EDGE
         if self.edge_mode not in EDGE_MODES:raise ValueError('Unknown source knife edge mode')
+        if self.edge_mode==CROSSBAR_EDGE:self.collider=self.root+'/CrossbarContact'
         root_matrix=inverse@np.asarray(cache.GetLocalToWorldTransform(stage.GetPrimAtPath(self.root))).T
         self.arc_axis_local=root_matrix[:3,2].copy()
         self.arc_axis_local/=np.linalg.norm(self.arc_axis_local)
@@ -195,7 +196,7 @@ class KnifeGeometry:
             group=stage.GetPrimAtPath(self.root+'/ArcContacts')
             expected=group.GetAttribute('tomato:contactPartCount').Get() if group else None
             parts=list(group.GetChildren()) if group else []
-            if (not isinstance(expected,int) or not 1<=expected<=14 or len(parts)!=expected
+            if (not isinstance(expected,int) or not 1<=expected<=(18 if self.edge_mode==CROSSBAR_EDGE else 14) or len(parts)!=expected
                     or any(not part.HasAPI(UsdPhysics.CollisionAPI)
                         or not UsdPhysics.CollisionAPI(part).GetCollisionEnabledAttr().Get() for part in parts)):
                 raise ValueError('Knife arc support has missing or disabled contact partitions')
@@ -205,6 +206,8 @@ class KnifeGeometry:
             raise ValueError('Knife frame is not orthogonal')
         if self.edge_mode==LOWER_EDGE and not np.allclose(self.local[:3,0],self.arc_axis_local,atol=1e-6):
             raise ValueError('Lower rim must face away from the actual source arc')
+        if self.edge_mode==CROSSBAR_EDGE and self.local[:3,0]@self.arc_axis_local<np.cos(np.radians(5)):
+            raise ValueError('Source crossbar bevel must face away from the curved support')
         if not np.allclose(edge.GetAttribute('tomato:cuttingDirection').Get(),[-1,0,0]):
             raise ValueError('Unsupported source edge direction')
         # Verify original right tongs stay absent; never hide left fingers.
@@ -307,9 +310,9 @@ class ShearGate:
         downward=p.model==DOWNWARD_CUT_MODEL
         down_cosine=float(-direction[2]);arc_cosine=1.
         if downward:
-            from .blade_contacts import LOWER_EDGE
+            from .blade_contacts import DOWNWARD_EDGES
             arc=np.asarray(arc_up,float)
-            if (edge_mode!=LOWER_EDGE or arc.shape!=(3,) or not np.isfinite(arc).all()
+            if (edge_mode not in DOWNWARD_EDGES or arc.shape!=(3,) or not np.isfinite(arc).all()
                     or abs(math.hypot(*arc)-1)>1e-4):
                 self.reset_window();raise ValueError('Actual source arc axis and lower rim contract required')
             arc_cosine=float(arc[2])
@@ -345,7 +348,14 @@ class ShearGate:
         if self.strategy=='right_only':
             checks.pop('stable_grasp');checks.pop('grasp_slip')
             checks['cut_only_park_and_current_plan']=support
+        # Separate contact geometry/support from the fracture load threshold.
+        # This current-sample signal may permit bounded controller loading;
+        # it NEVER grants release, displacement credit or permission to exceed
+        # force caps. Low force must not prevent acquiring a qualifying load.
+        loading_geometry=all(ok for key,ok in checks.items()
+            if key not in ('signed_load','nonreversing_relative_step'))
         self.diagnostic=dict(state='qualifying_contact' if valid else 'rejected_contact',
+            loading_geometry_verified=bool(loading_geometry),
             failed_conditions=[key for key,ok in checks.items() if not ok],
             signed_resistance_n=resistance,full_load_upper_n=upper,relative_step_m=step,
             maximum_axial_contact_m=axial,leading_normal_cosine=normal_cosine,

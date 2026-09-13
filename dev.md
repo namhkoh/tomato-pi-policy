@@ -7459,3 +7459,68 @@ No hardware, collection, tuning, review, split or training-export changes.
   uncalibrated failure-law limitations, native A/B repeated successes with
   visible evidence, full-greenhouse A/B/C requalification, post-fall material
   warnings. No source assets, datasets, training, hardware or OS settings changed.
+
+## 2026-09-13 - Actual source cutting edge audit and correction (IN PROGRESS)
+
+- Critical root cause found by inspecting the native knife image and three
+  orthographic views of the unmodified CAD: the importer's widest-X component
+  named `Blade` is the mounting plate. The actual narrow beveled straight bar
+  below the curved support belongs to the component named `Arc`. Both older
+  side-edge and the first lower-rim mode targeted the mounting plate, not that
+  bar. Historical releases must NOT be presented as intended-blade validation.
+- Added explicit `source_crossbar_edge_v1`: derive the actual sloped tip from
+  source cross-sections (3 mm wide bar, ~2-degree straight lower edge), separate
+  its central source triangles into `CrossbarContact`, retain every other arc
+  surface in collidable convex partitions, and retain both mounting-plate
+  carriers. No visual mesh, STL, mass, source plant or physical dimensions are
+  changed. Only the exact sharpened strip of the crossbar can supply eligible
+  cutting contact; the curved support and mounting plate remain noncutting.
+  Legacy modes remain explicitly reproducible, not promoted as realistic cuts.
+- Public `sim_physics.ground_truth_trial` now selects the corrected crossbar and
+  loaded-downward law by default, still experimental and allowed to fail closed.
+  Reproducing old mounting-plate results requires `--historical-mounting-plate`.
+  The internal recipe-vector helper remains unchanged for historical comparisons;
+  the source edge in each report distinguishes the two. No claim that the new
+  default already passes the manipulation milestone or fixes full-greenhouse UI.
+- The existing stricter downward seam law also accepts this explicitly named
+  source edge: actual arc-up/downward orientation, transverse alignment, exact
+  seam identity, signed measured normal load, full load cap, dwell and measured
+  net world AND relative loaded travel remain mandatory. Still an uncalibrated
+  joint-release approximation, not measured tissue fracture/partial incision.
+- Corrected a controller mismatch: the old pressure-only feed stopped at its
+  force target. The stricter model now proposes bounded 0.15 mm/s loaded
+  advance with the same 0.28 N normal/0.40 N full-load backoff and 0.50 N hard
+  cap. Fresh geometry/support verification gates loading; bad alignment/contact
+  holds or backs off. Commanded advance never counts as measured cut evidence.
+  This may still stall on physical load/penetration limits; no force increase
+  or reduced 0.3 mm cut-travel requirement was used to manufacture success.
+- New source area-preservation/open-window/edge mapping checks initially passed
+  5/5; the existing blade/arc/gate regression selection passed 147 tests and the
+  separate feed selection passed 140. Full regression passed 4,680 tests with
+  two skips in 178.64 s (`regression_20260913_crossbar_v1.log`). Additional
+  source-frame negative controls then passed with the expanded 11-test crossbar
+  suite: zero/insufficient/excess load and sideways/upside-down blade rejected.
+- Native264 (old lower rim, left park tilted 30 degrees) rejected all 50 tool
+  corridors. Native265 (corrected crossbar, original seed101/SubStem_41) passed
+  startup and found three locally clear full tool strokes, but rejected the
+  old parked-wrist rotation/transit into them. No IK motion or cut occurred.
+  Proposed higher arc-up starts failed IK at the existing stance; stance/path
+  diagnosis continues with all guards. No A/B/C completion or deadline promise.
+- Evidence: `data/sim_physics/knife_source_edge_audit_20260913_v1.png` and
+  `knife_source_edge_audit_20260913_v2_corrected.png` (code component labels vs
+  actual edge); native264/265 reports; `crossbar_ready_proposals_v1.log`;
+  `lower_rim_source_candidate_survey_v1.log` and `lower_rim_other_sources_v1.log`.
+  Candidate surveys are read-only source audits, not collection/review changes.
+  VLM work remains paused until isolated and greenhouse A/B/C are demonstrated.
+- Native266 (corrected crossbar bimanual, original stance) again verified the
+  left grasp, max slip 0.01671 mm, and found one local tool corridor at the
+  opposite heading; old ready-pose transit remained blocked. Native267 used a
+  new arc-up start 50 mm above pre-contact: IK and full left self-path passed,
+  but the native zero-step startup screen found right upper-arm contact with
+  the original distal `Leaf_005`. It correctly refused all physics motion.
+  Next: screen same-wrist-pose elbow alternatives against the frozen native
+  scene, then re-run grasp/approach/loaded cut. All new-mode cuts remain unverified.
+- Public crossbar launcher also enables the source-complete wrist partitions
+  used in these native trials. Public/historical launcher and source geometry
+  tests passed 23/23; watch-panel tests passed 14/14. Historical profile vectors
+  remain unchanged; no existing jobs, datasets, hardware or OS settings changed.

@@ -138,10 +138,10 @@ class PlantRig:
                 or evidence['loading_travel_requirement_met'] is not None):
             raise ValueError('Brittle strength-only model must mark loading travel not applicable')
         if p.model==DOWNWARD_CUT_MODEL:
-            from .blade_contacts import LOWER_EDGE
+            from .blade_contacts import DOWNWARD_EDGES
             keys=('measured_world_downward_travel_m','minimum_world_downward_cosine','minimum_source_arc_up_cosine')
             values=[evidence.get(k) for k in keys]
-            if (evidence.get('edge_mode')!=LOWER_EDGE
+            if (evidence.get('edge_mode') not in DOWNWARD_EDGES
                     or evidence.get('world_travel_definition')!='net_world_down_since_first_consecutive_qualified_contact'
                     or any(isinstance(v,(bool,np.bool_)) or not isinstance(v,(int,float,np.integer,np.floating)) for v in values)
                     or not np.isfinite(values).all() or values[0]<p.minimum_loading_travel_m

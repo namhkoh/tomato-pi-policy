@@ -16,13 +16,18 @@ from .knife import DOWNWARD_CUT_MODEL
 from .blade_contacts import LOWER_EDGE
 
 
-def fixture(**changes):
+def fixture(*,source_plant=None,source_target=None,**changes):
     from sim_data.audit import DEFAULT_PACK,audit_manifest
     from sim_data.geometry import assemble_plant
     from .branch_contact_fixture import select_components
     from .plant import build
     from .bimanual import BimanualRobot
     a=parser().parse_args(arguments('unused_offline','bimanual','cut_action'))
+    if source_plant is not None:
+        if source_plant not in {p.parent.name for p in (DEFAULT_PACK/'plants/components').glob('*/manifest.json')}:
+            raise ValueError('An existing original source plant is required')
+        a.plant=source_plant
+    if source_target is not None:a.target=source_target
     stage=Usd.Stage.CreateInMemory();stage.SetEditTarget(stage.GetSessionLayer())
     UsdGeom.SetStageMetersPerUnit(stage,1);UsdGeom.SetStageUpAxis(stage,'Z')
     manifest=DEFAULT_PACK/'plants/components'/a.plant/'manifest.json'
@@ -51,11 +56,13 @@ def main(argv=None):
     p.add_argument('--approach-tilt',type=float,default=0.)
     p.add_argument('--grasp-pitch',type=float,default=20.)
     p.add_argument('--grasp-roll',type=int,default=0)
+    p.add_argument('--plant');p.add_argument('--target')
     a=p.parse_args(argv)
     if not np.isfinite(a.seconds) or not 0<a.seconds<=600:raise ValueError('Bounded offline search required')
     from .downward_cut import vertical_cut_frame,arm_extension
     from .rigid_tool_screen import RigidToolScreen
-    r=fixture(approach_tilt=a.approach_tilt,grasp_pitch=a.grasp_pitch,grasp_roll=a.grasp_roll)
+    r=fixture(source_plant=a.plant,source_target=a.target,
+        approach_tilt=a.approach_tilt,grasp_pitch=a.grasp_pitch,grasp_roll=a.grasp_roll)
     centre,axis=r.seam(r.rig.rest_frames);aim=centre+r.blade_axial_aim_offset_m*axis
     start=time.monotonic();seed=r.right.copy();original=r.right.copy()
     r.held_plant_screen.include_static_scene(r.stage,r.root,r.rig.root,

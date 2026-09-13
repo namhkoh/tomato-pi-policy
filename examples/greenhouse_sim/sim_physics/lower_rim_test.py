@@ -67,6 +67,14 @@ def test_micro_motion_is_not_a_cut():
     g=gate();assert all(sample(g,(i%2)*.008) is None for i in range(1000))
 
 
+def test_loading_signal_distinguishes_low_load_from_bad_geometry():
+    g=gate();assert sample(g,0,load=.1) is None
+    assert g.diagnostic['loading_geometry_verified'] is True
+    assert 'signed_load' in g.diagnostic['failed_conditions']
+    assert sample(g,1,arc=(1,0,0)) is None
+    assert g.diagnostic['loading_geometry_verified'] is False
+
+
 @pytest.mark.parametrize('mode',['bimanual','right_only'])
 def test_both_explicit_native_modes_validate_without_loosening_other_guards(tmp_path,monkeypatch,mode):
     from pathlib import Path

@@ -23,3 +23,19 @@ def test_durable_profile_reaches_validation_boundary_without_launch(tmp_path,mon
         raise Validated()
     monkeypatch.setattr(Path,'mkdir',stop)
     with pytest.raises(Validated):main(argv)
+
+
+@pytest.mark.parametrize('mode',['bimanual','right_only'])
+@pytest.mark.parametrize('historical',[False,True])
+def test_public_launcher_never_silently_uses_the_wrong_physical_edge(monkeypatch,tmp_path,mode,historical):
+    from . import benchmark,ground_truth_trial
+    from .blade_contacts import CROSSBAR_EDGE,SIDE_EDGE
+    from .knife import DOWNWARD_CUT_MODEL,BRITTLE_CUT_MODEL
+    captured=[]
+    monkeypatch.setattr(benchmark,'main',lambda args:captured.append(benchmark.parser().parse_args(args)))
+    argv=['--output',str(tmp_path/'new'),'--mode',mode,'--milestone','cut_action']
+    if historical:argv.append('--historical-mounting-plate')
+    ground_truth_trial.main(argv)
+    assert captured[0].knife_edge_mode==(SIDE_EDGE if historical else CROSSBAR_EDGE)
+    assert captured[0].cut_model==(BRITTLE_CUT_MODEL if historical else DOWNWARD_CUT_MODEL)
+    assert captured[0].source_wrist_contacts is (not historical)

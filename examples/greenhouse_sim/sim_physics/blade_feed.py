@@ -9,7 +9,7 @@ import numpy as np
 
 
 class BladeFeed:
-    def __init__(self, offsets, *, radius, dwell_feedback=False, compliant_rate=False, friction_budget=False, physics_hz=240):
+    def __init__(self, offsets, *, radius, dwell_feedback=False, compliant_rate=False, friction_budget=False, physics_hz=240, loaded_advance=False):
         from .diagnostic_rate import frequency
         self.physics_hz=frequency(physics_hz)
         values=np.asarray(offsets,dtype=float)
@@ -38,6 +38,14 @@ class BladeFeed:
         if type(friction_budget) is not bool or friction_budget and not (compliant_rate and dwell_feedback):
             raise ValueError('Friction budget requires explicit compliant rate and minimum-window feedback')
         self.friction_budget=friction_budget
+        if (type(loaded_advance) is not bool or loaded_advance and not
+                (friction_budget and self.physics_hz==480)):
+            raise ValueError('Loaded advance requires explicit 480 Hz compliant minimum-window friction-budget control')
+        self.loaded_advance=loaded_advance
+        self.loading_geometry_verified=False
+        # Commanded progress is not measured penetration or fracture work.
+        # Half the existing near-contact speed; no load threshold/cap increase.
+        self.loaded_speed=.00015 if loaded_advance else 0.
         # Contact upper bound includes friction; it is not the signed normal
         # load tested by the cut gate. At mu=.5, .26 N normal may require
         # .39 N total. .40 N is a CONTROL backoff, not a raised .50 N guard.
@@ -57,6 +65,13 @@ class BladeFeed:
                 for v in (normal,upper)) or not np.isfinite([normal,upper]).all()
                 or not 0<=upper<=.5 or abs(normal)>upper+1e-7):
             raise RuntimeError('Invalid or unsafe measured blade load')
+        geometry=False
+        if self.loaded_advance:
+            from .knife import DOWNWARD_CUT_MODEL
+            geometry=knife.get('loading_geometry_verified')
+            if knife.get('cut_model')!=DOWNWARD_CUT_MODEL or type(geometry) is not bool:
+                raise RuntimeError('Current downward-rim geometry/support observation required')
+        self.loading_geometry_verified=geometry
         self.normal=float(normal);self.upper=float(upper);self.released=released
         # Consecutive contact samples only. This window affects feed commands,
         # NEVER the cut detector's unsmoothed per-step force/direction evidence.
@@ -80,8 +95,11 @@ class BladeFeed:
         control_load=min(self.loads) if self.dwell_feedback and self.loads else self.normal
         if self.upper>self.backoff_load or self.normal>.28:
             speed=-.0005;mode='backoff_load'
+        elif self.loaded_advance and self.upper>.01 and not self.loading_geometry_verified:
+            speed=0.;mode='hold_unqualified_contact'
         elif .22<=control_load<=.28:
-            speed=0.;mode='hold_valid_load'
+            speed=self.loaded_speed
+            mode='loaded_downward_advance' if self.loaded_advance else 'hold_valid_load'
         elif self.upper>.10 and self.normal<.01:
             speed=0.;mode='hold_nonqualifying_load'
         elif self.upper>.01:
@@ -105,6 +123,9 @@ class BladeFeed:
             near_contact_speed_m_s=self.near_speed,loading_speed_limit_m_s=self.loading_speed,
             backoff_speed_m_s=.0005,cut_authorized=False,force_limit_guaranteed=False)
         self.receipt.update(compliant_rate_comparison=self.compliant_rate,
+            loaded_advance_comparison=self.loaded_advance,
+            current_loading_geometry_verified=self.loading_geometry_verified,
+            loaded_speed_limit_m_s=self.loaded_speed,
             friction_budget_comparison=self.friction_budget,hard_full_contact_guard_n=.5,
             loading_gain_m_per_n_s=self.load_gain,
             maximum_loading_increment_m=self.loading_speed*dt,
