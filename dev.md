@@ -6988,3 +6988,40 @@ No hardware, collection, tuning, review, split or training-export changes.
   Offline60..70 mm station comparisons likewise find no coarse-clear complete
   tool stroke. Further station proposals must retain full native validation;
   do not alter the fixed cut point or remove camera/plant collision geometry.
+- Further candidate diagnostics are geometry proposals, NOT additional
+  successful grasp/cut episodes. The offline combined hand/tool search now
+  checks the original left hand against the target leaves during approach and
+  closure as well as the full sampled right-tool stroke. Full-arm IK, static
+  native geometry, actual contact and retention remain separate requirements.
+  Unresolved coarse static boxes are not proof of actual collision.
+- Native228 tests seed67_full/SubStem_43,95 mm grasp,pitch20,20 mm cut,
+  nominal zero blade axial offset. Two offline combined tool strokes clear,
+  but full native startup rejects finger1 against original Leaf_032/Leaf_033.
+  No physics motion or cut. The local-only screen did not certify this
+  initial leaf clearance; adding that check removes all sampled survivors
+  for this branch, without deleting leaves or changing collision filters.
+- Native229 tests original seed19_full/SubStem_41,55 mm grasp,pitch40,
+  20 mm cut and zero blade offset. Offline left approach/closure and seven
+  complete tool strokes clear. Full native startup/left approach pass;
+  measured preload ready8.920833 s at0.252262/0.187568 N. Attached maximum
+  slip0.052075 mm. Static retention fails: detached mass12.385444 g,
+  14 compressive rows, utilization1.456021, required normal-plus-friction
+  bounds0.570360/0.728011 N versus unchanged0.5 N per-finger limits.
+  Right planning/motion and cut are refused. More geometric access does not
+  make this longer branch physically retainable by that measured patch.
+- Evidence in `data/sim_physics`: native228/229 report directories;
+  `compact_branch_free_ready_20260913_v13.log` through`v18.log`,
+  `coupled_grasp_access_20260913_v1.log` through`v8.log`, and
+  `local_hand_tool_search_20260913_v2.log` through`v6.log`. These local searches
+  are privileged source-geometry diagnostics, not VLM observations or accepted
+  demonstrations. No new training/collection/review/split decisions.
+  Native230 is a frozen post-grasp access diagnostic on the lighter original
+  seed41 target, using live static-actor query refinement and stopping before
+  ANY right motion. It repeats the227 grasp and finds zero clear bare-tool
+  corridors among the tested original downward proposals.699 native queries,
+  379 coarse rejections cleared,316 retained rejections; final query validation
+  and cleanup pass. Robot positions/velocities/targets/submitted-force arrays
+  are exactly unchanged across the probe. No proposed grasp or cut is
+  authorized. See `native230/native_local_hand_tool.json` under the same
+  `bimanual_downward_20260912_` prefix. This is an access diagnostic, not a
+  physical cutting failure or proof about every possible manipulation strategy.
