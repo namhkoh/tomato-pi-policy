@@ -39,6 +39,7 @@ def test_left_native_miss_refines_only_static_bounds_and_keeps_whole_box(link,su
 def harness(monkeypatch,fault=None):
     import sim_physics.held_plant_screen as h
     import sim_physics.native_static_clearance as n
+    import sim_physics.whole_robot_target as w
     calls=[]
     def action(name):
         calls.append(name)
@@ -51,6 +52,8 @@ def harness(monkeypatch,fault=None):
         assert kw['lazy_coverage'] is True
         action('initialize');return native
     monkeypatch.setattr(h,'HeldPlantScreen',lambda *a,**kw:screen)
+    monkeypatch.setattr(w,'WholeRobotTargetScreen',lambda *a:S(check=lambda *a,**k:
+        dict(passed=fault!='whole_target',failure={'reason':'whole_target_overlap'})))
     monkeypatch.setattr(n,'current_scene_query',factory)
     r=BimanualRobot.__new__(BimanualRobot)
     r.held_plant_screen=S(workspace=(np.zeros(3),np.ones(3)),static=[],static_indices={})
@@ -85,3 +88,13 @@ def test_geometric_grasp_rejection_stays_rejected_and_closes_query(monkeypatch):
     assert not result['passed'] and result['failure']['reason']=='synthetic_obstacle'
     assert 'validate' not in calls and calls.count('close')==1
     assert screen.native_static_query is None
+
+
+def test_complete_robot_target_rejection_precedes_arm_context_and_closes(monkeypatch):
+    r,calls,screen=harness(monkeypatch,'whole_target')
+    result=r.screen_grasp_scene(np.empty(0))
+    assert not result['passed']
+    assert result['failure']['reason']=='whole_target_overlap'
+    assert not result['complete_robot_target']['passed']
+    assert 'check' not in calls and 'validate' not in calls
+    assert calls.count('close')==1 and not hasattr(r,'planning_slides')

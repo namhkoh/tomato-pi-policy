@@ -2,6 +2,22 @@
 import numpy as np
 
 
+def arc_box(points,local):
+    """Enclose a thin-X source arc partition in its YZ edge-aligned box.
+
+    The existing XYZ box includes empty wedges in sloped arc partitions.
+    A rigid cyclic axis permutation reuses the checked plate enclosure. Every
+    authored vertex (and therefore its entire convex hull) remains inside;
+    the native mesh, source thickness and independent margins are unchanged.
+    This remains a conservative authored bound, not a cooking certificate.
+    """
+    p=np.asarray(points,float);m=np.asarray(local,float)
+    if p.ndim!=2 or p.shape[1:]!=(3,) or m.shape!=(4,4):
+        raise ValueError('Source arc vertices and local transform required')
+    permutation=np.eye(4);permutation[:3,:3]=np.eye(3)[:,[1,2,0]]
+    return plate_box(p[:,[1,2,0]],m@permutation)
+
+
 def plate_box(points,local):
     """Smallest source-XY edge-aligned rectangle, retaining full Z thickness.
 

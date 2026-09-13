@@ -44,6 +44,14 @@ class SelfCapsuleScreen:
                 value=plate_box(UsdGeom.Mesh(prim).GetPointsAttr().Get(),local)
                 self.shapes.append((path,body_path,link,'box',value));self.box_paths.append(path)
                 continue
+            if fit_plate and path.startswith(robot_root+'/ee_right/attachments/DeleafKnife/ArcContacts/Part_'):
+                from .tool_bounds import arc_box
+                if (not prim.IsA(UsdGeom.Mesh) or
+                        UsdPhysics.MeshCollisionAPI(prim).GetApproximationAttr().Get()!='convexHull'):
+                    raise ValueError('Source convex arc partition required')
+                value=arc_box(UsdGeom.Mesh(prim).GetPointsAttr().Get(),local)
+                self.shapes.append((path,body_path,link,'box',value));self.box_paths.append(path)
+                continue
             if not prim.IsA(UsdGeom.Boundable): raise ValueError('Unbounded tool collider: '+path)
             bound=bounds.ComputeUntransformedBound(prim).ComputeAlignedRange()
             if bound.IsEmpty(): raise ValueError('Empty tool collision bounds: '+path)

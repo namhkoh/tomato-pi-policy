@@ -7025,3 +7025,53 @@ No hardware, collection, tuning, review, split or training-export changes.
   authorized. See `native230/native_local_hand_tool.json` under the same
   `bimanual_downward_20260912_` prefix. This is an access diagnostic, not a
   physical cutting failure or proof about every possible manipulation strategy.
+
+### 2026-09-13 ? Coupled grasp/access investigation and complete-target preview
+
+- Reliable cut/retain/withdraw/deposit is still NOT established. No dataset,
+  review, split, collection, training, hardware or source-asset changes here.
+- Native231 completes an attached source101 grasp, then the diagnostic preserves
+  the actual failed static retention result (utilization5.512214). A frozen
+  native-static geometry query finds two bare-tool corridors and hypothetical
+  hand configurations. It unconditionally stops before right motion; these are
+  not successful grasps at the proposed frames or demonstrations.
+- Native232 proposes an80 mm grasp/pitch40/roll0 with a newly optimized torso.
+  The arm-only offline preview passes, but the full native zero-step screen
+  rejects torso5 versus original distal leaves. No motion is allowed.
+  FIX: `whole_robot_target.py` now independently checks ALL supplied robot
+  colliders against the complete current target snapshot during every sampled
+  left approach and closure pose. It runs alongside the unchanged bounded
+  static-context screen. The finite target subset has no arm-cache workspace
+  restriction, but explicitly does NOT certify surrounding scene coverage.
+  Only left-finger/selected connected-shaft pairs retain the existing expected
+  grasp allowance; torso, parked right arm, head, palm and cameras do not.
+- Native233 keeps the previously checked base/torso and tests source101/41 at
+  80 mm, pitch40, roll0. Native startup and grasp approach pass; grasp6.720833 s,
+  measured preload8.9875 s; static retention prerequisite passes with0.827933
+  utilization,12 compressive rows and8.613447 g detached inventory. Maximum
+  attached slip0.015345 mm. This is NOT dynamic retention or cutter-load proof.
+  All400 original fitted-tool corridors reject before IK, notably left palm
+  versus knife ArcContacts/Part_00. No cut or right motion.
+- FIX: source-enclosing YZ-oriented boxes for the thin-X convex arc partitions
+  replace their XYZ planning boxes in the existing downward fitted-tool screen.
+  Every original source vertex/convex hull remains enclosed with1 micrometre
+  padding. Native colliders, visible knife, mounting, material and all existing
+  collision margins are unchanged. This reduces empty-wedge conservatism;
+  it is not an exact native convex-cooking certificate.
+  Native234 repeats233: identical attached slip and preload, but still no
+  complete clear corridor. Tighter bounds alone do NOT fix this configuration.
+- Native235 repeats the attached grasp and uses a frozen read-only native
+  static query to explore nearby depths/pitches/stations. Two bare-tool paths,
+  16 local hand proposals,105 combined checks,90 left-path rejections in3.375 s.
+  Query errors absent; robot q/v/targets/submitted-effort arrays unchanged.
+  These omit full arm IK/new native contacts and never authorize right motion.
+  Native236 is the subsequent physical candidate, not yet qualified here.
+- Validation:50 focused whole-target/native-cleanup/aperture tests;30 focused
+  arc/source-enclosure/target tests; complete `sim_physics` suite **4,008 passed
+  in151.07 s** (`data/sim_physics/regression_20260913_whole_target_arc_bounds_v1.log`).
+  Test counts overlap and are not independent episodes. Original guarded
+  launch policy retained; no reboot or memory preflight bypass.
+- Native reports: `data/sim_physics/bimanual_downward_20260912_native231` through
+  `native235`; native235 includes `native_local_hand_tool.json`. Offline proposal
+  logs `compact_branch_free_ready_20260913_v19..v22` and
+  `coupled_grasp_access_20260913_v9..v10` remain diagnostics, not training data.

@@ -934,6 +934,16 @@ default remains 25 mm per side. Native213 passes zero-step startup but rejects
 the approach against an original target leaf. This is not a successful grasp
 or evidence that narrower pre-shaping alone solves access or retention.
 
+Grasp approach/closure now also screens every robot collider against the full
+current target, separately from the arm's bounded static-context cache. This
+catches torso/parked-arm contact with distal leaves without pretending that a
+target-only subset covers the whole greenhouse. Native startup and execution
+guards remain mandatory. The downward planner also uses source-enclosing,
+edge-aligned bounds for each original knife arc partition; no native mesh,
+visual, mounting or collision margin is changed. Native233/234 establish an
+attached grasp and static retention prerequisite, but their tool corridors
+still fail. Neither change establishes reliable cutting or post-cut retention.
+
 Additional **default-OFF isolated diagnostics**:
 
 - `--physical-grasp-span`: connected exact shaft identities under the current

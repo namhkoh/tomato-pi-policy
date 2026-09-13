@@ -238,11 +238,25 @@ class BimanualRobot(FullRobotGripper):
                 native=current_scene_query(self.stage,screen.static,lazy_coverage=True,
                     wall_limit_s=self.native_static_planning_seconds)
                 screen.native_static_query=native
+            # The left-arm cache does not cover the torso/base or parked right
+            # arm. These can hit distal leaves even when the hand path clears.
+            # Keep that bounded static-context screen AND independently check
+            # every robot collider against the full current dynamic target.
+            from .whole_robot_target import WholeRobotTargetScreen
+            target_screen=WholeRobotTargetScreen(screen,self.self_screen.shapes)
+            def check_proposal(q):
+                world=self.body_world(q,self.right)
+                complete=target_screen.check(world,grasp=True)
+                result['complete_robot_target']=complete
+                if not complete['passed']:
+                    screen.last_failure=complete['failure']
+                    return False
+                return screen.check(world,grasp=True)
             self.planning_slides=self.slides.copy()
             for fraction,q in zip(self.fractions,self.path_q):
                 if fraction>1.+1e-8: break
                 checks+=1
-                if not screen.check(self.body_world(q,self.right),grasp=True):
+                if not check_proposal(q):
                     result['failure']={**screen.last_failure,'phase':'approach','fraction':float(fraction)}
                     return result
             q=self.path_q[int(np.argmin(abs(self.fractions-1.)))]
@@ -252,7 +266,7 @@ class BimanualRobot(FullRobotGripper):
             for gap in closure_samples(self.pregrasp_half_aperture,aperture):
                 self.planning_slides={'gripper_finger_l1':-gap,'gripper_finger_l2':gap}
                 checks+=1
-                if not screen.check(self.body_world(q,self.right),grasp=True):
+                if not check_proposal(q):
                     result['failure']={**screen.last_failure,'phase':'closure','aperture_m':float(gap)}
                     return result
             result['passed']=True
