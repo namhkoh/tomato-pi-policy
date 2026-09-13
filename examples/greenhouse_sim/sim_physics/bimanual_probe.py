@@ -80,6 +80,9 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             and not getattr(args,'bimanual_hold_control',False)):
         raise ValueError('Raw contact diagnostic is restricted to a right-parked hold control')
     fixture.bind(sim.physics_sim_view)
+    if getattr(args,'fixed_root_cut_trial',False):
+        from .root_transition import FixedRootTransition
+        fixture.root_transition=FixedRootTransition(runtime,springs,fixture)
     step_context=sim
     if getattr(args,'step_profile',False):
         from .step_profile import MeasuredStep
@@ -104,6 +107,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             [float(rig.stage.GetPrimAtPath(p+'/StemCollider').GetAttribute('radius').Get()) for p in rig.body_paths],
             [p['stiffness'] for p in rig.properties],int(rig.cut_index))
     spring_snapshot=None
+    free_root_snapshot=None;free_root_reader=None
     prediction_before=None;prediction_reader=None;contact_stream=None
     previous_prediction=None;contact_springs=None;spring_control_record=None
     contact_springs_started=False
@@ -168,6 +172,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         nonlocal goal_set,grasp_local,planned,cut_fraction,grasp_verified,last_right_command
         nonlocal reposition_vector
         nonlocal spring_snapshot,prediction_before
+        nonlocal free_root_snapshot,free_root_reader
         nonlocal spring_control_record
         nonlocal contact_springs_started
         nonlocal times,grasp_time,delay,plan_time,approach_start,stroke_start,stroke_end,acquisition_wait_logged
@@ -280,6 +285,27 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 fixture.robot_bodies.get_velocities(),dtype=float,copy=True).tolist()
             prediction_before['robot_com_local_poses']=np.array(
                 fixture.robot_bodies.get_coms(),dtype=float,copy=True).tolist()
+        free_root_snapshot=None
+        if rig.cut and getattr(args,'diagnostic_free_root_dynamics',False):
+            from .plant_prediction_snapshot import PlantPredictionSnapshot
+            from .kinetic_consistency import check as kinetic_check
+            if free_root_reader is None:
+                free_root_reader=PlantPredictionSnapshot(runtime.articulation,
+                    source_target=rig.source_target,expected_body_paths=rig.body_paths[rig.cut_index:])
+            try:
+                free_root_snapshot=free_root_reader.read(step=int(stamp.step),root_constrained=False)
+            except Exception:
+                rejected=free_root_reader.last_failure
+                if rejected is not None:
+                    rejected['kinetic_consistency']=kinetic_check(rejected,
+                        runtime.articulation.get_masses(),runtime.articulation.get_inertias())
+                    rejected['native_masses']=np.asarray(runtime.articulation.get_masses()).tolist()
+                    rejected['native_inertias']=np.asarray(runtime.articulation.get_inertias()).tolist()
+                    (output/'free_root_snapshot_fault.json').write_text(
+                        json.dumps(rejected,allow_nan=False),encoding='utf-8')
+                raise
+            free_root_snapshot['kinetic_consistency']=kinetic_check(free_root_snapshot,
+                runtime.articulation.get_masses(),runtime.articulation.get_inertias())
         spring_control_record=None
         spring_phase=experimental_spring_phase(contact_springs is not None,grasp_verified,contact_springs_started)
         if spring_phase=='contact':
@@ -349,6 +375,13 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             grasp_point=grasp_point.tolist(),max_speed_m_s=speed,max_gripper_net_contact_n=total,
             support_error_m=support,seam_world=seam.tolist(),
             detached_seam_gap_m=float(np.linalg.norm(seam-rig.chain_world[rig.cut_index])),cut=rig.cut)
+        record['attached_root_translation_error_m']=(None if rig.cut else float(np.linalg.norm(
+            frames[rig.cut_index,:3,3]-rig.rest_frames[rig.cut_index,:3,3])))
+        if getattr(args,'fixed_root_contact_hold',False) or getattr(args,'fixed_root_cut_trial',False) and not rig.cut:
+            if rig.cut or not runtime.articulation.shared_metatype.fixed_base:
+                raise RuntimeError('Fixed root HOLD topology changed')
+            if record['attached_root_translation_error_m']>1e-6:
+                raise RuntimeError('Fixed root HOLD attachment moved beyond 1 micrometre')
         # Snapshot after the native step. target_palm() clears the event stream
         # at the next tick; inspecting it in before() loses the blocking pair.
         record['native_contact_pairs_n']=[[a,b,v/dt] for (a,b),v in fixture.event_monitor.pairs.items()]
@@ -359,6 +392,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             joint_velocities_rad_s=plant_v.tolist(),elastic_energy_j=.5*float(np.dot(springs.k*plant_q,plant_q)),
             fastest_body=rig.body_paths[int(np.argmax(np.linalg.norm(velocity[:,:3],axis=1)))])
         records.append(record)
+        if free_root_snapshot is not None:
+            record['free_root_prediction_before_step']=free_root_snapshot
         # Preserve failure-tick contact data without invoking release logic
         # before the guards. No sensor/force evidence is manufactured here.
         if blade_feed is not None:

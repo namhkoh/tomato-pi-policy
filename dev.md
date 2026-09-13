@@ -6656,3 +6656,76 @@ No hardware, collection, tuning, review, split or training-export changes.
   Full regression before diagnostics:3774 passed145.98s; after diagnostics:
   **3,784 passed in134.03s**, `regression_20260913_shear_diagnostics_v1.log`.
   These are software checks; reliable cutting/retention is still NOT COMPLETE.
+
+### 2026-09-13: Fixed attachment, continuous detach, and remaining free-root instability
+
+- Native190's small topology check and native192's original full source branch
+  transition fixed-to-free with no measured pose/velocity jump and the correct
+  free-root mass dimensions. Native193 repeats the full branch WITHOUT global
+  tensor reset: unchanged state, correct 54x54 free mass, 0.3049565m root fall
+  over 0.25s. These are contact-free diagnostics, not grasp/cut qualification.
+- Added default-OFF `--fixed-root-contact-hold`: complete isolated original
+  implicit/flat/PGS240/128-0-or-8 diagnostic, attached-only, no reposition or
+  right-arm motion. Native194 completes 12,000 ticks / 50s with all runtime
+  guards passing, verified grasp and maximum slip 0.146941mm. Maximum attached
+  root translation difference is 9.698nm (float32 readback). Its overall
+  bimanual result intentionally remains failed: a hold-only control cannot
+  pass cut/retention/withdrawal gates.
+- Added default-OFF `--fixed-root-cut-trial`, still restricted to the complete
+  isolated instrumented no-reposition fixture. `root_transition.py` flushes the
+  qualified seam edit without stepping/resetting, creates a fresh explicit-stage
+  tensor view, verifies original coordinate/link inventory, free mass layout,
+  plant and robot poses/velocities/commands/mass/inertia/K/C/caps, then rebinds
+  only plant articulation and cached spring controller. Existing robot/body
+  views must also pass continuity. No fixture.bind(), warmup, weld, force replay,
+  pose setter or velocity setter; partial transition failure is latched and
+  stops before another tick. Direct fixed-root diagnostic release stays banned.
+- Native195 produces a raw blade-qualified seam release at16.770833s; every
+  recorded no-step plant/robot change is zero. All49 logged release/post-release
+  grasp adapter checks agree. This is NOT successful retained cutting: at
+ 16.970833s, full finger loads0.525118/0.672567N exceed the unchanged0.5N limit.
+  Maximum slip2.166239mm. Modeled spring potential rises from1.00851mJ at release
+  to3.14015J in0.20s, corroborated by body-derived strain. Native contact cache
+  preservation is not independently certified; Python controller/contact
+  histories are preserved and next-step raw callback/tensor reconciliation
+  remains mandatory.
+- Tested original native damping / explicit stiffness as an independent
+  post-release diagnostic in `native_damped_springs.py`; original K/C, masses,
+  caps, no added root/contact force. Native196 fails the0.25rad diagnostic
+  bound even WITHOUT contact despite C >= hK/2. That inequality is NOT a
+  certificate of the installed native solver. This alternative is rejected
+  and has NO benchmark/robot integration or production default.
+- `--diagnostic-free-root-dynamics` is read-only and restricted to the fixed
+  cut trial. Native197 repeats the same cut, then stops on disagreement between
+  native COM Jacobian-mapped and native reported body velocities. Added exact
+  rejected snapshot capture, never returning invalid values as a prediction.
+  `kinetic_consistency.py` separately reconstructs generalized inertia/kinetic
+  energy from reported body mass, COM inertia, transforms and Jacobians; it
+  does not repair state or infer a new physical law. Native198 captures this
+  mismatch for further diagnosis; coordinate-error vs solver-lag cause pending.
+- Native198 stops before any post-cut spring step: angular mapping residual
+  1.40707e-4rad/s. Independent body/Jacobian reconstruction agrees with the
+  free mass matrix (maximum diagonal-scaled difference4.075e-7); shifting the
+  Jacobian to/from body origin makes this much worse. This rules against a
+  simple COM-origin/mass-layout correction, NOT proof that this relatively
+  small velocity residual explains the large energy growth. Native199 compares
+  the Jacobian/velocity residual before and after the no-step topology edit.
+- Native199 finds EXACTLY the same residual before and after release:
+  linear3.45956e-5m/s, angular1.40707e-4rad/s, intrinsic Jacobian change ZERO.
+  Thus the no-step transition does not introduce this mismatch. Do not claim
+  the residual proves a root-coordinate bug or explains the3J growth. The
+  remaining physics investigation is the spring/contact split with a freely
+  moving, finger-constrained branch; do not retain a hidden fixed root after
+  cutting, weaken contact/direction guards or substitute computed velocities.
+- Evidence: `data/sim_physics/root_transition_20260913_native190/192/193/196.json`
+  (individual files with those suffixes), `bimanual_downward_20260912_native194/`,
+  `native195/`, `native197/`, `native198/`, `fixed_root_audit_20260913.log`.
+  First broad regression exposed ten legacy mock-call incompatibilities;
+  restored the unchanged positional release call when no adapter is requested.
+  Rerun: **3,857 passed in126.02s**, `regression_20260913_fixed_root_v2.log`.
+  Later rejection-capture tests separately pass; further guard tests ongoing.
+- Reliable free-branch retention, withdrawal and deposit remain incomplete.
+  Production scene/assets/fidelity, physical force/slip/collision limits,
+  datasets/splits/reviews, training and hardware are unchanged. No reboot or
+  host-memory preflight bypass. These diagnostic cuts remain simulated joint
+  release, not calibrated tissue fracture or training-approved demonstrations.

@@ -28,8 +28,10 @@ class PlantPredictionSnapshot:
                 or len(set(self.paths))!=len(self.paths)):
             raise ValueError('Exact single floating plant articulation inventory required')
         self.d=len(self.names);self.n=self.d+6;self.b=len(self.paths)
+        self.last_failure=None
 
     def read(self,*,step,root_constrained):
+        self.last_failure=None
         a=self.a
         if (type(step) is not int or step<0 or type(root_constrained) is not bool
                 or a.count!=1 or a.shared_metatype.fixed_base
@@ -49,6 +51,15 @@ class PlantPredictionSnapshot:
         mapped=np.einsum('bij,j->bi',jac,v);error=float(np.max(abs(mapped-velocity)))
         allowance=1e-6+1e-5*float(np.max(abs(velocity)))
         if error>allowance:
+            # Preserve rejected native evidence; never return it as a valid
+            # prediction or replace velocities with a computed substitute.
+            self.last_failure=dict(step_id=step,source_target=self.target,
+                body_paths=list(self.paths),joint_names=list(self.names),
+                q_rad=q.tolist(),generalized_velocity=v.tolist(),mass_matrix=rawM.tolist(),
+                body_world_com_jacobians=jac.tolist(),body_frames_world=frames.tolist(),
+                body_velocities_world=velocity.tolist(),native_com_local_poses=com.tolist(),
+                mapped_body_velocities=mapped.tolist(),point_velocity_max_error=error,
+                point_velocity_error_allowance=allowance,valid_prediction=False,training_eligible=False)
             raise ValueError('Native COM Jacobian/velocity convention disagrees')
         gravity=_array(a.get_gravity_compensation_forces(),(1,self.n),'gravity compensation')[0]
         coriolis=_array(a.get_coriolis_and_centrifugal_compensation_forces(),(1,self.n),'Coriolis compensation')[0]

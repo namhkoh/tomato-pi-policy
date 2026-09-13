@@ -127,6 +127,12 @@ def parser():
         help='Isolated HOLD-only bounded explicit left-finger PD comparison; no native contact or force-guard change')
     p.add_argument('--isolated-cut-contact-trial',action='store_true',
         help='Explicit isolated flat-cylinder/effort-control cut DIAGNOSTIC; native126 hold is not tissue or greenhouse certification')
+    p.add_argument('--fixed-root-contact-hold',action='store_true',
+        help='Isolated fixed-root implicit grasp HOLD comparison; no blade approach, release or production qualification')
+    p.add_argument('--fixed-root-cut-trial',action='store_true',
+        help='Isolated fixed-root cut diagnostic with no-step checked detach; not production or tissue qualification')
+    p.add_argument('--diagnostic-free-root-dynamics',action='store_true',
+        help='Read-only post-release native mass/Jacobian/velocity consistency; fixed-root cut diagnostic only')
     p.add_argument('--branch-contact-fixture',action='store_true',
         help='CONTACT ONLY: keep original main stem and selected complete petiole/leaves; excludes other source branches in session; NOT intact-plant/greenhouse qualification')
     p.add_argument('--anchored-pad-damping',action='store_true',
@@ -178,8 +184,30 @@ def parser():
     return p
 
 
+def validate_fixed_root_hold(args):
+    """Narrow opt-in; never turns an attached-only result into cutting evidence."""
+    enabled=args.fixed_root_contact_hold
+    if enabled and not (args.isolated_cut_contact_trial and args.bimanual_hold_control
+            and args.attached_only and args.constraint_mode=='fixed_articulation'
+            and args.spring_mode=='implicit_effort' and args.diagnostic_grasp_dynamics
+            and args.bimanual_reposition_m==0 and not args.native_torsion_trial
+            and not args.native_spring_cut_trial and not args.measured_withdrawal):
+        raise ValueError('Fixed root contact HOLD requires attached-only original implicit instrumented no-reposition isolated HOLD')
+    return enabled
+
+
 def main(argv=None):
     args=parser().parse_args(argv)
+    fixed_hold=validate_fixed_root_hold(args)
+    fixed_cut=args.fixed_root_cut_trial
+    if args.diagnostic_free_root_dynamics and not fixed_cut:
+        raise ValueError('Free root dynamics requires isolated fixed-root cut diagnostic')
+    if fixed_cut and not (args.isolated_cut_contact_trial and not args.bimanual_hold_control
+            and not args.attached_only and args.constraint_mode=='fixed_articulation'
+            and args.spring_mode=='implicit_effort' and args.diagnostic_grasp_dynamics
+            and args.bimanual_reposition_m==0 and not args.native_torsion_trial
+            and not args.native_spring_cut_trial and not fixed_hold):
+        raise ValueError('Fixed root CUT requires original implicit instrumented no-reposition isolated cut trial')
     if args.blade_friction_budget and not (args.compliant_blade_rate and args.blade_dwell_feedback):
         raise ValueError('Blade friction budget requires isolated compliant rate and minimum-window feedback')
     if args.native_capsule_sphere_cover and not (args.bimanual_cut and args.native_static_clearance):
@@ -217,10 +245,10 @@ def main(argv=None):
     if args.branch_contact_fixture and not contact_trial:
         raise ValueError('Branch-only selection requires the isolated cut contact diagnostic')
     if contact_trial and not (args.scene=='package' and args.isolate_station and args.full_robot_probe
-            and args.bimanual_cut and not args.bimanual_hold_control and not args.robot_interactive
+            and args.bimanual_cut and (not args.bimanual_hold_control or fixed_hold) and not args.robot_interactive
             and args.explicit_finger_effort and args.force_closure and args.physics_hz==240
             and args.solver=='PGS' and args.spring_mode==('native' if args.native_spring_cut_trial else 'implicit_effort')
-            and args.constraint_mode=='articulation'
+            and args.constraint_mode==('fixed_articulation' if fixed_hold or fixed_cut else 'articulation')
             and args.stem_contact_model=='flat_cylinders_v1' and args.grasp_contact_frames=='pre_solve_pgs_v1'
             and args.uniform_solver_iterations in ([128,0],[128,8]) and args.force_newton==0
             and not args.diagnostic_contact_prediction and not args.experimental_contact_springs):
@@ -356,7 +384,7 @@ def main(argv=None):
     if args.force_closure and not (args.bimanual_cut and args.compliant_fingers and args.seconds>=28):
         raise ValueError('Force closure requires bimanual compliant native fingers')
     if args.full_robot_probe and (args.gripper_probe or args.interactive or (args.scene=='package' and not args.sparse_contacts)
-            or (args.constraint_mode!='articulation' and not (native_hold and args.constraint_mode=='fixed_articulation' and args.attached_only))
+            or (args.constraint_mode!='articulation' and not (fixed_cut or (native_hold or fixed_hold) and args.constraint_mode=='fixed_articulation' and args.attached_only))
             or (args.spring_mode!='implicit_effort' and not native_hold and not args.native_spring_cut_trial)
             or args.solver!='PGS' or args.physics_hz!=240 or args.gravity!=9.81 or args.seconds<7
             or args.diagnostic_detach or not -30<=args.approach_tilt<=30
@@ -386,7 +414,7 @@ def main(argv=None):
             or args.spring_mode!='implicit_effort' or args.constraint_mode!='articulation'
             or args.gravity!=9.81 or args.solver!='PGS' or args.physics_hz!=240):
         raise ValueError('Interactive demo requires GUI, isolated scene, rendering, implicit_effort, articulation, Earth gravity, PGS and 240 Hz')
-    if args.constraint_mode=='fixed_articulation' and not args.attached_only:
+    if args.constraint_mode=='fixed_articulation' and not args.attached_only and not fixed_cut:
         raise ValueError('Fixed-base comparison is attached-only until topology transition is qualified')
     if args.spring_mode=='implicit_effort' and args.constraint_mode=='maximal':
         raise ValueError('Implicit spring diagnostic requires an articulation')

@@ -89,7 +89,7 @@ class PlantRig:
                     material_arc_m=float(self.arcs[self.cut_index]),
                     physical_cut_verified=False,training_eligible=False)
 
-    def release_from_blade(self,evidence):
+    def release_from_blade(self,evidence,*,transition=None):
         """Internal mechanism API: validate evidence before changing topology."""
         from .knife import ShearParameters,CUT_MODELS,LEGACY_CUT_MODEL,KNIFE_IMPULSE_CONTRACT
         if not isinstance(evidence,dict) or evidence.get('model') not in CUT_MODELS:
@@ -137,14 +137,23 @@ class PlantRig:
         elif (evidence['minimum_loading_travel_m'] is not None
                 or evidence['loading_travel_requirement_met'] is not None):
             raise ValueError('Brittle strength-only model must mark loading travel not applicable')
-        if self.constraint_mode=='fixed_articulation' or self.cut:
+        if self.cut:
             raise ValueError('Seam cannot be released in current state')
-        with Usd.EditContext(self.stage,self.stage.GetSessionLayer()):
-            UsdPhysics.Joint.Get(self.stage,self.cut_joint_path).GetJointEnabledAttr().Set(False)
-        self.cut=True
+        topology=None
+        if self.constraint_mode=='fixed_articulation':
+            from .root_transition import FixedRootTransition
+            if not isinstance(transition,FixedRootTransition) or transition.rig is not self:
+                raise ValueError('Seam cannot be released in current state without checked fixed-root transition')
+            topology=transition.release()
+        else:
+            if transition is not None:
+                raise ValueError('Fixed-root transition cannot operate on another constraint mode')
+            with Usd.EditContext(self.stage,self.stage.GetSessionLayer()):
+                UsdPhysics.Joint.Get(self.stage,self.cut_joint_path).GetJointEnabledAttr().Set(False)
+            self.cut=True
         return dict(event='blade_contact_joint_release',material_arc_m=float(self.arcs[self.cut_index]),
             evidence=dict(evidence),physical_cut_verified=False,tissue_fracture_calibrated=False,
-            training_eligible=False)
+            training_eligible=False,topology_transition=topology)
 
     def restore_authored_state(self):
         """Only while simulation is stopped; caller must rebuild tensor views."""

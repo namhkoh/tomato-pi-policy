@@ -804,7 +804,9 @@ class BimanualRobot(FullRobotGripper):
             tool_contact_upper_bound_n=loads['allowed_tool_contact_n'],
             held=held and self.cut_authorized,slip=slip)
         if decision:
-            self.cut_event=self.rig.release_from_blade(decision)
+            transition=getattr(self,'root_transition',None)
+            self.cut_event=(self.rig.release_from_blade(decision) if transition is None else
+                self.rig.release_from_blade(decision,transition=transition))
         return dict(edge_frame=edge.tolist(),right_tracking_error_m=error,
             edge_contact_count=len(self.edge_points),edge_force_n=math.fsum(math.hypot(*v) for v in self.edge_impulses)/dt,
             edge_signed_resistance_n=self.cut_gate.signed_resistance_n,

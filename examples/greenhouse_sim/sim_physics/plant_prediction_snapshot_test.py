@@ -38,7 +38,14 @@ def test_finite_nonzero_com_jacobian_velocity_mapping():
     v=np.zeros((1,2,6));v[0,1,1]=1;a.get_link_velocities=lambda:v
     assert observer(a).read(step=0,root_constrained=False)['point_velocity_max_error']==0
     v[0,1,1]=0
-    with pytest.raises(ValueError,match='convention'):observer(a).read(step=0,root_constrained=False)
+    o=observer(a)
+    with pytest.raises(ValueError,match='convention'):o.read(step=0,root_constrained=False)
+    assert o.last_failure['valid_prediction'] is False
+    assert o.last_failure['point_velocity_max_error']==1.
+    assert o.last_failure['body_velocities_world'][1][1]==0.
+    v[0,1,1]=1
+    o.read(step=1,root_constrained=False)
+    assert o.last_failure is None
 
 
 @pytest.mark.parametrize('change',[lambda a:setattr(a,'count',2),
