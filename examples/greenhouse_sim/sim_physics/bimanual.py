@@ -151,6 +151,7 @@ class BimanualRobot(FullRobotGripper):
         radius=max(float(self.stage.GetPrimAtPath(self.rig.body_paths[i]+'/StemCollider').GetAttribute('radius').Get())
             for i in (self.rig.cut_index-1,self.rig.cut_index))
         self.stroke_offsets=transverse_stroke_offsets(radius,self.knife.size[0],standoff)
+        self.cut_shaft_radius=radius
         self.cut_gate=ShearGate(self.rig.source_target,cut_parameters,strategy=self.cut_strategy)
         self.cut_authorized=False;self.edge_points=[];self.edge_impulses=[]
         self.edge_normals=[];self.edge_contact_rows=[];self.edge_contact_error=None
@@ -859,6 +860,14 @@ class BimanualRobot(FullRobotGripper):
         from .blade_aim import edge_centre
         aim=edge_centre(centre,axis,getattr(self,'blade_axial_aim_offset_m',0.))
         failure=dict(angle=angle,plane_tilt_degrees=tilt,normal_sign=normal_sign,wing_m=wing)
+        section_aim=None
+        if getattr(self,'blade_axial_aim_offset_m',0.)>.0015:
+            from .blade_aim import section_placement
+            section_aim=section_placement(axis,normal,offset_m=self.blade_axial_aim_offset_m,
+                radius=self.cut_shaft_radius,half_thickness=self.knife.source_crossbar_half_thickness_m)
+            if not section_aim['passed']:
+                failures.append(dict(failure,rejection='blade_body_stump_or_original_cut_window',
+                    section_placement=section_aim));return False
         minimum=float('inf');stroke=[];seed=q;transit=None
         downward=getattr(self,'cut_style','legacy')=='downward'
         if downward:
@@ -919,6 +928,7 @@ class BimanualRobot(FullRobotGripper):
         self.plan=dict(approach=approach,stroke=np.asarray(stroke),direction=d,
             centre=centre.copy(),axis=axis.copy(),angle=angle,normal_sign=normal_sign,wing_m=wing,
             blade_aim_centre=aim.copy(),blade_axial_aim_offset_m=getattr(self,'blade_axial_aim_offset_m',0.),
+            source_section_placement=section_aim,
             release_seam_or_tolerance_changed=False,
             blade_plane_normal=normal.copy(),plane_tilt_degrees=tilt,
             stroke_offset_range_m=[float(self.stroke_offsets[0]),float(self.stroke_offsets[-1])],

@@ -74,6 +74,8 @@ def parser():
     p.add_argument('--greenhouse-cut-trial',action='store_true',help='Explicit intact greenhouse diagnostic with all original target-plant components and guarded preview context')
     p.add_argument('--plant',default='seed101_full')
     p.add_argument('--target',default='SubStem_41')
+    p.add_argument('--target-row-slot',type=int,choices=(0,12,23),default=12,
+        help='Swap target with an original end-row backdrop; retain all plants and original spacing')
     p.add_argument('--physics-hz',type=int,choices=(120,240,480,1920),default=240)
     p.add_argument('--cut-convergence-trial',action='store_true',
         help='Default-OFF isolated native-release comparison at480 Hz; same SI material/force limits and controller dwell durations, not production qualification')
@@ -108,7 +110,7 @@ def parser():
     p.add_argument('--cut-arc-m',type=float,default=.01,
         help='Explicit diagnostic seam within agreed 10..20 mm petiole interval; original 10 mm default unchanged')
     p.add_argument('--blade-axial-aim-offset-m',type=float,default=0.,
-        help='Isolated downward contact diagnostic: +/-1.5 mm blade aim about the SAME observed seam; no release tolerance change')
+        help='Downward contact proposal: -1.5..+2.5 mm about SAME seam; >1.5 mm also requires source-body/stump and 3 mm section checks')
     p.add_argument('--diagnostic-detach',action='store_true')
     p.add_argument('--full-robot-probe',action='store_true',help='Full dynamic v1.2 robot with an IK-driven left arm')
     p.add_argument('--bimanual-cut',action='store_true',help='Guarded native left grasp and original right knife seam-release qualification')
@@ -254,6 +256,7 @@ def parser():
         help='In robot interactive mode, run immediately; disable to inspect the mounting/target before Run')
     p.add_argument('--sparse-contacts',action='store_true',help='Native event accounting including all greenhouse/neighbor contacts')
     p.add_argument('--finger-gravity',action='store_true',help='Compensate native finger weight inside the original 0.5 N total effort budget')
+    p.add_argument('--budgeted-joint-gravity',action='store_true',help='Experimental angular gravity compensation within source effort, preserving corrective reserve')
     p.add_argument('--compliant-fingers',action='store_true',help='Experimental native force-based finger-pad compliance; unchanged masses/effort/guard limits')
     p.add_argument('--approach-tilt',type=float,default=0.,help='Bounded diagnostic wrist tilt around the shaft, in degrees')
     p.add_argument('--station-offset',type=float,nargs=2,metavar=('FORWARD_M','LEFT_M'),
@@ -327,9 +330,13 @@ def main(argv=None):
         raise ValueError('Coupled fingers require the explicit 480 Hz instrumented bimanual symmetric-effort trial')
     from .greenhouse_cut import validate as validate_greenhouse
     greenhouse_trial=validate_greenhouse(args)
+    if args.target_row_slot!=12 and not (args.scene=='package' and args.full_robot_probe and args.context_gutters):
+        raise ValueError('End-row swap requires full package robot and preserved context planting')
     contact_scope=args.isolate_station or greenhouse_trial
     from .cut_only import validate_profile
     cut_only=validate_profile(args)
+    if args.budgeted_joint_gravity and not args.full_robot_probe:
+        raise ValueError('Budgeted angular gravity requires the full native robot')
     if args.park_left_ready and not cut_only:
         raise ValueError('Independent left park requires the complete right-only trial')
     if args.park_left_ready and args.native_startup_station_search and not args.cut_station_orbit:
@@ -435,8 +442,8 @@ def main(argv=None):
             and args.cut_model=='loaded_downward_lower_rim_seam_v1'):
         raise ValueError('Seam yielding requires complete isolated 480 Hz crossbar feedback diagnostics')
     lower_rim=args.knife_edge_mode in ('source_lower_rim_v1','source_crossbar_edge_v1')
-    if args.cut_station_orbit and not (args.native_startup_station_search and args.cut_priority_report):
-        raise ValueError('Cut station orbit requires explicit zero-motion station search and prior cut-frame family')
+    if args.cut_station_orbit and not args.native_startup_station_search:
+        raise ValueError('Cut station orbit requires explicit zero-motion station search')
     startup_search=any((args.native_startup_pose_search,args.native_startup_approach_search,args.native_startup_heading_search,args.native_startup_station_search))
     if sum((args.native_startup_pose_search,args.native_startup_approach_search,args.native_startup_heading_search,args.native_startup_station_search))>1:
         raise ValueError('Select one zero-motion startup search mode')
@@ -451,9 +458,12 @@ def main(argv=None):
     if args.blade_force_feed and not (contact_trial and args.cut_style=='downward'
             and args.cut_model in ('signed_edge_load_brittle_seam_v1','loaded_downward_lower_rim_seam_v1') and args.seconds>=40):
         raise ValueError('Blade feedback requires isolated downward signed-seam trial and >=40 seconds')
-    if (not math.isfinite(args.blade_axial_aim_offset_m) or abs(args.blade_axial_aim_offset_m)>.0015
+    if (not math.isfinite(args.blade_axial_aim_offset_m) or not -.0015<=args.blade_axial_aim_offset_m<=.0025
             or args.blade_axial_aim_offset_m and not (contact_trial and args.cut_style=='downward')):
-        raise ValueError('Blade aim offset requires isolated downward contact trial and finite +/-1.5 mm')
+        raise ValueError('Blade aim offset requires isolated downward contact trial and finite -1.5..+2.5 mm')
+    if args.blade_axial_aim_offset_m>.0015 and not (args.knife_edge_mode=='source_crossbar_edge_v1'
+            and args.material_clearance_trial and args.through_stroke_trial):
+        raise ValueError('Distal blade aim requires source crossbar and complete measured material-section trial')
     if args.native_startup_clearance and not (contact_trial and args.native_static_clearance):
         raise ValueError('Native startup validation requires isolated cut contact and native path clearance')
     if args.branch_contact_fixture and not contact_trial:
@@ -666,8 +676,9 @@ def main(argv=None):
             print('PHYSICS_HOST_MEMORY_BLOCKED '+json.dumps(report),flush=True)
             return 2
     from isaacsim import SimulationApp
-    app=SimulationApp({'headless':not (args.gui or args.watch_cut_trial),'width':1280 if args.interactive or args.watch_cut_trial else 848,'height':900 if args.watch_cut_trial else 720 if args.interactive else 408,'multi_gpu':False,
-                       'sync_loads':False,'renderer':'RaytracedLighting'})
+    from .startup_report import start as start_application
+    app=start_application(SimulationApp,{'headless':not (args.gui or args.watch_cut_trial),'width':1280 if args.interactive or args.watch_cut_trial else 848,'height':900 if args.watch_cut_trial else 720 if args.interactive else 408,'multi_gpu':False,
+                       'sync_loads':False,'renderer':'RaytracedLighting'},output,report)
     import carb.settings
     process_settings=carb.settings.get_settings()
     thread_setting='/persistent/physics/numThreads'
@@ -695,6 +706,7 @@ def main(argv=None):
         for component in audit['components'].values():
             path=manifest.parent/component['file'];source_hashes[path]=component['asset_sha256']
         robot_options=dict(sparse_contacts=args.sparse_contacts,finger_gravity=args.finger_gravity,
+            budgeted_joint_gravity=args.budgeted_joint_gravity,
             park_left_ready=args.park_left_ready,
             exact_grasp_arc=args.exact_grasp_arc,
             right_ready_degrees=args.right_ready_degrees,
@@ -718,7 +730,8 @@ def main(argv=None):
             if not context.open_stage(str(scene),load_set=omni.usd.UsdContextInitialLoadSet.LOAD_NONE):
                 raise RuntimeError('Cannot open supplied greenhouse')
             stage=context.get_stage();stage.SetEditTarget(stage.GetSessionLayer())
-            record,height,scene_report=prepare(stage,DEFAULT_PACK,args.plant,sparse_backdrop=not args.context_gutters)
+            record,height,scene_report=prepare(stage,DEFAULT_PACK,args.plant,sparse_backdrop=not args.context_gutters,
+                target_row_slot=args.target_row_slot)
             report['greenhouse']=scene_report
             if args.rectilinear_floor_contacts:
                 from .floor_contacts import apply as apply_floor_contacts
@@ -832,7 +845,7 @@ def main(argv=None):
                 report['collision_window']=configure(stage,fixture,half_extent=args.physics_window_half_m)
             if args.context_gutters:
                 from .greenhouse_context import populate as populate_context
-                context_options={}
+                context_options=dict(target_row_slot=args.target_row_slot)
                 if greenhouse_trial:
                     # Match launch_sim_data.populate's ordered second detailed
                     # plant, not a lower-detail backdrop at the adjacent station.

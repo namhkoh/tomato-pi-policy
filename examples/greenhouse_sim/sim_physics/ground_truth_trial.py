@@ -69,6 +69,11 @@ def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--output',required=True,type=Path)
     p.add_argument('--mode',required=True,choices=('bimanual','right_only'))
+    p.add_argument('--source-station-trial',help='Explicit existing plant/SubStem_N; derive a new station and use SDK right ready, with fresh guards')
+    p.add_argument('--target-row-slot',type=int,choices=(0,12,23),default=12,
+        help='Explicit end-row target/backdrop swap; preserves original plant count and spacing')
+    p.add_argument('--approach-vector',type=float,nargs=3,default=None,
+        help='Explicit bimanual grasp-side proposal; same anatomical shaft, new native IK/clearance qualification')
     p.add_argument('--milestone',choices=('full_sequence','cut_action'),default='full_sequence')
     p.add_argument('--capture',action='store_true',help='Paused native milestone PNGs; headless, not synchronized training RGB-D')
     p.add_argument('--watch',action='store_true',help='Open a visible Run-once panel; no automatic run, reset or hardware commands')
@@ -91,8 +96,9 @@ def main(argv=None):
     p.add_argument('--screen-approach-start',action='store_true',help='Zero-motion higher/lateral waiting-pose search only')
     p.add_argument('--screen-tool-heading',action='store_true',help='Zero-motion arc-up complete-tool heading search only')
     p.add_argument('--screen-station',action='store_true',help='Zero-motion base/two-arm proposal search; no base-motion or path authority')
-    p.add_argument('--cut-station-orbit',action='store_true',help='Screen both a raised waiting pose and cut entry; requires --screen-station and --cut-priority-report')
+    p.add_argument('--cut-station-orbit',action='store_true',help='Screen raised waiting and cut-entry poses; requires --screen-station; prior frame is optional')
     p.add_argument('--park-left-ready',action='store_true',help='Explicit right-only SDK left park, independent of grasp reachability')
+    p.add_argument('--budgeted-joint-gravity',action='store_true',help='Experimental source-effort angular gravity compensation, unchanged contact guards')
     p.add_argument('--station-proposal-report',type=Path,help='Explicit new initial station in greenhouse or isolation; all native startup/path checks run again')
     p.add_argument('--coupled-fingers-trial',action='store_true',help='Experimental physical jaw coupling; bimanual only, unchanged force/slip limits')
     p.add_argument('--right-ready-lift-m',type=float,default=0.,help='Initial world-up waiting-pose lift; fresh IK and original native guards required')
@@ -100,7 +106,7 @@ def main(argv=None):
     p.add_argument('--profile',action='store_true',help='Diagnostic cProfile and native-step timing; overhead means this is not a latency comparison')
     p.add_argument('--cut-priority-report',type=Path,help='Try a prior native cut-frame family first; no pose/path replay or inherited clearance')
     p.add_argument('--blade-aim-offset-m',type=float,default=None,
-        help='Explicit bounded contact-placement comparison, +/-1.5 mm; never changes the seam or release gates')
+        help='Explicit bounded contact-placement comparison, -1.5..+2.5 mm; distal extension requires full section preflight')
     p.add_argument('--grasp-arc-m',type=float,default=None,
         help='Explicit bimanual grasp proposal 60..120 mm from attachment; all native clearance and retention checks remain')
     p.add_argument('--physics-threads',type=int,choices=(1,2,4,8),default=None,
@@ -108,6 +114,12 @@ def main(argv=None):
     args=p.parse_args(argv)
     if args.process_zone_trial and args.historical_mounting_plate:
         p.error('Process-zone trial cannot use the historical mounting plate')
+    if args.source_station_trial and not args.process_zone_trial:
+        p.error('Existing-source station trial requires the explicit process-zone profile')
+    if args.target_row_slot!=12 and not (args.source_station_trial and args.greenhouse_trial):
+        p.error('End-row swap requires an explicit existing-source station and intact greenhouse trial')
+    if args.approach_vector is not None and not (args.process_zone_trial and args.mode=='bimanual'):
+        p.error('Grasp approach vector requires explicit bimanual process-zone trial')
     if args.through_stroke_trial and not (args.process_zone_trial and args.milestone=='cut_action'):
         p.error('Through-stroke requires explicit process-zone cut_action trial')
     if args.material_clearance_trial and not args.through_stroke_trial:
@@ -120,8 +132,8 @@ def main(argv=None):
     if args.blade_aim_offset_m is not None:
         import math
         if not (args.process_zone_trial and math.isfinite(args.blade_aim_offset_m)
-                and abs(args.blade_aim_offset_m)<=.0015):
-            p.error('Contact-placement comparison requires process-zone trial and finite +/-1.5 mm offset')
+                and -.0015<=args.blade_aim_offset_m<=.0025):
+            p.error('Contact-placement comparison requires process-zone trial and finite -1.5..+2.5 mm offset')
     from .benchmark import main as run
     if args.grasp_arc_m is not None:
         import math
@@ -159,6 +171,7 @@ def main(argv=None):
     if args.screen_station:options+=['--native-startup-station-search']
     if args.cut_station_orbit:options+=['--cut-station-orbit']
     if args.park_left_ready:options+=['--park-left-ready']
+    if args.budgeted_joint_gravity:options+=['--budgeted-joint-gravity']
     if args.station_proposal_report:options+=['--station-proposal-report',str(args.station_proposal_report)]
     if args.coupled_fingers_trial:options+=['--coupled-fingers-trial']
     if args.right_ready_lift_m:options+=['--right-ready-lift-m',str(args.right_ready_lift_m)]
@@ -169,6 +182,11 @@ def main(argv=None):
         options+=['--blade-axial-aim-offset-m',str(args.blade_aim_offset_m)]
     if args.grasp_arc_m is not None:options+=['--grasp-arc-m',str(args.grasp_arc_m)]
     if args.physics_threads is not None:options+=['--physics-threads',str(args.physics_threads)]
+    if args.source_station_trial:
+        from .source_station_trial import configure
+        options=configure(options,args.source_station_trial)
+    if args.target_row_slot!=12:options+=['--target-row-slot',str(args.target_row_slot)]
+    if args.approach_vector is not None:options+=['--approach-vector',*map(str,args.approach_vector)]
     return run(options)
 
 

@@ -1226,7 +1226,7 @@ joint path. Add --capture for paused diagnostic PNGs. Keep128/0 iterations and
 the default0.3mm/s loaded post-release feed:64 iterations lost grasp in317 and
 1mm/s exceeded a finger-contact limit in311. Neither is a qualified speedup.
 `--screen-station --cut-station-orbit` is a zero-motion initial-station proposal
-search requiring a cut-priority report; it cannot certify or execute a path.
+search with an optional cut-priority report; it cannot certify or execute a path.
 See `dev.md` for rejected greenhouse approaches and current memory constraints.
 
 Experimental `--park-left-ready` is RIGHT-ONLY: it holds the source SDK left
@@ -1234,3 +1234,39 @@ ready configuration instead of requiring target-grasp IK for an unused hand.
 All native park/contact/self/scene checks remain. Its full-greenhouse zero-step
 searches322/323 found no clear station; no execution qualification is claimed.
 Do not use it for bimanual grasp or infer retention from a direct cut.
+
+The cut-station orbit now also accepts the current anatomy's downward frame
+without a prior report. `--source-station-trial seed19_full/SubStem_41` selects
+that existing source and discards the historical seed101 initial-pose recipe.
+With `--greenhouse-trial --target-row-slot 0`, swap the detailed target into
+the original end-row slot (all144 plants/asset identities/spacing retained).
+Native327 found a clear waiting/entry proposal there; fresh328 executed the
+approach but rejected wrong-face blade contact and did NOT cut. No middle-row
+or bimanual greenhouse success is implied. `--budgeted-joint-gravity` is an
+explicit effort-bounded controller experiment, currently under native test.
+It must not be treated as a qualified default until its results are recorded.
+
+Native330 confirms that source-budgeted gravity removes the observed steady
+wrist bias and enables a greenhouse right-only release, but follow-through
+stalls on the attached stump. `--blade-aim-offset-m .0023` is the subsequent
+geometry-checked experiment: source-body halfspace clearance and full section
+inside the ORIGINAL3mm window, not increased cutting tolerance. It requires
+both `--material-clearance-trial` and `--through-stroke-trial`. No completion
+or tissue-cutting claim follows from the release alone.
+
+### Intact greenhouse direct-cut reference (native331)
+
+All nine full diagnostic gates PASS for this single end-row target: cut,
+full section traversal, unloaded reversal, fresh egress and85s bounded run.
+No grasp, safe deposit, broad reliability or tissue-calibration claim.
+20 paused inspection PNGs are in the native331 directory. Measured0.1575x
+real time is still too slow; bimanual greenhouse validation is still open.
+
+```powershell
+& D:\isaac-sim-6.0.1\python.bat -B -m sim_physics.ground_truth_trial --output D:\research\tomato-pi-policy\data\sim_physics\NEW_GREENHOUSE_TRIAL --mode right_only --milestone cut_action --process-zone-trial --through-stroke-trial --material-clearance-trial --postcut-egress-trial --blade-aim-offset-m .0023 --rectilinear-floor-contacts --physics-threads 1 --greenhouse-trial --park-left-ready --source-station-trial seed19_full/SubStem_41 --target-row-slot 0 --station-proposal-report D:\research\tomato-pi-policy\data\sim_physics\bimanual_downward_20260914_native327\report.json --budgeted-joint-gravity --capture
+```
+
+The old327 file supplies initial poses ONLY. All native startup, source-section
+and full moving-path checks run again; no inherited cut authority. Bimanual
+`--approach-vector X Y Z` proposes a different grasp approach side and needs
+its OWN new station/path/grasp qualification.

@@ -27,6 +27,7 @@ def test_actual_beveled_bar_not_mounting_plate_is_cutting_surface():
     assert result['physical_part']=='straight_beveled_lower_crossbar'
     assert .025<k.size[1]<.035
     assert k.size[[0,2]]==pytest.approx([.001,.001])
+    assert k.source_crossbar_half_thickness_m==pytest.approx(.0015,abs=1e-9)
     for normal in ([1,0,0],[-1,0,0]):
         wrist=k.wrist_for_edge([0,0,1],[0,0,-1],normal)
         edge=k.frame(wrist)

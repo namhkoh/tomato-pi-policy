@@ -38,6 +38,14 @@ def test_same_initial_proposal_in_isolation_still_requires_fresh_all_shape_check
     assert not receipt['prior_native_checks_inherited'] and not receipt['motion_authorized']
 
 
+@pytest.mark.parametrize('key,value',[('approach_vector',[1.,0.,0.]),('approach_distance',.02)])
+def test_grasp_side_or_approach_cannot_inherit_a_different_initial_proposal(tmp_path,key,value):
+    args,report,_=fixture(tmp_path);setattr(args,key,value)
+    args.station_proposal_report.write_text(json.dumps(report))
+    with pytest.raises(ValueError,match=key):apply_to_arguments(args)
+    assert args.station_pose==[9,9,9]
+
+
 @pytest.mark.parametrize('change',['final_control','steps','target','pose_nan','missing_pose','wrong_scene','another_search'])
 def test_bad_proposal_cannot_change_arguments(tmp_path,change):
     args,report,search=fixture(tmp_path)

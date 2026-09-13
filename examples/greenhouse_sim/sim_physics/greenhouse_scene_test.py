@@ -2,6 +2,23 @@ import numpy as np
 import pytest
 
 
+def test_end_row_uses_original_slot_without_editing_building_or_source_layers():
+    from pxr import Usd,UsdGeom
+    from sim_data.audit import DEFAULT_PACK
+    from sim_physics.greenhouse_scene import prepare
+    scene=DEFAULT_PACK/'house/green_house_base.usd'
+    if not scene.is_file():pytest.skip('Supplied greenhouse package not installed')
+    stage=Usd.Stage.Open(str(scene),load=Usd.Stage.LoadNone)
+    before=stage.GetRootLayer().ExportToString()
+    record,height,report=prepare(stage,DEFAULT_PACK,'seed19_full',sparse_backdrop=False,target_row_slot=0)
+    np.testing.assert_allclose(report['plant_position_world_m'],[-.005,-6.,.9],atol=1e-6)
+    position=UsdGeom.XformCache().GetLocalToWorldTransform(stage.GetPrimAtPath(record['plant_root'])).ExtractTranslation()
+    np.testing.assert_allclose(position,report['plant_position_world_m'])
+    assert report['target_row_slot']==0 and report['gutters_in_asset']==75
+    assert not report['greenhouse_geometry_moved'] and np.isfinite(height(.3,-6.))
+    assert stage.GetRootLayer().ExportToString()==before
+
+
 def test_actual_package_placement_floor_and_collisions_are_session_only():
     from pxr import Usd,UsdGeom,UsdPhysics
     from sim_data.audit import DEFAULT_PACK

@@ -27,7 +27,9 @@ def collision_prototype(asset):
     return stage,count
 
 
-def populate(stage,package,robot,rows=3,*,detailed_neighbor_manifest=None):
+def populate(stage,package,robot,rows=3,*,detailed_neighbor_manifest=None,target_row_slot=12):
+    from .planting_slots import validate,backdrop_source_slot
+    validate(target_row_slot)
     if rows not in (1,3,5): raise ValueError('Select 1, 3 or 5 context gutters')
     if robot.window is None: raise ValueError('Context requires a guarded fixed collision window')
     if stage.GetPrimAtPath('/World/PhysicsBackdrop'):
@@ -46,8 +48,10 @@ def populate(stage,package,robot,rows=3,*,detailed_neighbor_manifest=None):
         for gi,(cx,_) in enumerate(selected):
             for side in (-1,1):
                 for i in range(24):
-                    if cx==stations[center][0] and side==1 and i==12: continue
-                    asset=assets[(i+gi*7+(5 if side>0 else 0))%len(assets)]
+                    source_slot=backdrop_source_slot(i,target_row_slot,
+                        target_side=bool(cx==stations[center][0] and side==1))
+                    if source_slot is None:continue
+                    asset=assets[(source_slot+gi*7+(5 if side>0 else 0))%len(assets)]
                     if asset not in bounds:
                         source=Usd.Stage.Open(str(asset))
                         bound=cache.ComputeWorldBound(source.GetDefaultPrim()).ComputeAlignedRange()
@@ -87,6 +91,7 @@ def populate(stage,package,robot,rows=3,*,detailed_neighbor_manifest=None):
     # Keep anonymous referenced layers alive for the whole diagnostic.
     robot.context_layers=[v[0] for v in layers.values()]
     return dict(populated_gutters=len(selected),context_plants=near+far+detailed,
+        target_row_slot=target_row_slot,planting_asset_assignment='original' if target_row_slot==12 else 'detailed_target_and_existing_backdrop_swapped',
         detailed_target_plants=1,detailed_neighbor_plants=detailed,static_contact_plants=near+detailed,render_only_distant_plants=far,
         source_layout='same_0.5m_spacing_and_two_sides_as_launch_sim_data.populate',
         compliance='selected_petiole_only_context_is_static',

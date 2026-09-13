@@ -33,7 +33,8 @@ def search(robot,backend,guard):
     from .blade_aim import edge_centre
     from greenhouse_sim.robot_scene import SDK_READY_POSE_DEGREES
     priority=getattr(robot,'cut_priority',None)
-    if priority is None:raise ValueError('Cut station orbit requires an explicit prior frame family')
+    priority_supplied=priority is not None
+    if priority is None:priority=dict(normal_sign=-1,tilt=0.,wing_m=0.)
     centre,axis=robot.seam(robot.rig.rest_frames)
     frame=vertical_cut_frame(axis,priority['normal_sign'],priority['tilt'])
     if frame is None:raise ValueError('Current anatomy does not permit the requested downward cut')
@@ -50,6 +51,8 @@ def search(robot,backend,guard):
         entry_frames[sign]=(entry,waiting)
     poses=[robot.kin.forward('left',q,robot.base) for q in robot.path_q]
     ready=np.array([SDK_READY_POSE_DEGREES[f'right_arm_{i}'] for i in range(7)])
+    right_seeds=[robot.right]
+    if not np.array_equal(robot.right,ready):right_seeds.append(ready)
     rows=[];proposal=None;began=time.monotonic();expired=False
     def check_time():
         guard()
@@ -75,7 +78,7 @@ def search(robot,backend,guard):
         row['right_attempts']=[]
         # Either physical side of the shaft may offer access. Both still keep
         # arc-up and world-downward motion, and both receive full native checks.
-        for sign,seed in ((sign,seed) for sign in entry_frames for seed in (robot.right,ready)):
+        for sign,seed in ((sign,seed) for sign in entry_frames for seed in right_seeds):
             if not check_time():expired=True;break
             entry,waiting=entry_frames[sign]
             attempt=dict(cut_plane_normal_sign=sign);row['right_attempts'].append(attempt)
@@ -93,6 +96,11 @@ def search(robot,backend,guard):
                 maximum_evaluations=200,joint_limit_margin_degrees=3.)
             if not endpoint.succeeded:attempt['rejection']='entry_ik';continue
             eq=np.asarray(endpoint.joint_degrees)
+            from .downward_cut import arm_extension
+            extension=arm_extension(candidate.body_world(lq,eq))
+            attempt['entry_right_arm_extension']=extension
+            if not .8<=extension<=.98:
+                attempt['rejection']='folded_or_fully_extended_cut_entry';continue
             if not candidate.check_self(lq,eq)['passed']:
                 attempt['rejection']='entry_self_collision';continue
             native=backend.check(candidate.body_world(lq,eq),robot.self_screen.shapes)
@@ -121,7 +129,7 @@ def search(robot,backend,guard):
     guard()
     return dict(model='frozen_native_two_arm_station_search_v1',search_strategy='cut_frame_orbit_v1',
         candidates=rows,proposed_station=proposal,maximum_candidates=294,
-        cut_frame_priority_used=True,initial_vertical_standoff_m=.03,
+        cut_frame_priority_used=priority_supplied,initial_vertical_standoff_m=.03,
         cut_plane_normal_signs=list(entry_frames),
         original_spawn_unchanged=True,plant_or_mounting_changed=False,
         physics_steps=0,motion_authorized=False,relaunch_required=True,

@@ -14,6 +14,13 @@ def fixture():
     def wrist(point,*args):
         pose=np.eye(4);pose[:3,3]=point;return pose
     r.knife=S(wrist_for_edge=wrist)
+    body_world=r.body_world
+    def complete_world(*args):
+        world=body_world(*args)
+        for i,p in ((2,[0.,0.,0.]),(3,[.45,np.sqrt(.5**2-.45**2),0.]),(4,[.9,0.,0.])):
+            frame=np.eye(4);frame[:3,3]=p;world['link_right_arm_'+str(i)]=frame
+        return world
+    r.body_world=complete_world
     solve=r.kin.solve_pose
     def record(arm,pose,*args,**kwargs):
         poses.append((arm,pose.copy()));return solve(arm,pose,*args,**kwargs)
@@ -70,9 +77,29 @@ def test_guard_failure_propagates_to_owner_for_final_revocation():
     with pytest.raises(RuntimeError,match='stale epoch'):search(r,S(),fail)
 
 
-def test_missing_priority_is_not_an_implicit_pose_choice():
+def test_folded_cut_entry_cannot_be_proposed_as_a_straight_arm_cut():
+    r,_=fixture();world=r.body_world
+    def folded(*args):
+        w=world(*args);w['link_right_arm_4'][:3,3]=[0.,0.,0.];return w
+    r.body_world=folded;calls=[]
+    out=search(r,S(check=lambda *a:(calls.append(1) or dict(passed=True))),lambda:None)
+    assert out['proposed_station'] is None
+    assert all(a['rejection']=='folded_or_fully_extended_cut_entry'
+               for row in out['candidates'] for a in row['right_attempts'])
+
+
+def test_identical_right_seeds_are_not_solved_twice():
+    from greenhouse_sim.robot_ready_pose import SDK_READY_POSE_DEGREES
+    r,_=fixture();r.right=np.array([SDK_READY_POSE_DEGREES[f'right_arm_{i}'] for i in range(7)])
+    out=search(r,S(check=lambda *a:dict(passed=False)),lambda:None)
+    assert all(len(row['right_attempts'])==2 for row in out['candidates'])
+
+
+def test_no_prior_report_uses_fresh_anatomy_not_a_prior_path():
     r,_=fixture();r.cut_priority=None
-    with pytest.raises(ValueError,match='prior frame'):search(r,S(),lambda:None)
+    out=search(r,S(check=lambda *a:dict(passed=True)),lambda:None)
+    assert out['proposed_station'] and not out['cut_frame_priority_used']
+    assert not out['motion_authorized'] and not out['whole_path_certified']
 
 
 def test_public_flag_requires_zero_motion_search(tmp_path):

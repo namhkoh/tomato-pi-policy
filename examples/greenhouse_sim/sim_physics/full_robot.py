@@ -105,9 +105,15 @@ def finger_compliance(finger_masses,stem_mass,*,anchored_pad_damping=False):
 class FullRobotGripper(GripperFixture):
     finger_actuator_limit_n=.5
     pregrasp_half_aperture=.025
+    budgeted_joint_gravity=False
+    joint_gravity_sample=None
 
     def __init__(self,stage,rig,*,arc=.08,friction=.5,ground_height=None,
-                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None,grasp_skew=0.,grasp_pitch=0.,finger_actuator_limit_n=.5,exact_grasp_arc=False,right_ready_degrees=None,left_ik_seed_degrees=None,anchored_pad_damping=False,pregrasp_half_aperture=.025,right_ready_lift_m=0.,right_ready_retreat_m=0.,park_left_ready=False):
+                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None,grasp_skew=0.,grasp_pitch=0.,finger_actuator_limit_n=.5,exact_grasp_arc=False,right_ready_degrees=None,left_ik_seed_degrees=None,anchored_pad_damping=False,pregrasp_half_aperture=.025,right_ready_lift_m=0.,right_ready_retreat_m=0.,park_left_ready=False,budgeted_joint_gravity=False):
+        if type(budgeted_joint_gravity) is not bool:
+            raise ValueError('Explicit angular gravity budget option required')
+        self.budgeted_joint_gravity=budgeted_joint_gravity
+        self.joint_gravity_sample=None
         if type(park_left_ready) is not bool or park_left_ready and getattr(self,'cut_strategy',None)!='right_only':
             raise ValueError('Independent left park requires an explicit right-only strategy')
         self.park_left_ready=park_left_ready
@@ -426,6 +432,8 @@ class FullRobotGripper(GripperFixture):
             mounting_proxy_exclusions=self.mount_exclusions,self_collision_enabled=True,
             contact_monitor='sparse_native_events' if self.sparse_contacts else 'dense_pair_matrices',
             finger_contact_compliance=self.finger_contact_compliance,
+            angular_gravity_protocol=('source_effort_shared_budget_v1' if self.budgeted_joint_gravity else 'legacy_30_percent_clip'),
+            angular_gravity_last_sample=self.joint_gravity_sample,
             finger_gravity_compensation=self.finger_gravity,total_finger_effort_limit_n=self.finger_actuator_limit_n,
             left_finger_total_actuator_limit_n=self.finger_actuator_limit_n,
             right_finger_legacy_drive_limit_n=.5,
@@ -481,6 +489,10 @@ class FullRobotGripper(GripperFixture):
         self.names=list(self.robot.shared_metatype.dof_names)
         self.left_indices=[self.names.index(f'left_arm_{i}') for i in range(7)]
         self.finger_indices=[self.names.index(f'gripper_finger_l{i}') for i in (1,2)]
+        from .joint_gravity import source_limits
+        # Keep double-precision source limits; float32 rounding must not enlarge them.
+        self.angular_indices,self.angular_total_effort=source_limits(self.names,self.effort)
+        self.angular_pd_ceiling=.7*self.angular_total_effort
         targets=np.zeros((1,len(self.names)),dtype=np.float32)
         k=np.zeros_like(targets);d=np.zeros_like(targets);force=np.zeros_like(targets)
         self.feedforward_limit=np.zeros_like(targets)
@@ -544,12 +556,25 @@ class FullRobotGripper(GripperFixture):
         self.robot.set_dof_position_targets(self.targets,self.index)
         gravity=self.robot.get_gravity_compensation_forces()
         compensation=np.clip(gravity,-self.feedforward_limit,self.feedforward_limit)
+        if self.budgeted_joint_gravity:
+            from .joint_gravity import allocate
+            angular_gravity=np.array(gravity[0,self.angular_indices],dtype=float)
+            angular_ff,angular_pd=allocate(angular_gravity,self.angular_total_effort,self.angular_pd_ceiling)
+            compensation[0,self.angular_indices]=angular_ff
+            self.force_limits[0,self.angular_indices]=angular_pd
+            self.joint_gravity_sample=dict(
+                names=[self.names[i] for i in self.angular_indices],
+                native_required_nm=angular_gravity.tolist(),applied_nm=angular_ff.tolist(),
+                pd_limit_nm=angular_pd.tolist(),source_total_nm=self.angular_total_effort.tolist(),
+                legacy_clipping_residual_nm=(angular_gravity-np.clip(angular_gravity,
+                    -.3*self.angular_total_effort,.3*self.angular_total_effort)).tolist())
         if self.finger_gravity:
             self.finger_compensation=np.array(gravity[0,self.finger_indices])
             self.force_limits[0,self.finger_indices]=finger_force_budget(
                 self.finger_compensation,self.finger_actuator_limit_n)
-            self.robot.set_dof_max_forces(self.force_limits,self.index)
             compensation[0,self.finger_indices]=self.finger_compensation
+        if self.finger_gravity or self.budgeted_joint_gravity:
+            self.robot.set_dof_max_forces(self.force_limits,self.index)
         self.robot.set_dof_actuation_forces(compensation.astype(np.float32),self.index)
 
     def close(self,fraction):
@@ -597,6 +622,7 @@ class FullRobotGripper(GripperFixture):
                 raise RuntimeError('Full robot contact/tracking guard: '+json.dumps(self.last_fault))
             return dict(palm_tracking_error_m=error,max_body_speed_m_s=speed,**metrics,**finger_metrics,
                 finger_gravity_effort_n=self.finger_compensation.tolist(),
+                angular_gravity=self.joint_gravity_sample,
                 joint_positions_rad=self.robot.get_dof_positions()[0].tolist())
         # get_net_contact_forces includes all contacts regardless of filters;
         # the force matrix, below, is the plant-specific measurement.

@@ -32,25 +32,7 @@ DEFAULT_POSE_NAME = "opposite_aisle_lower_gutter_safe_stow"
 
 # The official Model A ready pose used by the SDK's multi-control and leader-arm
 # examples.  Angular drive and PhysX joint-state attributes are in degrees.
-SDK_READY_POSE_DEGREES = {
-    **{name: value for name, value in zip(
-        (f"torso_{index}" for index in range(6)),
-        (0.0, 45.0, -90.0, 45.0, 0.0, 0.0),
-        strict=True,
-    )},
-    **{name: value for name, value in zip(
-        (f"right_arm_{index}" for index in range(7)),
-        (0.0, -5.0, 0.0, -120.0, 0.0, 70.0, 0.0),
-        strict=True,
-    )},
-    **{name: value for name, value in zip(
-        (f"left_arm_{index}" for index in range(7)),
-        (0.0, 5.0, 0.0, -120.0, 0.0, 70.0, 0.0),
-        strict=True,
-    )},
-    "head_0": 0.0,
-    "head_1": 0.0,
-}
+from greenhouse_sim.robot_ready_pose import SDK_READY_POSE_DEGREES
 
 # Historical deterministic-route seed for the old -90 degree station. At the
 # current +90 degree station this pose folds the knife arm backward, so it must

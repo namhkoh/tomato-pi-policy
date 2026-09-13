@@ -69,7 +69,7 @@ def test_contact_aim_comparison_preserves_all_other_trial_options(tmp_path,monke
     assert original==changed
 
 
-@pytest.mark.parametrize('offset',['nan','inf','.0015001','-.002'])
+@pytest.mark.parametrize('offset',['nan','inf','.0025001','-.002'])
 def test_invalid_contact_aim_never_creates_output(tmp_path,offset):
     from .ground_truth_trial import main
     out=tmp_path/'none'

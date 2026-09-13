@@ -1,11 +1,13 @@
 from types import SimpleNamespace
 import hashlib
 import numpy as np
+import pytest
 from pxr import Usd,UsdGeom,UsdPhysics
 from sim_physics.greenhouse_context import populate,collision_prototype
 
 
-def test_context_matches_preview_layout_and_preserves_source(tmp_path):
+@pytest.mark.parametrize('target_row_slot',[0,12,23])
+def test_context_matches_preview_layout_and_preserves_source(tmp_path,target_row_slot):
     folder=tmp_path/'plants/backdrop';folder.mkdir(parents=True)
     asset=folder/'backdrop_000.usd'
     source=Usd.Stage.CreateNew(str(asset))
@@ -21,7 +23,7 @@ def test_context_matches_preview_layout_and_preserves_source(tmp_path):
         g.CreateSizeAttr(.2);g.AddTranslateOp().Set((x,0,0))
     before=stage.GetRootLayer().ExportToString()
     robot=SimpleNamespace(base=np.eye(4),window=dict(centre=np.zeros(2),half_extent=2.))
-    result=populate(stage,tmp_path,robot)
+    result=populate(stage,tmp_path,robot,target_row_slot=target_row_slot)
     assert result['context_plants']==143
     assert result['static_contact_plants']>0 and result['render_only_distant_plants']>0
     assert stage.GetRootLayer().ExportToString()==before
@@ -31,4 +33,5 @@ def test_context_matches_preview_layout_and_preserves_source(tmp_path):
         assert prim.IsInstance()
         shape=stage.GetPrimAtPath(entry['path']+'/Mesh')
         assert shape.HasAPI(UsdPhysics.CollisionAPI)==entry['static_contact']
-    assert not any(np.allclose(e['position_m'],[.195,0,.9]) for e in result['instances'])
+    assert not any(np.allclose(e['position_m'],[.195,(target_row_slot-12)*.5,.9]) for e in result['instances'])
+    assert result['target_row_slot']==target_row_slot

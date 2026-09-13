@@ -25,6 +25,11 @@ def apply_to_arguments(args):
     config=report.get('configuration',{})
     if config.get('park_left_ready',False)!=getattr(args,'park_left_ready',False):
         raise ValueError('Station proposal task mismatch: parked-left strategy')
+    if config.get('target_row_slot',12)!=getattr(args,'target_row_slot',12):
+        raise ValueError('Station proposal task mismatch: original planting slot')
+    for key in ('approach_vector','approach_distance'):
+        if config.get(key)!=getattr(args,key,None):
+            raise ValueError('Station proposal task mismatch: '+key)
     # Same anatomical task and robot geometry; no mismatched grasp/torso recipe.
     keys=('plant','target','grasp_arc_m','grasp_roll','grasp_pitch','grasp_depth_m',
           'torso_degrees','cut_arc_m','knife_edge_mode','knife_alignment','stem_contact_model')

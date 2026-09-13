@@ -8065,3 +8065,119 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   Investigation identified existing outward-facing candidates in seed19/47/53/79
   among the supplied plants. No source switch or new-target physics pass yet.
   Original seed101/SubStem_41 greenhouse access and real-time speed remain open.
+
+### 2026-09-14 continuation: intact end-row approach and gravity-bias investigation
+
+- Native324 repeats all ten isolated bimanual gates after the arithmetic-only
+  optimization, with the same23.564583s release and1.286446mm maximum slip.
+ 85s simulated /402.757s tick wall time is0.211x real time. Host loads were not
+  matched; this does NOT establish a causal whole-simulator speedup or C.
+- Added explicit `--source-station-trial PLANT/SubStem_N`. It removes the old
+  seed101-specific initial base/arm poses before proposing a station for an
+  existing source petiole. No source anatomy or labeling is changed. Optional
+  `--target-row-slot 0` or23 swaps that detailed plant with an existing backdrop
+  at an original end-row position: same144 plants, same assets and0.5m spacing,
+  intact greenhouse/gutters. This is a different, easier test case, NOT a fix
+  or a pass for the previously blocked middle-row target.
+- Native325 exposed a startup import-order bug: importing robot_scene before
+  SimulationApp loaded incompatible USD bindings. Moved unchanged SDK pose
+  constants to a pure module; fresh-subprocess tests forbid pxr/omni imports
+  from source-trial configuration. Startup failures now leave an explicit
+  failure report;325 predates this fix and has only its preserved log.
+- Native326 seed19/SubStem_41 middle-row search found no clear station within
+ 45s. The obstructing backdrop collision meshes are exact static triangles,
+  NOT whole-plant convex hulls. No contact geometry was removed.
+- Native327 seed19/SubStem_41 at original row slot0 found a native-clear raised
+  waiting pose and cut-entry proposal after15 stations/8.656s. Final native
+  positive controls passed. Zero physics steps: this was no motion proof.
+- Fresh native328 revalidated327 and executed the right-only approach in the
+  full scene, but FAILED load acquisition: leading-edge guard rejected shaft
+  end-face contacts. No release or material change occurred. Steady measured
+  right-wrist position error was about1.45mm, already present before contact,
+  comparable to the1.5mm axial aiming offset. This motivates investigating
+  the historical30%-of-effort gravity clip; causation is not yet confirmed.
+- New opt-in `--budgeted-joint-gravity` shares the SOURCE total angular effort
+  between native gravity feedforward and PD. Original stiffness, damping and
+ 70% PD ceiling remain; gravity above90% of source effort fails closed. Float32
+  rounding cannot enlarge the total budget. Original finger budgets and all
+  cut/contact/slip/geometry guards remain. Full-rate diagnostics report native
+  required gravity, applied effort, PD allowance and hypothetical legacy clip.
+  Native329 is the first fresh end-row test; no pass claimed yet.
+- Regression v12:4651 passed,1 skipped in216.02s
+  (`data/sim_physics/regression_20260914_end_row_v12.log`).187 focused gravity,
+  full-robot, finger-budget and launcher tests pass. A/B still require intact
+  greenhouse sequence passes; C is not real time. VLM/data/hardware remain
+  untouched. Cutting is an uncalibrated force-qualified joint-release model,
+  not tissue fracture, kerf or measured clean-cut quality.
+
+- Gravity follow-up:329 failed controller binding before motion because
+  imported continuous wheel joints have no URDF effort field. The allocator
+  now selects torso/arms/head only, retaining the prior wheel/finger behavior.
+ 330 confirms the diagnosis: native torso_0 gravity113.45965Nm versus the old
+ 81Nm clip (32.45965Nm residual). New right-wrist precontact error at8s is
+ 0.006683mm versus about1.45mm in328. The same intact-scene approach now cuts
+  at approximately18.7s, with original contact/alignment/force gates.
+-330 is NOT a complete pass: it times out in follow-through. At40s the only
+  loaded knife pair is CrossbarContact against the attached proximal stump,
+  about0.388N and0.550mm penetration, outside the exact leading strip. The
+ 35s traversal deadline stops it; no force increase/collider removal/bypass.
+- Added a bounded distal placement experiment, up to+2.5mm (negative bound
+  remains-1.5mm). This changes a commanded AIM bound, not the3mm release or
+  traversal window. Extended proposals require the actual source crossbar,
+  full measured section trial, and a conservative cylinder-cap/knife-slab
+  preflight. Source mesh vertices supply actual blade thickness. Require
+  >=0.1mm separation from the attached stump and the entire section within
+  the ORIGINAL3mm window with50um planning reserve. All native guards remain.
+ 331 tests+2.3mm with captured inspection PNGs; result pending. No kerf or
+  tissue removal is introduced. This is not a geometry exemption.
+- Regression v13:4669 passed,1 skipped in219.79s before the distal-placement
+  addition (`regression_20260914_joint_gravity_v13.log`);89 focused placement,
+  source knife, section and launcher tests passed after it. A/B/C remain open.
+
+### 2026-09-14 intact-greenhouse RIGHT-ONLY sequence pass (native331)
+
+- Native331 PASSES all nine complete diagnostic sequence gates for
+  seed19_full/SubStem_41 at original end-row slot0: checked approach, native
+  force/direction-qualified release18.718750s, full shaft-section traversal
+ 39.525000s, unloaded reversal45.177083s, freshly screened2mm upward egress,
+  and bounded observation through85s. Left remains SDK-parked/open/unloaded.
+  All configured144 plants, source greenhouse/gutters, knife, cameras and
+  existing physics/contact/clearance limits are retained. Captured20 native
+  inspection PNGs (NOT continuous video or synchronized training RGB-D).
+- The source-geometry placement screen reports blade half-thickness1.500000mm,
+  proximal stump clearance0.173072mm and maximum section axial distance2.897694mm
+  inside the unchanged3mm window. Native follow-through is unloaded, unlike330.
+  Maximum passive released-material contact2.973177N is disclosed, not a safe
+  deposit claim. Tissue fracture/kerf/clean-cut quality remain uncalibrated.
+- Performance is NOT satisfactory yet:85s simulated /539.616s tick wall time
+  (0.1575x). Render median13.256ms, whereas480Hz control+native ticks have
+  median12.068ms (native-step8.505ms, before0.948ms, after2.619ms). These are
+  instrumentation timings, not a matched host-load comparison. Rendering
+  capability alone does not establish real-time physics. C stays open.
+- Native332 performs an independent BIMANUAL station search on the same source.
+  No valid station in45.141s/280 candidates:243 initial-left IK failures; among
+  right attempts106 waiting-IK failures,34 self-collision rejections,8 native
+  foliage/torso rejections. Zero steps and final native positive controls pass.
+  Do not reuse the right-only station as a bimanual motion certificate.
+- Exposed the existing bounded `--approach-vector X Y Z` proposal through the
+  bimanual trial wrapper. It changes grasp approach side, not target, grasp arc,
+  aperture, force/slip criteria or source anatomy. Station reports must match
+  approach vector/distance. Native333 searches the opposite side; pending.
+- Regression v14:4674 passed,1 skipped,1 stale command-bound test failed. Its
+  +1.5001mm-invalid assumption was updated to the new+2.5001mm-invalid bound;
+  new tests still require full source-section/runtime guards above+1.5mm.
+ 59 focused greenhouse/placement/source-geometry tests and49 source/proposal
+  tests pass. Full repeat pending. A greenhouse grasp/cut pass, user-visible
+  continuous sequence and responsiveness work remain; VLM tasks stay paused.
+
+- Full regression v15 now PASSES:4678 passed,1 skipped in195.84s
+  (`data/sim_physics/regression_20260914_greenhouse_cut_v15.log`). Native333's
+  opposite-side search also found no valid station:263 candidates/45.109s,
+  with final native controls intact and zero steps. An offline kinematic
+  screen identified below-shaft grasp approaches with separated wrists; those
+  are NOT scene-clear or motion-authorized results. Native334 tests one such
+  approach with fresh native scene checks. Startup search now deduplicates
+  identical right-arm IK seeds and rejects cut-entry arm extension outside the
+  EXISTING0.8..0.98 execution bound;16 focused station tests pass. No physical
+  or contact guard is changed. B for native331's end-row case is established;
+  full-greenhouse A, continuous visible evidence and acceptable C remain open.

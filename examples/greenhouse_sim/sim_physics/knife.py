@@ -181,7 +181,7 @@ class KnifeGeometry:
         root_matrix=inverse@np.asarray(cache.GetLocalToWorldTransform(stage.GetPrimAtPath(self.root))).T
         self.arc_axis_local=root_matrix[:3,2].copy()
         self.arc_axis_local/=np.linalg.norm(self.arc_axis_local)
-        plate,_=local(self.collider.rsplit('/',1)[1])
+        plate,plate_matrix=local(self.collider.rsplit('/',1)[1])
         blade,_=local('Blade');arc,_=local('Arc')
         arc_contact,_=local('ArcCollision')
         if (edge.GetAttribute('tomato:cuttingSurface').Get() is not True
@@ -202,6 +202,13 @@ class KnifeGeometry:
                 raise ValueError('Knife arc support has missing or disabled contact partitions')
         self.size=np.linalg.norm(matrix[:3,:3],axis=0)*float(UsdGeom.Cube(edge).GetSizeAttr().Get())
         self.local=matrix.copy();self.local[:3,:3]/=np.linalg.norm(matrix[:3,:3],axis=0)
+        self.source_crossbar_half_thickness_m=None
+        if self.edge_mode==CROSSBAR_EDGE:
+            vertices=np.asarray(UsdGeom.Mesh(plate).GetPointsAttr().Get(),float)
+            if vertices.ndim!=2 or vertices.shape[1]!=3 or len(vertices)<4 or not np.isfinite(vertices).all():
+                raise ValueError('Complete source crossbar collider vertices required')
+            edge_points=(vertices@plate_matrix[:3,:3].T+plate_matrix[:3,3]-self.local[:3,3])@self.local[:3,:3]
+            self.source_crossbar_half_thickness_m=float(np.max(np.abs(edge_points[:,2])))
         if not np.allclose(self.local[:3,:3].T@self.local[:3,:3],np.eye(3),atol=1e-6):
             raise ValueError('Knife frame is not orthogonal')
         if self.edge_mode==LOWER_EDGE and not np.allclose(self.local[:3,0],self.arc_axis_local,atol=1e-6):
