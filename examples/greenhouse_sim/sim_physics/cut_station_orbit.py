@@ -134,7 +134,9 @@ def search(robot,backend,guard):
                 proposal=dict(station_pose=[float(base[0,3]),float(base[1,3]),
                     float(np.degrees(np.arctan2(base[1,0],base[0,0])))],
                     left_ik_seed_degrees=lq.tolist(),right_ready_degrees=rq.tolist(),
-                    left_path_degrees=path)
+                    left_path_degrees=path,
+                    cut_frame_family=dict(normal_sign=int(sign),tilt=float(priority['tilt']),
+                                          wing_m=float(priority['wing_m'])))
                 break
         if proposal is not None or expired:break
     guard()

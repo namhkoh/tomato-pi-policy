@@ -317,16 +317,14 @@ def main(argv=None):
     if args.station_reference_report is not None:
         from .station_reference import validate_mode
         validate_mode(args)
-    cut_priority=None
-    if args.cut_priority_report is not None:
-        if not (args.bimanual_cut and args.cut_style=='downward' and args.knife_edge_mode=='source_crossbar_edge_v1'):
-            raise ValueError('Cut priority requires explicit actual-crossbar downward diagnostic')
-        from .cut_priority import load as load_priority
-        cut_priority=load_priority(args.cut_priority_report,args)
+    from .cut_priority import from_arguments as priority_from_arguments
+    cut_priority=priority_from_arguments(args)
     proposal_receipt=None
     if args.station_proposal_report is not None:
         from .station_proposal import apply_to_arguments
         proposal_receipt=apply_to_arguments(args)
+        if cut_priority is None:
+            cut_priority=proposal_receipt.get('cut_frame_priority')
     fixed_hold=validate_fixed_root_hold(args)
     fixed_cut=args.fixed_root_cut_trial
     if args.coupled_fingers_trial and not (fixed_cut and args.bimanual_cut and args.symmetric_finger_closure

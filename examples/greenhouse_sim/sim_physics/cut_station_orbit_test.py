@@ -46,6 +46,7 @@ def test_both_native_endpoints_required_and_original_spawn_untouched():
         return dict(passed=True)
     out=search(r,S(check=native),lambda:None)
     assert len(calls)==2 and out['proposed_station']
+    assert out['proposed_station']['cut_frame_family']==dict(normal_sign=-1,tilt=15.,wing_m=0.)
     right=[pose for arm,pose in poses if arm=='right']
     np.testing.assert_allclose(right[0][:3,3]-right[1][:3,3],[0,0,.03])
     np.testing.assert_array_equal(r.base,base)

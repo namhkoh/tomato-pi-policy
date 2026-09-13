@@ -8318,3 +8318,37 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   proposals must still pass fresh native contact/retention and blade checks.
 - A and C remain OPEN. Isolated A/B and greenhouse B evidence are not a full
   milestone freeze. VLM collection/training and hardware remain untouched.
+
+### 2026-09-14 continuation: physical equivalence and blade-frame handoff
+
+- Native349 repeats the complete intact-greenhouse right-only cut after the
+  contact optimization (commit c0f32e9). All nine gates pass over85s/40800
+  physics steps: cut18.71875s,3439 edge-contact samples, unloaded reverse
+  complete45.177083s, passive-debris maximum2.973177N. Twenty paused native
+  milestone PNGs are diagnostic evidence, not video or training observations.
+  `data/sim_physics/bimanual_downward_20260914_native349/report.json` and
+  `contact_cache_native349_comparison.log` contain the results. All40800
+  selected physical-state/guard records match331 exactly; robot and plant
+  joint arrays have zero maximum difference. This is not all-metadata equality.
+- C is still NOT real time:349 tick wall547.978s, RTF0.155116 versus331's
+  0.157519. The measured1.207x helper improvement did not establish a net
+  full-run speed improvement. Geometry, rendering, physics and guards remain.
+- Fixed a planning handoff: a successful native station-reference seed now
+  supplies its associated blade-plane tilt to the bounded zero-motion search.
+  An explicit cut-priority report still wins. Winning station proposals carry
+  their exact tilt/normal-sign/wing family into a fresh launch as candidate
+  ORDER only; execution still considers its original families and recomputes
+  the complete path. Old proposals without this field remain compatible.
+  Task identity, finite original family, source hashes, zero-motion and native
+  control receipts are checked; no prior trajectory/clearance is inherited.
+- Native350 exercises the implicit15-degree reference family but finds no
+  complete proposal: its original left forearm intersects a neighboring plant.
+  Native348's source19/SubStem_43 seed hits context foliage with torso1.
+  Side-station351/352 are rejected before motion by torso5/right-arm1 self
+  clearance (2.690mm and -0.765mm versus unchanged3mm). These are failures,
+  not executed bimanual demonstrations or proofs of general infeasibility.
+-137 focused tests passed; full regression v19 passed4765 tests in202.20s.
+  Native353's balanced lower-torso proposal still intersects a target leaf
+  with torso5; the zero-motion search ends without a proposal and with final
+  native controls intact. Further kinematic proposals remain unqualified.
+  No A/C completion, calibrated tissue cutting or VLM restart is claimed.

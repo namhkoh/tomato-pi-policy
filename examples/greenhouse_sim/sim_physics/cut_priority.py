@@ -27,6 +27,30 @@ def load(path,args):
         order_only=True,prior_pose_or_path_replayed=False,motion_authorized=False)
 
 
+def from_arguments(args):
+    """Keep a reference waiting-pose seed paired with its blade-frame family.
+
+    Previously a station-reference search reused that run's joint seed but
+    silently tried only the unrelated default zero-tilt cut frame. This is
+    one blade-frame family for zero-motion station search and only candidate
+    ordering for execution. Same-task evidence and every fresh native check
+    still apply. An explicit cut-priority report remains authoritative.
+    """
+    path=args.cut_priority_report
+    reference=path is None and args.station_reference_report is not None
+    if reference:
+        from .station_reference import validate_mode
+        validate_mode(args)
+        path=args.station_reference_report
+    if path is None:return None
+    if not (args.bimanual_cut and args.cut_style=='downward'
+            and args.knife_edge_mode=='source_crossbar_edge_v1'):
+        raise ValueError('Cut priority requires explicit actual-crossbar downward diagnostic')
+    result=load(path,args)
+    if reference:result['station_reference_frame_family_only']=True
+    return result
+
+
 def tilt_order(tilts,priority):
     if priority is None:return tilts
     if priority['tilt'] not in tilts:raise ValueError('Priority outside current tilt family')

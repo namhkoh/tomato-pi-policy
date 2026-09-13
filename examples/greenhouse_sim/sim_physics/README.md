@@ -1316,3 +1316,15 @@ Contact bookkeeping now reuses only unchanged bucket sums and bounded plain
 path syntax. All changed sums, original contact rows and finite-value checks
 remain immediate.126 focused and4750 full tests pass; measured1.207x speedup
 is for a mixed-contact helper benchmark only. Whole-simulator C is still open.
+
+Native349 is another complete intact-greenhouse RIGHT-ONLY pass after that
+optimization: all9 gates, cut18.71875s,3439 edge contacts, reverse45.177083s.
+The40800 selected physical-state/guard records (including full robot and plant
+joint arrays) match331 exactly. Runtime0.155116x is still too slow; no net
+whole-simulator speed improvement is inferred from the helper benchmark.
+
+A zero-motion station-reference search now preserves the successful seed's
+blade-frame tilt. A winning proposal carries that family into fresh execution
+as candidate ordering, never inherited path/contact authority. Native350 uses
+the corrected15-degree family but still fails neighboring-foliage clearance.
+Native351/352 fail self-clearance before motion. Full-greenhouse A remains open.

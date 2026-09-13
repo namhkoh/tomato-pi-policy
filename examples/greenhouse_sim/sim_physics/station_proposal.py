@@ -42,9 +42,25 @@ def apply_to_arguments(args):
                 or any(type(v) not in (int,float) for v in value)
                 or not np.isfinite(value).all()):raise ValueError('Finite initial proposal required: '+key)
         values[key]=list(map(float,value))
+    priority=None
+    if 'cut_frame_family' in proposal:
+        family=proposal['cut_frame_family']
+        if (args.knife_edge_mode!='source_crossbar_edge_v1'
+                or not isinstance(family,dict) or set(family)!={'tilt','normal_sign','wing_m'}
+                or any(type(v) not in (int,float) for v in family.values())
+                or not np.isfinite(list(family.values())).all()
+                or family['tilt'] not in (0.,-10.,10.,-15.,15.)
+                or family['normal_sign'] not in (-1,1) or abs(family['wing_m'])>.02):
+            raise ValueError('Finite original crossbar candidate family required')
+        priority=dict(tilt=float(family['tilt']),normal_sign=int(family['normal_sign']),
+            wing_m=float(family['wing_m']),source_report=str(path),
+            source_sha256=hashlib.sha256(raw).hexdigest(),order_only=True,
+            prior_pose_or_path_replayed=False,motion_authorized=False,
+            zero_motion_station_family_only=True,prior_cut_success_claimed=False)
     for key,value in values.items():setattr(args,key,value)
     return dict(model='fresh_launch_from_unprivileged_station_proposal_v1',source_report=str(path),
         source_sha256=hashlib.sha256(raw).hexdigest(),initial_pose_proposal=values,
+        cut_frame_priority=priority,
         destination_scope='intact_greenhouse' if intact else 'isolated_source_branch_fixture',
         prior_path_replayed=False,prior_native_checks_inherited=False,
         fresh_startup_and_path_required=True,motion_authorized=False)
