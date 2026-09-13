@@ -51,6 +51,29 @@ the wrist/main stem partly occludes the edge, so images alone do not establish
 the contact location. The native cut evidence remains authoritative for this
 simulated seam-release model. Final physics regression:4,221 tests passed.
 
+### Visible one-shot watch panel
+
+To open this same native trial in a NEW Isaac window, add `--watch`:
+
+```bat
+D:\isaac-sim-6.0.1\python.bat -B -m sim_physics.ground_truth_trial --mode bimanual --milestone cut_action --watch --output D:\research\tomato-pi-policy\data\sim_physics\my_new_cut_watch
+```
+
+It waits for **Run once: left grasp + right cut** and offers the full-robot,
+grasp close-up/plant-side, original knife, head and wrist-camera views. Use
+`--mode right_only` in a separate new process to watch unheld cutting. No
+physics values or native execution checks change; only 15 Hz rendering and
+the visible one-shot observer are enabled. The 50 simulated seconds currently
+take several minutes of wall time. Use the panel, not the timeline or object
+transform controls: changed idle state/timeline is rejected, not resumed.
+
+The result stays paused for inspection. Run can be requested only once;
+reset/replay are deliberately unavailable for this cut topology. Close and
+relaunch with a new output folder for another run. `live_status.json` reports
+ready/progress/result; `watch_result.json` stores the completed probe result.
+Original benchmark `report.json` is finalized on window closure. This watch
+panel does not waive final withdrawal failure or certify a full robot task.
+
 Omitting `--milestone cut_action` preserves the older full-sequence assessment
 and passive-contact failure policy. Both Python and Kit exit codes now agree
 with the explicitly requested milestone; a success label alone is insufficient.

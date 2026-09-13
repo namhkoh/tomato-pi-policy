@@ -187,7 +187,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         if args.scene=='isolated': UsdLux.DomeLight.Define(rig.stage,'/World/ProbeLight').CreateIntensityAttr(1400.)
         viewport.set_active_camera(setup_probe_camera(rig.stage,rig.rest_frames[fixture.body_index,:3,3]))
         fixture.setup_views(viewport)
-        if getattr(args,'robot_interactive',False) and previous_view in fixture.views.values():
+        if (getattr(args,'robot_interactive',False) or getattr(args,'watch_cut_trial',False)) and previous_view in fixture.views.values():
             viewport.set_active_camera(previous_view)
 
     def capture(name):
@@ -218,6 +218,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         nonlocal spring_control_record
         nonlocal contact_springs_started
         nonlocal times,grasp_time,delay,plan_time,approach_start,stroke_start,stroke_end,acquisition_wait_logged
+        if getattr(args,'watch_cut_trial',False) and not sim.is_playing():
+            raise RuntimeError('Timeline changed during watched trial; close and relaunch, no stale-step continuation')
         t=stamp.simulation_time_s
         if (rig.cut and getattr(args,'native_drives_after_cut',False)
                 and not hasattr(springs,'handoff_receipt')):
@@ -657,5 +659,6 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     (output/'bimanual_trajectory.json').write_text(json.dumps(records,allow_nan=False),encoding='utf-8')
     if contact_stream is not None:fixture.event_monitor.full_contact_observer=None
     fixture.release_grasp_observer()
-    sim.stop()
+    if getattr(args,'watch_cut_trial',False):sim.pause()
+    else:sim.stop()
     return result

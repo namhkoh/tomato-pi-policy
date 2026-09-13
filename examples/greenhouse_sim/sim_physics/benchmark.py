@@ -112,6 +112,8 @@ def parser():
         help='Separate isolated unheld cut diagnostic: left stays parked/open, no retention or deposit credit')
     p.add_argument('--cut-action-trial',action='store_true',
         help='Limited grasp/cut milestone; record released-target torso landings separately, keep full-task gates visible')
+    p.add_argument('--watch-cut-trial',action='store_true',
+        help='Visible one-shot observer for the same cut-action trial; no interactive reset/replay or physical parameter changes')
     p.add_argument('--knife-alignment',choices=('legacy','camera'),default='legacy',
         help='Camera aligns the arc to the actual wrist camera radial side; original source asset untouched')
     p.add_argument('--cut-style',choices=('legacy','downward'),default='legacy',
@@ -268,18 +270,20 @@ def main(argv=None):
     fixed_cut=args.fixed_root_cut_trial
     from .cut_only import validate_profile
     cut_only=validate_profile(args)
+    from .cut_watch import validate as validate_watch
+    validate_watch(args)
     if args.cut_action_trial and not (fixed_cut and args.native_drives_after_cut
             and args.branch_contact_fixture and args.native_startup_clearance
             and args.native_static_clearance and not args.gui and not args.robot_interactive
             and not args.measured_withdrawal):
-        raise ValueError('Cut action milestone requires explicit headless native-release diagnostic')
+        raise ValueError('Cut action milestone requires explicit native-release diagnostic without interactive reset')
     if args.cut_convergence_trial and not (fixed_cut and args.physics_hz==480
             and args.native_drives_after_cut and args.require_retention_screen
             and args.physical_grasp_span and args.settle_retention_preload
             and args.effort_bounded_grasp_target and args.preload_force_servo
             and args.native_startup_clearance and args.native_static_clearance
             and not args.gui and not args.robot_interactive and not args.measured_withdrawal):
-        raise ValueError('480 Hz convergence requires complete headless fixed-root native-release retention trial')
+        raise ValueError('480 Hz convergence requires complete fixed-root native-release retention trial without interactive reset')
     robot_rate_allowed=args.physics_hz==240 or args.cut_convergence_trial or cut_only
     if args.native_station_park_reference and not (fixed_cut and (args.require_retention_screen or cut_only)
             and args.native_static_clearance and not args.measured_withdrawal):
@@ -547,7 +551,7 @@ def main(argv=None):
             print('PHYSICS_HOST_MEMORY_BLOCKED '+json.dumps(report),flush=True)
             return 2
     from isaacsim import SimulationApp
-    app=SimulationApp({'headless':not args.gui,'width':1280 if args.interactive else 848,'height':720 if args.interactive else 408,'multi_gpu':False,
+    app=SimulationApp({'headless':not (args.gui or args.watch_cut_trial),'width':1280 if args.interactive or args.watch_cut_trial else 848,'height':900 if args.watch_cut_trial else 720 if args.interactive else 408,'multi_gpu':False,
                        'sync_loads':False,'renderer':'RaytracedLighting'})
     import carb.settings
     process_settings=carb.settings.get_settings()
@@ -794,7 +798,10 @@ def main(argv=None):
             from .gripper_probe import run
             if args.bimanual_cut:
                 from .bimanual_probe import run
-            if args.robot_interactive:
+            if args.watch_cut_trial:
+                from .cut_watch import watch
+                report.update(watch(app,sim,rig,runtime,springs,fixture,args,output,run))
+            elif args.robot_interactive:
                 from .full_robot import interactive
                 report.update(interactive(app,sim,rig,fixture,args,output))
             else:

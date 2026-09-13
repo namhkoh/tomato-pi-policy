@@ -7357,3 +7357,30 @@ No hardware, collection, tuning, review, split or training-export changes.
   material warnings, perturbation/multiple-target and reset/retry coverage,
   arbitrary-start approach, and full-greenhouse requalification/performance.
   VLM training/data, other running applications and OS settings were untouched.
+
+### 2026-09-13 - Visible one-shot native cut inspection
+
+- User requested a visible launch of the current working actions. Added explicit
+  ground_truth_trial --watch / benchmark --watch-cut-trial instead of opening
+  the older grasp-only demo or bypassing the trial's reset restrictions.
+- Separate native Isaac window,15 Hz rendering, Run-once/Stop and existing
+  camera-view buttons. Same complete isolated480 Hz action profile, original
+  assets, controls and guards. No automatic run, reset/replay, hardware calls,
+  dataset operations, OS changes or takeover of an existing Isaac process.
+- Idle robot/plant pose and timeline are checked before Run; changed timeline
+  during execution aborts rather than incrementing stale physics timestamps.
+  After the one trial, pause preserves the final scene for viewing. Results
+  distinguish limited cut success from final withdrawal; no full-task claim.
+- First native watch launch v1 exposed an observer initialization-order error:
+  fixture.robot exists only after the actual probe binds its control interface.
+  Corrected idle observation to create a read-only native articulation view;
+  it does NOT bind/set controller gains or execute an extra physics step.
+  Regression test explicitly uses a fixture with no pre-bound robot attribute.
+- Visible launch cut_action_watch_20260913_v2 reached CUT_WATCH_READY with an
+  Isaac Sim Python6.0.1 window and one-shot bimanual ready state. User then
+  started the run from the panel; live native telemetry reports progress.
+  Reports/logs: data/sim_physics/cut_action_watch_20260913_v{1,2}.
+- Focused suites132 passed before the idle-reader correction; all14 watch
+  tests passed after it. Full physics regression4,234 passed136.05 s in
+  regression_20260913_cut_watch_all_v1.log (before the extra idle-reader test).
+  Ready-state launch is not by itself a completed native cutting result.
