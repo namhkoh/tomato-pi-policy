@@ -49,6 +49,24 @@ def test_final_native_control_failure_revokes_a_provisional_proposal(monkeypatch
     assert out['right_pose_search']['final_native_controls_passed'] is False
 
 
+def test_disconnected_elbow_branch_is_screened_after_local_family_ends(monkeypatch):
+    from .startup_pose_search import search
+    from . import redundant_ik
+    monkeypatch.setattr(redundant_ik,'pose_family',lambda *a,**k:iter(()))
+    seeds=[];q=np.arange(7,dtype=float)
+    def solve(*args,**kwargs):
+        seeds.append(args[2].copy());assert kwargs['joint_limit_margin_degrees']==3.
+        return S(succeeded=True,joint_degrees=q)
+    robot=S(right=q.copy(),base=np.eye(4),initial_q=q.copy(),path_q=[q],
+        kin=S(forward=lambda *a:np.eye(4),inter_arm_clearance=lambda *a:S(clearance_m=.02),
+            arm_limits_degrees=lambda *a:(np.full(7,-180.),np.full(7,180.)),solve_pose=solve),
+        check_self=lambda *a:dict(passed=True),body_world=lambda *a:{},self_screen=S(shapes=['all']))
+    out=search(robot,S(check=lambda world,shapes:dict(passed=True)),lambda:None)
+    assert out['ik_attempts']['global_ik_attempts']==1 and len(seeds)==1
+    assert out['candidates'][0]['ik_origin']=='global_multistart'
+    assert not out['motion_authorized'] and out['relaunch_required']
+
+
 def test_cli_requires_complete_native_diagnostic_before_output_creation(tmp_path):
     from .benchmark import main
     out=tmp_path/'none'

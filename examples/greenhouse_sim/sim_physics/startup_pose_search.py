@@ -13,13 +13,33 @@ def search(robot,backend,guard):
     seed=np.array(robot.right,float,copy=True)
     desired=robot.kin.forward('right',seed,robot.base)
     begin=time.monotonic();rows=[];candidate=None
-    for solved in pose_family(robot.kin,'right',desired,seed,robot.base,
-            steps_per_direction=12,joint_limit_margin_degrees=3.):
+    attempts={'local_solutions':0,'global_ik_attempts':0}
+    def proposals():
+        for solved in pose_family(robot.kin,'right',desired,seed,robot.base,
+                steps_per_direction=12,joint_limit_margin_degrees=3.):
+            guard()
+            if time.monotonic()-begin>=30:return
+            attempts['local_solutions']+=1
+            yield 'local_self_motion',solved
+        # A connected self-motion family can end at a wrist limit while an
+        # entirely different elbow branch reaches the SAME wrist pose. These
+        # deterministic multistarts are proposals, never motion permissions.
+        low,high=robot.kin.arm_limits_degrees('right')
+        rng=np.random.default_rng(267)
+        for _ in range(16):
+            guard()
+            if time.monotonic()-begin>=30:return
+            proposed_seed=rng.uniform(np.asarray(low)+10,np.asarray(high)-10)
+            attempts['global_ik_attempts']+=1
+            solved=robot.kin.solve_pose('right',desired,proposed_seed,robot.base,
+                maximum_evaluations=200,joint_limit_margin_degrees=3.)
+            if solved.succeeded:yield 'global_multistart',solved
+    for origin,solved in proposals():
         guard()
-        if time.monotonic()-begin>=30:break  # Leave time for final native controls.
+        if time.monotonic()-begin>=30 or len(rows)>=24:break  # Leave final-control reserve.
         q=np.asarray(solved.joint_degrees,float)
         row=dict(right_ready_degrees=q.tolist(),native_startup_clear=False,
-            left_self_path_clear=False,motion_authorized=False)
+            left_self_path_clear=False,motion_authorized=False,ik_origin=origin)
         rows.append(row)
         # Every existing dense left-arm path knot; no new grasp or path accepted.
         for left in robot.path_q:
@@ -38,6 +58,7 @@ def search(robot,backend,guard):
                 candidate=q.tolist();break
     guard()
     return dict(model='frozen_native_same_wrist_elbow_search_v1',candidates=rows,
+        ik_attempts=attempts,global_multistart_seed=267,
         proposed_right_ready_degrees=candidate,maximum_candidates=24,
         original_spawn_unchanged=True,relaunch_required=True,physics_steps=0,
         motion_authorized=False,whole_path_certified=False,grasp_or_cut_verified=False)

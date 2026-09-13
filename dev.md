@@ -7533,3 +7533,16 @@ No hardware, collection, tuning, review, split or training-export changes.
   any provisional proposal. Native268 checked six feasible elbow alternatives;
   all retained the right-upper-arm/Leaf_005 overlap. No actor, collision filter,
   stage pose or physics step changed; all final native controls passed.
+
+- Expanded the frozen-scene elbow diagnostic with 16 deterministic bounded
+  global IK seeds after the connected local family. Disconnected solutions are
+  still proposals only: full left self-path, native scene queries and final
+  positive controls are mandatory, with no motion or authored pose changes.
+  The 53 startup/search/lifecycle/clearance tests pass. No search result changes
+  the saved action profile automatically.
+- Native269's 80 mm robot-station adjustment still failed upper-arm/Leaf_005
+  startup clearance. A disconnected elbow-up branch at the original station
+  fixes that particular overlap, but native270 found camera/MainStem_28 contact
+  at the 50 mm raised start; native271's lateral start hit MainStem_27 instead.
+  All three stopped at zero physics steps. Native272 is testing the lower,
+  pre-contact elbow-up pose; completion and an extended approach remain pending.
