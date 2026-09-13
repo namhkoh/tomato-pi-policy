@@ -100,6 +100,10 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     if getattr(fixture,'diagnostic_physics_hz',240)!=args.physics_hz:
         raise ValueError('Robot control/sensing clock must match the physics clock')
     fixture.bind(sim.physics_sim_view)
+    coupling_monitor=None
+    if getattr(args,'coupled_fingers_trial',False):
+        from .finger_coupling import CouplingMonitor
+        coupling_monitor=CouplingMonitor()
     cut_only=bool(getattr(args,'right_only_cut_trial',False))
     if getattr(fixture,'cut_strategy','bimanual')!=('right_only' if cut_only else 'bimanual'):
         raise ValueError('Fixture and execution cut strategy disagree')
@@ -367,7 +371,10 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                     if retraction_time is None:
                         phase='stroke';fraction=retraction.command(step=int(stamp.step),dt=dt)
                     else:
-                        phase='approach';fraction=1-ramp(t,retraction_time,retraction_time+4)
+                        if getattr(args,'postcut_egress_trial',False):
+                            phase='egress';fraction=ramp(t,retraction_time,
+                                retraction_time+fixture.postcut_egress_evidence['duration_s'])
+                        else:phase='approach';fraction=1-ramp(t,retraction_time,retraction_time+4)
                 elif t<reverse_time+2:
                     phase='stroke';fraction=(through_fraction if through_requested else cut_fraction)*(1-ramp(t,reverse_time,reverse_time+2))
                 else:
@@ -526,6 +533,9 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             from .grasp_dynamics_evidence import grasp_dynamics_evidence
             positions=fixture.robot.get_dof_positions()[0]
             joint_velocity=fixture.robot.get_dof_velocities()[0]
+            if coupling_monitor is not None:
+                record['finger_mechanism']=coupling_monitor.observe(
+                    positions[fixture.finger_indices],joint_velocity[fixture.finger_indices],step=int(stamp.step))
             fingers=pose_matrices(fixture.fingers.get_transforms())[fixture.order]
             record['grasp_dynamics']=grasp_dynamics_evidence(
                 frames,rig.body_paths,fingers,fixture.paths[1:],fixture.grasp_observer.core.rows,
@@ -595,7 +605,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 if fixture.cut_event is None or fixture.root_transition.receipt is None:
                     raise RuntimeError('Through-stroke requires validated native release transition')
                 endpoint=fixture.knife.frame(fixture.kin.forward('right',fixture.plan['stroke'][-1],fixture.base))[:3,3]
-                options={}
+                options={'maximum_feed_m_s':getattr(args,'postrelease_feed_m_s',.0003)}
                 if getattr(args,'material_clearance_trial',False):
                     parent_index=rig.cut_index-1
                     centre,axis=fixture.seam(frames)
@@ -635,19 +645,31 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             if retraction is None:
                 endpoint=fixture.knife.frame(fixture.kin.forward('right',fixture.plan['stroke'][0],fixture.base))[:3,3]
                 retraction=CutRetraction(fixture.stroke_offsets,fraction=through_fraction,endpoint=endpoint,
-                    direction=fixture.plan['direction'],step=int(stamp.step),section=through.material_section)
+                    direction=fixture.plan['direction'],step=int(stamp.step),section=through.material_section,
+                    maximum_feed_m_s=getattr(args,'postrelease_feed_m_s',.0003))
             support=bool(c['bilateral'] and slip is not None and slip<.003) if not cut_only else 'cut_only_park' in record
             record['cut_retraction']=retraction.observe(record,step=int(stamp.step),support_ready=support)
             if retraction.complete:
                 retraction_time=stamp.simulation_time_s
                 events.append(dict(t=retraction_time,event='measured_stroke_retraction_unloaded',evidence=dict(retraction.receipt)))
+                if getattr(args,'postcut_egress_trial',False):
+                    from .postcut_egress import plan as plan_egress
+                    path,evidence=plan_egress(fixture,frames,step=int(stamp.step),record=record,
+                        retraction=retraction.receipt)
+                    fixture.plan['egress']=path
+                    events.append(dict(t=retraction_time,event='postcut_egress_planned',evidence=evidence))
         if rig.cut and stamp.step==int(args.seconds*args.physics_hz):
             from .withdrawal_native_check import check as check_withdrawal
             options={}
             if getattr(args,'native_station_park_reference',False):options['native_station_park']=True
+            if getattr(args,'postcut_egress_trial',False):options['postcut_egress']=True
             record['withdrawal']=check_withdrawal(fixture,frames,stamp.step,**options)
             events.append(dict(t=stamp.simulation_time_s,event='final_native_withdrawal_endpoint',
                 evidence=record['withdrawal']))
+        if retraction_time is not None and getattr(args,'postcut_egress_trial',False):
+            from .seam_escape import execution_guard
+            execution_guard(record)
+            record['postcut_egress_unloaded_guard_passed']=True
         record['phase']='Cut-only / withdraw' if cut_only and rig.cut else 'Left parked / right cut' if cut_only else 'Left hold negative control' if hold_control else 'Retain / withdraw' if rig.cut else 'Blade stroke' if planned and stamp.simulation_time_s>=stroke_start else 'Right approach' if planned and stamp.simulation_time_s>=approach_start else 'Held target reposition / reobserve' if grasp_verified and reposition else 'Left grasp'
         if rig.cut and through_requested and through_time is None:record['phase']='Measured downward follow-through'
         fixture.on_sample(record)
@@ -738,6 +760,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         measured_withdrawal_completed=helper_complete,
         negative_control_no_right_motion=hold_control,
         requested_pre_cut_reposition_m=reposition,
+        measured_finger_mechanism=None if not records else records[-1].get('finger_mechanism'),
+        postcut_egress=getattr(fixture,'postcut_egress_evidence',None),
         grasp_acquisition=dict(feedback_event_driven=force_closure,
             earliest_verification_s=3.5,deadline_s=13.5 if force_closure else 3.5,
             required_native_bilateral_dwell_s=.1,verified_time_s=grasp_time if grasp_verified else None,

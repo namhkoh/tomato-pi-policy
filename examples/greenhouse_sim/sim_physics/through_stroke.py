@@ -8,7 +8,9 @@ import numpy as np
 
 
 class ThroughStroke:
-    def __init__(self, offsets, *, fraction, endpoint, direction, physics_hz, step, material_section=None):
+    def __init__(self, offsets, *, fraction, endpoint, direction, physics_hz, step, material_section=None, maximum_feed_m_s=.0003):
+        from .postrelease_feed import validate
+        self.maximum_feed=validate(maximum_feed_m_s)
         offsets=np.asarray(offsets,float)
         endpoint=np.asarray(endpoint,float);direction=np.asarray(direction,float)
         if (offsets.ndim!=1 or len(offsets)<2 or not np.isfinite(offsets).all()
@@ -103,10 +105,11 @@ class ThroughStroke:
         elif self.material_section is not None and not self.face_sliding: speed=0.;state='hold_unverified_cut_face'
         elif self.upper>.10 and self.normal<.01 and not self.face_sliding: speed=0.;state='hold_nonleading_contact'
         elif self.face_sliding:
-            speed=.0003*min(1.,max(0.,(.40-self.upper)/.10));state='guarded_cut_face_sliding'
+            from .postrelease_feed import loaded_speed
+            speed=loaded_speed(self.upper,self.maximum_feed)*min(1.,max(0.,(.40-self.upper)/.10));state='guarded_cut_face_sliding'
         else: speed=.0003;state='forward'
         self.offset=float(np.clip(self.offset+speed*dt,self.start,self.end))
         self.consumed=step
         self.receipt.update(command_state=state,command_offset_m=self.offset,
-            command_speed_m_s=speed,commanded_motion_used_as_completion=False)
+            command_speed_m_s=speed,maximum_contact_feed_m_s=self.maximum_feed,commanded_motion_used_as_completion=False)
         return (self.offset-self.start)/self.span

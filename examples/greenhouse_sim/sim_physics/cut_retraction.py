@@ -10,7 +10,9 @@ import numpy as np
 
 
 class CutRetraction:
-    def __init__(self,offsets,*,fraction,endpoint,direction,step,section):
+    def __init__(self,offsets,*,fraction,endpoint,direction,step,section,maximum_feed_m_s=.0003):
+        from .postrelease_feed import validate
+        self.maximum_feed=validate(maximum_feed_m_s)
         a=np.asarray(offsets,float);p=np.asarray(endpoint,float);d=np.asarray(direction,float)
         if (a.ndim!=1 or len(a)<2 or not np.isfinite(a).all() or not np.all(np.diff(a)>0)
                 or not -.025<=a[0]<0<a[-1]<=.02 or isinstance(fraction,bool)
@@ -62,8 +64,11 @@ class CutRetraction:
         if not self.complete and (step-self.first)/480>=35:raise RuntimeError('Contact-paced retraction timed out')
         if self.complete:speed=0.;state='complete'
         elif not self.allowed or self.upper>.40:speed=0.;state='hold_contact_or_support'
-        elif self.upper>.01:speed=.0003;state='loaded_reverse'
+        elif self.upper>.01:
+            from .postrelease_feed import loaded_speed
+            speed=loaded_speed(self.upper,self.maximum_feed);state='loaded_reverse'
         else:speed=.002;state='unloaded_reverse'
         self.offset=max(self.start,self.offset-speed*dt);self.consumed=step
-        self.receipt.update(command_state=state,command_speed_m_s=speed,command_offset_m=self.offset)
+        self.receipt.update(command_state=state,command_speed_m_s=speed,command_offset_m=self.offset,
+            maximum_contact_feed_m_s=self.maximum_feed)
         return (self.offset-self.start)/self.span

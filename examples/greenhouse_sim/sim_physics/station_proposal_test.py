@@ -28,6 +28,16 @@ def test_new_launch_uses_only_initial_values_never_replays_path(tmp_path):
     assert len(receipt['source_sha256'])==64
 
 
+def test_same_initial_proposal_in_isolation_still_requires_fresh_all_shape_checks(tmp_path):
+    args,report,_=fixture(tmp_path);args.greenhouse_cut_trial=False
+    args.isolate_station=True;args.branch_contact_fixture=True
+    args.station_proposal_report.write_text(json.dumps(report))
+    receipt=apply_to_arguments(args)
+    assert receipt['destination_scope']=='isolated_source_branch_fixture'
+    assert receipt['fresh_startup_and_path_required']
+    assert not receipt['prior_native_checks_inherited'] and not receipt['motion_authorized']
+
+
 @pytest.mark.parametrize('change',['final_control','steps','target','pose_nan','missing_pose','wrong_scene','another_search'])
 def test_bad_proposal_cannot_change_arguments(tmp_path,change):
     args,report,search=fixture(tmp_path)

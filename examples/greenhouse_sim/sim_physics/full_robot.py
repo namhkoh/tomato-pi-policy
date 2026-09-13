@@ -107,7 +107,7 @@ class FullRobotGripper(GripperFixture):
     pregrasp_half_aperture=.025
 
     def __init__(self,stage,rig,*,arc=.08,friction=.5,ground_height=None,
-                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None,grasp_skew=0.,grasp_pitch=0.,finger_actuator_limit_n=.5,exact_grasp_arc=False,right_ready_degrees=None,left_ik_seed_degrees=None,anchored_pad_damping=False,pregrasp_half_aperture=.025):
+                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None,grasp_skew=0.,grasp_pitch=0.,finger_actuator_limit_n=.5,exact_grasp_arc=False,right_ready_degrees=None,left_ik_seed_degrees=None,anchored_pad_damping=False,pregrasp_half_aperture=.025,right_ready_lift_m=0.,right_ready_retreat_m=0.):
         if type(anchored_pad_damping) is not bool or anchored_pad_damping and not compliant_fingers:
             raise ValueError('Anchored damping prior requires compliant fingers')
         self.finger_actuator_limit_n=_finger_actuator_limit(finger_actuator_limit_n)
@@ -225,6 +225,9 @@ class FullRobotGripper(GripperFixture):
                 raise ValueError('Initial right configuration must obey exact URDF limits')
             self.right=q.copy()
             self.pose.update({f'right_arm_{i}':float(v) for i,v in enumerate(q)})
+        from .ready_lift import propose as propose_ready_lift
+        self.right,self.right_ready_lift=propose_ready_lift(self.kin,self.right,self.base,right_ready_lift_m,right_ready_retreat_m)
+        self.pose.update({f'right_arm_{i}':float(v) for i,v in enumerate(self.right)})
         seed=np.array([self.pose[f'left_arm_{i}'] for i in range(7)])
         if left_ik_seed_degrees is not None:
             seed=np.asarray(left_ik_seed_degrees,float)
@@ -427,6 +430,7 @@ class FullRobotGripper(GripperFixture):
                 legacy_mode_available=True),
             torso_degrees=self.kin.default_torso_degrees().tolist(),floor_root=self.floor_root,
             initial_right_pose='explicit_prephysics_screened_proposal' if getattr(self,'right_ready_explicit',False) else 'sdk_ready',
+            right_waiting_lift_proposal=getattr(self,'right_ready_lift',None),
             joint_state_names=getattr(self,'names',None),
             approach_tilt_degrees=self.approach_tilt,
             grasp_roll_degrees=self.grasp_roll,

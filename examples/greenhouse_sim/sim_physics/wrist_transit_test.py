@@ -2,7 +2,7 @@ from types import SimpleNamespace as S
 import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
-from sim_physics.wrist_transit import frames,screen_modes,MODES
+from sim_physics.wrist_transit import frames,screen_modes,try_modes,MODES,LIFT_OFFSETS,RETREAT_OFFSETS,GOAL_SIDE_OFFSETS
 from sim_physics.downward_cut import cartesian_transit
 
 
@@ -20,7 +20,7 @@ def test_exact_endpoints_bounded_translation_rotation_and_no_mutation(mode):
     assert np.max(np.linalg.norm(np.diff(path[:,:3,3],axis=0),axis=1))<=.002+1e-12
     turns=Rotation.from_matrix(path[1:,:3,:3]@path[:-1,:3,:3].transpose(0,2,1)).magnitude()
     assert np.max(turns)<=np.radians(1)+1e-12
-    if mode!='simultaneous':
+    if mode!='simultaneous' and mode not in LIFT_OFFSETS and mode not in RETREAT_OFFSETS and mode not in GOAL_SIDE_OFFSETS:
         moving=np.linalg.norm(path[:,:3,3]-a[:3,3],axis=1)>1e-12
         np.testing.assert_allclose(path[moving,:3,:3],np.broadcast_to(b[:3,:3],path[moving,:3,:3].shape),atol=1e-12)
 
@@ -58,9 +58,75 @@ def test_rigid_preview_can_select_orientation_first_without_allowing_seam_contac
         aligned=np.max(abs(path[:,:3,:3]-b[:3,:3]),axis=(1,2))<1e-10
         return dict(passed=not np.any(translated&~aligned),motion_authorized=False)
     modes,evidence=screen_modes(S(check=check),a,b)
-    assert modes==MODES[1:] and len(seen)==len(MODES)
+    assert modes==tuple(m for m in MODES if m!='simultaneous' and m not in LIFT_OFFSETS and m not in RETREAT_OFFSETS and m not in GOAL_SIDE_OFFSETS)
+    assert len(seen)==len(MODES)
     assert not evidence['simultaneous']['passed']
     assert not evidence['orient_then_translate']['motion_authorized']
+
+
+@pytest.mark.parametrize('mode',LIFT_OFFSETS)
+def test_lift_precedes_rotation_then_translation_and_final_descent(mode):
+    a,b=endpoints();path=frames(a,b,mode=mode)
+    height=max(a[2,3],b[2,3])+LIFT_OFFSETS[mode]
+    changed=np.max(abs(path[:,:3,:3]-a[:3,:3]),axis=(1,2))>1e-9
+    first=int(np.flatnonzero(changed)[0])
+    np.testing.assert_allclose(path[:first,:3,:3],np.broadcast_to(a[:3,:3],(first,3,3)),atol=1e-12)
+    assert path[first,2,3]==pytest.approx(height)
+    np.testing.assert_allclose(path[:first,:2,3],np.broadcast_to(a[:2,3],(first,2)),atol=1e-12)
+    descending=np.flatnonzero(np.diff(path[:,2,3])<-1e-12)
+    assert len(descending)
+    np.testing.assert_allclose(path[descending,:2,3],np.broadcast_to(b[:2,3],(len(descending),2)),atol=1e-12)
+    np.testing.assert_allclose(path[descending,:3,:3],np.broadcast_to(b[:3,:3],(len(descending),3,3)),atol=1e-12)
+
+
+def test_lift_collision_is_rejected_without_a_stroke_allowance():
+    a,b=endpoints()
+    def check(path,*,stroke):
+        assert stroke is False
+        return dict(passed=bool(np.max(path[:,2,3])<.05),motion_authorized=False)
+    modes,evidence=screen_modes(S(check=check),a,b)
+    for mode in LIFT_OFFSETS:
+        assert mode not in modes and not evidence[mode]['passed']
+
+
+@pytest.mark.parametrize('mode',GOAL_SIDE_OFFSETS)
+def test_final_side_entry_is_horizontal_and_aligned(mode):
+    a,b=endpoints();path=frames(a,b,mode=mode)
+    count=int(np.ceil(abs(GOAL_SIDE_OFFSETS[mode])/.002))+1
+    np.testing.assert_allclose(path[-count:,2,3],b[2,3],atol=1e-12)
+    np.testing.assert_allclose(path[-count:,:3,:3],np.broadcast_to(b[:3,:3],(count,3,3)),atol=1e-12)
+    side=b[:3,0].copy();side[2]=0;side/=np.linalg.norm(side)
+    np.testing.assert_allclose(path[-count,:3,3],b[:3,3]+GOAL_SIDE_OFFSETS[mode]*side,atol=1e-12)
+
+
+@pytest.mark.parametrize('mode',RETREAT_OFFSETS)
+def test_retreat_moves_away_unrotated_before_any_lift(mode):
+    a,b=endpoints();path=frames(a,b,mode=mode);distance,height=RETREAT_OFFSETS[mode]
+    rising=np.flatnonzero(path[:,2,3]>a[2,3]+1e-12)[0]
+    away=a[:2,3]-b[:2,3];away/=np.linalg.norm(away)
+    np.testing.assert_allclose(path[rising-1,:2,3],a[:2,3]+distance*away,atol=1e-12)
+    np.testing.assert_allclose(path[:rising,:3,:3],np.broadcast_to(a[:3,:3],(rising,3,3)),atol=1e-12)
+    assert max(path[:,2,3])==pytest.approx(max(a[2,3],b[2,3])+height)
+
+
+def test_lazy_preview_retains_full_arm_fallbacks_and_stops_only_on_full_success():
+    a,b=endpoints();tested=[];accepted=[];evidence={}
+    def check(path,*,stroke):
+        assert not stroke;tested.append(path)
+        return dict(passed=True)
+    def accept(mode):
+        accepted.append(mode)
+        return len(accepted)==3  # First two fail full-arm validation.
+    assert try_modes(S(check=check),a,b,accept,evidence)
+    assert accepted==list(MODES[:3]) and list(evidence)==list(MODES[:3])
+    assert len(tested)==3
+
+
+def test_lazy_rejected_preview_never_reaches_ik_and_errors_propagate():
+    def accept(mode):raise AssertionError('Rejected preview may not authorize IK/path')
+    assert not try_modes(S(check=lambda *a,**k:dict(passed=False)),*endpoints(),accept,{})
+    def fail(*a,**kw):raise RuntimeError('native epoch changed')
+    with pytest.raises(RuntimeError):try_modes(S(check=fail),*endpoints(),accept,{})
 
 
 def test_query_error_cannot_become_a_clear_fallback():

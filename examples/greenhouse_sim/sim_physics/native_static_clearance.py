@@ -38,13 +38,18 @@ def capsule_enclosing_box(start,end,radius):
 
 class NativeStaticClearance:
     def __init__(self, query, records, *, guard=lambda:None, max_queries=20000, wall_limit_s=8.,
-                 close_guard=None, epoch_report=None, lazy_coverage=False, sphere_query=None):
+                 close_guard=None, epoch_report=None, lazy_coverage=False, sphere_query=None, memoize_queries=False,
+                 reuse_clear_regions=False):
         if (type(max_queries) is not int or not 0 < max_queries <= 20000
-                or type(lazy_coverage) is not bool
+                or type(lazy_coverage) is not bool or type(memoize_queries) is not bool
+                or type(reuse_clear_regions) is not bool
                 or isinstance(wall_limit_s,(bool,np.bool_))
                 or not np.isfinite(wall_limit_s) or not 0 < wall_limit_s <= 60.):
             raise ValueError('Bounded native query budget required')
         self.query=query;self.guard=guard;self.max_queries=max_queries
+        self.memoize_queries=memoize_queries;self.query_cache={};self.cache_hits=0
+        from .empty_regions import EmptyRegions
+        self.empty_regions=EmptyRegions() if reuse_clear_regions else None
         self.lazy_coverage=lazy_coverage
         self.started=time.perf_counter();self.wall_limit_s=wall_limit_s
         self.active=True;self.calls=0;self.clearances=0;self.blocked=0
@@ -82,20 +87,23 @@ class NativeStaticClearance:
 
     def _invalidate(self,reason):
         if reason not in self.errors:self.errors.append(reason)
+        self.query_cache.clear()
+        if self.empty_regions is not None:self.empty_regions.clear()
         self.active=False;self.validation_passed=False
 
     def _check(self,*,request=False):
         if not self.active:
             raise RuntimeError('Native refinement invalid or closed: '+str(self.errors))
         self.guard()
-        if (self.calls>self.max_queries or (request and self.calls>=self.max_queries)
-                or time.perf_counter()-self.started>=self.wall_limit_s):
-            raise RuntimeError('query_budget_exhausted')
+        if self.calls>self.max_queries or (request and self.calls>=self.max_queries):
+            raise RuntimeError('query_budget_exhausted: native_call_limit_exceeded')
+        if time.perf_counter()-self.started>=self.wall_limit_s:
+            raise RuntimeError('query_budget_exhausted: wall_time_limit_exceeded')
 
-    def _overlap(self,path,centre,axes,half):
+    def _overlap(self,path,centre,axes,half,*,memoize=False):
         if not self.active:return None
         try:
-            self._check(request=True)
+            self._check()
             centre,axes,half=np.asarray(centre,float),np.asarray(axes,float),np.asarray(half,float)
             if (centre.shape!=(3,) or axes.shape!=(3,3) or half.shape!=(3,)
                     or not np.isfinite(centre).all() or not np.isfinite(axes).all()
@@ -106,12 +114,29 @@ class NativeStaticClearance:
             # nevertheless represent a proper rotation, never a reflection.
             if np.linalg.det(axes)<0:
                 axes=axes.copy();axes[:,2]*=-1
+            key=('box',path,centre.tobytes(),axes.tobytes(),half.tobytes())
+            if memoize and self.memoize_queries and key in self.query_cache:
+                self._check();self.cache_hits+=1;return self.query_cache[key]
+            if memoize and self.empty_regions is not None:
+                if self.empty_regions.contains(path,centre,axes,half):
+                    self._check();return False
+                # Ask about an enclosing box first. A miss proves the
+                # original query too; a hit proves NOTHING about the original
+                # and falls through to its unchanged exact native query.
+                expanded=half+.005
+                enclosing=self._overlap(path,centre,axes,expanded,memoize=False)
+                if enclosing is None:return None
+                if enclosing is False:
+                    self.empty_regions.add(path,centre,axes,expanded)
+                    self._check();return False
+            self._check(request=True)
             self.calls+=1
             result=self.query(path,centre,axes,half)
             # A native call cannot be interrupted here; reject its result if
             # it returns after the deadline or after any epoch invalidation.
             self._check()
             if type(result) is not bool:raise ValueError('Native overlap did not return an explicit bool')
+            if memoize and self.memoize_queries and len(self.query_cache)<4096:self.query_cache[key]=result
             return result
         except Exception as exc:
             self._invalidate(type(exc).__name__+': '+str(exc))
@@ -122,7 +147,7 @@ class NativeStaticClearance:
             raise ValueError('Native refinement preserves >=1 mm scene margin')
         if not self._ensure_coverage(path):return False
         self.validation_passed=False
-        hit=self._overlap(path,centre,axes,np.asarray(half,float)+margin)
+        hit=self._overlap(path,centre,axes,np.asarray(half,float)+margin,memoize=True)
         clear=hit is False
         self.clearances+=int(clear);self.blocked+=int(not clear)
         if clear:self.used_paths.add(path)
@@ -157,7 +182,7 @@ class NativeStaticClearance:
             from .capsule_sphere_cover import cover
             centres,covered_radius=cover(start,end,radius,margin)
             for point in centres:
-                if self._sphere_overlap(path,point,covered_radius):return False
+                if self._sphere_overlap(path,point,covered_radius,memoize=True):return False
             self._check();self.used_paths.add(path);self.sphere_used.add(path)
             self.clearances+=1;self.blocked-=1
             return True
@@ -165,11 +190,18 @@ class NativeStaticClearance:
             self._invalidate(type(exc).__name__+': '+str(exc))
             raise RuntimeError('Native sphere cover unavailable; clearance not determined: '+str(exc)) from exc
 
-    def _sphere_overlap(self,path,centre,radius):
+    def _sphere_overlap(self,path,centre,radius,*,memoize=False):
+        self._check();centre=np.asarray(centre,float);radius=float(radius)
+        if centre.shape!=(3,) or not np.isfinite(centre).all() or not math.isfinite(radius) or radius<=0:
+            raise ValueError('Finite positive native sphere required')
+        key=('sphere',path,centre.tobytes(),radius)
+        if memoize and self.memoize_queries and key in self.query_cache:
+            self._check();self.cache_hits+=1;return self.query_cache[key]
         self._check(request=True);self.calls+=1;self.sphere_calls+=1
-        hit=self.sphere_query(path,np.asarray(centre,float),float(radius))
+        hit=self.sphere_query(path,centre,radius)
         self._check()
         if type(hit) is not bool:raise RuntimeError('Native sphere overlap must return explicit bool')
+        if memoize and self.memoize_queries and len(self.query_cache)<4096:self.query_cache[key]=hit
         return hit
 
     def _sphere_control(self,path):
@@ -198,6 +230,8 @@ class NativeStaticClearance:
     def close(self):
         if self.closed:return
         validated=self.validation_passed
+        self.query_cache.clear()
+        if self.empty_regions is not None:self.empty_regions.clear()
         self.active=False;self.closed=True
         try:
             if self.close_guard is not None:self.close_guard()
@@ -213,6 +247,11 @@ class NativeStaticClearance:
 
     def report(self):
         return dict(method='live_native_static_overlap_expanded_conservative_robot_box',
+                    exact_query_cache_enabled=self.memoize_queries,exact_query_cache_hits=self.cache_hits,
+                    query_cache_entries=len(self.query_cache),query_cache_capacity=4096,
+                    query_cache_scope='one_frozen_epoch_exact_float64_inputs_no_rounding',
+                    positive_controls_cached=False,
+                    native_empty_regions=None if self.empty_regions is None else self.empty_regions.report(),
                     query_count=self.calls,coarse_rejections_cleared=self.clearances,
                     capsule_enclosing_box_attempts=self.capsule_box_attempts,
                     capsule_query='whole_capsule_plus_margin_contained_not_tessellated_samples',
@@ -360,6 +399,7 @@ def current_scene_query(stage, records, *, wall_limit_s=8., max_queries=20000, l
         result=NativeStaticClearance(query,eligible,guard=epoch.check,
             close_guard=epoch.close,epoch_report=epoch.report,wall_limit_s=wall_limit_s,
             max_queries=max_queries,lazy_coverage=lazy_coverage,
+            memoize_queries=True,reuse_clear_regions=True,
             sphere_query=sphere_query if capsule_sphere_cover else None)
         epoch.check()
         return result

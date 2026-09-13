@@ -4,7 +4,60 @@ This is an opt-in engineering harness on `koh-dev/sim-vlm`, not a replacement
 for the static dataset collector, and not yet a validated robot manipulation
 environment. Do not collect training demonstrations from this harness.
 
-## September 13 limited cut-action checkpoint (supersedes older outcomes)
+## September 14 current status - A/B/C NOT frozen
+
+Latest: **native310 passes all10 isolated bimanual mechanism gates**, including
+full-section traversal, retention, unloaded reverse and a fresh clear withdrawal
+endpoint after a2mm upward egress. Native293 remains the isolated direct-cut pass.
+This does not establish general reliability, a neutral-stance approach, greenhouse
+A/B, calibrated tissue cutting or responsive performance. Native312's bounded
+whole-arm approach search still times out without a path. VLM work stays paused.
+
+Reproduce native310 in a NEW folder (headless; add `--capture` for diagnostics):
+
+```bat
+D:\isaac-sim-6.0.1\python.bat -B -m sim_physics.ground_truth_trial --output D:\research\tomato-pi-policy\data\sim_physics\my_new_egress_trial --mode bimanual --milestone cut_action --process-zone-trial --through-stroke-trial --material-clearance-trial --postcut-egress-trial --blade-aim-offset-m .0015 --rectilinear-floor-contacts --coupled-fingers-trial --physics-threads 1 --cut-priority-report D:\research\tomato-pi-policy\data\sim_physics\bimanual_downward_20260914_native293\report.json
+```
+
+`--postcut-egress-trial` uses fresh post-cut geometry. Initially close, previously
+severed faces can only escape along increasing separation bounds, under0.01N
+measured full-tool load; all other obstacles and the final1mm margin stay checked.
+The old waiting pose is not silently redefined. An explicit screened egress joint
+goal is independently checked against the final native pose. No weld/pose setter.
+
+`--joint-transit-fallback` is an experimental bounded APPROACH search, not permission
+to deviate from the required downward cutting stroke. `--postrelease-feed-m-s`
+defaults to0.0003; the0.001 comparison FAILED a finger-load guard in native311 and
+must not be presented as a working faster setting. Regression v6:4578 tests pass.
+
+The current knife is the source's straight lower crossbar, with arc up and a
+measured downward stroke. Historical native253-256 below used the superseded
+mounting-plate contact recipe; they do **not** qualify this corrected edge.
+Current native293 passes isolated right-only cut, section traversal and unloaded
+withdrawal. Experimental coupled-jaw native297 retains the branch through the
+same stages (max material slip1.286mm), but its final parking-clearance screen
+fails. Native301's rendered repeat retains the same failure: tighter
+flat-cylinder planning bounds do not clear that final endpoint. See root
+`dev.md` for results; do not infer success from an active run or the limited
+`cut_action.passed` field alone.
+
+Intact-greenhouse native295/296/298 establishes the left grasp but rejects the
+right tool approach before motion; native298 exhausts its60s planning budget.
+Lift-before-rotation proposals and same-epoch native empty-box certificates are
+under qualification. No surrounding plant visual/contact geometry is removed
+by these planner changes. All native contact, force, grasp and slip limits stay.
+Real-time full-scene operation, repeats/reset and realistic tissue fracture
+are **not** qualified. VLM/data collection remains paused until A/B/C pass.
+
+New diagnostic options (not frozen defaults): `--coupled-fingers-trial` models
+compliant equal/opposite left-jaw motion at480Hz; it is not a plant weld and
+its transmission stiffness is uncalibrated. `--cut-priority-report REPORT`
+changes candidate ordering only, never imports a motion path or its clearance.
+`--right-ready-lift-m METRES` proposes an IK-solved higher initial wrist pose;
+3mm/10mm native300/299 proposals were rejected against the original plant.
+Do not use those lifts as a verified fix. Each run needs a NEW output folder.
+
+## Historical September 13 limited cut-action checkpoint (superseded)
 
 Both requested actions now pass on the isolated original source branch fixture:
 left grasp + right cut (native254/255), and right-only cut (native253/256). These are

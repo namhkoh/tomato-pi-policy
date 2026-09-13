@@ -7,7 +7,11 @@ ABOVE_OFFSETS={'orient_via_above_30mm':.03,'orient_via_above_60mm':.06,
                'orient_via_above_90mm':.09}
 SIDE_OFFSETS={'orient_via_side_plus_60mm':.06,'orient_via_side_minus_60mm':-.06,
               'orient_via_side_plus_120mm':.12,'orient_via_side_minus_120mm':-.12}
-MODES=('simultaneous','orient_then_translate',*SIDE_OFFSETS,*ABOVE_OFFSETS)
+LIFT_OFFSETS={'lift_then_orient_above_60mm':.06,'lift_then_orient_above_120mm':.12}
+RETREAT_OFFSETS={'retreat_100mm_lift_orient':(.10,.06),'retreat_200mm_lift_orient':(.20,.12)}
+GOAL_SIDE_OFFSETS={'goal_wrist_x_plus_20mm':.02,'goal_wrist_x_minus_20mm':-.02,
+                   'goal_wrist_x_plus_60mm':.06,'goal_wrist_x_minus_60mm':-.06}
+MODES=('simultaneous',*GOAL_SIDE_OFFSETS,*RETREAT_OFFSETS,*LIFT_OFFSETS,'orient_then_translate',*SIDE_OFFSETS,*ABOVE_OFFSETS)
 
 
 def frames(start,end,*,mode='simultaneous'):
@@ -21,6 +25,43 @@ def frames(start,end,*,mode='simultaneous'):
             raise ValueError('Proper rigid wrist endpoints required')
     distance=float(np.linalg.norm(b[:3,3]-a[:3,3]))
     if distance>2:raise ValueError('Wrist transit exceeds bounded robot workspace')
+    if mode in GOAL_SIDE_OFFSETS:
+        # Enter horizontally beside the final wrist, not always by descending
+        # through the parent's vertical stem. This changes APPROACH only; the
+        # subsequent independently screened cut remains a straight downstroke.
+        side=b[:3,0].copy();side[2]=0.;length=float(np.linalg.norm(side))
+        side=side/length if length>1e-12 else np.array([1.,0.,0.])
+        entry=b.copy();entry[:3,3]+=GOAL_SIDE_OFFSETS[mode]*side
+        away=a[:2,3]-b[:2,3];length=float(np.linalg.norm(away))
+        away=away/length if length>1e-12 else np.array([1.,0.])
+        backed=a.copy();backed[:2,3]+=.10*away
+        lifted=backed.copy();lifted[2,3]=max(a[2,3],b[2,3])+.06
+        oriented=lifted.copy();oriented[:3,:3]=b[:3,:3]
+        above=entry.copy();above[2,3]=lifted[2,3]
+        knots=(a,backed,lifted,oriented,above,entry,b)
+        sections=[frames(x,y,mode='simultaneous') for x,y in zip(knots[:-1],knots[1:])]
+        return np.concatenate([sections[0],*(s[1:] for s in sections[1:])])
+    if mode in RETREAT_OFFSETS:
+        retreat,height=RETREAT_OFFSETS[mode]
+        away=a[:2,3]-b[:2,3];length=float(np.linalg.norm(away))
+        away=away/length if length>1e-12 else np.array([1.,0.])
+        backed=a.copy();backed[:2,3]+=retreat*away
+        lifted=backed.copy();lifted[2,3]=max(a[2,3],b[2,3])+height
+        oriented=lifted.copy();oriented[:3,:3]=b[:3,:3]
+        above=b.copy();above[2,3]=lifted[2,3]
+        knots=(a,backed,lifted,oriented,above,b)
+        sections=[frames(x,y,mode='simultaneous') for x,y in zip(knots[:-1],knots[1:])]
+        return np.concatenate([sections[0],*(s[1:] for s in sections[1:])])
+    if mode in LIFT_OFFSETS:
+        # Move the unrotated tool clear of its initial low corridor first.
+        # The old above-waypoint modes rotate before lifting; they cannot
+        # represent this distinct sweep. These are proposals, not clearances.
+        lifted=a.copy();lifted[2,3]=max(a[2,3],b[2,3])+LIFT_OFFSETS[mode]
+        oriented=lifted.copy();oriented[:3,:3]=b[:3,:3]
+        above=b.copy();above[2,3]=lifted[2,3]
+        knots=(a,lifted,oriented,above,b)
+        sections=[frames(x,y,mode='simultaneous') for x,y in zip(knots[:-1],knots[1:])]
+        return np.concatenate([sections[0],*(s[1:] for s in sections[1:])])
     if mode in ABOVE_OFFSETS or mode in SIDE_OFFSETS:
         waypoint=b.copy()
         if mode in ABOVE_OFFSETS:waypoint[2,3]+=ABOVE_OFFSETS[mode]
@@ -61,7 +102,7 @@ def frames(start,end,*,mode='simultaneous'):
 def screen_modes(screen,start,end):
     """Elbow redundancy cannot repair the SAME nominal rigid-tool sweep.
 
-    Test both explicit schedules once per requested wrist pose before arm IK.
+    Test bounded schedules once per requested wrist pose before arm IK.
     This only rejects/ranks proposals; full actual IK-path/native checks remain.
     A native query error propagates; there is no timeout-to-clear fallback.
     """
@@ -71,3 +112,16 @@ def screen_modes(screen,start,end):
         evidence[mode]=result
         if result['passed']:allowed.append(mode)
     return tuple(allowed),evidence
+
+
+def try_modes(screen,start,end,accept,evidence):
+    """Lazily try FULL paths; a clear tool preview alone never stops search.
+
+    Preserve every fallback after an arm/IK/stroke failure, but do not screen
+    unused templates after one complete candidate has already passed.
+    """
+    for mode in MODES:
+        result=screen.check(frames(start,end,mode=mode),stroke=False)
+        evidence[mode]=result
+        if result['passed'] and accept(mode):return True
+    return False

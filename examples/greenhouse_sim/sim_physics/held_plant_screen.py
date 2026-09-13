@@ -62,6 +62,7 @@ class HeldPlantScreen:
         self.grasp_colliders=set() if index is None else {
             p+'/StemCollider' for p in rig.body_paths[max(rig.cut_index,index-1):index+2]}
         self.local=[];self.blade_path=blade_path;self.last_failure=None
+        self.flat_cylinders=set();self.flat_cylinder_refinements=0
         self.seam_paths={rig.body_paths[i]+'/StemCollider' for i in (rig.cut_index-1,rig.cut_index)}
         cache=UsdGeom.XformCache()
         for i,path in enumerate(rig.body_paths):
@@ -78,6 +79,7 @@ class HeldPlantScreen:
                         raise ValueError('Rigid Z cylinder required for conservative planning bound')
                     d=matrix[:3,2]*float(shape.GetHeightAttr().Get())/2
                     capsule=(matrix[:3,3]-d,matrix[:3,3]+d,float(shape.GetRadiusAttr().Get()))
+                    self.flat_cylinders.add(str(prim.GetPath()))
                 if capsule is not None:
                     self.local.append((str(prim.GetPath()),i,'capsule',capsule));continue
                 if (not prim.IsA(UsdGeom.Mesh)
@@ -161,6 +163,10 @@ class HeldPlantScreen:
                 approximation=UsdPhysics.MeshCollisionAPI(prim).GetApproximationAttr().Get()
                 if approximation=='convexHull':
                     hull=ConvexHull(points)
+                    # Derive the broad phase from the SAME geometry as the
+                    # existing narrow phase, not potentially oversized authored
+                    # USD extent hints. No collision shape is edited.
+                    low=points.min(0)-1e-9;high=points.max(0)+1e-9
                     records.append((path,'hull',(points[hull.simplices],hull.equations),low,high));continue
                 if approximation in (None,'none'):
                     counts=np.asarray(mesh.GetFaceVertexCountsAttr().Get(),int)
@@ -170,6 +176,8 @@ class HeldPlantScreen:
                     # workspace. Faces wholly outside cannot be touched.
                     near=np.all(triangles.max(1)>=self.workspace[0]-1e-9,axis=1)&np.all(triangles.min(1)<=self.workspace[1]+1e-9,axis=1)
                     triangles=triangles[near]
+                    if not len(triangles):continue  # No faces in the guarded workspace.
+                    low=triangles.min(axis=(0,1))-1e-9;high=triangles.max(axis=(0,1))+1e-9
                     records.append((path,'triangles',(triangles,None),low,high));continue
             # Unknown cooked approximations and primitive shapes retain their
             # enclosing WORLD box. Never silently ignore an unsupported shape.
@@ -211,12 +219,16 @@ class HeldPlantScreen:
         if not np.isfinite(margin) or margin<.001: raise ValueError('Held-plant margin must be at least 1 mm')
         if grasp and (self.arm!='left' or self.grasp_collider is None):
             raise ValueError('Grasp screening requires a selected left-grasp shaft')
-        self.last_failure=None
+        self.last_failure=None;validated={}
         for path,body,link,kind,data in self.shapes:
-            matrix=np.asarray(body_world[link],float);r,t=matrix[:3,:3],matrix[:3,3]
-            if (matrix.shape!=(4,4) or not np.isfinite(matrix).all()
-                    or not np.allclose(r.T@r,np.eye(3),atol=1e-5) or np.linalg.det(r)<0):
-                raise ValueError('Invalid arm body transform')
+            if link not in validated:
+                matrix=np.asarray(body_world[link],float)
+                if matrix.shape!=(4,4) or not np.isfinite(matrix).all():raise ValueError('Invalid arm body transform')
+                r,t=matrix[:3,:3],matrix[:3,3]
+                if not np.allclose(r.T@r,np.eye(3),atol=1e-5) or np.linalg.det(r)<0:
+                    raise ValueError('Invalid arm body transform')
+                validated[link]=(r,t)
+            r,t=validated[link]
             if kind=='capsule':
                 a,b,radius=data;a=r@a+t;b=r@b+t
                 low=np.minimum(a,b)-radius;high=np.maximum(a,b)+radius
@@ -256,8 +268,18 @@ class HeldPlantScreen:
                     else:
                         local=(triangles-centre)@axes
                         hit=((equations is not None and np.all(equations[:,:3]@centre+equations[:,3]<=1e-9))
-                             or triangles_intersect_box(local,-half-margin,half+margin))
+                             or bool(len(triangles)) and triangles_intersect_box(local,-half-margin,half+margin))
                 if hit:
+                    # This explicit backend uses flat analytic cylinders, not
+                    # capsules. A separating plane can safely disprove a
+                    # capsule-end false positive without changing ANY native
+                    # geometry, intended-contact allowance or scene margin.
+                    if (kind=='box' and okind=='capsule'
+                            and other in getattr(self,'flat_cylinders',())):
+                        from .cylinder_bounds import separation
+                        if separation(*odata,centre,axes,half)>margin:
+                            self.flat_cylinder_refinements+=1
+                            continue
                     # Optional, same-tick native static-actor refinement. Keep
                     # the entire proposed tool/arm bound and margin; dynamic target,
                     # source triangles and all unverified paths keep

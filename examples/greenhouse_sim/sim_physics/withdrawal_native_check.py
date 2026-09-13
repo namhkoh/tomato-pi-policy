@@ -102,6 +102,7 @@ def _screens(fixture, frames):
     right.static_indices = dict(getattr(original, 'static_indices', {}))
     right.workspace = tuple(np.array(v, copy=True) for v in original.workspace)
     right.shapes = list(original.shapes); right.native_static_query = None
+    right.flat_cylinder_refinements = 0
     expected_right = [s for s in fixture.self_screen.shapes
                       if s[2].startswith(('link_right_arm_', 'ee_right', 'ee_finger_r'))]
     if not right.shapes or [s[0] for s in right.shapes] != [s[0] for s in expected_right]:
@@ -124,7 +125,7 @@ def _screens(fixture, frames):
     return right, left
 
 
-def check(fixture, frames, step_id, *, native_station_park=False):
+def check(fixture, frames, step_id, *, native_station_park=False, postcut_egress=False):
     """Return current endpoint/clearance diagnostics; errors never complete.
 
     An integer step_id is scoped to this synchronous call; alternatively pass
@@ -137,12 +138,29 @@ def check(fixture, frames, step_id, *, native_station_park=False):
         raise ValueError('Explicit joint-space native-station park selection required')
     actual = _wrist(fixture)
     station=None
+    goal=None
+    if type(postcut_egress) is not bool:raise ValueError('Explicit post-cut egress reference selection required')
+    if postcut_egress:
+        evidence=getattr(fixture,'postcut_egress_evidence',{})
+        if (not native_station_park or evidence.get('passed') is not True
+                or evidence.get('step',-1)>=sample[1]
+                or evidence.get('cut_face_allowance') is not False and not (
+                    evidence.get('cut_face_allowance') is True
+                    and evidence.get('escape_execution_load_limit_n')==.01
+                    and evidence.get('escape_endpoint_full_margin_required') is True)):
+            raise ValueError('Prior fully screened post-cut egress goal required')
+        goal=np.array(evidence['goal_right_degrees'],float)
+        path=np.array(fixture.plan['egress'],float)
+        if (path.ndim!=2 or path.shape[1]!=7 or len(path)<2
+                or not np.array_equal(path,np.array(evidence['path_degrees'],float))
+                or not np.array_equal(path[-1],goal)):
+            raise ValueError('Egress reference differs from screened path')
     if native_station_park:
         from .station_park import StationPark
         world=_robot_world(fixture)
         if not np.allclose(actual,world['ee_right'],atol=1e-7,rtol=0):
             raise RuntimeError('Native wrist/body views disagree before park reference')
-        station=StationPark(fixture,world);park=station.pose
+        station=StationPark(fixture,world,**({'right_reference':goal} if postcut_egress else {}));park=station.pose
     else:
         park = _pose(fixture.kin.forward('right', np.array(fixture.right, copy=True),
                                         np.array(fixture.base, copy=True)))
@@ -204,7 +222,8 @@ def check(fixture, frames, step_id, *, native_station_park=False):
                           and np.isfinite(self_result.get('minimum_clearance_m', np.nan)))
             right_clear = right.check(world, stroke=False)  # unchanged default 1 mm
             result['right_scene'] = dict(passed=right_clear, stroke_allowance=False,
-                margin_m=.001, failure=deepcopy(right.last_failure))
+                margin_m=.001, failure=deepcopy(right.last_failure),
+                analytic_flat_cylinder_separations=getattr(right,'flat_cylinder_refinements',0))
             holding=getattr(fixture,'cut_strategy','bimanual')=='bimanual'
             left_clear = left.check(world, grasp=holding, stroke=False)
             result['left_scene'] = dict(passed=left_clear, margin_m=.001,

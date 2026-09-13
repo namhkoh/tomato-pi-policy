@@ -76,13 +76,16 @@ class SelfCapsuleScreen:
     def check(self,body_world,*,margin=.003,include_clearances=False):
         from greenhouse_sim.robot_kinematics import _segment_segment_distance,_segment_aabb_distance,_oriented_box_obb_separation
         if not np.isfinite(margin) or margin<0: raise ValueError('Invalid self-clearance margin')
-        shapes=[];centres=[];radii=[]
+        shapes=[];centres=[];radii=[];validated={}
         for path,body,link,kind,shape in self.shapes:
-            matrix=np.asarray(body_world[link])
-            if matrix.shape!=(4,4) or not np.isfinite(matrix).all(): raise ValueError('Invalid body transform')
-            if (not np.allclose(matrix[:3,:3].T@matrix[:3,:3],np.eye(3),atol=1e-6)
-                    or not np.allclose(matrix[3],[0,0,0,1]) or np.linalg.det(matrix[:3,:3])<0):
-                raise ValueError('Nonrigid body transform')
+            if link not in validated:
+                matrix=np.asarray(body_world[link])
+                if matrix.shape!=(4,4) or not np.isfinite(matrix).all(): raise ValueError('Invalid body transform')
+                if (not np.allclose(matrix[:3,:3].T@matrix[:3,:3],np.eye(3),atol=1e-6)
+                        or not np.allclose(matrix[3],[0,0,0,1]) or np.linalg.det(matrix[:3,:3])<0):
+                    raise ValueError('Nonrigid body transform')
+                validated[link]=matrix
+            matrix=validated[link]
             if kind=='capsule':
                 start,end,radius=shape
                 start=matrix[:3,:3]@start+matrix[:3,3];end=matrix[:3,:3]@end+matrix[:3,3]
@@ -90,10 +93,15 @@ class SelfCapsuleScreen:
             else:
                 centre,axes,half=shape;centre=matrix[:3,:3]@centre+matrix[:3,3];axes=matrix[:3,:3]@axes
                 shapes.append((centre,axes,half));centres.append(centre);radii.append(np.linalg.norm(half))
+        # Same per-pair enclosing spheres, computed together instead of
+        # thousands of tiny numpy calls. No pair or narrow-phase check removed.
+        indices=np.asarray(self.pairs,dtype=int).reshape(-1,2)
+        c=np.asarray(centres);rad=np.asarray(radii)
+        lower_bounds=(np.linalg.norm(c[indices[:,0]]-c[indices[:,1]],axis=1)
+                      -rad[indices[:,0]]-rad[indices[:,1]]-1e-12)
         minimum=float('inf');nearest=None;clearances=[]
-        for i,j in self.pairs:
+        for (i,j),lower_bound in zip(self.pairs,lower_bounds):
             a,b=shapes[i],shapes[j];ka,kb=self.shapes[i][3],self.shapes[j][3]
-            lower_bound=float(np.linalg.norm(centres[i]-centres[j])-radii[i]-radii[j])
             if lower_bound>=margin and not include_clearances:
                 clearance=lower_bound  # conservative bound, not exact nearest distance
             elif ka==kb=='capsule':

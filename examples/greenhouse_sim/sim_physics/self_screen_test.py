@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from pxr import Usd,UsdGeom,UsdPhysics
 from sim_physics.self_screen import SelfCapsuleScreen
 
@@ -25,6 +26,30 @@ def test_native_adjacent_and_explicit_filters_without_adding_any():
     assert stage.GetRootLayer().ExportToString()==before
     UsdPhysics.FilteredPairsAPI.Apply(stage.GetPrimAtPath('/R/torso')).CreateFilteredPairsRel().SetTargets(['/R/arm1'])
     assert SelfCapsuleScreen(stage,'/R').check(frames)['checked_pairs']==1
+
+
+def test_bulk_broad_phase_matches_scalar_capsule_pairs_without_dropping_any():
+    import itertools
+    from greenhouse_sim.robot_kinematics import _segment_segment_distance
+    rng=np.random.default_rng(302);screen=object.__new__(SelfCapsuleScreen)
+    screen.shapes=[];screen.box_paths=[];screen.unsupported=[]
+    world={};values=[]
+    for i in range(30):
+        a=rng.uniform(-1,1,3);b=a+rng.uniform(-.1,.1,3);radius=.03
+        link=str(i);world[link]=np.eye(4)
+        screen.shapes.append(('/R/'+link+'/cap','/R/'+link,link,'capsule',(a,b,radius)))
+        values.append((a,b,radius))
+    screen.pairs=list(itertools.combinations(range(30),2));reference=[]
+    for i,j in screen.pairs:
+        a,b=values[i],values[j]
+        bound=np.linalg.norm((a[0]+a[1]-b[0]-b[1])/2)-(np.linalg.norm(a[1]-a[0])/2+a[2])-(np.linalg.norm(b[1]-b[0])/2+b[2])
+        reference.append(bound if bound>=.003 else _segment_segment_distance(a[0],a[1],b[0],b[1])-a[2]-b[2])
+    result=screen.check(world)
+    assert result['checked_pairs']==len(reference)==435
+    assert result['minimum_clearance_m']==pytest.approx(min(reference),abs=2e-12)
+    assert result['passed']==(min(reference)>=.003)
+    world['1'][0,0]=2.
+    with pytest.raises(ValueError,match='Nonrigid'):screen.check(world)
 
 
 def test_tool_box_screen_detects_camera_finger_collision_missed_by_arm_capsules():

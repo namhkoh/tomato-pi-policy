@@ -79,6 +79,9 @@ def main(argv=None):
     p.add_argument('--through-stroke-trial',action='store_true',
         help='Experimental measured follow-through and withdrawal; 85 s, no solid-face bypass')
     p.add_argument('--stream-trajectory',action='store_true',help='Lossless full-rate compressed diagnostic evidence')
+    p.add_argument('--joint-transit-fallback',action='store_true',help='Screened whole-arm joint search for approach only')
+    p.add_argument('--postrelease-feed-m-s',type=float,default=.0003,help='Explicit post-release contact feed comparison')
+    p.add_argument('--postcut-egress-trial',action='store_true',help='Fresh fully screened post-cut withdrawal goal')
     p.add_argument('--material-clearance-trial',action='store_true',
         help='Measure sharp-edge clearance of the shaft section; bounded cut-face sliding only after verified release')
     p.add_argument('--rectilinear-floor-contacts',action='store_true',help='Exact source-floor collision solid as native boxes; no visual changes')
@@ -87,7 +90,12 @@ def main(argv=None):
     p.add_argument('--screen-approach-start',action='store_true',help='Zero-motion higher/lateral waiting-pose search only')
     p.add_argument('--screen-tool-heading',action='store_true',help='Zero-motion arc-up complete-tool heading search only')
     p.add_argument('--screen-station',action='store_true',help='Zero-motion base/two-arm proposal search; no base-motion or path authority')
-    p.add_argument('--station-proposal-report',type=Path,help='Explicit new greenhouse spawn proposal; all native startup and path checks run again')
+    p.add_argument('--station-proposal-report',type=Path,help='Explicit new initial station in greenhouse or isolation; all native startup/path checks run again')
+    p.add_argument('--coupled-fingers-trial',action='store_true',help='Experimental physical jaw coupling; bimanual only, unchanged force/slip limits')
+    p.add_argument('--right-ready-lift-m',type=float,default=0.,help='Initial world-up waiting-pose lift; fresh IK and original native guards required')
+    p.add_argument('--right-ready-retreat-m',type=float,default=0.,help='Initial waiting pose withdrawn along wrist +Z; fresh IK and all native guards required')
+    p.add_argument('--profile',action='store_true',help='Diagnostic cProfile and native-step timing; overhead means this is not a latency comparison')
+    p.add_argument('--cut-priority-report',type=Path,help='Try a prior native cut-frame family first; no pose/path replay or inherited clearance')
     p.add_argument('--blade-aim-offset-m',type=float,default=None,
         help='Explicit bounded contact-placement comparison, +/-1.5 mm; never changes the seam or release gates')
     p.add_argument('--grasp-arc-m',type=float,default=None,
@@ -130,6 +138,9 @@ def main(argv=None):
     if args.through_stroke_trial:
         options+=['--through-stroke-trial','--seconds','85']
     if args.material_clearance_trial:options+=['--material-clearance-trial']
+    if args.postcut_egress_trial:options+=['--postcut-egress-trial']
+    if args.joint_transit_fallback:options+=['--joint-transit-fallback']
+    if args.postrelease_feed_m_s!=.0003:options+=['--postrelease-feed-m-s',str(args.postrelease_feed_m_s)]
     if args.rectilinear_floor_contacts:options+=['--rectilinear-floor-contacts']
     if args.stream_trajectory or args.through_stroke_trial:options+=['--stream-trajectory']
     if args.greenhouse_trial:
@@ -141,6 +152,11 @@ def main(argv=None):
     if args.screen_tool_heading:options+=['--native-startup-heading-search']
     if args.screen_station:options+=['--native-startup-station-search']
     if args.station_proposal_report:options+=['--station-proposal-report',str(args.station_proposal_report)]
+    if args.coupled_fingers_trial:options+=['--coupled-fingers-trial']
+    if args.right_ready_lift_m:options+=['--right-ready-lift-m',str(args.right_ready_lift_m)]
+    if args.right_ready_retreat_m:options+=['--right-ready-retreat-m',str(args.right_ready_retreat_m)]
+    if args.profile:options+=['--profile','--step-profile']
+    if args.cut_priority_report:options+=['--cut-priority-report',str(args.cut_priority_report)]
     if args.blade_aim_offset_m is not None:
         options+=['--blade-axial-aim-offset-m',str(args.blade_aim_offset_m)]
     if args.grasp_arc_m is not None:options+=['--grasp-arc-m',str(args.grasp_arc_m)]

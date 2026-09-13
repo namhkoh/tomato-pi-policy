@@ -29,6 +29,24 @@ def search(robot,backend,guard):
     # ready arm provides a visibly withdrawn alternative to the near-limit
     # precontact wrist. The later complete approach must still be solved.
     choices=[(0.,0.,0.,'sdk_ready')]+[(*v,'sdk_ready') for v in choices]+[(*v,'fixed_world_tool') for v in choices]
+    desired_tools={'fixed_world_tool':right_pose}
+    priority=getattr(robot,'cut_priority',None)
+    if priority is not None:
+        from .downward_cut import vertical_cut_frame
+        from .blade_aim import edge_centre
+        centre,axis=robot.seam(robot.rig.rest_frames)
+        frame=vertical_cut_frame(axis,priority['normal_sign'],priority['tilt'])
+        if frame is None:raise ValueError('Prior cut-frame family violates current anatomical angles')
+        d,normal=frame;aim=edge_centre(centre,axis,robot.blade_axial_aim_offset_m)
+        desired=robot.knife.wrist_for_edge(aim+robot.stroke_offsets[0]*d,d,normal,priority['wing_m'])
+        withdrawn=desired.copy();withdrawn[:3,3]+=.02*desired[:3,2]
+        desired_tools.update(cut_frame=desired,cut_frame_withdrawn_20mm=withdrawn)
+        # A valid cut frame can place the camera/forearm differently from the
+        # old near-limit staging pose. These are fresh initial-pose proposals,
+        # not imported joint paths. All native shapes and left-path checks run.
+        stations=[(0.,0.,0.)]+[(back,side,yaw) for back in (.05,.10,.15) for side,yaw in
+            ((0.,0.),(.10,0.),(-.10,0.),(0.,15.),(0.,-15.))]
+        choices=[(*v,mode) for v in stations for mode in ('cut_frame_withdrawn_20mm','cut_frame')]+choices
     for back,side,yaw,mode in choices:
         guard()
         if time.monotonic()-start>=30:break
@@ -44,7 +62,7 @@ def search(robot,backend,guard):
             row['rejection']='station_distance_outside_original_bounds';continue
         left=robot.kin.solve_pose('left',poses[0],robot.initial_q,candidate.base,
             maximum_evaluations=200,joint_limit_margin_degrees=3.)
-        right=None if mode=='sdk_ready' else robot.kin.solve_pose('right',right_pose,robot.right,candidate.base,
+        right=None if mode=='sdk_ready' else robot.kin.solve_pose('right',desired_tools[mode],robot.right,candidate.base,
             maximum_evaluations=200,joint_limit_margin_degrees=3.)
         guard()
         if not left.succeeded or right is not None and not right.succeeded:
@@ -78,6 +96,7 @@ def search(robot,backend,guard):
     guard()
     return dict(model='frozen_native_two_arm_station_search_v1',candidates=rows,
         proposed_station=proposal,maximum_candidates=len(choices),
+        cut_frame_priority_used=priority is not None,
         original_spawn_unchanged=True,plant_or_mounting_changed=False,
         physics_steps=0,motion_authorized=False,relaunch_required=True,
         whole_path_certified=False,base_motion_certified=False,

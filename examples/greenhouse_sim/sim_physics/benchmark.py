@@ -124,6 +124,10 @@ def parser():
         help='Downward: extended arm, gravity-aligned stroke within measured angular limits and straight Cartesian approach; no detour fallback')
     p.add_argument('--right-ready-degrees',type=float,nargs=7,
         help='Explicit initial right pose for a coordinated downward fixture; screened before physics, never a runtime teleport')
+    p.add_argument('--right-ready-lift-m',type=float,default=0.,
+        help='Raise the initial right waiting pose 0..50 mm using IK; preserve orientation and all native/path checks')
+    p.add_argument('--right-ready-retreat-m',type=float,default=0.,
+        help='Withdraw the initial right waiting pose toward the wrist along its +Z axis, 0..50 mm; all checks remain')
     p.add_argument('--left-ik-seed-degrees',type=float,nargs=7,
         help='Seed the coordinated left pregrasp IK; exact target and path guards still apply')
     p.add_argument('--blade-force-feed',action='store_true',
@@ -140,6 +144,10 @@ def parser():
         help='Experimental isolated crossbar process-zone softening from qualified measured loaded advance; uncalibrated')
     p.add_argument('--through-stroke-trial',action='store_true',
         help='Explicit measured post-release follow-through; no collision/force bypass, can fail on solid cut faces')
+    p.add_argument('--postrelease-feed-m-s',type=float,default=.0003,
+        help='Experimental post-release contact feed cap 0.0003..0.002 m/s; original force limits remain')
+    p.add_argument('--postcut-egress-trial',action='store_true',
+        help='Reobserve after unloaded reverse and screen a separate withdrawal goal; no clearance allowance')
     p.add_argument('--material-clearance-trial',action='store_true',
         help='Experimental measured sharp-edge section clearance and bounded post-release cut-face sliding')
     p.add_argument('--rectilinear-floor-contacts',action='store_true',
@@ -167,6 +175,9 @@ def parser():
         help='Zero-motion base and both-arm proposals; same world grasp, complete native startup controls')
     p.add_argument('--station-proposal-report',type=Path,
         help='Reinitialize from a previously controlled station proposal, never replay its path or inherit its checks')
+    p.add_argument('--coupled-fingers-trial',action='store_true',
+        help='Experimental compliant one-aperture jaw mechanism; no plant weld or increased effort/contact limits')
+    p.add_argument('--cut-priority-report',type=Path,help='Warm-start only candidate order from a prior native crossbar trial')
     p.add_argument('--native-capsule-sphere-cover',action='store_true',
         help='Optional whole-capsule conservative native sphere union after a coarse box hit; no sampled gaps')
     p.add_argument('--native-static-planning-seconds',type=float,default=8.,
@@ -220,6 +231,8 @@ def parser():
         help='Isolated retention trial: derive connected shaft identity from measured full pad footprint; original contact geometry/force verification remains mandatory')
     p.add_argument('--settle-retention-preload',action='store_true',
         help='Isolated retention trial: wait bounded 0.2 s measured original-preload dwell before static capacity audit; no force-limit increase')
+    p.add_argument('--joint-transit-fallback',action='store_true',
+        help='Bounded whole-arm joint search after Cartesian approach failure; cut stroke remains downward')
     p.add_argument('--staged-downward-transit',action='store_true',
         help='Isolated guarded comparison: screen orient-then-straight approach before arm IK')
     p.add_argument('--preload-force-servo',action='store_true',
@@ -292,12 +305,22 @@ def validate_fixed_root_hold(args):
 
 def main(argv=None):
     args=parser().parse_args(argv)
+    cut_priority=None
+    if args.cut_priority_report is not None:
+        if not (args.bimanual_cut and args.cut_style=='downward' and args.knife_edge_mode=='source_crossbar_edge_v1'):
+            raise ValueError('Cut priority requires explicit actual-crossbar downward diagnostic')
+        from .cut_priority import load as load_priority
+        cut_priority=load_priority(args.cut_priority_report,args)
     proposal_receipt=None
     if args.station_proposal_report is not None:
         from .station_proposal import apply_to_arguments
         proposal_receipt=apply_to_arguments(args)
     fixed_hold=validate_fixed_root_hold(args)
     fixed_cut=args.fixed_root_cut_trial
+    if args.coupled_fingers_trial and not (fixed_cut and args.bimanual_cut and args.symmetric_finger_closure
+            and args.explicit_finger_effort and args.force_closure and args.diagnostic_grasp_dynamics
+            and args.physics_hz==480 and not args.right_only_cut_trial and not args.watch_cut_trial):
+        raise ValueError('Coupled fingers require the explicit 480 Hz instrumented bimanual symmetric-effort trial')
     from .greenhouse_cut import validate as validate_greenhouse
     greenhouse_trial=validate_greenhouse(args)
     contact_scope=args.isolate_station or greenhouse_trial
@@ -307,6 +330,16 @@ def main(argv=None):
     validate_watch(args)
     if args.material_clearance_trial and not args.through_stroke_trial:
         raise ValueError('Material-clearance trial requires guarded through-stroke profile')
+    if args.joint_transit_fallback and not (args.staged_downward_transit and args.native_static_clearance
+            and args.native_startup_clearance and args.cut_style=='downward'):
+        raise ValueError('Joint approach fallback requires the fully checked staged downward profile')
+    from .postrelease_feed import validate as validate_feed
+    validate_feed(args.postrelease_feed_m_s)
+    if args.postrelease_feed_m_s!=.0003 and not args.material_clearance_trial:
+        raise ValueError('Faster feed requires complete native material-clearance trial')
+    if args.postcut_egress_trial and not (args.material_clearance_trial and args.native_station_park_reference
+            and args.native_static_clearance and args.native_startup_clearance and not args.measured_withdrawal):
+        raise ValueError('Post-cut egress requires the guarded material-clearance and native station profile')
     if args.rectilinear_floor_contacts and not (args.scene=='package' and args.full_robot_probe and args.bimanual_cut):
         raise ValueError('Exact floor contacts require the package full-robot cut diagnostic')
     if args.stream_trajectory and not args.bimanual_cut:
@@ -456,6 +489,14 @@ def main(argv=None):
         raise ValueError('Anchored pad damping requires compliant feedback closure')
     if (args.right_ready_degrees is not None or args.left_ik_seed_degrees is not None) and (not args.bimanual_cut or args.cut_style!='downward'):
         raise ValueError('Coordinated right ready pose requires the downward bimanual fixture')
+    if (not math.isfinite(args.right_ready_lift_m) or not 0<=args.right_ready_lift_m<=.05
+            or args.right_ready_lift_m and not (args.bimanual_cut and args.cut_style=='downward'
+                and args.native_startup_clearance and args.native_static_clearance)):
+        raise ValueError('Waiting-pose lift requires downward fixture with complete native startup/path checks')
+    if (not math.isfinite(args.right_ready_retreat_m) or not 0<=args.right_ready_retreat_m<=.05
+            or args.right_ready_retreat_m and not (args.bimanual_cut and args.cut_style=='downward'
+                and args.knife_alignment=='camera' and args.native_startup_clearance and args.native_static_clearance)):
+        raise ValueError('Waiting-pose retreat requires the fitted downward knife and complete native checks')
     if args.exact_grasp_arc and not args.bimanual_cut:
         raise ValueError('Exact grasp arc requires bimanual qualification')
     if (args.knife_alignment!='legacy' or args.cut_style!='legacy') and not args.bimanual_cut:
@@ -641,6 +682,8 @@ def main(argv=None):
         robot_options=dict(sparse_contacts=args.sparse_contacts,finger_gravity=args.finger_gravity,
             exact_grasp_arc=args.exact_grasp_arc,
             right_ready_degrees=args.right_ready_degrees,
+            right_ready_lift_m=args.right_ready_lift_m,
+            right_ready_retreat_m=args.right_ready_retreat_m,
             left_ik_seed_degrees=args.left_ik_seed_degrees,
             anchored_pad_damping=args.anchored_pad_damping,
             grasp_skew=args.grasp_skew,
@@ -751,6 +794,7 @@ def main(argv=None):
                 robot_options['native_static_planning_seconds']=getattr(args,'native_static_planning_seconds',8.)
                 robot_options['cut_model']=getattr(args,'cut_model','force_qualified_pre_authored_seam_release')
                 robot_options['knife_edge_mode']=args.knife_edge_mode
+                robot_options['cut_priority']=cut_priority
                 robot_options['source_wrist_contacts']=args.source_wrist_contacts
                 robot_options['finger_actuator_limit_n']=getattr(args,'finger_actuator_limit_n',.5)
                 robot_options['cut_proposal_json']=getattr(args,'cut_proposal_json',None)
@@ -758,6 +802,10 @@ def main(argv=None):
                 robot_options['diagnostic_grasp_contacts']=getattr(args,'diagnostic_grasp_contacts',False)
                 robot_options['grasp_contact_frames']=args.grasp_contact_frames
             fixture=robot_class(stage,rig,arc=args.grasp_arc_m,friction=args.finger_friction,**robot_options)
+            fixture.joint_transit_fallback=args.joint_transit_fallback
+            if args.coupled_fingers_trial:
+                from .finger_coupling import author as author_coupling
+                report['finger_mechanism_trial']=author_coupling(stage,fixture)
             if args.rigid_pad_control:
                 from .pad_contact_control import apply as apply_pad_control
                 report['pad_contact_control']=apply_pad_control(fixture,diagnostic_only=True)

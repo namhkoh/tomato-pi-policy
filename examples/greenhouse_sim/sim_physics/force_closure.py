@@ -7,6 +7,7 @@ import numpy as np
 
 
 class ForceClosure:
+    physical_gear_coupling_modeled=False
     # Drive effort excludes independently measured gravity feed-forward. The
     # original total-motor and 0.5 N all-contact budgets remain upper bounds.
     drive_limit_n = .15
@@ -120,7 +121,7 @@ class ForceClosure:
             desired_support_n=self.desired_support_n, near_contact_speed_limit_m_s=.0005,
             load_profile='retention_preload_v1' if self.retention_preload else 'legacy_preload_v1',
             controller_backoff_contact_n=self.backoff_contact_n,native_hard_contact_limit_n=.5,
-            symmetric_aperture_command=self.symmetric,physical_gear_coupling_modeled=False,
+            symmetric_aperture_command=self.symmetric,physical_gear_coupling_modeled=self.physical_gear_coupling_modeled,
             maximum_non_gravity_drive_effort_n=self.drive_limit_n,
             geometry_valid=self.geometry_valid,maximum_backoff_speed_m_s=.005,
             grasp_verified=False)

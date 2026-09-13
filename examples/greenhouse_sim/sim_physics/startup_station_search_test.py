@@ -47,6 +47,27 @@ def test_never_accept_unreachable_or_colliding_station():
     assert out['proposed_station'] is None
 
 
+def test_prior_family_proposes_only_fresh_current_anatomy_poses_and_native_checks():
+    r=Robot();r.cut_priority=dict(tilt=15.,normal_sign=-1,wing_m=0.)
+    r.blade_axial_aim_offset_m=.0015;r.stroke_offsets=np.array([-.008,.005])
+    r.rig.rest_frames=np.eye(4)[None]
+    r.seam=lambda frames:(np.array([.1,.2,.3]),np.array([1.,0.,0.]))
+    requested=[]
+    def wrist(point,*args):
+        requested.append(point.copy());pose=np.eye(4);pose[:3,3]=point
+        return pose
+    r.knife=S(wrist_for_edge=wrist);calls=[]
+    def check(world,shapes):
+        assert shapes==['all_original_shapes'];calls.append(world)
+        return dict(passed=True)
+    out=search(r,S(check=check),lambda:None)
+    assert out['cut_frame_priority_used'] and len(calls)==1
+    assert out['candidates'][0]['right_start_mode']=='cut_frame_withdrawn_20mm'
+    np.testing.assert_allclose(requested[0],[.1015,.2,.308])
+    assert out['proposed_station'] is not None and not out['motion_authorized']
+    np.testing.assert_array_equal(r.right,np.ones(7))
+
+
 def test_bad_left_path_revokes_native_clear_start():
     r=Robot();r.kin.inter_arm_clearance=lambda *a:S(clearance_m=.005)
     out=search(r,S(check=lambda *a:dict(passed=True)),lambda:None)

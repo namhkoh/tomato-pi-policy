@@ -7860,3 +7860,129 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   190.96 s (before the fresh-proposal adapter was added); the adapter plus
   stance/comparison focused tests:19 passed. These suites overlap. VLM tasks
   remain paused, and this is an engineering checkpoint, NOT an A/B/C freeze.
+
+### 2026-09-14 - Coupled jaws and intact-scene planning (IN PROGRESS)
+
+- A/B/C are NOT frozen: finish grasp/downward cut and right-only cut in the
+  isolated fixture AND intact greenhouse, then qualify responsiveness without
+  removing physics/visual surroundings. VLM work remains paused. Source
+  checkpoint before this increment: `2ab8bfa` on `koh-dev/sim-vlm`.
+- Native295/296 establish the left grasp in the intact greenhouse but right
+  planning stops at its60s WALL budget, not the20,000-query cap. Query counts:
+  3513/3292;296 has123 exact-cache hits. Budget diagnostics now distinguish
+  time and query count. No right approach or cut occurred.
+- Added exact float64 native-query memoization in one invalidation-guarded
+  epoch; initial/final actor-positive controls are NEVER cached. Added
+  `--cut-priority-report`: changes candidate ORDER only, not poses/path replay
+  or inherited motion authority. Native298 tries the known15deg/-1/zero-wing
+  frame first but all original tool transits intersect main stem/foliage.
+  Stops at60.0215s,3589 queries,129 exact hits,6 proposals, ZERO arm IK attempts.
+- The imported v1.2 URDF has two independent finger slides; the manufacturer's
+  specification lists one opening DOF per gripper. Added explicit
+  `--coupled-fingers-trial`: compliant PhysX mimic q2+q1=0 on original left
+  prismatic joints, session-only, frequency480/damping1.2 engineering prior.
+  Metre/Z-up, original parent/child/limits and USD values checked. No plant
+  weld, extra grasp force, collision filter, mass change or pose overwrite.
+  Transmission stiffness/backlash are UNCALIBRATED; native parameters have
+  not been independently read back. Actual jaw relation is monitored every step.
+  Manufacturer: https://www.rainbow-robotics.com/product_spec/download?id=ba9fd188-b019-4c7b-9812-d55b27c4b1c0
+  Schema: https://docs.omniverse.nvidia.com/kit/docs/omni_usd_schema_physics/latest/physxschema/class_physx_schema_physx_mimic_joint_a_p_i.html
+- Native297 isolated coupled-jaw result: release23.564583s, full-section
+  traversal44.925s, unloaded reverse78.789583s, retained through85s. Max
+  material slip1.286114mm; maximum measured |q1+q2|1.791865micrometres.
+  Measured reverse10.945775mm, load0.002309N,25ms unloaded dwell.9/10 gates
+  pass. FINAL PARK CLEARANCE FAILS: crossbar versus detached Segment_001.
+  Final wrist position error0.000402mm: reaches its command, but not clear.
+  NOT a complete A pass. Headless RTF0.2020, not real-time.
+- Native299/300 proposed +10mm/+3mm world-up waiting poses with checked IK.
+  Full native startup rejects camera/main-stem and arc/main-stem interference,
+  respectively, ZERO physics steps. Raising the tool alone is not a solution.
+  Bounded `--right-ready-lift-m` and `--right-ready-retreat-m` propose initial
+  poses only; original startup/path checks run again. Wrist-axis retreat is
+  being tested next. No runtime body pose is assigned by these options.
+- Flat-cylinder/box separating-plane refinement removes only mathematically
+  proved capsule-end false positives under the explicit analytic-cylinder
+  backend. The complete original1mm margin is required. Native geometry,
+  contacts and seam allowances stay unchanged. Native301 rendered repeat
+  still has the SAME final park failure (zero such refinements there), so
+  this improvement did NOT fix withdrawal. It repeats297's cut time and max
+  slip, traversal, unloaded reverse and retention through85s without a fault.
+- Native301 saves17 paused native diagnostic PNGs with timestep receipts:
+  `data/sim_physics/bimanual_downward_20260914_native301/`. Inspected knife and
+  plant-side views: camera hardware/main stem partly obscure the edge. Images
+  alone are not proof of clean cutting and are NOT synchronized training RGB-D.
+- Added lift-before-rotation/above-target wrist proposals, preserving existing
+  <=2mm/1deg samples, whole-arm IK/self/plant checks and every native guard.
+  Old above-waypoint modes rotated while low; they could not test this sweep.
+- Added native empty-region reuse: a REAL overlap miss on an expanded box can
+  certify a later box only when it is wholly contained, including original
+  margin, for the EXACT same static collider and unchanged epoch. Expansion
+  5mm/half extent, containment reserve0.1micrometre,128paths x16 certificates.
+  An expanded hit falls back to the original query; unknown/invalidation stops
+  planning. Fresh positive controls remain. Speed benefit UNMEASURED.
+  Native302 is profiling the intact scene with these changes; result pending.
+- Full regression `regression_20260914_coupled_clearance_v3.log`:4504 passed
+  in199.82s. Subsequent waiting-retreat/coupling focused tests:24 passed.
+  Overlapping focused sets:84 cylinder/transit/withdrawal,91 query/cache tests.
+  No datasets/reviews/splits/model jobs or hardware changed. Existing review
+  apps were not closed. No reboot or memory-reserve bypass. Original native
+  force/slip limits and480Hz physics retained. Tissue fracture/kerf/partial
+  damage, greenhouse A/B, responsive execution and repeat/reset remain open.
+
+### 2026-09-14 continuation: isolated withdrawal passes; greenhouse approach open
+
+- Native302 profile identified repeated Python geometry checks as well as native
+  stepping cost. Native304 completes all 50 full-greenhouse pose proposals in
+  34.7023s (2632 native queries,6631 same-epoch empty-region hits), compared with
+  the earlier 60s timeout after six proposals. It still finds NO full approach.
+  These are combined engineering changes, not an isolated cache speedup study.
+- Reduced repeated per-shape transform checks and empty triangle queries; bounds
+  come from the same actual collision points/faces as the narrow phase. Source
+  visuals, native colliders, solver iterations and contact limits are unchanged.
+  Full regression v4:4512 passed. v5:4536 passed. Latest v6:4578 passed in210.30s
+  (`data/sim_physics/regression_20260914_egress_joint_search_v6.log`).
+- Native303's 10mm waiting-wrist retreat fails native startup. Native305/306
+  also reject all50 cut proposals from the SDK-ready station in ISOLATION, so
+  the approach obstruction is not solely the extra greenhouse plants. New
+  back-away/lift/side-entry schedules retain <=2mm/1deg sampling and full-arm
+  checks. Native309's horizontal goal-side entries also find no valid path.
+- Native307 zero-step cut-frame station search:28 of32 new choices fail IK;
+  remaining new choices fail native geometry (including right forearm versus
+  neighboring Leaf_028). It falls back to the already known native294 station;
+  this is NOT a new qualified approach or a solved greenhouse deployment.
+- Added opt-in `--joint-transit-fallback`: after failed Cartesian templates,
+  try bounded, deterministic whole-arm joint-space approach paths and rebuild
+  the exact downward stroke from their terminal state. Existing 10mm interarm,
+  3mm self,1mm scene margins and native epoch checks remain. No filter change.
+  Exact configurations, not rounded neighbors, key the joint search cache.
+  Native312 tries five clear endpoint IK configurations but exhausts60.0422s
+  (5635 native queries) without a connecting path. No right motion is executed.
+- Native308 confirms that an unloaded blade can still be within1mm of a
+  previously severed face; a strict free-space start therefore rejects it.
+  Added opt-in `--postcut-egress-trial`: reobserve after verified unloaded
+  reverse, then search fixed-orientation egress. Only the two already severed
+  faces can have an initial proximity allowance; their conservative separation
+  bounds must increase until clear. All other pairs remain checked normally.
+  Execute under the stricter <0.01N full-tool limit, keep the left grasp and
+  all original guards, and require a fresh full-margin native endpoint check.
+  This neither ignores neighboring geometry nor authorizes a new release.
+- **Native310: isolated bimanual mechanism passes all10 sequence gates.**
+  Same source `seed101_full/SubStem_41`,20mm seam,80mm left-grasp arc, original
+  full RB-Y1 and camera-aligned crossbar blade. Release23.564583s; full material
+  section traversal44.925s; unloaded reverse78.789583s; then a screened2mm
+  world-up egress over4s. Retained through85s and final full-margin withdrawal
+  check passes. See `data/sim_physics/bimanual_downward_20260914_native310/report.json`.
+  This is ONE privileged source-target mechanism trial, not broad reliability,
+  a long visible approach from a neutral stance, greenhouse proof, safe deposit
+  or calibrated tissue fracture. Source anatomy/knife/cameras were not edited.
+- Added explicit post-release feed comparison (`--postrelease-feed-m-s`, default
+  unchanged0.0003m/s, bounded up to0.002m/s). Faster rate reduces as measured
+  knife load rises; original hold/backoff, contact, penetration and slip gates
+  stay active. **Native311 at0.001m/s FAILS the left-finger0.5N limit** just after
+  release, despite low knife load. Faster feed is NOT qualified or a new default.
+  Any future acceleration must account for left-grasp load, not just knife load.
+- Current A/B/C is NOT frozen or complete. Next: rendered/repeated native310,
+  isolated direct-cut repeat, a genuine collision-free approach in the intact
+  greenhouse for both strategies, and matched latency measurements. Do not
+  claim real-time speed from these overlapping diagnostic runs. VLM collection,
+  training, review decisions/splits and hardware remain untouched.

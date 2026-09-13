@@ -7,6 +7,29 @@ from sim_physics.held_plant_screen import HeldPlantScreen
 from sim_physics.held_plant_screen import TriangleIndex,collision_triangles
 
 
+@pytest.mark.parametrize('approximation',['convexHull','none'])
+def test_static_broadphase_uses_all_real_geometry_not_oversized_extent(approximation):
+    screen,rig,robot=fixture('box')
+    mesh=UsdGeom.Mesh.Define(rig.stage,'/World/FarLeaf')
+    points=np.array(list(itertools.product((.4,.5),(.4,.5),(.4,.5))))
+    mesh.CreatePointsAttr(points.tolist());mesh.CreateFaceVertexCountsAttr([3,3])
+    mesh.CreateFaceVertexIndicesAttr([0,1,2,5,6,7])
+    mesh.CreateExtentAttr([(-10,-10,-10),(10,10,10)])
+    UsdPhysics.CollisionAPI.Apply(mesh.GetPrim())
+    UsdPhysics.MeshCollisionAPI.Apply(mesh.GetPrim()).CreateApproximationAttr(approximation)
+    before=rig.stage.GetRootLayer().ExportToString()
+    screen.include_static_scene(rig.stage,'/World/R','/World/P',np.zeros(3))
+    record=next(r for r in screen.static if r[0]=='/World/FarLeaf')
+    assert np.all(record[3]>=.4-2e-9) and np.all(record[4]<=.5+2e-9)
+    frames=rig.rest_frames.copy();frames[1,0,3]=.5;screen.snapshot(frames)
+    assert screen.check(robot)
+    # Move the box to the actual geometry: the same narrow phase still rejects.
+    robot['link_right_arm_5'][:3,3]=[.3,.4,.4]
+    assert not screen.check(robot)
+    assert screen.last_failure['plant_collider']=='/World/FarLeaf'
+    assert rig.stage.GetRootLayer().ExportToString()==before
+
+
 def fixture(shape_kind='capsule',blade=False):
     stage=Usd.Stage.CreateInMemory()
     paths=['/World/P/Support','/World/P/Branch']

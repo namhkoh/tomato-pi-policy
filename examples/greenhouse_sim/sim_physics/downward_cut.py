@@ -128,6 +128,8 @@ def cartesian_transit(robot,left,goal,*,replan_stroke_from_endpoint=False,diagno
             orientation_error_rad=orientation_error if np.isfinite(orientation_error) else None)
     method=('straight_cartesian_no_detour' if mode=='simultaneous' else
             'orient_then_straight_cartesian_no_detour' if mode=='orient_then_translate' else
+            'lift_then_orient_then_checked_above_waypoint' if mode.startswith('lift_then_orient_') else
+            'retreat_lift_orient_then_checked_above_waypoint' if mode.startswith('retreat_') else
             'orient_then_checked_clearance_waypoint')
     return np.asarray(path),minimum,dict(method=method,
         wrist_schedule=mode,

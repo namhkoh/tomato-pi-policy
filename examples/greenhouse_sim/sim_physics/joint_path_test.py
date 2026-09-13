@@ -25,3 +25,10 @@ def test_exhaustion_and_blocked_goal_do_not_return_unchecked_fallback():
     assert connect_path(*args,lambda q:False) is None
     with pytest.raises(ValueError): connect_path(*args,valid,max_checks=1)
     with pytest.raises(ValueError): connect_path(np.array([float('nan'),0]),*args[1:],valid)
+
+
+def test_nearby_configurations_do_not_share_rounded_clearance():
+    seen=[]
+    def valid(q):seen.append(float(q[0]));return q[0]<2e-9
+    assert connect_path(np.array([1e-9]),np.array([4e-9]),np.array([-1.]),np.array([1.]),valid) is None
+    assert seen==[1e-9,4e-9]

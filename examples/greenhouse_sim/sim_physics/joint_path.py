@@ -23,7 +23,9 @@ def connect_path(start,goal,lower,upper,valid,*,iterations=300,seed=0,max_checks
         raise ValueError('Invalid bounded joint-path request')
     cache={}
     def checked(q):
-        key=tuple(np.round(q,8))
+        # Reuse only the identical configuration, never a rounded neighbor
+        # across a collision boundary.
+        key=tuple(q)
         if key not in cache and len(cache)>=max_checks: return False
         if key not in cache: cache[key]=bool(valid(q))
         return cache[key]

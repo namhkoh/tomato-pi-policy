@@ -30,6 +30,7 @@ class BimanualRobot(FullRobotGripper):
         source_wrist_contacts=kwargs.pop('source_wrist_contacts',False)
         if type(source_wrist_contacts) is not bool:raise ValueError('Explicit wrist partition option required')
         self.cut_style=kwargs.pop('cut_style','legacy')
+        self.cut_priority=kwargs.pop('cut_priority',None)
         if (self.knife_edge_mode not in EDGE_MODES or
                 (self.knife_edge_mode in DOWNWARD_EDGES)!=(self.cut_model==DOWNWARD_CUT_MODEL) or
                 self.knife_edge_mode in DOWNWARD_EDGES and self.cut_style!='downward'):
@@ -335,6 +336,8 @@ class BimanualRobot(FullRobotGripper):
                 effort_bounded_target=self.effort_bounded_grasp_target,preload_force_servo=self.preload_force_servo,
                 physics_hz=self.diagnostic_physics_hz)
         self.right_indices=[self.names.index(f'right_arm_{i}') for i in range(7)]
+        if getattr(self,'finger_coupling_trial',None) is not None:
+            self.force_closer.physical_gear_coupling_modeled=True
         if getattr(self,'explicit_finger_effort',False):
             from .finger_effort import FingerEffort
             self.finger_effort=FingerEffort(self)
@@ -483,7 +486,7 @@ class BimanualRobot(FullRobotGripper):
         shoulder waypoints, then a seeded bounded bidirectional search. Every
         <=1-degree sample retains arm/tool and scene checks; no filter is changed.
         """
-        if getattr(self,'cut_style','legacy')=='downward':
+        if getattr(self,'cut_style','legacy')=='downward' and not getattr(self,'_joint_transit_proposal',False):
             from .downward_cut import cartesian_transit
             self.last_transit_rejection={}
             if self.staged_downward_transit:
@@ -681,6 +684,9 @@ class BimanualRobot(FullRobotGripper):
         # with the proposed blade normal when evaluating native contact.
         clear_endpoints=0
         tilts=(single['plane_tilt_degrees'],) if single is not None else ((0.,-10.,10.,-15.,15.) if downward else (0.,-10.,10.))
+        from .cut_priority import tilt_order,proposal_order
+        priority=getattr(self,'cut_priority',None)
+        tilts=tilt_order(tilts,priority)
         for tilt in tilts:
             usable_wing=float(self.knife.size[1]/2-.005)
             proposals=([(single_angle,single['normal_sign'],single['wing_m'])] if single is not None else
@@ -696,6 +702,7 @@ class BimanualRobot(FullRobotGripper):
                 if getattr(self,'cut_model',LEGACY_CUT_MODEL)!=DOWNWARD_CUT_MODEL:
                     proposals += [(a,s,w) for w in wings
                         for s in (1,-1) for a in downward_angles(axis)]
+            proposals=proposal_order(proposals,tilt,priority)
             for degrees,normal_sign,wing in proposals:
                 vertical=downward and degrees is None
                 if vertical:d,normal=vertical_cut_frame(axis,normal_sign,tilt)
@@ -725,32 +732,67 @@ class BimanualRobot(FullRobotGripper):
                 if not subset['passed']:
                     attempt['rejection']='rigid_tool_corridor';continue
                 if self.staged_downward_transit:
-                    from .wrist_transit import screen_modes
+                    from .wrist_transit import try_modes
                     self.screened_transit_modes=()
                     start=self.kin.forward('right',self.right,self.base)
-                    modes,detail=screen_modes(rigid_screen,start,desired)
+                    detail={};solution=None;full_modes=[]
                     attempt['rigid_tool_transits']=detail
-                    if not modes:
-                        attempt['rejection']='rigid_tool_transit';continue
-                    self.screened_transit_modes=modes
+                    attempt['full_path_modes_attempted']=full_modes
+                    def accept_mode(mode):
+                        nonlocal solution
+                        if solution is None:
+                            solution=self.solve_right_pose(desired,self.right)
+                            attempt.update(ik_attempted=True,ik_succeeded=solution.succeeded,
+                                position_error_m=solution.position_error_m,
+                                orientation_error_rad=solution.orientation_error_rad,
+                                evaluations=solution.evaluations,endpoint_is_pose_seed_only=True)
+                        if not solution.succeeded:return False
+                        self.screened_transit_modes=(mode,);full_modes.append(mode)
+                        candidate=(float(np.linalg.norm(np.asarray(solution.joint_degrees)-self.right)),
+                            degrees,d,np.asarray(solution.joint_degrees),normal_sign,wing,normal)
+                        return self._try_cut_candidate(left_q,centre,axis,candidate,tilt,failures)
+                    if try_modes(rigid_screen,start,desired,accept_mode,detail):
+                        self.plan['stroke_basis']=attempt['stroke_basis'];return
+                    if getattr(self,'joint_transit_fallback',False):
+                        # Cartesian template failure is not proof that no
+                        # collision-free joint path exists. Change APPROACH
+                        # search only: rebuild and validate the same extended,
+                        # correctly oriented downward stroke afterward.
+                        if solution is None:solution=self.solve_right_pose(desired,self.right)
+                        attempt.update(ik_attempted=True,ik_succeeded=solution.succeeded,
+                            evaluations=solution.evaluations)
+                        attempt['joint_fallback_attempts']=[]
+                        if solution.succeeded:
+                            from itertools import chain
+                            from .redundant_ik import pose_family
+                            family=chain((solution,),pose_family(self.kin,'right',desired,
+                                np.asarray(solution.joint_degrees),self.base,steps_per_direction=4,
+                                joint_limit_margin_degrees=3.))
+                            self._joint_transit_proposal=True
+                            try:
+                                for member in family:
+                                    q=np.asarray(member.joint_degrees)
+                                    entry=dict(joint_degrees=q.tolist(),endpoint_clear=False)
+                                    attempt['joint_fallback_attempts'].append(entry)
+                                    if (self.kin.inter_arm_clearance(left_q,q,self.base).clearance_m<.01
+                                            or not self.check_self(left_q,q)['passed']
+                                            or not self.check_held_plant(left_q,q)):continue
+                                    entry['endpoint_clear']=True
+                                    candidate=(float(np.linalg.norm(q-self.right)),degrees,d,q,normal_sign,wing,normal)
+                                    if self._try_cut_candidate(left_q,centre,axis,candidate,tilt,failures):
+                                        self.plan['stroke_basis']=attempt['stroke_basis']
+                                        self.plan['approach_joint_fallback']=True
+                                        return
+                            finally:self._joint_transit_proposal=False
+                    attempt['rejection']=('rigid_tool_transit' if solution is None else
+                        'endpoint_IK' if not solution.succeeded else 'actual_transit_or_rebuilt_stroke')
+                    continue
                 solution=self.solve_right_pose(desired,self.right)
                 attempt.update(ik_attempted=True,
                     position_error_m=solution.position_error_m,orientation_error_rad=solution.orientation_error_rad,
                     evaluations=solution.evaluations,ik_succeeded=solution.succeeded)
                 if not solution.succeeded:
                     attempt['rejection']='endpoint_IK';continue
-                if self.staged_downward_transit:
-                    # The initial IK supplies a wrist POSE, not an accepted
-                    # elbow branch. Cartesian transit starts at the parked arm
-                    # and rebuilds the stroke from its actual terminal joints.
-                    # Repeating the same transit for redundant endpoint guesses
-                    # cannot repair a blocked wrist sweep and wastes the budget.
-                    attempt['endpoint_is_pose_seed_only']=True
-                    candidate=(float(np.linalg.norm(np.asarray(solution.joint_degrees)-self.right)),
-                        degrees,d,np.asarray(solution.joint_degrees),normal_sign,wing,normal)
-                    if self._try_cut_candidate(left_q,centre,axis,candidate,tilt,failures):
-                        self.plan['stroke_basis']=attempt['stroke_basis'];return
-                    attempt['rejection']='actual_transit_or_rebuilt_stroke';continue
                 family=(solution,)
                 if downward:
                     from itertools import chain
@@ -964,6 +1006,7 @@ class BimanualRobot(FullRobotGripper):
     def report(self):
         result=super().report()
         result['staged_downward_transit']=self.staged_downward_transit
+        result['cut_candidate_priority']=getattr(self,'cut_priority',None)
         result.update(right_arm='original_fitted_knife_guarded_native_joint_drives',
             grasp_closure=dict(mode='native_force_closure_v1' if getattr(self,'force_closure_enabled',False) else 'ground_truth_shaft_width_stop_with_native_contact_verification',
                 commanded_half_aperture_m=None if getattr(self,'force_closure_enabled',False) else max(0.,self.radius-self.grasp_compression),
