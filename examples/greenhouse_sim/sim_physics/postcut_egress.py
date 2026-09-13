@@ -96,8 +96,10 @@ def plan(f, frames, *, step, record, retraction):
             return dict(left=left.last_failure)
         return None
     try:
+        options={}
+        if getattr(f,'planning_heartbeat',None) is not None:options['heartbeat']=f.planning_heartbeat
         native=current_scene_query(f.stage,right.static,
-            capsule_sphere_cover=bool(getattr(f,'native_capsule_sphere_cover',False)))
+            capsule_sphere_cover=bool(getattr(f,'native_capsule_sphere_cover',False)),**options)
         right.native_static_query=native;left.native_static_query=native
         initial=clear(world,start)
         if initial is not None:

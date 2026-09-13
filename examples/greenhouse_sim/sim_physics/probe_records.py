@@ -5,9 +5,9 @@ stays complete until the next append/close; prior full samples go to JSONL.
 This is diagnostic storage, not a training dataset or observation stream.
 """
 import gzip
-import json
 import time
 from collections.abc import Sequence
+from .strict_json import encode,backend
 
 
 def summary(record):
@@ -28,7 +28,7 @@ class ProbeRecords(Sequence):
     def _write_current(self):
         if self.current is None:return
         start=time.perf_counter()
-        packet=json.dumps(self.current,allow_nan=False,separators=(',',':')).encode('utf-8')+b'\n'
+        packet=encode(self.current)
         self.archive.write(packet);self.written+=1
         elapsed=time.perf_counter()-start;self.seconds+=elapsed;self.maximum_s=max(self.maximum_s,elapsed)
 
@@ -54,6 +54,7 @@ class ProbeRecords(Sequence):
 
     def report(self):
         return dict(format='lossless_jsonl_gzip_v1',path=self.path.name,samples=self.written,
+            json_encoder=backend(),
             closed=self.closed,bytes=self.path.stat().st_size,serialization_wall_s=self.seconds,
             maximum_serialization_s=self.maximum_s,full_sample_retention_in_memory=1,
             original_per_step_guards_unchanged=True,training_eligible=False)

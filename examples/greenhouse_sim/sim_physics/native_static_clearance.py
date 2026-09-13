@@ -39,7 +39,7 @@ def capsule_enclosing_box(start,end,radius):
 class NativeStaticClearance:
     def __init__(self, query, records, *, guard=lambda:None, max_queries=20000, wall_limit_s=8.,
                  close_guard=None, epoch_report=None, lazy_coverage=False, sphere_query=None, memoize_queries=False,
-                 reuse_clear_regions=False):
+                 reuse_clear_regions=False,heartbeat=None):
         if (type(max_queries) is not int or not 0 < max_queries <= 20000
                 or type(lazy_coverage) is not bool or type(memoize_queries) is not bool
                 or type(reuse_clear_regions) is not bool
@@ -47,6 +47,8 @@ class NativeStaticClearance:
                 or not np.isfinite(wall_limit_s) or not 0 < wall_limit_s <= 60.):
             raise ValueError('Bounded native query budget required')
         self.query=query;self.guard=guard;self.max_queries=max_queries
+        if heartbeat is not None and not callable(heartbeat):raise ValueError('Callable render-only heartbeat required')
+        self.heartbeat=heartbeat
         self.memoize_queries=memoize_queries;self.query_cache={};self.cache_hits=0
         from .empty_regions import EmptyRegions
         self.empty_regions=EmptyRegions() if reuse_clear_regions else None
@@ -95,6 +97,11 @@ class NativeStaticClearance:
         if not self.active:
             raise RuntimeError('Native refinement invalid or closed: '+str(self.errors))
         self.guard()
+        if self.heartbeat is not None:
+            self.heartbeat()
+            # UI may process a stop, transform or timeline edit. No cached
+            # clearance can survive that event, including a cache-hit path.
+            self.guard()
         if self.calls>self.max_queries or (request and self.calls>=self.max_queries):
             raise RuntimeError('query_budget_exhausted: native_call_limit_exceeded')
         if time.perf_counter()-self.started>=self.wall_limit_s:
@@ -247,6 +254,7 @@ class NativeStaticClearance:
 
     def report(self):
         return dict(method='live_native_static_overlap_expanded_conservative_robot_box',
+                    render_only_heartbeat_enabled=self.heartbeat is not None,
                     exact_query_cache_enabled=self.memoize_queries,exact_query_cache_hits=self.cache_hits,
                     query_cache_entries=len(self.query_cache),query_cache_capacity=4096,
                     query_cache_scope='one_frozen_epoch_exact_float64_inputs_no_rounding',
@@ -309,11 +317,15 @@ class _SceneQueryEpoch:
         if reason not in self.reasons:self.reasons.append(reason)
 
     def check(self):
-        if (self.revision or not np.isfinite(self.simulation_time)
-                or self.context.get_stage()!=self.stage
-                or self.timeline.get_current_time()!=self.simulation_time
-                or (self.timeline.is_playing(),self.timeline.is_stopped())!=self.timeline_state):
-            raise RuntimeError('Native query epoch invalidated: '+str(self.reasons))
+        reasons=list(self.reasons)
+        if not np.isfinite(self.simulation_time):reasons.append('nonfinite_snapshot_time')
+        if self.context.get_stage()!=self.stage:reasons.append('stage_changed')
+        actual=self.timeline.get_current_time()
+        if actual!=self.simulation_time:reasons.append(f'timeline_time_changed:{self.simulation_time}->{actual}')
+        if (self.timeline.is_playing(),self.timeline.is_stopped())!=self.timeline_state:
+            reasons.append('timeline_play_state_changed')
+        if self.revision or reasons:
+            raise RuntimeError('Native query epoch invalidated: '+str(reasons))
 
     def close(self):
         if self.closed:return
@@ -346,7 +358,7 @@ class _SceneQueryEpoch:
                     physics_pre_step_subscribed=True)
 
 
-def current_scene_query(stage, records, *, wall_limit_s=8., max_queries=20000, lazy_coverage=False,capsule_sphere_cover=False):
+def current_scene_query(stage, records, *, wall_limit_s=8., max_queries=20000, lazy_coverage=False,capsule_sphere_cover=False,heartbeat=None):
     """Create only during native planning after fetched physics; never load/step."""
     import omni.usd
     import omni.timeline
@@ -358,6 +370,20 @@ def current_scene_query(stage, records, *, wall_limit_s=8., max_queries=20000, l
     if type(capsule_sphere_cover) is not bool:raise ValueError('Explicit sphere-cover option required')
     timeline=omni.timeline.get_timeline_interface()
     epoch=_SceneQueryEpoch(stage,omni.usd.get_context(),timeline,get_physx_interface())
+    frozen=None
+    def checked():
+        epoch.check()
+        if frozen is not None:
+            if not frozen.closed:frozen.check()
+            elif timeline.is_auto_updating() is not frozen.old:
+                raise RuntimeError('Planning timeline restoration changed')
+    def close_owned():
+        try:
+            if frozen is not None:frozen.close()
+            # A validated query checks its epoch again AFTER owned cleanup.
+            # Already-invalid queries still need idempotent cleanup without
+            # repeating their original execution fault as a cleanup failure.
+        finally:epoch.close()
     def query(path,centre,axes,half):
         count=0;matched=False
         def collect(hit):
@@ -380,6 +406,10 @@ def current_scene_query(stage, records, *, wall_limit_s=8., max_queries=20000, l
         if reported!=count:raise RuntimeError('Incomplete native sphere callback coverage')
         return bool(matched)
     try:
+        if heartbeat is not None:
+            from .planning_heartbeat import FrozenTimeline
+            frozen=FrozenTimeline(timeline)
+            checked()
         eligible=[]
         for record in records:
             path,kind,_,_,_=record
@@ -396,14 +426,15 @@ def current_scene_query(stage, records, *, wall_limit_s=8., max_queries=20000, l
             if not body:eligible.append(record)
         epoch.check()
         native=get_physx_scene_query_interface()
-        result=NativeStaticClearance(query,eligible,guard=epoch.check,
-            close_guard=epoch.close,epoch_report=epoch.report,wall_limit_s=wall_limit_s,
+        result=NativeStaticClearance(query,eligible,guard=checked,
+            close_guard=close_owned,epoch_report=epoch.report,wall_limit_s=wall_limit_s,
             max_queries=max_queries,lazy_coverage=lazy_coverage,
+            heartbeat=heartbeat,
             memoize_queries=True,reuse_clear_regions=True,
             sphere_query=sphere_query if capsule_sphere_cover else None)
-        epoch.check()
+        checked()
         return result
     except BaseException as exc:
-        try:epoch.close()
+        try:close_owned()
         except Exception as cleanup:exc.add_note('Epoch cleanup: '+str(cleanup))
         raise

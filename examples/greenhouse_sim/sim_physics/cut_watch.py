@@ -9,6 +9,8 @@ import numpy as np
 
 
 def validate(args):
+    if getattr(args,'watch_auto_run',False) and not getattr(args,'watch_cut_trial',False):
+        raise ValueError('Automatic watched demonstration requires explicit watch mode')
     if not getattr(args,'watch_cut_trial',False):return
     if not (args.cut_action_trial and args.fixed_root_cut_trial and args.bimanual_cut
             and args.full_robot_probe and ((args.isolate_station and args.branch_contact_fixture)
@@ -62,13 +64,13 @@ def watch(app,sim,rig,runtime,springs,fixture,args,output,run):
     with window.frame:
         with ui.VStack(spacing=5):
             ui.Label('FULL RB-Y1 A v1.2 - '+('INTACT GREENHOUSE' if getattr(args,'greenhouse_cut_trial',False) else 'ISOLATED ORIGINAL BRANCH'),word_wrap=True,height=38)
-            ui.Label('Live native physics, not recorded playback. Diagnostic only: no tissue calibration or greenhouse qualification.',word_wrap=True,height=48)
+            ui.Label('Live native physics, not recorded playback. Diagnostic only: no tissue calibration or general-target qualification.',word_wrap=True,height=48)
             status=ui.Label('Ready. Choose a view, then Run once. Use this panel, not the timeline controls.',word_wrap=True,height=70)
             start=ui.Button('Run once: right-only cut' if args.right_only_cut_trial else 'Run once: left grasp + right cut',height=32,clicked_fn=control.request)
             ui.Button('Stop trial (relaunch required)',height=26,clicked_fn=lambda:setattr(fixture,'stop_requested',True))
             for name in fixture.views:
                 ui.Button(name,height=23,clicked_fn=lambda n=name:fixture.select_view(n))
-            ui.Label('Experimental isolated fixture. Full through-stroke requires its separate measured trial. Falling material may contact torso; reset/replay disabled.',word_wrap=True,height=58)
+            ui.Label('Experimental guarded trial. Full through-stroke requires its measured section check. Falling material may contact torso; reset/replay disabled.',word_wrap=True,height=58)
             ui.Label(f'{args.seconds:g} simulated seconds may take several minutes. Close Isaac to end. Do not transform the robot or plant.',word_wrap=True,height=44)
     def on_sample(record):
         nonlocal last_update
@@ -81,10 +83,14 @@ def watch(app,sim,rig,runtime,springs,fixture,args,output,run):
         publish(dict(state='running',strategy=mode,t=record['t'],cut=record['cut'],
             bilateral=record['contact']['bilateral'],slip_m=slip,training_eligible=False))
     fixture.on_sample=on_sample
+    from .planning_heartbeat import PlanningHeartbeat
+    fixture.planning_heartbeat=PlanningHeartbeat(sim.render,
+        lambda:bool(app.is_running() and not fixture.stop_requested))
     property_window=ui.Workspace.get_window('Property')
     if property_window:window.dock_in(property_window,ui.DockPosition.SAME)
     publish(dict(state='ready',strategy=mode,one_shot=True,training_eligible=False))
     print('CUT_WATCH_READY '+str(output),flush=True)
+    if getattr(args,'watch_auto_run',False):control.request()
     while app.is_running():
         if control.state in ('ready','requested'):
             runtime.sample()
@@ -93,6 +99,7 @@ def watch(app,sim,rig,runtime,springs,fixture,args,output,run):
         if control.take():
             start.enabled=False
             result=run(app,sim,rig,runtime,springs,fixture,args,output)
+            result['planning_ui']=fixture.planning_heartbeat.report()
             control.finish()
             (output/'watch_result.json').write_text(json.dumps(result,indent=2,allow_nan=False),encoding='utf-8')
             publish(result)

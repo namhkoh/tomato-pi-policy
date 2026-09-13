@@ -95,6 +95,17 @@ def test_identical_right_seeds_are_not_solved_twice():
     assert all(len(row['right_attempts'])==2 for row in out['candidates'])
 
 
+def test_original_between_grid_station_is_checked_before_coarse_orbits():
+    r,_=fixture();r.base[0,3]=.5123;calls=[]
+    def native(world,shapes):
+        calls.append(world['base'].copy());return dict(passed=True)
+    out=search(r,S(check=native),lambda:None)
+    assert out['candidates'][0]['original_station']
+    assert out['proposed_station']['station_pose']==pytest.approx([.5123,0,0])
+    assert len(calls)==2 and all(m[0,3]==.5123 for m in calls)
+    assert not out['motion_authorized'] and out['maximum_candidates']==295
+
+
 def test_no_prior_report_uses_fresh_anatomy_not_a_prior_path():
     r,_=fixture();r.cut_priority=None
     out=search(r,S(check=lambda *a:dict(passed=True)),lambda:None)

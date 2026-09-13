@@ -265,8 +265,10 @@ class BimanualRobot(FullRobotGripper):
                 from .native_static_clearance import current_scene_query
                 result['native_static_clearance']=dict(initialization_status='in_progress',
                     query_count=None,final_validation_passed=False)
+                options={}
+                if getattr(self,'planning_heartbeat',None) is not None:options['heartbeat']=self.planning_heartbeat
                 native=current_scene_query(self.stage,screen.static,lazy_coverage=True,
-                    wall_limit_s=self.native_static_planning_seconds)
+                    wall_limit_s=self.native_static_planning_seconds,**options)
                 screen.native_static_query=native
             # The left-arm cache does not cover the torso/base or parked right
             # arm. These can hit distal leaves even when the hand path clears.
@@ -638,6 +640,7 @@ class BimanualRobot(FullRobotGripper):
                 native_evidence.update(initialization_status='in_progress',
                     query_count=None,query_count_known=False)
                 query_options={}
+                if getattr(self,'planning_heartbeat',None) is not None:query_options['heartbeat']=self.planning_heartbeat
                 if getattr(self,'native_capsule_sphere_cover',False):query_options['capsule_sphere_cover']=True
                 if getattr(self,'native_static_planning_seconds',8.)!=8.:
                     query_options['wall_limit_s']=self.native_static_planning_seconds

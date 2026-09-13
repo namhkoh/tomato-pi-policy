@@ -263,6 +263,8 @@ def parser():
         help='Initial fixed-base station offset only (norm <=0.3 m); never moves a running robot')
     p.add_argument('--park-left-ready',action='store_true',help='Right-only trial with task-independent SDK left park, no grasp IK or grasp path')
     p.add_argument('--cut-station-orbit',action='store_true',help='Zero-motion station search checking raised waiting and cut-entry poses')
+    p.add_argument('--station-reference-report',type=Path,help='Same-anatomy prior initial pose as zero-motion search seed; no replay authority')
+    p.add_argument('--watch-auto-run',action='store_true',help='Explicitly start one watched demonstration after native startup; no reset/replay')
     p.add_argument('--station-yaw',type=float,default=0.,
         help='Initial station heading relative to palm approach, within +/-90 degrees; no live base motion')
     p.add_argument('--station-pose',type=float,nargs=3,metavar=('X_M','Y_M','YAW_DEG'),
@@ -312,6 +314,9 @@ def validate_fixed_root_hold(args):
 
 def main(argv=None):
     args=parser().parse_args(argv)
+    if args.station_reference_report is not None:
+        from .station_reference import validate_mode
+        validate_mode(args)
     cut_priority=None
     if args.cut_priority_report is not None:
         if not (args.bimanual_cut and args.cut_style=='downward' and args.knife_edge_mode=='source_crossbar_edge_v1'):
@@ -326,7 +331,7 @@ def main(argv=None):
     fixed_cut=args.fixed_root_cut_trial
     if args.coupled_fingers_trial and not (fixed_cut and args.bimanual_cut and args.symmetric_finger_closure
             and args.explicit_finger_effort and args.force_closure and args.diagnostic_grasp_dynamics
-            and args.physics_hz==480 and not args.right_only_cut_trial and not args.watch_cut_trial):
+            and args.physics_hz==480 and not args.right_only_cut_trial):
         raise ValueError('Coupled fingers require the explicit 480 Hz instrumented bimanual symmetric-effort trial')
     from .greenhouse_cut import validate as validate_greenhouse
     greenhouse_trial=validate_greenhouse(args)
@@ -794,6 +799,11 @@ def main(argv=None):
                 source='explicit_USD_cylinder_and_process_setting',native_cooked_shape_readback=False,
                 full_greenhouse_qualified=False)
         report['rig']=rig.report()
+        if args.station_reference_report is not None:
+            from .station_reference import initial_options
+            seed_options,receipt=initial_options(args,rig)
+            robot_options.update(seed_options)
+            report['station_search_reference']=receipt
         fixture=None
         if args.full_robot_probe:
             from .full_robot import FullRobotGripper
@@ -832,6 +842,7 @@ def main(argv=None):
                 robot_options['grasp_contact_frames']=args.grasp_contact_frames
             fixture=robot_class(stage,rig,arc=args.grasp_arc_m,friction=args.finger_friction,**robot_options)
             fixture.joint_transit_fallback=args.joint_transit_fallback
+            fixture.station_reference_search=args.station_reference_report is not None
             if args.coupled_fingers_trial:
                 from .finger_coupling import author as author_coupling
                 report['finger_mechanism_trial']=author_coupling(stage,fixture)

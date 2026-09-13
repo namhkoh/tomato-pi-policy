@@ -8181,3 +8181,93 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   EXISTING0.8..0.98 execution bound;16 focused station tests pass. No physical
   or contact guard is changed. B for native331's end-row case is established;
   full-greenhouse A, continuous visible evidence and acceptable C remain open.
+
+### 2026-09-14 continuation: bimanual station diagnosis and watched execution
+
+- Native334 (below-shaft approach),335 (opposite side at original row23),336
+  (source101 at row23) and337 (source101 warm-start) found no complete native
+  station proposal. Each took zero physics steps and passed final native
+  positive controls.338 also found no proposal with source19 grasp arc120mm;
+  the tested native rejections include torso versus Gutter_31. These bounded
+  searches are NOT proofs of infeasibility and do not qualify greenhouse A.
+- Added optional same-anatomy `--station-reference-report` for ZERO-MOTION
+  searches only. It transfers an isolated run's initial joint seeds and moves
+  the proposed station by the new authored attachment displacement, recomputing
+  floor height. Current source/task/robot checks, both native endpoints and
+  all later motion checks remain mandatory. No old path/clearance is inherited.
+ 337 uses native324 at original row23: more IK branches are found, but foliage
+  still blocks the tested poses. The reference did not authorize any motion.
+- Public diagnostic wrapper now exposes existing initial torso, grasp roll/
+  pitch, station and arm-seed proposals. Defaults and all physical guards are
+  unchanged. Explicit seeds are applied AFTER clearing source-specific legacy
+  poses and cannot conflict with report-based initialization. The orbit search
+  now checks the exact proposed initial station before its coarse radial grid;
+  previously a valid between-grid IK proposal could be omitted entirely.
+- URDF FK diagnosis: the inherited isolated-test torso posture puts the left
+  shoulder at local z1.228133m and right at1.410557m, about182.4mm apart in
+  height. A neutral torso places both at1.370m before base/floor translation.
+  This is a kinematic measurement, not yet proof of native bimanual improvement.
+  Read-only neutral-torso screening found two source19 candidates with the
+  unchanged right extension0.8..0.98 and >=10mm interarm-capsule requirement;
+  full tool/scene/native grasp checks are still needed. Native341 attempted
+  the second candidate but its memory preflight REFUSED startup while340 was
+  open:10.33GiB commit headroom versus16GiB reserve. It is not a physics failure.
+  Preserve the reserve; run these full-scene tests serially.
+- Diagnostic JSON encoding now optionally uses installed orjson with an
+  explicit recursive finite/type/cycle check and stdlib fallback. Unlike raw
+  orjson, NaN/infinity cannot silently become null. All480Hz records, float
+  values, late failure-tick mutations and exclusive output creation remain.
+  On102 sampled native331 records, five-repeat median encoding time was
+ 44.831ms stdlib versus36.302ms finite-checked fast encoding (~1.235x for this
+  helper ONLY). This does NOT establish whole-simulator real-time speed.
+ 25 archive/encoding tests passed in Isaac's interpreter, including invalid
+  values and lossless parsed-record equality. Scalar diagnostic finite checks
+  also use equivalent math.isfinite after float conversion, not NumPy dispatch.
+- Watched trials now have an explicit optional `--watch-auto-run`, still one
+  shot with no reset/replay. Coupled-finger watch retains the full480Hz effort,
+  contact, slip and diagnostic contract. Render-only heartbeat services the UI
+  during synchronous native planning, bounded at15 wall-Hz. Every heartbeat
+  is bracketed by the existing scene/physics/timeline epoch guard; rendering
+  time counts against the original planning deadline, never extends it.
+- Native339 exposed a REAL integration failure: sim.render updates Kit's
+  animation timeline although physical stepping is suppressed. At3.5s its
+  first planning refresh invalidated the strict time snapshot. No cut occurred;
+  the fault and full1680-step archive are retained. Closed only that owned
+  failed trial afterward; no unrelated apps or jobs were stopped.
+- Corrected this by temporarily disabling automatic timeline advance during
+  each rendered native query, committing on the main thread and restoring the
+  previous setting at cleanup. Never sets/rewinds time or ignores a timeline
+  change. The epoch exists BEFORE the commit, so pending user scrubs/edits
+  cannot become a silently accepted new snapshot. Native physics-step and USD
+  changes still revoke the plan. See NVIDIA's timeline API for the independent
+  auto-update/commit operations:
+  https://docs.omniverse.nvidia.com/kit/docs/omni.timeline/1.0.11/omni.timeline/omni.timeline.Timeline.html
+- Native340 is the fresh watched full-greenhouse right-only repeat with this
+  fix, original source19/row0/2.3mm placement and unchanged physical settings.
+  It has passed initial planning, released the seam and reached post-cut
+  observation; final85s result pending. No watched sequence pass claimed yet.
+- Regression v16:4724 passed in226.03s before the timeline-freeze follow-up.
+  The follow-up initially repeated already-latched epoch failures on cleanup;
+  fixed cleanup while retaining the post-cleanup acceptance guard.102 focused
+  UI/epoch/egress tests now pass, as do56 source/reference/profile tests and30
+  station/orbit tests. Full v17 repeat is running. VLM/data/training/hardware
+  remain untouched. A/C are open; do not freeze the entire milestone from B.
+
+- Native340 watched repeat now PASSES all nine complete diagnostic gates in
+  `data/sim_physics/bimanual_downward_20260914_native340/watch_result.json`.
+ 40,800 native steps/85s, cut18.718750s,3439 edge contacts and maximum passive
+  released-material contact2.973177N: same measured values as headless331.
+  Three render-only planning updates survive the strict epoch/final controls.
+  This is a live rendered run, NOT an archived video or training observation.
+  Closed only that completed owned window after the result was written, to
+  free the launch reserve for342; its durable result is watch_result.json.
+- C remains too slow:340 took727.527s tick wall time (0.116834x), with8272
+  wall-scheduled renders (~11.37 frames/wall-second over measured ticks).
+  Render median14.069ms; native/control median14.629ms. Concurrent read-only
+  checks/regression and host memory pressure prevent a matched speed claim.
+  UI event service is improved, but physical action playback is NOT real time.
+- Full regression v17:4733 passed in252.96s. Latest explicit-pose forwarding
+  and exact-initial-station additions separately pass56 source/profile and30
+  station/reference tests. Native342 is the fresh serial full-scene neutral-
+  torso search, using the second kinematic candidate with80mm grasp arc and
+  the original20-degree pad pitch. Still a proposal, not a motion certificate.

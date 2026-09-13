@@ -28,6 +28,7 @@ No dwell/slip update, force gate change, contact filtering, or training approval
 """
 import hashlib
 import json
+import math
 
 import numpy as np
 
@@ -79,7 +80,7 @@ def _diagnostic_text(value):
 def _diagnostic_number(value):
     try:
         number = float(value)
-        if np.isfinite(number):
+        if math.isfinite(number):
             return number
     except Exception:
         pass

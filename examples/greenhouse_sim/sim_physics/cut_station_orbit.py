@@ -57,7 +57,18 @@ def search(robot,backend,guard):
     def check_time():
         guard()
         return time.monotonic()-began<45.
-    for base,meta in stations(robot.base,centre):
+    choices=stations(robot.base,centre)
+    reference=getattr(robot,'station_reference_search',False)
+    if reference:
+        from itertools import chain
+        from .station_reference import local_stations
+        choices=chain(local_stations(robot.base),choices)
+    else:
+        from itertools import chain
+        # A new explicit/IK-derived initial station may lie between coarse
+        # orbit radii. Do not discard it before checking its two endpoints.
+        choices=chain(((robot.base.copy(),dict(original_station=True)),),choices)
+    for base,meta in choices:
         if not check_time():expired=True;break
         candidate=copy(robot);candidate.base=base
         row=dict(**meta,native_startup_clear=False,native_cut_entry_clear=False,
@@ -128,7 +139,8 @@ def search(robot,backend,guard):
         if proposal is not None or expired:break
     guard()
     return dict(model='frozen_native_two_arm_station_search_v1',search_strategy='cut_frame_orbit_v1',
-        candidates=rows,proposed_station=proposal,maximum_candidates=294,
+        candidates=rows,proposed_station=proposal,maximum_candidates=315 if reference else 295,
+        reference_local_seed_search=reference,
         cut_frame_priority_used=priority_supplied,initial_vertical_standoff_m=.03,
         cut_plane_normal_signs=list(entry_frames),
         original_spawn_unchanged=True,plant_or_mounting_changed=False,

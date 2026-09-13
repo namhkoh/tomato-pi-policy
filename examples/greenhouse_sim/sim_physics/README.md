@@ -1270,3 +1270,37 @@ The old327 file supplies initial poses ONLY. All native startup, source-section
 and full moving-path checks run again; no inherited cut authority. Bimanual
 `--approach-vector X Y Z` proposes a different grasp approach side and needs
 its OWN new station/path/grasp qualification.
+
+### Watched direct-cut repeat and bimanual search (native340, 2026-09-14)
+
+Native340 passes the same nine full greenhouse direct-cut gates in a visible
+window, with the same18.718750s cut/3439 contact rows as331. Its durable result
+is `data/sim_physics/bimanual_downward_20260914_native340/watch_result.json`.
+This is live execution evidence, not a recorded video, calibrated tissue model
+or bimanual pass. It remains slow:0.116834x physics real-time factor. UI updates
+are wall-scheduled separately; do not confuse render rate with physics speed.
+
+For the preceding native331 command, replace `--capture` with
+`--watch --watch-auto-run` to start one visible run automatically. Without
+`--watch-auto-run`, choose a camera then press Run once. Stop aborts the trial;
+reset/replay is deliberately not enabled. Use a NEW output directory each time.
+Run full greenhouse trials serially; never bypass the Windows memory reserve.
+
+Planning refreshes the UI without advancing physical steps. Automatic timeline
+advance is temporarily disabled and restored around the native query; the
+existing epoch still rejects any scene, physics, play-state or time change.
+Native339's first implementation correctly stopped when rendering advanced
+timeline time;340 qualifies the corrected clock ownership for this case.
+
+Bimanual diagnostic proposals may explicitly select `--torso-degrees`,
+`--grasp-roll`, `--grasp-pitch`, `--station-pose`, `--left-ik-seed-degrees` and
+`--right-ready-degrees`. These are INITIAL proposals, not native pose writes
+during execution. Source joint limits, complete native startup/path screens
+and all contact/retention/cut checks remain. Report-based and explicit initial
+poses cannot be mixed. `--station-reference-report` is an alternative only for
+zero-motion same-anatomy station searches; it never grants motion authority.
+
+Current bimanual investigation tests a neutral torso: the old isolated recipe
+leans sideways and places the two shoulders about182mm apart vertically.
+Do not treat isolated successes or a kinematic candidate as full-greenhouse A.
+VLM/data collection remains paused until A, B and acceptable C are established.

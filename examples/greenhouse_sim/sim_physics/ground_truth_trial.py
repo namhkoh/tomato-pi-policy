@@ -74,9 +74,22 @@ def main(argv=None):
         help='Explicit end-row target/backdrop swap; preserves original plant count and spacing')
     p.add_argument('--approach-vector',type=float,nargs=3,default=None,
         help='Explicit bimanual grasp-side proposal; same anatomical shaft, new native IK/clearance qualification')
+    p.add_argument('--grasp-roll',type=int,choices=(0,180),default=None,
+        help='Equivalent parallel-jaw orientation proposal; bimanual only, fresh grasp/clearance checks')
+    p.add_argument('--grasp-pitch',type=float,default=None,
+        help='Existing bounded pad-span pitch proposal; bimanual only, no contact or geometry changes')
+    p.add_argument('--torso-degrees',type=float,nargs=6,default=None,
+        help='Explicit initial source-limit torso posture, not a runtime body pose change')
+    p.add_argument('--station-pose',type=float,nargs=3,default=None,
+        help='Explicit new initial x/y/yaw proposal; original native startup and complete path checks remain')
+    p.add_argument('--left-ik-seed-degrees',type=float,nargs=7,default=None,
+        help='Explicit new left IK seed; never a path or collision certificate')
+    p.add_argument('--right-ready-degrees',type=float,nargs=7,default=None,
+        help='Explicit new right waiting configuration; source limits and native startup checks required')
     p.add_argument('--milestone',choices=('full_sequence','cut_action'),default='full_sequence')
     p.add_argument('--capture',action='store_true',help='Paused native milestone PNGs; headless, not synchronized training RGB-D')
     p.add_argument('--watch',action='store_true',help='Open a visible Run-once panel; no automatic run, reset or hardware commands')
+    p.add_argument('--watch-auto-run',action='store_true',help='Explicit one-shot visible demo; requires --watch')
     p.add_argument('--historical-mounting-plate',action='store_true',
         help='Reproduce the superseded mounting-plate contact test, NOT the physical knife edge')
     p.add_argument('--process-zone-trial',action='store_true',
@@ -100,6 +113,7 @@ def main(argv=None):
     p.add_argument('--park-left-ready',action='store_true',help='Explicit right-only SDK left park, independent of grasp reachability')
     p.add_argument('--budgeted-joint-gravity',action='store_true',help='Experimental source-effort angular gravity compensation, unchanged contact guards')
     p.add_argument('--station-proposal-report',type=Path,help='Explicit new initial station in greenhouse or isolation; all native startup/path checks run again')
+    p.add_argument('--station-reference-report',type=Path,help='Same-anatomy native run as zero-motion station-search seed only')
     p.add_argument('--coupled-fingers-trial',action='store_true',help='Experimental physical jaw coupling; bimanual only, unchanged force/slip limits')
     p.add_argument('--right-ready-lift-m',type=float,default=0.,help='Initial world-up waiting-pose lift; fresh IK and original native guards required')
     p.add_argument('--right-ready-retreat-m',type=float,default=0.,help='Initial waiting pose withdrawn along wrist +Z; fresh IK and all native guards required')
@@ -120,6 +134,13 @@ def main(argv=None):
         p.error('End-row swap requires an explicit existing-source station and intact greenhouse trial')
     if args.approach_vector is not None and not (args.process_zone_trial and args.mode=='bimanual'):
         p.error('Grasp approach vector requires explicit bimanual process-zone trial')
+    if (args.grasp_roll is not None or args.grasp_pitch is not None) and not (args.process_zone_trial and args.mode=='bimanual'):
+        p.error('Grasp orientation requires explicit bimanual process-zone trial')
+    if args.torso_degrees is not None and not args.process_zone_trial:
+        p.error('Initial torso proposal requires explicit process-zone trial')
+    if any(v is not None for v in (args.station_pose,args.left_ik_seed_degrees,args.right_ready_degrees)):
+        if not args.process_zone_trial or args.station_proposal_report or args.station_reference_report:
+            p.error('Explicit initial pose requires process-zone trial without conflicting report-based initialization')
     if args.through_stroke_trial and not (args.process_zone_trial and args.milestone=='cut_action'):
         p.error('Through-stroke requires explicit process-zone cut_action trial')
     if args.material_clearance_trial and not args.through_stroke_trial:
@@ -141,6 +162,7 @@ def main(argv=None):
                 and .06<=args.grasp_arc_m<=.12):
             p.error('Grasp comparison requires bimanual process-zone trial and finite 60..120 mm arc')
     options=arguments(args.output,args.mode,args.milestone,args.capture,args.watch)
+    if args.watch_auto_run:options+=['--watch-auto-run']
     if not args.historical_mounting_plate:
         from .blade_contacts import CROSSBAR_EDGE
         from .knife import DOWNWARD_CUT_MODEL
@@ -173,6 +195,7 @@ def main(argv=None):
     if args.park_left_ready:options+=['--park-left-ready']
     if args.budgeted_joint_gravity:options+=['--budgeted-joint-gravity']
     if args.station_proposal_report:options+=['--station-proposal-report',str(args.station_proposal_report)]
+    if args.station_reference_report:options+=['--station-reference-report',str(args.station_reference_report)]
     if args.coupled_fingers_trial:options+=['--coupled-fingers-trial']
     if args.right_ready_lift_m:options+=['--right-ready-lift-m',str(args.right_ready_lift_m)]
     if args.right_ready_retreat_m:options+=['--right-ready-retreat-m',str(args.right_ready_retreat_m)]
@@ -187,6 +210,12 @@ def main(argv=None):
         options=configure(options,args.source_station_trial)
     if args.target_row_slot!=12:options+=['--target-row-slot',str(args.target_row_slot)]
     if args.approach_vector is not None:options+=['--approach-vector',*map(str,args.approach_vector)]
+    if args.grasp_roll is not None:options+=['--grasp-roll',str(args.grasp_roll)]
+    if args.grasp_pitch is not None:options+=['--grasp-pitch',str(args.grasp_pitch)]
+    if args.torso_degrees is not None:options+=['--torso-degrees',*map(str,args.torso_degrees)]
+    for flag,value in (('--station-pose',args.station_pose),('--left-ik-seed-degrees',args.left_ik_seed_degrees),
+                       ('--right-ready-degrees',args.right_ready_degrees)):
+        if value is not None:options+=[flag,*map(str,value)]
     return run(options)
 
 
