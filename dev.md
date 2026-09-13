@@ -8394,3 +8394,40 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   gutter with source-limit torso articulation; no plant/gutter relocation.
 - A and C remain open, B retains its native passes. VLM/data/training remain
   paused. This commit is experimental infrastructure/evidence, not a freeze.
+
+### 2026-09-14 continuation: bounded waiting search and final-query reservation
+
+- Added explicit zero-motion `--station-waiting-search`: twelve bounded initial
+  waiting offsets, retaining the same cut-entry pose and blade orientation.
+  Both waiting and entry still need fresh native clearance, straight-arm entry,
+  and the complete left self/interarm approach screen. No endpoint certifies a
+  moving path, grasp, cut or base motion. Default waiting pose is unchanged.
+- Native357 (source101/row0, prior324 frame family) intersects an original
+  non-target leaf with right arm4; native358's outside-gutter forward-torso
+  source19/SubStem43 seed intersects context foliage with torso1. Neither
+  bounded zero-motion search produces a station; final actor controls pass.
+- Native359's first expanded search exhausted20000 queries before final actor
+  controls. It correctly withheld all motion authority. Fixed the search to
+  reserve exact worst-case capsule-cover/box queries plus every final scene and
+  robot positive control, strictly below the unchanged hard query ceiling.
+  Stale epochs still invalidate; soft budget exhaustion is not infeasibility.
+- Native360 exercises twelve waiting offsets and that reservation: nine base
+  candidates, no proposal,19913 native queries,23.578s search/26.668s overall.
+  All1095 scene and71 robot final positive controls complete, with zero physics
+  steps and no scene/robot/filter changes. The reservation fixes invalidated
+  search evidence, NOT the remaining bimanual access problem.
+- Evidence: `data/sim_physics/bimanual_downward_20260914_native357` through
+  `native360` report.json files. Regression v21 (before the final reservation
+  tests) passes4783 tests in199.31s; latest focused reservation tests pass132.
+- Alternate80/100/120mm grasp and180-degree jaw-roll offline proposals remain
+  only full-left-path IK/self-screen results. Native361 tests a100mm grasp at
+  the previously graspable344 station with unchanged contact/retention limits.
+  Do not infer its outcome from the launch or from offline feasibility.
+- A/C remain open; no milestone freeze, VLM restart or hardware action.
+- Latest complete regression v23:4786 passed in208.00s. The earlier v22
+  invocation had one subprocess import failure because PYTHONPATH omitted
+  examples/greenhouse_sim (4785 passed); corrected the launch environment,
+  not the assertion. Native361 stops at0.9s before grasp: the left wrist
+  camera's conservative bound intersects a distal leaf of the current target.
+  Native362's reversed80mm grasp acquires bilateral contact (max slip16.597um)
+  but again fails static retention (utilization2.14217); no knife motion.

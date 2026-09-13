@@ -87,6 +87,26 @@ def test_native_budget_is_enforced_after_return_and_before_next_query():
     assert n.calls==2 and not n.report()['final_validation_passed']
 
 
+def test_search_reserves_both_environment_and_robot_controls_without_queries():
+    n,s,world,shapes=fixture(kind='box',max_queries=5)
+    assert n.can_check_with_final_controls(world,shapes) and n.calls==1
+    assert n.check(world,shapes)['passed'] and n.calls==2
+    assert not n.can_check_with_final_controls(world,shapes) and n.calls==2
+    n.validate()
+    n._box(np.zeros(3),np.eye(3),np.full(3,.02))  # Owner's final robot control.
+    assert n.calls==4 and n.validated and n.active and not n.errors
+
+
+def test_sphere_cover_budget_cannot_be_mistaken_for_one_capsule_query():
+    n,s,world,shapes=fixture(kind='capsule',max_queries=5)
+    assert not n.can_check_with_final_controls(world,shapes)
+    assert n.calls==1 and n.active
+    s['guard_fail']=True
+    with pytest.raises(RuntimeError,match='epoch'):
+        n.can_check_with_final_controls(world,shapes)
+    assert not n.active
+
+
 def test_expired_native_call_is_not_a_clearance(monkeypatch):
     import sim_physics.native_startup_clearance as module
     n,s,world,shapes=fixture(kind='box');original=n.box_query

@@ -120,3 +120,67 @@ def test_public_flag_requires_zero_motion_search(tmp_path):
         main(['--output',str(tmp_path/'unused'),'--mode','right_only','--milestone','cut_action',
               '--process-zone-trial','--cut-station-orbit'])
     assert not (tmp_path/'unused').exists()
+
+
+def test_waiting_offsets_keep_orientation_entry_and_default_unchanged():
+    from .cut_station_orbit import waiting_poses
+    entry=np.eye(4);entry[:3,3]=[1,2,3];original=entry.copy()
+    d=np.array([0.,0.,-1.]);n=np.array([1.,0.,0.])
+    default=list(waiting_poses(entry,d,n));expanded=list(waiting_poses(entry,d,n,True))
+    assert len(default)==1 and len(expanded)==12
+    np.testing.assert_array_equal(default[0][0],expanded[0][0])
+    np.testing.assert_array_equal(entry,original)
+    for pose,offset in expanded:
+        np.testing.assert_array_equal(pose[:3,:3],entry[:3,:3])
+        np.testing.assert_allclose(pose[:3,3]-entry[:3,3],offset)
+        assert .01<=offset[2]<=.12 and np.linalg.norm(offset[:2])<=.08
+    with pytest.raises(ValueError):list(waiting_poses(entry,d,n,1))
+
+
+def test_alternate_waiting_pose_needs_its_own_native_entry_and_left_path():
+    r,poses=fixture();r.station_waiting_search=True;calls=[]
+    def solve(side,pose,seed,base,**kwargs):
+        q=np.asarray(seed).copy()
+        if side=='right':q[:3]=pose[:3,3]
+        return S(succeeded=True,joint_degrees=q)
+    r.kin.solve_pose=solve
+    def native(world,shapes):
+        assert shapes==['all_original_shapes'];z=float(world['right'][2]);calls.append(z)
+        return dict(passed=z<.02)  # Only lower waiting and the entry are clear.
+    out=search(r,S(check=native),lambda:None)
+    assert out['expanded_waiting_pose_search'] and out['waiting_pose_candidates_per_frame']==12
+    assert out['proposed_station']['waiting_offset_world_m']==[0.,0.,.01]
+    assert out['candidates'][0]['native_cut_entry_clear'] and out['candidates'][0]['left_self_path_clear']
+    assert calls==pytest.approx([.038,.038,.018,.008])
+    assert not out['motion_authorized'] and out['physics_steps']==0
+    np.testing.assert_array_equal(r.right,np.ones(7))
+
+
+def test_expanded_waits_cannot_promote_a_blocked_cut_entry():
+    r,_=fixture();r.station_waiting_search=True
+    def solve(side,pose,seed,base,**kwargs):
+        q=np.asarray(seed).copy()
+        if side=='right':q[:3]=pose[:3,3]
+        return S(succeeded=True,joint_degrees=q)
+    r.kin.solve_pose=solve
+    out=search(r,S(check=lambda world,shapes:dict(passed=world['right'][2]>.009)),lambda:None)
+    assert out['proposed_station'] is None
+    assert all(not row['native_cut_entry_clear'] for row in out['candidates'])
+
+
+def test_expanded_public_option_cannot_launch_motion(tmp_path):
+    from .ground_truth_trial import main
+    with pytest.raises(ValueError,match='zero-motion'):
+        main(['--output',str(tmp_path/'unused'),'--mode','bimanual','--milestone','cut_action',
+              '--process-zone-trial','--station-waiting-search'])
+    assert not (tmp_path/'unused').exists()
+
+
+def test_query_budget_stop_does_not_consume_final_native_control_reserve():
+    r,_=fixture();r.station_waiting_search=True
+    def unexpected(*args):pytest.fail('No native query after soft budget stop')
+    out=search(r,S(check=unexpected,can_check_with_final_controls=lambda *a:False),lambda:None)
+    assert out['proposed_station'] is None and out['budget_exhausted']
+    assert out['query_budget_reserved_for_final_controls']
+    assert out['candidates'][0]['right_attempts'][0]['rejection']=='reserved_final_native_controls'
+    assert not out['motion_authorized'] and not out['infeasibility_proof']

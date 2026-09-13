@@ -263,6 +263,7 @@ def parser():
         help='Initial fixed-base station offset only (norm <=0.3 m); never moves a running robot')
     p.add_argument('--park-left-ready',action='store_true',help='Right-only trial with task-independent SDK left park, no grasp IK or grasp path')
     p.add_argument('--cut-station-orbit',action='store_true',help='Zero-motion station search checking raised waiting and cut-entry poses')
+    p.add_argument('--station-waiting-search',action='store_true',help='Bounded alternate waiting poses during zero-motion station search only')
     p.add_argument('--station-reference-report',type=Path,help='Same-anatomy prior initial pose as zero-motion search seed; no replay authority')
     p.add_argument('--watch-auto-run',action='store_true',help='Explicitly start one watched demonstration after native startup; no reset/replay')
     p.add_argument('--station-yaw',type=float,default=0.,
@@ -448,6 +449,8 @@ def main(argv=None):
             and args.cut_model=='loaded_downward_lower_rim_seam_v1'):
         raise ValueError('Seam yielding requires complete isolated 480 Hz crossbar feedback diagnostics')
     lower_rim=args.knife_edge_mode in ('source_lower_rim_v1','source_crossbar_edge_v1')
+    if args.station_waiting_search and not (args.cut_station_orbit and args.native_startup_station_search):
+        raise ValueError('Expanded waiting poses require a zero-motion cut-oriented station search')
     if args.cut_station_orbit and not args.native_startup_station_search:
         raise ValueError('Cut station orbit requires explicit zero-motion station search')
     startup_search=any((args.native_startup_pose_search,args.native_startup_approach_search,args.native_startup_heading_search,args.native_startup_station_search))
@@ -900,6 +903,7 @@ def main(argv=None):
             if args.native_startup_heading_search:fixture.startup_heading_search=True
             if args.native_startup_station_search:fixture.startup_station_search=True
             if args.cut_station_orbit:fixture.cut_station_orbit=True
+            if args.station_waiting_search:fixture.station_waiting_search=True
             report['native_startup_collision_screen']=native_startup_screen(stage,fixture)
             if startup_search:
                 raise RuntimeError('Read-only startup pose search completed; relaunch and revalidate before motion')

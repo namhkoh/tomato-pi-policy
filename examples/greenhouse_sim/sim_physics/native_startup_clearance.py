@@ -88,6 +88,31 @@ class NativeStartupClearance:
             if not (link in ('base','wheel_l','wheel_r') and floor
                 and (p==floor or p.startswith(floor+'/'))))
 
+    def can_check_with_final_controls(self,body_world,shapes,*,margin=.001):
+        """Reserve complete final actor controls before another whole check.
+
+        This is a search stopping condition, never clearance or a larger
+        budget. Count the exact sphere covers for these unchanged proposed
+        transforms. No native query, state change or partial check is made.
+        """
+        self._check()
+        paths=[s[0] for s in shapes]
+        if set(paths)!=self.robot_paths or len(paths)!=len(self.robot_paths):
+            raise ValueError('Complete robot inventory required for query reservation')
+        if isinstance(margin,(bool,np.bool_)) or not np.isfinite(margin) or not .001<=margin<=.05:
+            raise ValueError('Preserve finite 1..50 mm scene margin')
+        cost=0
+        for path,body,link,kind,shape in shapes:
+            if kind=='capsule':
+                m=np.asarray(body_world[link],float);a,b,radius=shape
+                centres,_=cover(m[:3,:3]@a+m[:3,3],m[:3,:3]@b+m[:3,3],radius,margin)
+                cost+=len(centres)
+            elif kind=='box':cost+=1
+            else:raise ValueError('Unknown robot geometry cannot be ignored')
+        # The owner guard requires calls STRICTLY below its hard ceiling even
+        # after the final query returns. Include environment AND robot controls.
+        return self.calls+cost+len(self.scene)+len(self.robot_paths)<self.max_queries
+
     def check(self,body_world,shapes,*,margin=.001):
         self._check();self.validated=False
         paths=[s[0] for s in shapes]

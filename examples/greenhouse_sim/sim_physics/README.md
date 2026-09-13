@@ -6,7 +6,23 @@ environment. Do not collect training demonstrations from this harness.
 
 ## September 14 current status - A/B/C NOT frozen
 
-Latest: **native310 passes all10 isolated bimanual mechanism gates**, including
+Latest continuation: isolated A/B retain their native passes; full-greenhouse
+right-only B passes331/340/349/355. Greenhouse A and responsive C remain OPEN.
+Native344 grasps but fails static post-cut retention preflight before knife
+motion. Native360's expanded waiting search finds no station; its final native
+controls now finish within the reserved query budget. See root `dev.md` for
+per-run evidence and failures. None of the following historical successes
+establish general greenhouse bimanual reliability or calibrated tissue cutting.
+
+`--station-waiting-search` is an opt-in ZERO-motion option requiring
+`--screen-station --cut-station-orbit`. Twelve bounded initial waiting offsets
+leave the cut-entry pose/orientation unchanged. Fresh waiting/entry native
+checks and left self/interarm path checks remain; no prior clearance or motion
+authority is inherited. A fresh execution must revalidate the whole moving
+path and measured grasp. The search reserves final actor controls instead of
+exhausting the native-query budget; it never increases that budget.
+
+Earlier checkpoint: **native310 passes all10 isolated bimanual mechanism gates**, including
 full-section traversal, retention, unloaded reverse and a fresh clear withdrawal
 endpoint after a2mm upward egress. Native293 remains the isolated direct-cut pass.
 This does not establish general reliability, a neutral-stance approach, greenhouse

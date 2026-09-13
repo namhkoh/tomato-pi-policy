@@ -10,6 +10,20 @@ import time
 import numpy as np
 
 
+def waiting_poses(entry,direction,normal,expanded=False):
+    """Bounded INITIAL wrist proposals, not collision-free approach paths."""
+    if type(expanded) is not bool:raise ValueError('Explicit waiting-pose search option required')
+    offsets=[np.array([0.,0.,.03])]
+    if expanded:
+        edge=np.cross(normal,direction)
+        offsets += [np.array([0.,0.,z]) for z in (.01,.06,.12)]
+        offsets += [np.array([0.,0.,.03])+sign*distance*axis
+                    for distance in (.04,.08) for axis in (normal,edge) for sign in (-1.,1.)]
+    for offset in offsets:
+        pose=entry.copy();pose[:3,3]+=offset
+        yield pose,offset
+
+
 def stations(original, centre):
     from scipy.spatial.transform import Rotation
     original=np.asarray(original,float);centre=np.asarray(centre,float)
@@ -40,6 +54,7 @@ def search(robot,backend,guard):
     if frame is None:raise ValueError('Current anatomy does not permit the requested downward cut')
     d,normal=frame
     aim=edge_centre(centre,axis,robot.blade_axial_aim_offset_m)
+    expanded_waiting=getattr(robot,'station_waiting_search',False)
     entry_frames={}
     for sign in (priority['normal_sign'],-priority['normal_sign']):
         candidate_frame=vertical_cut_frame(axis,sign,priority['tilt'])
@@ -47,13 +62,19 @@ def search(robot,backend,guard):
         direction,plane_normal=candidate_frame
         entry=robot.knife.wrist_for_edge(aim+robot.stroke_offsets[0]*direction,
             direction,plane_normal,priority['wing_m'])
-        waiting=entry.copy();waiting[2,3]+=.03
-        entry_frames[sign]=(entry,waiting)
+        entry_frames[sign]=(entry,list(waiting_poses(entry,direction,plane_normal,expanded_waiting)))
     poses=[robot.kin.forward('left',q,robot.base) for q in robot.path_q]
     ready=np.array([SDK_READY_POSE_DEGREES[f'right_arm_{i}'] for i in range(7)])
     right_seeds=[robot.right]
     if not np.array_equal(robot.right,ready):right_seeds.append(ready)
-    rows=[];proposal=None;began=time.monotonic();expired=False
+    rows=[];proposal=None;began=time.monotonic();expired=False;query_limited=False
+    def native_check(candidate,left,right):
+        nonlocal expired,query_limited
+        world=candidate.body_world(left,right)
+        reserve=getattr(backend,'can_check_with_final_controls',None)
+        if reserve is not None and not reserve(world,robot.self_screen.shapes):
+            expired=True;query_limited=True;return None
+        return backend.check(world,robot.self_screen.shapes)
     def check_time():
         guard()
         return time.monotonic()-began<45.
@@ -89,17 +110,21 @@ def search(robot,backend,guard):
         row['right_attempts']=[]
         # Either physical side of the shaft may offer access. Both still keep
         # arc-up and world-downward motion, and both receive full native checks.
-        for sign,seed in ((sign,seed) for sign in entry_frames for seed in right_seeds):
+        attempts=((sign,entry,waiting,offset,seed)
+            for sign,(entry,poses_for_entry) in entry_frames.items()
+            for waiting,offset in poses_for_entry for seed in right_seeds)
+        for sign,entry,waiting,offset,seed in attempts:
             if not check_time():expired=True;break
-            entry,waiting=entry_frames[sign]
-            attempt=dict(cut_plane_normal_sign=sign);row['right_attempts'].append(attempt)
+            attempt=dict(cut_plane_normal_sign=sign,waiting_offset_world_m=offset.tolist())
+            row['right_attempts'].append(attempt)
             solved=robot.kin.solve_pose('right',waiting,seed,base,
                 maximum_evaluations=200,joint_limit_margin_degrees=3.)
             if not solved.succeeded:attempt['rejection']='raised_waiting_ik';continue
             rq=np.asarray(solved.joint_degrees)
             if not candidate.check_self(lq,rq)['passed']:
                 attempt['rejection']='waiting_self_collision';continue
-            native=backend.check(candidate.body_world(lq,rq),robot.self_screen.shapes)
+            native=native_check(candidate,lq,rq)
+            if native is None:attempt['rejection']='reserved_final_native_controls';break
             attempt['native_waiting']=native
             if native['passed'] is not True:continue
             row['native_startup_clear']=True
@@ -114,7 +139,8 @@ def search(robot,backend,guard):
                 attempt['rejection']='folded_or_fully_extended_cut_entry';continue
             if not candidate.check_self(lq,eq)['passed']:
                 attempt['rejection']='entry_self_collision';continue
-            native=backend.check(candidate.body_world(lq,eq),robot.self_screen.shapes)
+            native=native_check(candidate,lq,eq)
+            if native is None:attempt['rejection']='reserved_final_native_controls';break
             attempt['native_cut_entry']=native
             if native['passed'] is not True:continue
             row['native_cut_entry_clear']=True;path=[];pq=lq.copy()
@@ -135,6 +161,7 @@ def search(robot,backend,guard):
                     float(np.degrees(np.arctan2(base[1,0],base[0,0])))],
                     left_ik_seed_degrees=lq.tolist(),right_ready_degrees=rq.tolist(),
                     left_path_degrees=path,
+                    waiting_offset_world_m=offset.tolist(),
                     cut_frame_family=dict(normal_sign=int(sign),tilt=float(priority['tilt']),
                                           wing_m=float(priority['wing_m'])))
                 break
@@ -143,6 +170,8 @@ def search(robot,backend,guard):
     return dict(model='frozen_native_two_arm_station_search_v1',search_strategy='cut_frame_orbit_v1',
         candidates=rows,proposed_station=proposal,maximum_candidates=315 if reference else 295,
         reference_local_seed_search=reference,
+        expanded_waiting_pose_search=expanded_waiting,
+        waiting_pose_candidates_per_frame=12 if expanded_waiting else 1,
         cut_frame_priority_used=priority_supplied,initial_vertical_standoff_m=.03,
         cut_plane_normal_signs=list(entry_frames),
         original_spawn_unchanged=True,plant_or_mounting_changed=False,
@@ -150,4 +179,5 @@ def search(robot,backend,guard):
         whole_path_certified=False,base_motion_certified=False,
         cut_entry_checked_with_left='SDK_ready_park' if getattr(robot,'park_left_ready',False) else 'unloaded_pregrasp_not_held_branch',
         proposed_floor_height_requires_fresh_launch=True,budget_exhausted=expired,
+        query_budget_reserved_for_final_controls=query_limited,
         wall_seconds=time.monotonic()-began,infeasibility_proof=False)
