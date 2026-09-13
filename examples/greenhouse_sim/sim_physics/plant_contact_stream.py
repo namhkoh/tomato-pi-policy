@@ -9,6 +9,7 @@ no contact law, classification, load gate or actuation is implemented here.
 """
 from collections.abc import Mapping
 from itertools import islice
+from functools import lru_cache
 import math
 from numbers import Real
 import re
@@ -21,6 +22,19 @@ _PRIM_PATH=re.compile(r'/[A-Za-z_][A-Za-z0-9_]*(?:/[A-Za-z_][A-Za-z0-9_]*)*\Z')
 
 
 def _path(value):
+    # Native collider IDs repeatedly resolve to the same immutable plain
+    # strings. Cache syntax only, NEVER contact rows, poses or eligibility.
+    if type(value) is str and len(value)<=MAX_PATH_CHARS:
+        return _plain_path(value)
+    return _validate_path(value)
+
+
+@lru_cache(maxsize=MAX_PLANT_COLLIDERS)
+def _plain_path(value):
+    return _validate_path(value)
+
+
+def _validate_path(value):
     if (not isinstance(value,str) or not 1<len(value)<=MAX_PATH_CHARS
             or _PRIM_PATH.fullmatch(value) is None):
         raise ValueError('Bounded absolute plain collider prim path required')
@@ -28,7 +42,10 @@ def _path(value):
 
 
 def _number(value):
-    if isinstance(value,bool) or not isinstance(value,Real) or not math.isfinite(value):
+    # Avoid numbers.Real's ABC dispatch for the copied native Python floats.
+    # bool is deliberately NOT an exact int; non-builtins keep the old check.
+    if ((type(value) not in (float,int) and (isinstance(value,bool) or not isinstance(value,Real)))
+            or not math.isfinite(value)):
         raise ValueError('Finite numeric contact scalar required')
     return float(value)
 

@@ -15,6 +15,34 @@ STEM='/World/Target/Segment/StemCollider'
 LEAF='/World/Target/Segment/Leaf/Mesh'
 
 
+def test_path_cache_is_bounded_and_does_not_cache_contact_values():
+    from .plant_contact_stream import _plain_path,_path
+    _plain_path.cache_clear()
+    c=PlantContactStream([STEM]);c.add_contact(normal())
+    hits=_plain_path.cache_info().hits
+    c.begin_step();c.add_contact(normal())
+    assert _plain_path.cache_info().hits>hits
+    bad=normal();bad['impulse_on_0_ns'][0]=float('nan')
+    with pytest.raises(ValueError,match='Finite'):c.add_contact(bad)
+    assert c.error is not None  # A known path cannot bless stale/bad row data.
+    for i in range(MAX_PLANT_COLLIDERS+3):_path(f'/World/Path{i}')
+    assert _plain_path.cache_info().currsize==MAX_PLANT_COLLIDERS
+
+
+@pytest.mark.parametrize('value',[True,np.bool_(True),float('nan'),float('inf'),complex(1), '1'])
+def test_scalar_fast_path_preserves_invalid_numeric_rejection(value):
+    from .plant_contact_stream import _number
+    with pytest.raises(ValueError):_number(value)
+
+
+@pytest.mark.parametrize('value',[-0.,1,1.25,np.float64(-.125),np.int64(4)])
+def test_scalar_fast_path_keeps_original_value_and_signed_zero(value):
+    import math
+    from .plant_contact_stream import _number
+    result=_number(value)
+    assert result==float(value) and math.copysign(1,result)==math.copysign(1,float(value))
+
+
 def normal(first=STEM,second='/World/Gutter/Collider'):
     return dict(collider0=first,collider1=second,kind='normal',point_world_m=[1.,2.,3.],
         normal_on_0=[1.,0.,0.],separation_m=-.0001,impulse_on_0_ns=[-.001,0.,0.])

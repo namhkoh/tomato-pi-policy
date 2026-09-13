@@ -8271,3 +8271,50 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   station/reference tests. Native342 is the fresh serial full-scene neutral-
   torso search, using the second kinematic candidate with80mm grasp arc and
   the original20-degree pad pitch. Still a proposal, not a motion certificate.
+
+### 2026-09-14 continuation: upright bimanual grasp and contact-loop cost
+
+- Native342 rejected the neutral-torso candidate: left forearm versus original
+  MainStem_24/25. Native343, using the alternate -20-degree grasp pitch and
+  elbow solution, found a fresh native station at original source19/row0.
+  Raised waiting and cut-entry endpoints clear; right extension0.874351.
+  Both searches used zero physics steps. A station proposal is not a complete
+  moving-path or grasp/retention certificate.
+- Native344 freshly launched343's proposal and physically established bilateral
+  grasp in the intact greenhouse. Maximum measured slip17.400 micrometres;
+  original finger-to-cut-plane placement clearance41.374mm. It stopped BEFORE
+  right-arm planning at8.922917s because static retention was not established.
+  Detached mass12.385g and gravity moment about14.21mNm require a worst-finger
+  contact bound1.071N under the fixed-patch audit, versus the unchanged0.5N
+  limit (utilization2.1423). This is one tested grasp, not proof that the plant
+  is ungraspable. No force cap, grasp weld, geometry or mass was changed.
+  Evidence: `data/sim_physics/bimanual_downward_20260914_native344/report.json`,
+  full compressed trajectory and native milestone images in that directory.
+- Native345 tests source101, whose isolated324 previously passed retention,
+  with a neutral torso at original row23. Its bounded45s native station search
+  found no proposal. Read-only IK candidates were not scene certificates.
+  Native346 additionally prioritizes324's original15-degree blade-plane family;
+  no prior path/clearance is inherited.346 found no proposal: the exact seed
+  intersects a target leaf with torso5.347 tries the opposite end-row source19
+  approach with a180-degree jaw roll and40-degree pitch; its seed intersects
+  Leaf_000 with the first finger and its bounded search found no proposal.
+  These zero-motion failures retain full geometry and final native controls.
+- Reduced repeated contact bookkeeping without deferring any guard: unchanged
+  bucket sums are reused, while every changed bucket is recomputed from the
+  complete original-order finite terms. Late normal rejection still revokes
+  friction permission within the SAME consume call. No subtractive running
+  total, row filtering, force rounding or callback batching is introduced.
+- Passive plant-contact syntax validation now caches only immutable bounded
+  plain collider strings (4096 entries); contact values/poses/eligibility are
+  never cached. Native Python floats avoid generic numeric-ABC dispatch while
+  bool, nonnumeric and nonfinite values retain the original rejection path.
+-126 focused tests pass, including exact per-consume reference equivalence,
+  zero-load headers, resets, overflow, cache bounds and nonfinite row rejection.
+  Seven-repeat matched mixed-contact helper median77.078ms ->63.868ms (1.207x),
+  with equal final contact records. This is helper-only timing, NOT whole-sim
+  latency or a new greenhouse sequence pass. See contact_helper_timing_20260914_v1.log.
+- Full regression v18:4750 passed in204.69s. No new physical sequence pass
+  is inferred from these software tests. Further intact-source grasp/station
+  proposals must still pass fresh native contact/retention and blade checks.
+- A and C remain OPEN. Isolated A/B and greenhouse B evidence are not a full
+  milestone freeze. VLM collection/training and hardware remain untouched.

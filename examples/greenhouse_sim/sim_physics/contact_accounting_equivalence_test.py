@@ -71,3 +71,25 @@ def test_late_wrong_normal_revokes_only_that_pairs_friction_immediately():
 def test_explicit_rebuild_preserves_cached_results():
     m=monitor();m.consume('/R/arm/shape','/P/Stem',[(.001,0,0)])
     before=m.measurements(1);m._refresh_totals();assert m.measurements(1)==before
+
+
+def test_unchanged_bucket_sums_survive_repeated_zero_headers_and_reset():
+    a=monitor();b=monitor(Reference)
+    for _ in range(3):
+        for i in range(20):
+            for m in (a,b):
+                m.consume('/R/arm/shape',f'/Neighbor/Leaf{i}',[(1e-18*(i+1),0,0)])
+                m.consume('/R/finger/shape','/P/Stem',[(.001,0,0)])
+                m.consume('/R/knife/shape','/P/Stem',[(0.,0.,0.)],[(0,0,0)],[(1,0,0)],[0.])
+            same(a,b)
+        a._refresh_totals();same(a,b)
+        a.begin_step();b.begin_step();same(a,b)
+
+
+def test_large_finite_pair_sums_still_reject_bucket_overflow():
+    import pytest
+    for cls in (ContactEvents,Reference):
+        m=monitor(cls)
+        m.consume('/R/arm/shape','/Neighbor/A',[(1e308,0,0)])
+        with pytest.raises(ValueError,match='Overflowing'):
+            m.consume('/R/arm/shape','/Neighbor/B',[(1e308,0,0)])

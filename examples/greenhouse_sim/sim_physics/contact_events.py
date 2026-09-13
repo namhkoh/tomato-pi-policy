@@ -121,6 +121,8 @@ class ContactEvents:
         # reclassification; no running-total subtraction/cancellation is used.
         self._normal_terms={k:{} for k in self._buckets}
         self._friction_terms={k:{} for k in self._buckets}
+        self._normal_sums={k:0. for k in self._buckets}
+        self._friction_sums={k:0. for k in self._buckets}
         self.normal_impulse=0.;self.friction_impulse=0.
         for kind in self._buckets:
             setattr(self,kind+'_impulse',0.)
@@ -237,21 +239,32 @@ class ContactEvents:
         if changed_key is None:
             self._normal_terms={k:{} for k in self._buckets}
             self._friction_terms={k:{} for k in self._buckets}
+            normal_changed=set(self._buckets);friction_changed=set(self._buckets)
             keys=self._pair_states.keys()
-        else:keys=(changed_key,)
+        else:
+            normal_changed=set();friction_changed=set();keys=(changed_key,)
         for key in keys:
             state=self._pair_states[key]
             kind=state['kind']
             if kind=='tool_candidate':
                 kind='allowed_tool' if state['normal_count'] and state['all_tool_normals'] else 'unwanted'
             for bucket in self._buckets:
-                self._normal_terms[bucket][key]=state['normal'][bucket]
-                self._friction_terms[bucket][key]=state['friction'] if kind==bucket else 0.
+                n=state['normal'][bucket];f=state['friction'] if kind==bucket else 0.
+                if self._normal_terms[bucket].get(key,0.)!=n:normal_changed.add(bucket)
+                if self._friction_terms[bucket].get(key,0.)!=f:friction_changed.add(bucket)
+                self._normal_terms[bucket][key]=n
+                self._friction_terms[bucket][key]=f
             self.normal_pairs[key]=_sum(state['normal'].values())
             self.friction_pairs[key]=state['friction']
             self.pairs[key]=_sum((self.normal_pairs[key],self.friction_pairs[key]))
         for kind in self._buckets:
-            f=_sum(self._friction_terms[kind].values());n=_sum(self._normal_terms[kind].values())
+            # Reuse only a sum whose finite terms did not change. Changed
+            # buckets still use the complete original-order fsum, never a
+            # subtract/add running total. A late rejected normal immediately
+            # recomputes BOTH old/new friction buckets in this same consume.
+            if kind in normal_changed:self._normal_sums[kind]=_sum(self._normal_terms[kind].values())
+            if kind in friction_changed:self._friction_sums[kind]=_sum(self._friction_terms[kind].values())
+            n=self._normal_sums[kind];f=self._friction_sums[kind]
             setattr(self,kind+'_friction_impulse',f)
             setattr(self,kind+'_impulse',_sum((n,f)))
         self.normal_impulse=_sum(self.normal_pairs.values())

@@ -1304,3 +1304,15 @@ Current bimanual investigation tests a neutral torso: the old isolated recipe
 leans sideways and places the two shoulders about182mm apart vertically.
 Do not treat isolated successes or a kinematic candidate as full-greenhouse A.
 VLM/data collection remains paused until A, B and acceptable C are established.
+
+Native344 establishes an actual upright-torso bilateral grasp in the intact
+source19 greenhouse, but STOPS before knife planning: the current patch's
+static retention utilization is2.1423 against unchanged0.5N per-finger contact
+bounds. Maximum slip17.4 micrometres alone does not establish post-cut retention.
+It is a failed bimanual qualification, not a working A demo. Native345..347
+are further rejected zero-motion station proposals, not executed sequences.
+
+Contact bookkeeping now reuses only unchanged bucket sums and bounded plain
+path syntax. All changed sums, original contact rows and finite-value checks
+remain immediate.126 focused and4750 full tests pass; measured1.207x speedup
+is for a mixed-contact helper benchmark only. Whole-simulator C is still open.
