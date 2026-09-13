@@ -13,6 +13,24 @@ from .gripper_probe import ramp,setup_probe_camera
 from .runtime import pose_matrices
 
 
+def diagnostic_milestones(*,grasp_verified,grasp_time,hold_control,stroke_start,stroke_end,delay,cut_time):
+    """Observed grasp/cut events, not a nominal time mislabeled as contact."""
+    milestones=[('grasp',grasp_time)] if grasp_verified else []
+    milestones+=([('hold_10s',10),('hold_20s',20)] if hold_control else [
+        ('knife_precontact',stroke_start-.1),('stroke_midpoint',(stroke_start+stroke_end)/2),
+        ('late_sequence',17.5+delay)])
+    if cut_time is not None:milestones+=[('severed',cut_time),('post_cut_2s',cut_time+2)]
+    return milestones
+
+
+def diagnostic_detail_views(name):
+    if name in ('grasp','hold_20s'):
+        return [('Grasp close-up','close'),('Grasp plant-side','plant_side')]
+    if name in ('knife_precontact','severed','post_cut_2s'):
+        return [('Right knife mount','knife'),('Grasp plant-side','plant_side')]
+    return []
+
+
 def released_stroke_fraction(last_command):
     """Latch the sent command, never infer a later command from fetch time."""
     phase,fraction=last_command
@@ -93,7 +111,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         from .step_profile import MeasuredStep
         step_context=MeasuredStep(sim)
     clock=PhysicsClock(step_context,physics_hz=args.physics_hz,render_hz=args.render_hz)
-    records=[];events=[];captures={};fault=None;stable=0;lost=0
+    records=[];events=[];captures={};capture_receipts={};fault=None;stable=0;lost=0
     grasp_local=None;goal_set=False;planned=False;grasp_verified=False;cut_time=None;cut_fraction=0.
     last_right_command=('park',0.)
     blade_feed=None
@@ -184,6 +202,11 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         future.result();runtime.sample()
         if not np.allclose(before,runtime.frames,atol=1e-8,rtol=0): raise RuntimeError('Capture advanced physics')
         captures[name]=name+'.png'
+        capture_receipts[name]=dict(step_id=clock.stamp.step,t=clock.stamp.simulation_time_s,
+            camera_path=str(viewport.camera_path),cut=rig.cut,left_grasp_verified=grasp_verified,
+            native_guards_passed=records[-1].get('native_guards_passed') if records else None,
+            plant_pose_unchanged_during_capture=True,synchronized_rgbd_observation=False,
+            purpose='paused_native_viewport_diagnostic_not_training_data')
 
     def before(stamp,dt):
         nonlocal goal_set,grasp_local,planned,cut_fraction,grasp_verified,last_right_command
@@ -519,6 +542,13 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             # would add an unrequested forward increment after release.
             cut_fraction=released_stroke_fraction(last_right_command)
             events.append(dict(t=cut_time,**fixture.cut_event))
+            if getattr(args,'cut_action_trial',False):
+                from .released_debris import ReleasedDebris
+                if fixture.event_monitor.released_debris_policy is not None:
+                    raise RuntimeError('Debris policy cannot replace an existing release binding')
+                policy=ReleasedDebris(fixture)
+                fixture.event_monitor.released_debris_policy=policy
+                events.append(dict(t=cut_time,event='released_debris_landing_deferred',policy=policy.report()))
         if rig.cut and measured_withdrawal:
             from .withdrawal_controller import WithdrawalController
             if withdrawal is None:
@@ -559,17 +589,18 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 print('BIMANUAL_SECOND '+json.dumps(dict(t=latest['t'],phase=latest['phase'],
                     bilateral=latest['contact']['bilateral'],slip_m=latest['slip_m'],cut=rig.cut)),flush=True)
             if viewport and args.capture_milestones:
-                milestones=(('grasp',grasp_time-.1),('hold_10s',10),('hold_20s',20)) if hold_control else (
-                    ('grasp',grasp_time-.1),('knife_precontact',stroke_start-.1),('stroke_midpoint',(stroke_start+stroke_end)/2),('late_sequence',17.5+delay))
+                milestones=diagnostic_milestones(grasp_verified=grasp_verified,grasp_time=grasp_time,
+                    hold_control=hold_control,stroke_start=stroke_start,stroke_end=stroke_end,
+                    delay=delay,cut_time=cut_time)
                 for name,t in milestones:
                     if clock.stamp.simulation_time_s>=t and name not in captures:
                         capture(name)
-                        if name in ('grasp','hold_20s'):
+                        if diagnostic_detail_views(name):
                             previous=str(viewport.camera_path)
-                            fixture.select_view('Grasp close-up');capture(name+'_close')
-                            fixture.select_view('Grasp plant-side');capture(name+'_plant_side')
+                            for view,suffix in diagnostic_detail_views(name):
+                                fixture.select_view(view);capture(name+'_'+suffix)
                             viewport.set_active_camera(previous)
-                if rig.cut and 'severed' not in captures: capture('severed')
+                if clock.stamp.step==int(args.seconds*args.physics_hz):capture('final')
             if args.gui: time.sleep(max(0,1/args.physics_hz-(time.monotonic()-tick)))
     except Exception as exc:
         fault=str(exc)
@@ -594,7 +625,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     result=dict(state=passed_state if all(gates.values()) else 'failed_cut_only_qualification' if cut_only else 'failed_bimanual_qualification',
         cut_strategy='right_only' if cut_only else 'bimanual',left_grasp_verified=grasp_verified,
         retention_expected=not cut_only,dropped_material_expected=cut_only,drop_corridor_certified=False,
-        gates=gates,error=fault,events=events,images=captures,timing=clock.report(),robot=fixture.report(),
+        gates=gates,error=fault,events=events,images=captures,image_evidence=capture_receipts,
+        timing=clock.report(),robot=fixture.report(),
         measurements=dict(native_edge_contact_count=fixture.cut_contacts,cut_time_s=cut_time,
             bilateral_contact_fraction_before_cut_plan=float(np.mean([r['contact']['bilateral'] for r in records if grasp_time-.5<=r['t']<=grasp_time])) if any(grasp_time-.5<=r['t']<=grasp_time for r in records) else None,
             maximum_slip_m=max((r['slip_m'] for r in records if r['slip_m'] is not None),default=None)),
@@ -612,6 +644,16 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             sequence_schedule=times if grasp_verified else None),
         target_source='privileged_test_fixture_not_perception_verified',training_eligible=False)
     if step_context is not sim: result['step_profile']=step_context.report()
+    if getattr(args,'cut_action_trial',False):
+        from .cut_action import assess
+        action=assess(cut_only=cut_only,grasp_verified=grasp_verified,planned=planned,
+            cut_event=fixture.cut_event,cut_time=cut_time,records=records,fault=fault)
+        result['full_sequence_state']=result['state']
+        result['full_sequence_qualified']=all(gates.values())
+        result['cut_action']=action
+        result['state']='passed_cut_action_not_complete_robot_task' if action['passed'] else 'failed_cut_action'
+        result['measurements']['maximum_released_debris_contact_n']=max(
+            (r.get('robot',{}).get('released_debris_contact_n',0.) for r in records),default=0.)
     (output/'bimanual_trajectory.json').write_text(json.dumps(records,allow_nan=False),encoding='utf-8')
     if contact_stream is not None:fixture.event_monitor.full_contact_observer=None
     fixture.release_grasp_observer()

@@ -82,7 +82,7 @@ def _span(offset,count,size,label):
 
 
 class ContactEvents:
-    _buckets=('allowed_target','allowed_tool','allowed_floor','unwanted','self')
+    _buckets=('allowed_target','allowed_tool','allowed_floor','unwanted','self','released_debris')
 
     def __init__(self,*,robot_root,target_root,fingers,floor_root,full_contact_observer=None):
         self.robot_root=robot_root;self.target_root=target_root
@@ -90,6 +90,7 @@ class ContactEvents:
         self.subscription=None;self.paths={};self.total_events=0;self.error=None
         self.native_full_contact_reporting=False;self.native_friction_type=None
         self.tool_contact=None
+        self.released_debris_policy=None
         self.normal_contact_observer=None
         self.full_contact_observer=full_contact_observer
         self.begin_step()
@@ -127,6 +128,8 @@ class ContactEvents:
         if r0 and r1: return 'self',None,None
         robot,other=(first,second) if r0 else (second,first)
         body=self.robot_root+'/'+robot[len(self.robot_root)+1:].split('/')[0]
+        if self.released_debris_policy is not None and self.released_debris_policy.matches(robot,other):
+            return 'released_debris',robot,other
         if body in self.fingers and other.startswith(self.target_root+'/'):
             return 'allowed_target',robot,other
         if self.floor_root and (other==self.floor_root or other.startswith(self.floor_root+'/')) and body in {
@@ -310,4 +313,5 @@ class ContactEvents:
         self.subscription=None
         self.normal_contact_observer=None
         self.full_contact_observer=None
+        self.released_debris_policy=None
         self.native_full_contact_reporting=False;self.native_friction_type=None

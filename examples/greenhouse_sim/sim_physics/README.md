@@ -4,30 +4,66 @@ This is an opt-in engineering harness on `koh-dev/sim-vlm`, not a replacement
 for the static dataset collector, and not yet a validated robot manipulation
 environment. Do not collect training demonstrations from this harness.
 
-## September 13 checkpoint (supersedes older outcome statements below)
+## September 13 limited cut-action checkpoint (supersedes older outcomes)
 
-The isolated480 Hz fixture now repeats grasp, signed-edge-load joint release
-and31.5 seconds of retention after release. It still FAILS final withdrawal
-clearance: the detached branch settles against the pre-cut waiting blade pose.
-This is not a qualified complete robot task or calibrated tissue cutting.
+Both requested actions now pass on the isolated original source branch fixture:
+left grasp + right cut (native254/255), and right-only cut (native253/256). These are
+50-second, 480 Hz native trials with the complete RB-Y1 A v1.2 and original
+camera-aligned knife. Source geometry/material priors and force, slip and
+active-contact guards are unchanged. This is NOT general greenhouse reliability,
+calibrated tissue cutting, a complete robot task, or training-approved experience.
 
-An explicit cut-only diagnostic keeps the left arm parked/open, never invents
-grasp evidence, and does not claim retention/deposit. Its first unheld cuts
-release the branch, then correctly stop on falling-material/robot contact.
-Automatic strategy switching and safe falling-material clearance are not yet
-qualified. Anatomical left/right branch direction is only a planning hint.
+The user explicitly permits released material to land on the torso/base. The
+opt-in `--milestone cut_action` records those exact post-release contacts as
+`released_debris`, including normal/friction loads, without changing collision
+filters or physical response. Attached plants, neighboring plants, both hands
+and the active right arm/tool still use the existing guards. Release identity,
+exact detached collider inventory and the disabled seam are checked first.
 
-Reproduce these engineering tests (NOT a successful demo preset), from this
-directory's parent, using Isaac's Python and a NEW output directory:
+The limited success contract is checked approach + strategy-specific support +
+measured blade-contact seam release + at least two seconds of guarded observation.
+The actual trials continue to 50 seconds. Full withdrawal/retention/deposit are
+reported separately. Native254 retains for 31.5 seconds after cutting with
+2.21 mm maximum slip, but FAILS final blade clearance against the held branch.
+Native253 is unheld throughout, separates, and passes right withdrawal. Its
+maximum recorded passive-body debris load is 10.07 N; landing/damage is NOT
+certified. It also emits native material-index warnings after the fall, an
+unresolved engine/contact-metadata caveat. Do not suppress these or claim
+calibrated post-impact material behavior from this result.
+
+Reproduce the limited actions from `examples/greenhouse_sim`, using Isaac's
+Python and a NEW output directory (headless; does not take over the open UI):
 
 ```bat
-D:\isaac-sim-6.0.1\python.bat -B -m sim_physics.ground_truth_trial --mode bimanual --output D:\research\tomato-pi-policy\data\sim_physics\my_new_trial
+D:\isaac-sim-6.0.1\python.bat -B -m sim_physics.ground_truth_trial --mode bimanual --milestone cut_action --output D:\research\tomato-pi-policy\data\sim_physics\my_new_grasp_cut_trial
 ```
 
-Use `--mode right_only` for the distinct unheld test. Both are headless, retain
-original source assets/guards, and do not take over a running UI or start any
-training. See `ground_truth_trial.json` for exact options and root `dev.md`
-for native247..252, test logs, remaining blockers and the requested freeze gate.
+Use `--mode right_only` and another new output directory for the distinct unheld
+test. Optional `--capture` renders at 15 Hz and saves paused native milestone
+PNGs with frame receipts. Verified grasp/cut captures follow measured events,
+not nominal schedule times; cut-only never produces a verified-grasp image.
+These are diagnostic viewport images, NOT synchronized training RGB-D.
+Native255 (bimanual,11 PNGs) and256 (right-only,14 PNGs) repeat the non-rendered
+cut times and force/slip results with rendering enabled, and exit successfully.
+Their `image_evidence` receipts bind each PNG to the observed timestep/state.
+Right-only has no verified-grasp images. Close-up views accompany cutting in256;
+the wrist/main stem partly occludes the edge, so images alone do not establish
+the contact location. The native cut evidence remains authoritative for this
+simulated seam-release model. Final physics regression:4,221 tests passed.
+
+Omitting `--milestone cut_action` preserves the older full-sequence assessment
+and passive-contact failure policy. Both Python and Kit exit codes now agree
+with the explicitly requested milestone; a success label alone is insufficient.
+The original full-sequence gates remain visible in `report.json` even when the
+limited action passes. See `ground_truth_trial.json` for the exact fixture,
+root `dev.md` for results, and `cut_action.py` for the limited contract.
+
+Limits: one selected source petiole (seed101_full/SubStem_41), pre-positioned
+task-ready right arm, 20 mm seam / 80 mm grasp arc, no reposition, and no
+surroundings in the isolated contact fixture. Automatic strategy switching,
+arbitrary target approach, reset/retry qualification, intact greenhouse
+requalification and real-time performance remain unfinished. Retention/deposit
+and the bimanual final retreat must not be inferred from a limited cut pass.
 
 ## September 12: camera-aligned knife and precise closer grasp
 

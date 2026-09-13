@@ -1,8 +1,13 @@
-"""Reproducible isolated ground-truth diagnostics, NOT a qualified demo preset.
+"""Reproducible isolated ground-truth actions, NOT a full greenhouse qualification.
 
 From examples/greenhouse_sim, using Isaac's interpreter:
   -B -m sim_physics.ground_truth_trial --output NEW_DIRECTORY --mode bimanual
   -B -m sim_physics.ground_truth_trial --output NEW_DIRECTORY --mode right_only
+
+Add --milestone cut_action for the limited user-requested grasp/cut or unheld
+cut result, with post-release torso/base landing recorded separately. The
+default full_sequence keeps stricter historical gates. Add --capture for
+event-bound native diagnostic PNGs (not synchronized training observations).
 
 Both modes retain original assets/guards and run headless. No hardware, training,
 automatic fallback, GUI takeover, arbitrary target selection or OS changes.
@@ -15,9 +20,11 @@ from pathlib import Path
 PROFILE = Path(__file__).with_name('ground_truth_trial.json')
 
 
-def arguments(output, mode):
+def arguments(output, mode, milestone='full_sequence', capture=False):
     if mode not in ('bimanual','right_only'):
         raise ValueError('Explicit diagnostic mode required')
+    if milestone not in ('full_sequence','cut_action'):
+        raise ValueError('Explicit full-sequence or limited cut-action milestone required')
     data=json.loads(PROFILE.read_text(encoding='utf-8'))
     if data['schema']!='isolated_ground_truth_cut_trial_v1':
         raise ValueError('Unknown diagnostic profile')
@@ -28,6 +35,11 @@ def arguments(output, mode):
         args=[v for v in args if v not in remove]
         args+=['--right-only-cut-trial']
         args[args.index('--approach-distance')+1]='.08'
+    if milestone=='cut_action':args+=['--cut-action-trial']
+    if capture:
+        args.remove('--no-capture-milestones')
+        args[args.index('--render-hz')+1]='15'
+        args+=['--capture-milestones']
     return ['--output',str(output),*args]
 
 
@@ -35,9 +47,11 @@ def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--output',required=True,type=Path)
     p.add_argument('--mode',required=True,choices=('bimanual','right_only'))
+    p.add_argument('--milestone',choices=('full_sequence','cut_action'),default='full_sequence')
+    p.add_argument('--capture',action='store_true',help='Paused native milestone PNGs; headless, not synchronized training RGB-D')
     args=p.parse_args(argv)
     from .benchmark import main as run
-    return run(arguments(args.output,args.mode))
+    return run(arguments(args.output,args.mode,args.milestone,args.capture))
 
 
 if __name__=='__main__':

@@ -22,6 +22,46 @@ def report_configuration(args,output):
     return result
 
 
+def report_exit_code(report,args):
+    """Use the requested milestone for both Python return and native Kit exit.
+
+    A limited cut action may pass while final withdrawal fails; its separate
+    execution/contact/support gates must still be present and true. Never
+    upgrade a full-sequence request or accept a success label by itself.
+    """
+    if getattr(args,'cut_action_trial',False):
+        action=report.get('cut_action') or {}
+        gates=action.get('gates') or {}
+        required={'no_execution_fault','checked_right_plan','blade_contact_release',
+                  'required_pre_cut_support','post_cut_observation','native_guards'}
+        mode='right_only' if args.right_only_cut_trial else 'bimanual'
+        passed=(report.get('state')=='passed_cut_action_not_complete_robot_task'
+            and report.get('error') is None and report.get('source_assets_unchanged') is True
+            and report.get('cut_strategy')==mode
+            and report.get('left_grasp_verified') is (mode=='bimanual')
+            and action.get('model')=='ground_truth_cut_action_milestone_v1'
+            and action.get('strategy')==mode and action.get('passed') is True
+            and set(gates)==required and all(value is True for value in gates.values())
+            and all(report.get('gates',{}).get(k) is True for k in
+                    ('bounded','collision_clear_right_plan','blade_contact_release')))
+        return 0 if passed else 2
+    if report.get('state')=='passed_cut_only_mechanism_not_robot_task':
+        gates=report.get('gates') or {}
+        required={'bounded','completed','collision_clear_right_plan','blade_contact_release',
+                  'released_material_separates','right_withdrawal_completed','left_parked_open_unloaded'}
+        passed=(getattr(args,'right_only_cut_trial',False)
+            and report.get('error') is None and report.get('source_assets_unchanged') is True
+            and report.get('cut_strategy')=='right_only' and report.get('left_grasp_verified') is False
+            and set(gates)==required and all(value is True for value in gates.values()))
+        return 0 if passed else 2
+    if getattr(args,'right_only_cut_trial',False):
+        return 2  # A requested unheld trial cannot inherit a grasp-mode success.
+    return 0 if report.get('state') in (
+        'passed_mechanism_qualification_not_robot_task','interactive_demo_not_qualification',
+        'passed_gripper_mechanism_not_robot_task','passed_bimanual_mechanism_not_robot_task',
+        'interactive_full_robot_diagnostic','scene_ablation_diagnostic_not_qualification') else 2
+
+
 def parser():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--output',type=Path,required=True)
@@ -70,6 +110,8 @@ def parser():
     p.add_argument('--bimanual-cut',action='store_true',help='Guarded native left grasp and original right knife seam-release qualification')
     p.add_argument('--right-only-cut-trial',action='store_true',
         help='Separate isolated unheld cut diagnostic: left stays parked/open, no retention or deposit credit')
+    p.add_argument('--cut-action-trial',action='store_true',
+        help='Limited grasp/cut milestone; record released-target torso landings separately, keep full-task gates visible')
     p.add_argument('--knife-alignment',choices=('legacy','camera'),default='legacy',
         help='Camera aligns the arc to the actual wrist camera radial side; original source asset untouched')
     p.add_argument('--cut-style',choices=('legacy','downward'),default='legacy',
@@ -226,6 +268,11 @@ def main(argv=None):
     fixed_cut=args.fixed_root_cut_trial
     from .cut_only import validate_profile
     cut_only=validate_profile(args)
+    if args.cut_action_trial and not (fixed_cut and args.native_drives_after_cut
+            and args.branch_contact_fixture and args.native_startup_clearance
+            and args.native_static_clearance and not args.gui and not args.robot_interactive
+            and not args.measured_withdrawal):
+        raise ValueError('Cut action milestone requires explicit headless native-release diagnostic')
     if args.cut_convergence_trial and not (fixed_cut and args.physics_hz==480
             and args.native_drives_after_cut and args.require_retention_screen
             and args.physical_grasp_span and args.settle_retention_preload
@@ -762,7 +809,7 @@ def main(argv=None):
             if not report['source_assets_unchanged']: raise RuntimeError('Source asset changed during probe')
             (output/'report.json').write_text(json.dumps(report,indent=2,allow_nan=False),encoding='utf-8')
             print('GRIPPER_PROBE_RESULT '+json.dumps({k:report.get(k) for k in ('state','gates','measurements')}),flush=True)
-            return 0 if report['state'] in ('passed_gripper_mechanism_not_robot_task','passed_bimanual_mechanism_not_robot_task','interactive_full_robot_diagnostic') else 2
+            return report_exit_code(report,args)
         if args.interactive:
             from .demo import run
             report['state']='interactive_demo_not_qualification'
@@ -887,7 +934,7 @@ def main(argv=None):
             if previous_threads is None: process_settings.destroy_item(thread_setting)
             else: process_settings.set(thread_setting,previous_threads)
         # Fast Kit shutdown otherwise exits with zero even after an exception.
-        app.close(exit_code=0 if report['state'] in ('passed_mechanism_qualification_not_robot_task','interactive_demo_not_qualification','passed_gripper_mechanism_not_robot_task','passed_bimanual_mechanism_not_robot_task','interactive_full_robot_diagnostic','scene_ablation_diagnostic_not_qualification') else 2)
+        app.close(exit_code=report_exit_code(report,args))
 
 
 if __name__=='__main__':

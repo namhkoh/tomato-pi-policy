@@ -7265,3 +7265,95 @@ No hardware, collection, tuning, review, split or training-export changes.
 - Save engineering checkpoints independently of a frozen release. The user's
   today deadline does not change collision, force, contact, provenance or
   repeatability requirements. No reliable completion ETA is established yet.
+
+### 2026-09-13 - User-scoped grasp/cut and unheld cut milestone
+
+- The user narrowed today's milestone: support left grasp + right cut and
+  right-only cut; released material may land on the torso. This supersedes the
+  landing/withdrawal prerequisite in the preceding freeze plan ONLY for the
+  limited cut-action checkpoint. Do not call it a complete robot task, safe
+  deposit, universal reliability, calibrated tissue fracture or hardware proof.
+- Added explicit --cut-action-trial, exposed as ground_truth_trial
+  --milestone cut_action. It requires the existing isolated fixed-root/native
+  release profile and original startup/static native checks. Default behavior
+  and full-sequence reports remain unchanged. No source assets, material
+  parameters, native collision filters, force/slip/penetration bounds, sensor
+  cadence, dataset decisions, training or physical robot state were changed.
+- released_debris.py binds to the actual strategy-verified blade event and
+  composed disabled seam. Only exact detached target colliders contacting
+  exact torso/base/wheel bodies get a separate record-only classification.
+  Attached supports, neighboring plants, active right arm/tool and both hands
+  retain their existing guards. All original raw impulses and normal/friction
+  accounting remain available; reset or changed event identity fails closed.
+- Limited action success requires a checked right plan, correct native support
+  evidence (actual stable grasp OR explicit parked/open/unloaded cut-only),
+  measured blade release, >=2 s post-cut observation and all execution guards.
+  Native trials still run50 s. Full mechanism gates are preserved under
+  full_sequence_state/full_sequence_qualified, not overwritten by the new score.
+- Native253 (right-only): cut13.254167 s, completed50 s, all cut-action AND
+  right-only mechanism gates pass, including released separation and measured
+  right withdrawal. The left stays parked/open/unloaded: no fake grasp/slip.
+  Maximum separately recorded debris/torso-base contact10.069878 N. This is
+  accepted task scoring, NOT a safe-impact or material-damage certificate.
+  Log contains317,176 lines matching native getMaterialFromInternalFaceIndex after
+  the fall; no matching warning in249 or254. Root cause/physical relevance is
+  unresolved. Keep logs and do not silently suppress or label these harmless.
+-253 wrote a correct successful action report but returned an error exit:
+  the launcher/Kit success allowlists omitted new action and cut-only states.
+  Added one report_exit_code helper used by both return and app.close. It
+  checks requested mode, exact complete evidence gates, source integrity and
+  absence of execution fault. Full-sequence requests cannot claim limited
+  action success; unverified success labels cannot pass. Legacy exits retained.
+- Native254 (bimanual): process exit0; limited cut-action PASS through50 s.
+  Cut18.495833 s, maximum slip2.209229 mm; native retention passes through
+ 31.504 s after release. All original native execution guards and source-asset
+  integrity pass. Final held-branch/BladePlate clearance STILL FAILS, so the
+  full_sequence_state remains failed_bimanual_qualification. This is consistent
+  with247..249, not hidden by the narrower milestone. No torso debris load.
+- Evidence: data/sim_physics/bimanual_downward_20260912_native{253,254}/report.json,
+  corresponding .log files, and streamed bimanual_trajectory.json in each run.
+  Full regression:4,182 passed161.49 s before exit fix;4,210 passed160.77 s
+  after exit fix. Logs regression_20260913_cut_action_all_{v1,v2}.log.
+- Diagnostic capture correction: legacy 'grasp' screenshots were scheduled
+  before verification and could even be named in cut-only mode. They now
+  follow measured grasp verification; severed/post_cut_2s follow actual cut
+  time. Optional --capture saves paused15 Hz viewport evidence with step,
+  timestamp, camera, cut/grasp state and unchanged-plant-pose receipt, plus a
+  final image. They are explicitly NOT synchronized RGB-D or training data.
+- Current checkpoint is one isolated original branch, complete robot and
+  original knife, task-ready prepositioned right arm, cut at20 mm and grasp
+  at80 mm material arc. No reposition, arbitrary target solution, automatic
+  fallback, reset qualification, intact-greenhouse cut or real-time claim.
+  Measured no-render real-time factor:249 ~0.192,253 ~0.240; do not present
+  these instrumented runs as responsive online control or VLM demonstrations.
+- Native255 repeats the bimanual action WITH15 Hz rendering and11 native PNGs:
+  limited action PASS, process exit0, same18.495833 s cut and2.209229 mm peak
+  slip as254. Independent bounded-memory audit of all24,000 records confirms
+  zero native guard failures, two isolated post-cut nonbilateral samples, and
+  final bilateral contact with2.190898 mm slip. Full final withdrawal remains
+  failed. Source assets unchanged. Images/receipts are in the native255 folder.
+  The plant-side grasp image visibly shows the shaft between the finger pads.
+  Wide cut images are too distant to prove edge contact visually; added knife
+  and plant-side detail captures for the next rendered trial. Native contact
+  evidence, not an image filename, remains the basis of the release result.
+- Native256 repeats right-only WITH15 Hz rendering and14 native PNGs: process
+  exit0, limited action and all right-only mechanism gates PASS through50 s.
+  Cut13.254167 s,6519 native edge contacts, maximum recorded debris load
+ 10.069878 N, same as253. No left grasp/slip is fabricated; every image receipt
+  explicitly records left_grasp_verified=False. Original source assets intact.
+  Plant-side images show the branch present before cutting and absent after
+  detachment, with the left hand open. The knife-side view is partly occluded
+  by the wrist/main stem: this view alone does not prove the precise cut line.
+  Native material-index warnings repeat after the fall; unresolved caveat.
+  Instrumented real-time factor ~0.235 (NOT real-time online control).
+- Regression after event-bound screenshots:4,217 passed148.51 s in
+  regression_20260913_cut_action_all_v3.log. Final detail-view suite:4,221
+  passed150.49 s in regression_20260913_cut_action_all_v4.log. A subsequent
+  exit-mode consistency assertion also passes all28 focused exit tests:
+  requesting right-only cannot inherit a legacy grasp-mode success state.
+- Saved engineering checkpoint, not a general frozen manipulation release:
+  two requested actions reproduce with/without rendering on ONE identical
+  ground-truth fixture. Outstanding: bimanual final clearance, post-fall native
+  material warnings, perturbation/multiple-target and reset/retry coverage,
+  arbitrary-start approach, and full-greenhouse requalification/performance.
+  VLM training/data, other running applications and OS settings were untouched.
