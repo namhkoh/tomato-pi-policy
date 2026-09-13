@@ -27,7 +27,9 @@ def _current_side_witness_validated(q,radius,half_height,sw,pw,half,axis,sign,of
     """
     rho=float(np.linalg.norm(q[:2]))
     if not rho:raise ValueError('Cylinder side point needs a radial direction')
-    material=np.r_[q[:2]*(radius/rho),np.clip(q[2],-half_height,half_height)]
+    material=np.empty(3)
+    material[:2]=q[:2]*(radius/rho)
+    material[2]=np.clip(q[2],-half_height,half_height)
     point_now=sw[:3,:3]@material+sw[:3,3]
     local=(point_now-pw[:3,3])@pw[:3,:3]
     face=np.clip(local,-half,half);face[axis]=sign*half[axis]

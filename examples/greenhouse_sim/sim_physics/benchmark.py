@@ -231,6 +231,8 @@ def parser():
         help='Isolated retention trial: derive connected shaft identity from measured full pad footprint; original contact geometry/force verification remains mandatory')
     p.add_argument('--settle-retention-preload',action='store_true',
         help='Isolated retention trial: wait bounded 0.2 s measured original-preload dwell before static capacity audit; no force-limit increase')
+    p.add_argument('--solver-convergence-trial',type=int,choices=(64,),default=None,
+        help='Explicit numerical comparison only:64/0 vs baseline128/0, no fidelity equivalence assumed')
     p.add_argument('--joint-transit-fallback',action='store_true',
         help='Bounded whole-arm joint search after Cartesian approach failure; cut stroke remains downward')
     p.add_argument('--staged-downward-transit',action='store_true',
@@ -256,6 +258,8 @@ def parser():
     p.add_argument('--approach-tilt',type=float,default=0.,help='Bounded diagnostic wrist tilt around the shaft, in degrees')
     p.add_argument('--station-offset',type=float,nargs=2,metavar=('FORWARD_M','LEFT_M'),
         help='Initial fixed-base station offset only (norm <=0.3 m); never moves a running robot')
+    p.add_argument('--park-left-ready',action='store_true',help='Right-only trial with task-independent SDK left park, no grasp IK or grasp path')
+    p.add_argument('--cut-station-orbit',action='store_true',help='Zero-motion station search checking raised waiting and cut-entry poses')
     p.add_argument('--station-yaw',type=float,default=0.,
         help='Initial station heading relative to palm approach, within +/-90 degrees; no live base motion')
     p.add_argument('--station-pose',type=float,nargs=3,metavar=('X_M','Y_M','YAW_DEG'),
@@ -326,6 +330,10 @@ def main(argv=None):
     contact_scope=args.isolate_station or greenhouse_trial
     from .cut_only import validate_profile
     cut_only=validate_profile(args)
+    if args.park_left_ready and not cut_only:
+        raise ValueError('Independent left park requires the complete right-only trial')
+    if args.park_left_ready and args.native_startup_station_search and not args.cut_station_orbit:
+        raise ValueError('Task-independent left park station search requires cut-station-orbit')
     from .cut_watch import validate as validate_watch
     validate_watch(args)
     if args.material_clearance_trial and not args.through_stroke_trial:
@@ -427,6 +435,8 @@ def main(argv=None):
             and args.cut_model=='loaded_downward_lower_rim_seam_v1'):
         raise ValueError('Seam yielding requires complete isolated 480 Hz crossbar feedback diagnostics')
     lower_rim=args.knife_edge_mode in ('source_lower_rim_v1','source_crossbar_edge_v1')
+    if args.cut_station_orbit and not (args.native_startup_station_search and args.cut_priority_report):
+        raise ValueError('Cut station orbit requires explicit zero-motion station search and prior cut-frame family')
     startup_search=any((args.native_startup_pose_search,args.native_startup_approach_search,args.native_startup_heading_search,args.native_startup_station_search))
     if sum((args.native_startup_pose_search,args.native_startup_approach_search,args.native_startup_heading_search,args.native_startup_station_search))>1:
         raise ValueError('Select one zero-motion startup search mode')
@@ -448,13 +458,18 @@ def main(argv=None):
         raise ValueError('Native startup validation requires isolated cut contact and native path clearance')
     if args.branch_contact_fixture and not contact_trial:
         raise ValueError('Branch-only selection requires the isolated cut contact diagnostic')
+    solver_comparison=args.solver_convergence_trial is not None
+    if solver_comparison and not (args.uniform_solver_iterations==[64,0]
+            and args.physics_hz==480 and args.material_clearance_trial and args.through_stroke_trial
+            and fixed_cut and args.native_drives_after_cut and not args.watch_cut_trial):
+        raise ValueError('Solver convergence comparison requires explicit64/0 and complete480Hz material-clearance trial')
     if contact_trial and not (args.scene=='package' and contact_scope and args.full_robot_probe
             and args.bimanual_cut and (not args.bimanual_hold_control or fixed_hold) and not args.robot_interactive
             and args.explicit_finger_effort and args.force_closure and robot_rate_allowed
             and args.solver=='PGS' and args.spring_mode==('native' if args.native_spring_cut_trial else 'implicit_effort')
             and args.constraint_mode==('fixed_articulation' if fixed_hold or fixed_cut else 'articulation')
             and args.stem_contact_model=='flat_cylinders_v1' and args.grasp_contact_frames=='pre_solve_pgs_v1'
-            and args.uniform_solver_iterations in ([128,0],[128,8]) and args.force_newton==0
+            and (args.uniform_solver_iterations in ([128,0],[128,8]) or solver_comparison) and args.force_newton==0
             and not args.diagnostic_contact_prediction and not args.experimental_contact_springs):
         raise ValueError('Isolated cut contact trial requires the complete explicit flat/PGS/spring/128-0-or-8 fixture')
     if args.explicit_finger_effort and not (contact_scope and (args.bimanual_hold_control or contact_trial)
@@ -680,6 +695,7 @@ def main(argv=None):
         for component in audit['components'].values():
             path=manifest.parent/component['file'];source_hashes[path]=component['asset_sha256']
         robot_options=dict(sparse_contacts=args.sparse_contacts,finger_gravity=args.finger_gravity,
+            park_left_ready=args.park_left_ready,
             exact_grasp_arc=args.exact_grasp_arc,
             right_ready_degrees=args.right_ready_degrees,
             right_ready_lift_m=args.right_ready_lift_m,
@@ -858,6 +874,7 @@ def main(argv=None):
             if args.native_startup_approach_search:fixture.startup_approach_search=True
             if args.native_startup_heading_search:fixture.startup_heading_search=True
             if args.native_startup_station_search:fixture.startup_station_search=True
+            if args.cut_station_orbit:fixture.cut_station_orbit=True
             report['native_startup_collision_screen']=native_startup_screen(stage,fixture)
             if startup_search:
                 raise RuntimeError('Read-only startup pose search completed; relaunch and revalidate before motion')

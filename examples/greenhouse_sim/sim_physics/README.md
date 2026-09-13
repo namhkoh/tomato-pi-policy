@@ -1208,3 +1208,29 @@ See `dev.md` for exact failures/results and remaining fidelity limitations.
 The cut remains an uncalibrated force/direction-qualified seam-release model,
 not tissue fracture/kerf or a measured clean-cut quality model. Native293
 headless rate is0.26x real time; visual full-scene responsiveness remains open.
+
+### Isolated bimanual repeat (2026-09-14, native310/313/318)
+
+All ten isolated sequence gates pass in these three runs, including retained
+material, full shaft-section traversal, unloaded reversal and freshly screened
+post-cut egress.313 includes23 paused inspection PNGs. This is still one source
+petiole, not broad reliability, intact-greenhouse qualification or tissue
+fracture calibration. Native318 runs at about0.20x real time. A/B/C is NOT done.
+
+```powershell
+& D:\isaac-sim-6.0.1\python.bat -B -m sim_physics.ground_truth_trial --output D:\research\tomato-pi-policy\data\sim_physics\NEW_TRIAL --mode bimanual --milestone cut_action --process-zone-trial --through-stroke-trial --material-clearance-trial --postcut-egress-trial --blade-aim-offset-m .0015 --rectilinear-floor-contacts --coupled-fingers-trial --physics-threads 1 --cut-priority-report D:\research\tomato-pi-policy\data\sim_physics\bimanual_downward_20260914_native293\report.json
+```
+
+The prior report changes candidate ORDER ONLY, never imports clearance or a
+joint path. Add --capture for paused diagnostic PNGs. Keep128/0 iterations and
+the default0.3mm/s loaded post-release feed:64 iterations lost grasp in317 and
+1mm/s exceeded a finger-contact limit in311. Neither is a qualified speedup.
+`--screen-station --cut-station-orbit` is a zero-motion initial-station proposal
+search requiring a cut-priority report; it cannot certify or execute a path.
+See `dev.md` for rejected greenhouse approaches and current memory constraints.
+
+Experimental `--park-left-ready` is RIGHT-ONLY: it holds the source SDK left
+ready configuration instead of requiring target-grasp IK for an unused hand.
+All native park/contact/self/scene checks remain. Its full-greenhouse zero-step
+searches322/323 found no clear station; no execution qualification is claimed.
+Do not use it for bimanual grasp or infer retention from a direct cut.

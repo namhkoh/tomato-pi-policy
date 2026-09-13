@@ -79,6 +79,7 @@ def main(argv=None):
     p.add_argument('--through-stroke-trial',action='store_true',
         help='Experimental measured follow-through and withdrawal; 85 s, no solid-face bypass')
     p.add_argument('--stream-trajectory',action='store_true',help='Lossless full-rate compressed diagnostic evidence')
+    p.add_argument('--solver-convergence-trial',type=int,choices=(64,),default=None,help='Numerical convergence comparison, not a qualified faster default')
     p.add_argument('--joint-transit-fallback',action='store_true',help='Screened whole-arm joint search for approach only')
     p.add_argument('--postrelease-feed-m-s',type=float,default=.0003,help='Explicit post-release contact feed comparison')
     p.add_argument('--postcut-egress-trial',action='store_true',help='Fresh fully screened post-cut withdrawal goal')
@@ -90,6 +91,8 @@ def main(argv=None):
     p.add_argument('--screen-approach-start',action='store_true',help='Zero-motion higher/lateral waiting-pose search only')
     p.add_argument('--screen-tool-heading',action='store_true',help='Zero-motion arc-up complete-tool heading search only')
     p.add_argument('--screen-station',action='store_true',help='Zero-motion base/two-arm proposal search; no base-motion or path authority')
+    p.add_argument('--cut-station-orbit',action='store_true',help='Screen both a raised waiting pose and cut entry; requires --screen-station and --cut-priority-report')
+    p.add_argument('--park-left-ready',action='store_true',help='Explicit right-only SDK left park, independent of grasp reachability')
     p.add_argument('--station-proposal-report',type=Path,help='Explicit new initial station in greenhouse or isolation; all native startup/path checks run again')
     p.add_argument('--coupled-fingers-trial',action='store_true',help='Experimental physical jaw coupling; bimanual only, unchanged force/slip limits')
     p.add_argument('--right-ready-lift-m',type=float,default=0.,help='Initial world-up waiting-pose lift; fresh IK and original native guards required')
@@ -140,6 +143,9 @@ def main(argv=None):
     if args.material_clearance_trial:options+=['--material-clearance-trial']
     if args.postcut_egress_trial:options+=['--postcut-egress-trial']
     if args.joint_transit_fallback:options+=['--joint-transit-fallback']
+    if args.solver_convergence_trial is not None:
+        options+=['--solver-convergence-trial',str(args.solver_convergence_trial),
+                  '--uniform-solver-iterations',str(args.solver_convergence_trial),'0']
     if args.postrelease_feed_m_s!=.0003:options+=['--postrelease-feed-m-s',str(args.postrelease_feed_m_s)]
     if args.rectilinear_floor_contacts:options+=['--rectilinear-floor-contacts']
     if args.stream_trajectory or args.through_stroke_trial:options+=['--stream-trajectory']
@@ -151,6 +157,8 @@ def main(argv=None):
     if args.screen_approach_start:options+=['--native-startup-approach-search']
     if args.screen_tool_heading:options+=['--native-startup-heading-search']
     if args.screen_station:options+=['--native-startup-station-search']
+    if args.cut_station_orbit:options+=['--cut-station-orbit']
+    if args.park_left_ready:options+=['--park-left-ready']
     if args.station_proposal_report:options+=['--station-proposal-report',str(args.station_proposal_report)]
     if args.coupled_fingers_trial:options+=['--coupled-fingers-trial']
     if args.right_ready_lift_m:options+=['--right-ready-lift-m',str(args.right_ready_lift_m)]

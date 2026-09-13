@@ -23,6 +23,8 @@ def apply_to_arguments(args):
             or search.get('motion_authorized') is not False or not isinstance(proposal,dict)):
         raise ValueError('Unchanged zero-step final-controlled station proposal required')
     config=report.get('configuration',{})
+    if config.get('park_left_ready',False)!=getattr(args,'park_left_ready',False):
+        raise ValueError('Station proposal task mismatch: parked-left strategy')
     # Same anatomical task and robot geometry; no mismatched grasp/torso recipe.
     keys=('plant','target','grasp_arc_m','grasp_roll','grasp_pitch','grasp_depth_m',
           'torso_degrees','cut_arc_m','knife_edge_mode','knife_alignment','stem_contact_model')

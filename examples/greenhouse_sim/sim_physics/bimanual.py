@@ -537,10 +537,16 @@ class BimanualRobot(FullRobotGripper):
             checked+=1
             return (self.kin.inter_arm_clearance(left_q,q,self.base).clearance_m>=.01
                 and self.check_self(left_q,q)['passed'] and self.check_held_plant(left_q,q))
-        path=connect_path(self.right,goal,lower,upper,valid)
+        search={};options=({'diagnostics':search} if getattr(self,'_joint_transit_proposal',False) else {})
+        try:path=connect_path(self.right,goal,lower,upper,valid,**options)
+        finally:
+            if options:self.last_transit_rejection=dict(reason='bounded_joint_search_result',search=dict(search),
+                last_plant_failure=getattr(self.held_plant_screen,'last_failure',None))
+            if options and isinstance(getattr(self,'plan_diagnostics',None),dict):
+                self.plan_diagnostics['last_joint_search']=self.last_transit_rejection
         if path is not None:
             minimum=min(self.kin.inter_arm_clearance(left_q,q,self.base).clearance_m for q in path)
-            return path,minimum,dict(method='bounded_bidirectional_joint_search',seed=0,
+            return path,minimum,dict(method='bounded_bidirectional_joint_search',seed=0,search=search,
                 collision_checks=checked,maximum_joint_sample_step_degrees=1.,
                 held_plant_snapshot_screened=hasattr(self,'held_plant_screen'),whole_scene_certified=False)
         return None
@@ -766,7 +772,7 @@ class BimanualRobot(FullRobotGripper):
                             from itertools import chain
                             from .redundant_ik import pose_family
                             family=chain((solution,),pose_family(self.kin,'right',desired,
-                                np.asarray(solution.joint_degrees),self.base,steps_per_direction=4,
+                                np.asarray(solution.joint_degrees),self.base,steps_per_direction=32,
                                 joint_limit_margin_degrees=3.))
                             self._joint_transit_proposal=True
                             try:
@@ -774,9 +780,13 @@ class BimanualRobot(FullRobotGripper):
                                     q=np.asarray(member.joint_degrees)
                                     entry=dict(joint_degrees=q.tolist(),endpoint_clear=False)
                                     attempt['joint_fallback_attempts'].append(entry)
-                                    if (self.kin.inter_arm_clearance(left_q,q,self.base).clearance_m<.01
-                                            or not self.check_self(left_q,q)['passed']
-                                            or not self.check_held_plant(left_q,q)):continue
+                                    entry['interarm_clearance_m']=self.kin.inter_arm_clearance(left_q,q,self.base).clearance_m
+                                    if entry['interarm_clearance_m']<.01:entry['rejection']='interarm';continue
+                                    checked=self.check_self(left_q,q)
+                                    if not checked['passed']:
+                                        entry.update(rejection='robot_self',self_screen=checked);continue
+                                    if not self.check_held_plant(left_q,q):
+                                        entry.update(rejection='plant_or_scene',plant_screen=self.held_plant_screen.last_failure);continue
                                     entry['endpoint_clear']=True
                                     candidate=(float(np.linalg.norm(q-self.right)),degrees,d,q,normal_sign,wing,normal)
                                     if self._try_cut_candidate(left_q,centre,axis,candidate,tilt,failures):
@@ -1002,6 +1012,17 @@ class BimanualRobot(FullRobotGripper):
         xf=UsdGeom.Xformable(camera);xf.ClearXformOpOrder()
         xf.AddTransformOp().Set(Gf.Matrix4d().SetLookAt(Gf.Vec3d(*eye),Gf.Vec3d(*centre),Gf.Vec3d(0,0,1)).GetInverse())
         self.views['Right knife mount']=path
+        # Opposed external inspection angles expose the cutting plane when
+        # the original wrist/main-stem view is occluded. These are diagnostic
+        # cameras only; existing robot D405 views/calibration stay unchanged.
+        for sign,label in ((1.,'front'),(-1.,'back')):
+            eye=centre+sign*.22*edge[:3,2]+.045*edge[:3,1]+.05*edge[:3,0]
+            path='/World/BladePlaneInspection_'+label
+            camera=UsdGeom.Camera.Define(self.stage,path)
+            camera.CreateFocalLengthAttr(28.);camera.CreateClippingRangeAttr(Gf.Vec2f(.003,10))
+            xf=UsdGeom.Xformable(camera);xf.ClearXformOpOrder()
+            xf.AddTransformOp().Set(Gf.Matrix4d().SetLookAt(Gf.Vec3d(*eye),Gf.Vec3d(*centre),Gf.Vec3d(0,0,1)).GetInverse())
+            self.views['Blade plane '+label]=path
 
     def report(self):
         result=super().report()

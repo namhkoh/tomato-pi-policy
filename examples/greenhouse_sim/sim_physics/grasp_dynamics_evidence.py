@@ -72,9 +72,9 @@ def _frames(value, count, label):
     r = frames[:, :3, :3]
     # Match shaft_grasp's rigid-frame tolerance; do not silently repair poses.
     with np.errstate(over='ignore', invalid='ignore'):
-        rigid = (np.allclose(frames[:, 3], [0., 0., 0., 1.], atol=1e-7, rtol=0)
-                 and np.allclose(r.transpose(0, 2, 1) @ r, np.eye(3), atol=1e-5, rtol=0)
-                 and np.allclose(np.linalg.det(r), 1., atol=1e-5, rtol=0))
+        rigid = ((np.abs(frames[:, 3]-[0., 0., 0., 1.])<=1e-7).all()
+                 and (np.abs(r.transpose(0, 2, 1) @ r-np.eye(3))<=1e-5).all()
+                 and (np.abs(np.linalg.det(r)-1.)<=1e-5).all())
     if not rigid:
         raise ValueError('Proper rigid unscaled ' + label + ' required')
     return frames

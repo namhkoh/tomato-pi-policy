@@ -24,7 +24,8 @@ def test_release_and_observation_images_follow_actual_cut_not_stroke_schedule():
 @pytest.mark.parametrize('name',['knife_precontact','severed','post_cut_2s'])
 def test_cut_evidence_includes_detail_views_not_only_the_wide_camera(name):
     assert diagnostic_detail_views(name)==[
-        ('Right knife mount','knife'),('Grasp plant-side','plant_side')]
+        ('Right knife mount','knife'),('Grasp plant-side','plant_side'),
+        ('Blade plane front','blade_front'),('Blade plane back','blade_back')]
 
 
 def test_only_relevant_milestones_request_extra_views():

@@ -10,6 +10,9 @@ import numpy as np
 
 
 def search(robot,backend,guard):
+    if getattr(robot,'cut_station_orbit',False):
+        from .cut_station_orbit import search as orbit_search
+        return orbit_search(robot,backend,guard)
     from scipy.spatial.transform import Rotation
     from greenhouse_sim.robot_scene import SDK_READY_POSE_DEGREES
     ready=np.array([SDK_READY_POSE_DEGREES[f'right_arm_{i}'] for i in range(7)])

@@ -107,7 +107,10 @@ class FullRobotGripper(GripperFixture):
     pregrasp_half_aperture=.025
 
     def __init__(self,stage,rig,*,arc=.08,friction=.5,ground_height=None,
-                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None,grasp_skew=0.,grasp_pitch=0.,finger_actuator_limit_n=.5,exact_grasp_arc=False,right_ready_degrees=None,left_ik_seed_degrees=None,anchored_pad_damping=False,pregrasp_half_aperture=.025,right_ready_lift_m=0.,right_ready_retreat_m=0.):
+                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None,grasp_skew=0.,grasp_pitch=0.,finger_actuator_limit_n=.5,exact_grasp_arc=False,right_ready_degrees=None,left_ik_seed_degrees=None,anchored_pad_damping=False,pregrasp_half_aperture=.025,right_ready_lift_m=0.,right_ready_retreat_m=0.,park_left_ready=False):
+        if type(park_left_ready) is not bool or park_left_ready and getattr(self,'cut_strategy',None)!='right_only':
+            raise ValueError('Independent left park requires an explicit right-only strategy')
+        self.park_left_ready=park_left_ready
         if type(anchored_pad_damping) is not bool or anchored_pad_damping and not compliant_fingers:
             raise ValueError('Anchored damping prior requires compliant fingers')
         self.finger_actuator_limit_n=_finger_actuator_limit(finger_actuator_limit_n)
@@ -234,20 +237,24 @@ class FullRobotGripper(GripperFixture):
             low,high=self.kin.arm_limits_degrees('left')
             if seed.shape!=(7,) or not np.isfinite(seed).all() or np.any(seed<=low) or np.any(seed>=high):
                 raise ValueError('Left IK seed must obey exact URDF limits')
-        result=self.kin.solve_pose('left',self.start,seed,self.base)
-        self.pregrasp_ik_attempts=1
-        if not result.succeeded:
-            # The 7-DOF arm has wrist/elbow branches. A single ready-pose seed
-            # can hit a wrist limit without proving the target unreachable.
-            lower,upper=self.kin.arm_limits_degrees('left')
-            for wrist_roll in (-120.,0.,120.):
-                seed=np.array([self.pose[f'left_arm_{i}'] for i in range(7)],dtype=float)
-                seed[6]=wrist_roll;seed=np.clip(seed,lower+.1,upper-.1)
-                result=self.kin.solve_pose('left',self.start,seed,self.base,maximum_evaluations=400)
-                self.pregrasp_ik_attempts+=1
-                if result.succeeded: break
-        if not result.succeeded: raise ValueError('Full-robot pregrasp IK failed: '+str(result))
-        self.initial_q=np.array(result.joint_degrees)
+        if self.park_left_ready:
+            from .left_ready_park import initialize
+            initialize(self)
+        else:
+            result=self.kin.solve_pose('left',self.start,seed,self.base)
+            self.pregrasp_ik_attempts=1
+            if not result.succeeded:
+                # The 7-DOF arm has wrist/elbow branches. A single ready-pose
+                # seed cannot prove the target unreachable.
+                lower,upper=self.kin.arm_limits_degrees('left')
+                for wrist_roll in (-120.,0.,120.):
+                    seed=np.array([self.pose[f'left_arm_{i}'] for i in range(7)],dtype=float)
+                    seed[6]=wrist_roll;seed=np.clip(seed,lower+.1,upper-.1)
+                    result=self.kin.solve_pose('left',self.start,seed,self.base,maximum_evaluations=400)
+                    self.pregrasp_ik_attempts+=1
+                    if result.succeeded: break
+            if not result.succeeded: raise ValueError('Full-robot pregrasp IK failed: '+str(result))
+            self.initial_q=np.array(result.joint_degrees)
         self.pose.update({f'left_arm_{i}':v for i,v in enumerate(self.initial_q)})
         self.slides={'gripper_finger_l1':-self.pregrasp_half_aperture,'gripper_finger_l2':self.pregrasp_half_aperture}
         self.paths=[self.root+'/'+n for n in ('ee_left','ee_finger_l1','ee_finger_l2')]
@@ -336,8 +343,10 @@ class FullRobotGripper(GripperFixture):
                 str(p.GetPath()) for p in Usd.PrimRange(stage.GetPrimAtPath('/World/Plant'))
                 if p.HasAPI(UsdPhysics.CollisionAPI) and UsdPhysics.CollisionAPI(p).GetCollisionEnabledAttr().Get()]
         from .grasp_target import finger_seam_clearance
-        self.grasp_clearance=finger_seam_clearance(stage,self.root,self.goal,
-            rig.chain_world[rig.cut_index],rig.rest_frames[rig.cut_index,:3,2])
+        self.grasp_clearance=(dict(applicable=False,reason='left_is_parked_no_grasp_requested',
+            whole_tool_corridor_certified=False) if self.park_left_ready else
+            finger_seam_clearance(stage,self.root,self.goal,
+                rig.chain_world[rig.cut_index],rig.rest_frames[rig.cut_index,:3,2]))
         self.plan_approach()
 
     def _finger_drive_limit(self,name):
@@ -373,6 +382,10 @@ class FullRobotGripper(GripperFixture):
 
     def plan_approach(self):
         """Solve before motion; interpolate only a dense, checked local IK path."""
+        if getattr(self,'park_left_ready',False):
+            from .left_ready_park import stationary_path
+            stationary_path(self)
+            return
         self.fractions=np.linspace(0,1.15,47)
         joints=[];seed=self.initial_q.copy();minimum=float('inf')
         delta=self.goal[:3,3]-self.start[:3,3]
@@ -392,6 +405,8 @@ class FullRobotGripper(GripperFixture):
     def report(self):
         return dict(asset=str(self.asset),scope='full_dynamic_robot_native_joint_drives',
             arm_ik_solved=True,grasp_weld=False,plant_pose_override=False,base_fixed=True,
+            left_setup='sdk_ready_stationary_no_grasp_IK' if getattr(self,'park_left_ready',False) else 'target_pregrasp_IK',
+            left_grasp_ik_required=not getattr(self,'park_left_ready',False),
             pregrasp_ik_seed_attempts=self.pregrasp_ik_attempts,
             robot_base_world=self.base.tolist(),grasp_body=self.grasp_path,grasp_arc_m=self.arc,
             ground_truth_grasp=dict(target_petiole=self.rig.source_target,

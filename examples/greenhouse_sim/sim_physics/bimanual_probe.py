@@ -27,7 +27,8 @@ def diagnostic_detail_views(name):
     if name in ('grasp','hold_20s'):
         return [('Grasp close-up','close'),('Grasp plant-side','plant_side')]
     if name in ('knife_precontact','severed','post_cut_2s'):
-        return [('Right knife mount','knife'),('Grasp plant-side','plant_side')]
+        return [('Right knife mount','knife'),('Grasp plant-side','plant_side'),
+                ('Blade plane front','blade_front'),('Blade plane back','blade_back')]
     return []
 
 

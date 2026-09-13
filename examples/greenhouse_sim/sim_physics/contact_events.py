@@ -116,6 +116,11 @@ class ContactEvents:
                 if self.full_contact_observer is not None:self._full_contact_fault(exc)
                 raise
         self.pairs={};self.normal_pairs={};self.friction_pairs={};self._pair_states={}
+        # Preserve pair insertion order (including zero terms) so every fsum
+        # sees exactly the old summation order. Only the changed pair needs
+        # reclassification; no running-total subtraction/cancellation is used.
+        self._normal_terms={k:{} for k in self._buckets}
+        self._friction_terms={k:{} for k in self._buckets}
         self.normal_impulse=0.;self.friction_impulse=0.
         for kind in self._buckets:
             setattr(self,kind+'_impulse',0.)
@@ -224,23 +229,29 @@ class ContactEvents:
                 state['normal'][bucket]=_sum((state['normal'][bucket],magnitudes[i]))
                 if accepted:
                     self.minimum_tool_separation_m=min(self.minimum_tool_separation_m,separations[i])
-        self._refresh_totals()
+        self._refresh_totals(key)
 
-    def _refresh_totals(self):
+    def _refresh_totals(self,changed_key=None):
         # Recompute from sparse pair state so later headers/callbacks can revoke
         # earlier tool-friction permission without subtraction/cancellation.
-        normal={k:[] for k in self._buckets};friction={k:[] for k in self._buckets}
-        for key,state in self._pair_states.items():
-            for kind,value in state['normal'].items(): normal[kind].append(value)
+        if changed_key is None:
+            self._normal_terms={k:{} for k in self._buckets}
+            self._friction_terms={k:{} for k in self._buckets}
+            keys=self._pair_states.keys()
+        else:keys=(changed_key,)
+        for key in keys:
+            state=self._pair_states[key]
             kind=state['kind']
             if kind=='tool_candidate':
                 kind='allowed_tool' if state['normal_count'] and state['all_tool_normals'] else 'unwanted'
-            friction[kind].append(state['friction'])
+            for bucket in self._buckets:
+                self._normal_terms[bucket][key]=state['normal'][bucket]
+                self._friction_terms[bucket][key]=state['friction'] if kind==bucket else 0.
             self.normal_pairs[key]=_sum(state['normal'].values())
             self.friction_pairs[key]=state['friction']
             self.pairs[key]=_sum((self.normal_pairs[key],self.friction_pairs[key]))
         for kind in self._buckets:
-            f=_sum(friction[kind]);n=_sum(normal[kind])
+            f=_sum(self._friction_terms[kind].values());n=_sum(self._normal_terms[kind].values())
             setattr(self,kind+'_friction_impulse',f)
             setattr(self,kind+'_impulse',_sum((n,f)))
         self.normal_impulse=_sum(self.normal_pairs.values())

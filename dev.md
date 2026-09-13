@@ -7986,3 +7986,82 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   greenhouse for both strategies, and matched latency measurements. Do not
   claim real-time speed from these overlapping diagnostic runs. VLM collection,
   training, review decisions/splits and hardware remain untouched.
+
+### 2026-09-14 continuation: rendered repeat and exact contact-accounting optimization
+
+- Native313 repeats native310 with 15 Hz rendering and 23 paused, step-bound
+  diagnostic PNGs, including new front/back blade-plane inspection cameras.
+  All ten isolated sequence gates pass. Release23.564583s; full section
+  traversal44.925s; unloaded reverse78.789583s; retained through85s after the
+  fully screened2mm upward egress. Maximum slip1.286446mm. The new views do not
+  replace the three D405 views. These PNGs are NOT a continuous video or
+  synchronized RGB-D training observations; foliage/fingers still obscure
+  parts of the edge in some views.
+- Native315/316 retain the intact greenhouse. The broader redundant-arm
+  endpoint search checks59 IK configurations but finds no clear endpoint;
+  therefore it cannot proceed to joint-space path search. Diagnostics now
+  retain endpoint rejection details and bounded RRT tree/check counts. The
+  observed rejection includes right forearm versus SubStem_44/Leaf_028.
+  No foliage, tool geometry or contact margin was removed to obtain a pass.
+- Native317 explicitly compares64/0 solver iterations against128/0. It releases
+  at23.629167s but FAILS the3mm grasp-slip guard (3.005258mm). The64-iteration
+  option remains an unqualified numerical experiment, NOT the default.
+- Optimized ContactEvents bookkeeping: recompute the changed pair, while
+  preserving original pair order and fresh math.fsum totals for every bucket.
+  No delta-subtraction drift, deferred observer or dropped contact row. Tests
+  compare the old and new dictionaries/forces EXACTLY after every header,
+  including friction-only input, zero rows and late eligibility revocation.
+  Synthetic accounting-only benchmark medians: old0.129210s/new0.056285s
+  (~2.30x for that helper, NOT whole-simulator speed).
+- Native318 with this optimization PASSES all ten isolated gates with the
+  exact same release time,19,079 edge contacts and1.286446mm maximum slip as
+  native310/313.85s simulated takes421.807s tick wall time (~0.202x real time).
+  Runs were not matched for host load; no causal whole-sim speedup is claimed.
+  Full regression v7:4584 passed207.84s; v8:4587 passed216.20s
+  (`data/sim_physics/regression_20260914_contact_accounting_v8.log`).
+- Added explicit --screen-station --cut-station-orbit: zero-motion proposed
+  base/two-arm stations must clear BOTH a30mm-raised waiting pose and the
+  cut-entry pose using the full native robot/scene inventory. Existing hand
+  goals, target, torso and assets are unchanged. Proposals require a fresh
+  launch, native floor/startup checks and the entire grasp/cut path; endpoint
+  checks confer no path authority. Native319's first48 (radius>=.45m) choices
+  found no two-arm IK configuration. A local kinematic check showed the search
+  omitted reachable closer stations; the revised bounded family includes
+  .30/.35/.40m stations and15-degree heading variations, within the ORIGINAL
+  .25..1m base-distance limit.22 focused station/proposal tests pass. Native321
+  did not start: full-greenhouse memory reserve unavailable during native320.
+  The expanded family has NOT yet had its native search completed.
+- Native314/321 memory preflight refusals are host-capacity failures, not cut
+  results. No launch-reserve bypass, reboot or closure of unrelated apps.
+  Native320 is a profiling repeat, pending. A/B still lack an intact-greenhouse
+  motion pass and a neutral-stance visible approach; C is NOT real-time.
+  Three isolated bimanual passes remain single-source mechanism evidence,
+  not arbitrary-target reliability, calibrated tissue fracture or safe deposit.
+  VLM collection/training, datasets, review decisions and hardware stay paused.
+
+- Follow-up native320 profiling repeat also PASSES all ten isolated gates.
+  `profile.pstats` attributes substantial cost to native contact callbacks,
+  per-row shaft-contact evidence and diagnostic serialization. Native318's
+  full-rate archive alone spent45.580s serializing/compressing40,800 records.
+  Profiling timings are instrumentation-affected, not a speed benchmark.
+- Added opt-in `--park-left-ready` for RIGHT-ONLY trials. Previously even an
+  unheld cut initialized the left hand through target-grasp IK and a unused
+  grasp path. The new mode uses the source SDK left-ready joint configuration,
+  no grasp IK/path, and retains full startup/self/environment checks plus the
+  per-step open/unloaded/unchanged-left-reference guards. It is not available
+  for bimanual trials and does not claim grasp/retention. Historical defaults
+  stay unchanged. Station proposals cannot cross between the two left modes.
+- Native322 uses this independent left park in the intact scene: no clear
+  station within45.015s. Native323 additionally checks both shaft-normal signs
+  while keeping arc-up/downward motion;125 stations examined within45.218s,
+  no clear proposal. Both preserve final native positive controls and take
+  zero physics steps. These are bounded failures, not infeasibility proofs.
+- Arithmetic-only hot-path changes preserve the exact scalar normal tolerance,
+  rigid-transform bounds and material-point witness calculations. No rate,
+  iteration, contact, friction, slip or geometry checks were removed. Boundary
+  and randomized equivalence tests pass; native324 repeat is pending.
+- Full regression v9:4594 passed215.23s. v10:4614 passed202.45s
+  (`data/sim_physics/regression_20260914_independent_left_park_v10.log`).
+  Investigation identified existing outward-facing candidates in seed19/47/53/79
+  among the supplied plants. No source switch or new-target physics pass yet.
+  Original seed101/SubStem_41 greenhouse access and real-time speed remain open.

@@ -198,7 +198,9 @@ class ShaftGraspEvidence:
             i, sign = matches[0]; other = collider1 if sign == 1 else collider0
             p = _array(point, (3,)); n = _array(normal, (3,)); j = _array(impulse, (3,))
             length = float(np.linalg.norm(n))
-            if not np.isclose(length, 1., atol=1e-4, rtol=0):
+            # Identical finite-scalar rtol=0 predicate without generic array
+            # broadcasting/isclose dispatch for every native normal row.
+            if not abs(length-1.)<=1e-4:
                 raise ValueError('Unit native normal required')
             raw_normal = n
             n = n / length; scalar = float(np.dot(j, n)); magnitude = float(np.linalg.norm(j))
