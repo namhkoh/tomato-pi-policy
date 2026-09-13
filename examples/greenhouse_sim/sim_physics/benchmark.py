@@ -139,6 +139,8 @@ def parser():
         help='Explicit isolated CONTACT-LAW comparison only; cannot qualify the compliant-pad production model')
     p.add_argument('--require-retention-screen',action='store_true',
         help='Isolated fixed-root trial: require current contact-patch static gravity capacity before knife planning; not a dynamic certificate')
+    p.add_argument('--pregrasp-half-aperture-m',type=float,default=.025,
+        help='Isolated fixed-root trial only: commanded initial jaw half-opening, at least shaft radius +2 mm; original geometry/limits/guards unchanged')
     p.add_argument('--branch-contact-fixture',action='store_true',
         help='CONTACT ONLY: keep original main stem and selected complete petiole/leaves; excludes other source branches in session; NOT intact-plant/greenhouse qualification')
     p.add_argument('--anchored-pad-damping',action='store_true',
@@ -206,7 +208,12 @@ def main(argv=None):
     args=parser().parse_args(argv)
     fixed_hold=validate_fixed_root_hold(args)
     fixed_cut=args.fixed_root_cut_trial
-    if args.require_retention_screen and not (fixed_cut and args.diagnostic_grasp_dynamics and args.finger_friction==.5):
+    if (not math.isfinite(args.pregrasp_half_aperture_m) or not 0<args.pregrasp_half_aperture_m<=.025
+            or args.pregrasp_half_aperture_m!=.025 and not (fixed_cut and args.require_retention_screen
+                and args.force_closure and args.explicit_finger_effort and args.finger_target_antiwindup)):
+        raise ValueError('Pre-grasp opening requires the complete fixed-root feedback trial with retention preflight')
+    if args.require_retention_screen and not (fixed_cut and args.diagnostic_grasp_dynamics
+            and args.finger_friction==.5 and args.gravity==9.81):
         raise ValueError('Retention preflight requires the original isolated fixed-root contact/dynamics trial')
     if args.rigid_pad_control and not (fixed_cut and args.compliant_fingers and args.branch_contact_fixture):
         raise ValueError('Rigid pad control requires complete isolated fixed-root branch comparison')
@@ -568,6 +575,7 @@ def main(argv=None):
                 robot_options['cut_style']=args.cut_style
                 robot_options['grasp_compression']=args.grasp_compression_m
                 robot_options['force_closure']=args.force_closure
+                robot_options['pregrasp_half_aperture']=args.pregrasp_half_aperture_m
                 robot_options['explicit_finger_effort']=args.explicit_finger_effort
                 robot_options['finger_target_antiwindup']=args.finger_target_antiwindup
                 robot_options['retention_preload']=args.retention_preload

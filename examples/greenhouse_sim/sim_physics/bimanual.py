@@ -84,7 +84,7 @@ class BimanualRobot(FullRobotGripper):
         if self.force_closure_enabled:
             from .force_closure import ForceClosure
             self.force_closer=ForceClosure(self.radius,self.grasp_compression,retention_preload=self.retention_preload,
-                symmetric=self.symmetric_finger_closure)
+                symmetric=self.symmetric_finger_closure,pregrasp_half_aperture=self.pregrasp_half_aperture)
         if fixed is not None:
             low,high=self.kin.arm_limits_degrees('right')
             if not low[fixed[0]]<fixed[1]<high[fixed[0]]:
@@ -231,7 +231,8 @@ class BimanualRobot(FullRobotGripper):
                     return result
             q=self.path_q[int(np.argmin(abs(self.fractions-1.)))]
             aperture=max(0.,self.radius-self.grasp_compression)
-            for gap in np.linspace(.025,aperture,max(2,int(np.ceil((.025-aperture)/.001))+1)):
+            from .pregrasp_aperture import closure_samples
+            for gap in closure_samples(self.pregrasp_half_aperture,aperture):
                 self.planning_slides={'gripper_finger_l1':-gap,'gripper_finger_l2':gap}
                 checks+=1
                 if not screen.check(self.body_world(q,self.right),grasp=True):
@@ -270,7 +271,7 @@ class BimanualRobot(FullRobotGripper):
         if getattr(self,'force_closure_enabled',False):
             from .force_closure import ForceClosure
             self.force_closer=ForceClosure(self.radius,self.grasp_compression,retention_preload=self.retention_preload,
-                symmetric=self.symmetric_finger_closure)
+                symmetric=self.symmetric_finger_closure,pregrasp_half_aperture=self.pregrasp_half_aperture)
         self.right_indices=[self.names.index(f'right_arm_{i}') for i in range(7)]
         if getattr(self,'explicit_finger_effort',False):
             from .finger_effort import FingerEffort
@@ -335,14 +336,14 @@ class BimanualRobot(FullRobotGripper):
                 gaps,receipt=project(gaps,self.robot.get_dof_positions()[0,self.finger_indices],
                     self.robot.get_dof_velocities()[0,self.finger_indices],self.force_limits[0,self.finger_indices],
                     minimum=self.force_closer.minimum,retention_preload=self.force_closer.retention_preload,
-                    symmetric=self.force_closer.symmetric)
+                    symmetric=self.force_closer.symmetric,maximum=self.force_closer.opening)
                 self.force_closer.gaps=gaps.copy()
                 self.force_closer.receipt.update(half_gaps_m=gaps.tolist(),antiwindup=receipt)
             self.targets[0,self.finger_indices]=np.array([-1.,1.])*gaps
             self.robot.set_dof_position_targets(self.targets,self.index)
             return
         aperture=max(0.,self.radius-getattr(self,'grasp_compression',.0005))
-        super().close(fraction*(1-aperture/.025))
+        super().close(fraction*(1-aperture/self.pregrasp_half_aperture))
 
     def seam(self,frames):
         i=self.rig.cut_index

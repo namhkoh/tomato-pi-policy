@@ -76,3 +76,11 @@ def test_cli_rejects_outside_isolated_trial_before_output(tmp_path):
     with pytest.raises(ValueError,match='Retention preflight'):
         main(['--output',str(out),'--require-retention-screen'])
     assert not out.exists()
+
+
+def test_cli_rejects_a_different_gravity_than_the_static_load_model(tmp_path):
+    out=tmp_path/'must_not_create'
+    with pytest.raises(ValueError,match='Retention preflight'):
+        main(['--output',str(out),'--require-retention-screen','--fixed-root-cut-trial',
+            '--diagnostic-grasp-dynamics','--gravity','0'])
+    assert not out.exists()

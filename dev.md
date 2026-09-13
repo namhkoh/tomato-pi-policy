@@ -6798,3 +6798,53 @@ No hardware, collection, tuning, review, split or training-export changes.
   qualification. Dataset/splits/reviews/training, hardware, source assets and
   production greenhouse fidelity are unchanged. No reboot or memory-check bypass.
   Final explicit240Hz/step-clock preflight guard:139 focused tests pass in1.32s.
+
+### 2026-09-13: Source-preserving grasp access and consistent pre-shaping
+
+- Tightened the static retention prerequisite to require the same9.81m/s^2
+  gravity assumed by its load model; a zero-gravity diagnostic cannot reuse
+  that result.140 focused tests pass after this additional scope check.
+- Native210 tests original seed37_full/SubStem_41 at55mm grasp arc,20mm
+  cut arc and19mm finger/cut-plane clearance. Zero-step full native startup
+  passes; the approach screen rejects finger1/main-stem contact at7.5% of
+  the approach.211's75mm grasp rejects self-clearance against the parked
+  knife before physics.212 changes the initial right shoulder by-5 degrees;
+  self-clearance passes but zero-step scene checking rejects finger1 against
+  the target's original Leaf_019. No rejected approach is executed.
+- The approach had used a50mm total jaw opening for a shaft only a few
+  millimetres wide. Added diagnostic `--pregrasp-half-aperture-m` (default
+  unchanged25mm per side): require shaft radius+2mm clearance, initialize
+  native fingers and drive targets consistently, screen the entire actual
+  approach/closure, and preserve this commanded opening in force feedback
+  and antiwindup. This changes a proposed robot pose/command, NOT gripper
+  geometry, physical joint limits, actuator limits or contact mechanics.
+  CLI scope requires the complete fixed-root explicit-feedback diagnostic
+  and current-contact retention preflight. Runtime pose/velocity setters,
+  welds and reduced collision/force/slip guards are not introduced.
+- Native213 repeats210 with8mm half-opening. Zero-step native startup passes
+  (484 queries). At0.9s the planner rejects the approach at5% against the
+  target's Leaf_019/Segment_005; static main-stem coarse rejections encountered
+  before that are cleared by native queries. The changed opening does NOT
+  solve all access constraints. No grasp, knife motion or cut is qualified.
+- Alternative-angle/parent-plane and independently parked right-arm offline
+  proposals remain subject to original self/leaf/main-stem/camera/cut-plane
+  checks. No geometry is removed to manufacture a clear grasp. Offline
+  candidates do not establish native contact or physical retention.
+- Tests:220 focused pass in9.05s, including in-memory USD initial native
+  joint/drive readback and unchanged joint limits/source layer, complete
+  approach/closure sampling, default compatibility and bounded feedback.
+  Broad regression: **4,961 passed,2 skipped,47 subtests passed in183.26s**,
+  `data/sim_physics/regression_20260913_pregrasp_v1.log`.
+  Evidence: individual `bimanual_downward_20260912_native210` through
+  `native213` report/trajectory directories in `data/sim_physics`.
+- Reliable post-cut retention, withdrawal and deposit remain incomplete.
+  Native tests still model force/direction-qualified joint release, not
+  calibrated tissue fracture. Production greenhouse/assets/fidelity,
+  datasets/reviews/splits/training and hardware are unchanged. Host reserve
+  passed before213 (~29.3GiB commit headroom); abnormal kernel paged pool
+  remains. No reboot, unrelated-process stop or memory-check bypass.
+- Native214 moves the grasp to50mm with the same8mm half-opening. Startup
+  again passes, but the approach intersects the original main stem at2.5%
+  of the path. No grasp/cut follows. Final scalar/type validation regression:
+  **223 focused tests pass in9.21s**. This includes invalid text, boolean,
+  complex and nonfinite opening rejection before physical commands.

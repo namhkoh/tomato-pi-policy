@@ -923,3 +923,13 @@ spring effort after checked release. The latter changes the pad contact law,
 not geometry/friction/caps, and cannot qualify compliant-pad physics. Both
 comparisons still fail retention. See `dev.md` for individual failures and
 regression results; never report software test passes as physical success.
+
+`--pregrasp-half-aperture-m .008` is an opt-in commanded initial jaw opening
+for the complete isolated fixed-root feedback trial with retention preflight.
+The opening must leave at least 2 mm beyond the selected shaft radius on each
+side. Initial joint state, approach/closure screening, feedback scheduling and
+antiwindup use the same opening. Source geometry, physical joint limits,
+actuator/contact budgets, collision margins and cut gates are unchanged; the
+default remains 25 mm per side. Native213 passes zero-step startup but rejects
+the approach against an original target leaf. This is not a successful grasp
+or evidence that narrower pre-shaping alone solves access or retention.

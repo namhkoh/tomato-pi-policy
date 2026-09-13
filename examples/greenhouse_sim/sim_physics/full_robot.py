@@ -104,9 +104,10 @@ def finger_compliance(finger_masses,stem_mass,*,anchored_pad_damping=False):
 
 class FullRobotGripper(GripperFixture):
     finger_actuator_limit_n=.5
+    pregrasp_half_aperture=.025
 
     def __init__(self,stage,rig,*,arc=.08,friction=.5,ground_height=None,
-                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None,grasp_skew=0.,grasp_pitch=0.,finger_actuator_limit_n=.5,exact_grasp_arc=False,right_ready_degrees=None,left_ik_seed_degrees=None,anchored_pad_damping=False):
+                 torso_degrees=None,sparse_contacts=False,floor_root=None,finger_gravity=False,approach_tilt=0.,station_offset=(0.,0.),approach_side=1,approach_vector=(1.,-1.,.2),grasp_roll=0,approach_distance=.08,compliant_fingers=False,station_yaw=0.,grasp_depth=.1025,station_pose=None,grasp_skew=0.,grasp_pitch=0.,finger_actuator_limit_n=.5,exact_grasp_arc=False,right_ready_degrees=None,left_ik_seed_degrees=None,anchored_pad_damping=False,pregrasp_half_aperture=.025):
         if type(anchored_pad_damping) is not bool or anchored_pad_damping and not compliant_fingers:
             raise ValueError('Anchored damping prior requires compliant fingers')
         self.finger_actuator_limit_n=_finger_actuator_limit(finger_actuator_limit_n)
@@ -145,6 +146,8 @@ class FullRobotGripper(GripperFixture):
         self.grasp_path=rig.body_paths[self.body_index]
         self.half_length=float(np.linalg.norm(rig.chain_world[self.body_index+1]-rig.chain_world[self.body_index])/2)
         self.radius=float(stage.GetPrimAtPath(self.grasp_path+'/StemCollider').GetAttribute('radius').Get())
+        from .pregrasp_aperture import validate
+        self.pregrasp_half_aperture=validate(self.radius,pregrasp_half_aperture)
         # Side entry avoids the fixed foliage above this shaft. A kinematic
         # palm fixture does not reveal palm-vs-static contacts; the full dynamic
         # arm does, so do not reuse its top-down approach blindly.
@@ -243,7 +246,7 @@ class FullRobotGripper(GripperFixture):
         if not result.succeeded: raise ValueError('Full-robot pregrasp IK failed: '+str(result))
         self.initial_q=np.array(result.joint_degrees)
         self.pose.update({f'left_arm_{i}':v for i,v in enumerate(self.initial_q)})
-        self.slides={'gripper_finger_l1':-.025,'gripper_finger_l2':.025}
+        self.slides={'gripper_finger_l1':-self.pregrasp_half_aperture,'gripper_finger_l2':self.pregrasp_half_aperture}
         self.paths=[self.root+'/'+n for n in ('ee_left','ee_finger_l1','ee_finger_l2')]
         self.collider_paths=[];self.body_paths=[];self.drives=[];self.friction=friction
         self.stop_requested=False;self.on_sample=lambda record:None
@@ -430,6 +433,7 @@ class FullRobotGripper(GripperFixture):
             grasp_skew_degrees=self.grasp_skew,
             grasp_pitch_degrees=self.grasp_pitch,
             grasp_depth_m=self.grasp_depth,
+            commanded_pregrasp_half_aperture_m=self.pregrasp_half_aperture,
             approach_distance_m=self.approach_distance,
             approach_side=self.approach_side,
             minimum_planned_interarm_capsule_clearance_m=self.minimum_interarm,
@@ -515,7 +519,7 @@ class FullRobotGripper(GripperFixture):
 
     def close(self,fraction):
         if not np.isfinite(fraction) or not 0<=fraction<=1: raise ValueError('Invalid finger closure')
-        self.targets[0,self.finger_indices]=np.array([-.025,.025])*(1-fraction)
+        self.targets[0,self.finger_indices]=np.array([-1.,1.])*self.pregrasp_half_aperture*(1-fraction)
         self.robot.set_dof_position_targets(self.targets,self.index)
 
     def check(self,dt,palm):

@@ -10,7 +10,7 @@ class ForceClosure:
     # Drive effort excludes independently measured gravity feed-forward. The
     # original total-motor and 0.5 N all-contact budgets remain upper bounds.
     drive_limit_n = .15
-    def __init__(self, radius, compression, *, retention_preload=False, symmetric=False):
+    def __init__(self, radius, compression, *, retention_preload=False, symmetric=False, pregrasp_half_aperture=.025):
         if type(symmetric) is not bool:raise ValueError('Explicit symmetric aperture mode required')
         self.symmetric=symmetric
         if type(retention_preload) is not bool:
@@ -27,8 +27,10 @@ class ForceClosure:
                 or not .00025 <= compression <= .001):
             raise ValueError('Finite shaft radius and bounded compression required')
         self.minimum = max(0., radius-compression)
-        self.slow_gap = min(.025, radius+.002)
-        self.gaps = np.full(2, .025)
+        from .pregrasp_aperture import validate
+        self.opening = validate(radius, pregrasp_half_aperture)
+        self.slow_gap = min(self.opening, radius+.002)
+        self.gaps = np.full(2, self.opening)
         self.support = np.zeros(2)
         self.loads = np.zeros(2)
         self.geometry_valid = True
@@ -44,7 +46,7 @@ class ForceClosure:
         if (isinstance(fraction, (bool, np.bool_)) or not np.isfinite([fraction, dt]).all()
                 or not self.fraction <= fraction <= 1 or abs(dt-1/240) > 1e-12):
             raise ValueError('Monotone closure and qualified 240 Hz step required')
-        scheduled = .025-fraction*(.025-self.minimum)
+        scheduled = self.opening-fraction*(self.opening-self.minimum)
         current=float(np.mean(self.gaps))
         if self.symmetric and abs(self.gaps[0]-self.gaps[1])>1e-9:
             raise RuntimeError('Symmetric aperture controller state lost its fixed center')
@@ -76,10 +78,11 @@ class ForceClosure:
                     desired[i] = max(scheduled, self.gaps[i]-speed*dt)
                 else:
                     desired[i] = max(scheduled, self.slow_gap) if self.geometry_valid else self.gaps[i]
-        self.gaps = np.clip(desired, self.minimum, .025)
+        self.gaps = np.clip(desired, self.minimum, self.opening)
         self.fraction = float(fraction)
         self.commanded_step = step
         self.receipt = dict(mode='native_force_closure_v1', command_step=step,
+            commanded_pregrasp_half_aperture_m=self.opening,changes_physical_joint_limits=False,
             observation_step=self.observed_step, half_gaps_m=self.gaps.tolist(),
             preceding_compressive_support_n=self.support.tolist(),
             preceding_all_contact_upper_bound_n=self.loads.tolist(),
