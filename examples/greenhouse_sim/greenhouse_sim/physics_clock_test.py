@@ -41,3 +41,18 @@ def test_bad_rates_rejected(kwargs):
 def test_wrong_context_timestep_rejected():
     c=Context(); c.get_physics_dt=lambda:1/60
     with pytest.raises(ValueError): PhysicsClock(c)
+
+
+def test_wall_refresh_never_adds_physics_or_skips_controls(monkeypatch):
+    import greenhouse_sim.physics_clock as module
+    now=[0.];monkeypatch.setattr(module.time,'perf_counter',lambda:now[0])
+    c=Context();clock=PhysicsClock(c,render_hz=30,wall_render_hz=15)
+    samples=[];visuals=[]
+    for i in range(10):
+        now[0]+=.1
+        clock.tick(after=lambda s,dt:samples.append(s.step),before_render=lambda s:visuals.append(s.step))
+    assert len(visuals)==10 and samples==list(range(1,11))
+    assert c.events.count(('step',False))==10 and clock.stamp.simulation_time_s==10/240
+    assert clock.report()['render_schedule']=='wall_clock'
+    for rate in (-1,61,True,15.5):
+        with pytest.raises(ValueError):PhysicsClock(c,wall_render_hz=rate)

@@ -29,9 +29,9 @@ def _array(value, shape):
 
 def _pose(value):
     result = _array(value, (4, 4)); r = result[:3, :3]
-    if (not np.allclose(result[3], [0, 0, 0, 1], atol=1e-7, rtol=0)
-            or not np.allclose(r.T @ r, np.eye(3), atol=1e-5, rtol=0)
-            or not np.isclose(np.linalg.det(r), 1, atol=1e-5, rtol=0)):
+    if (not (np.abs(result[3]-[0,0,0,1])<=1e-7).all()
+            or not (np.abs(r.T@r-np.eye(3))<=1e-5).all()
+            or not abs(np.linalg.det(r)-1)<=1e-5):
         raise ValueError('Rigid unscaled transform required')
     return result
 
@@ -46,9 +46,9 @@ def _poses(value):
     if result.ndim!=3 or result.shape[1:]!=(4,4) or not np.isfinite(result).all():
         raise ValueError('Finite ordered rigid transform array required')
     r=result[:,:3,:3]
-    if (not np.allclose(result[:,3,:],[0,0,0,1],atol=1e-7,rtol=0)
-            or not np.allclose(np.swapaxes(r,1,2)@r,np.eye(3),atol=1e-5,rtol=0)
-            or not np.allclose(np.linalg.det(r),1,atol=1e-5,rtol=0)):
+    if (not (np.abs(result[:,3,:]-[0,0,0,1])<=1e-7).all()
+            or not (np.abs(np.swapaxes(r,1,2)@r-np.eye(3))<=1e-5).all()
+            or not (np.abs(np.linalg.det(r)-1)<=1e-5).all()):
         raise ValueError('Rigid unscaled transform required')
     result.setflags(write=False)
     return result
@@ -319,11 +319,11 @@ class ShaftGraspEvidence:
                 # A real material-surface witness, NOT an enclosing capsule,
                 # must remain on the actual current inner pad face. Every
                 # nonzero row is checked; old/end-cap contacts cannot hold.
-                from .flat_shaft_contact import current_side_witness
+                from .flat_shaft_contact import _current_side_witness_validated
                 key=(i,other,row)
                 witness=(dict(model='current_flat_cylinder_material_side_witness_v1',
                     passed=False,reason='no_cylindrical_side_direction') if distance==0 else
-                    current_side_witness(q,shaft.radius_m,shaft.half_height_m,
+                    _current_side_witness_validated(q,shaft.radius_m,shaft.half_height_m,
                     world[other],world[pad.collider],pad.half_extents_m,
                     pad.face_axis,pad.face_sign,offset))
                 current_pairs[key]=dict(finger=pad.body,collider=other,

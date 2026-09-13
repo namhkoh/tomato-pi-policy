@@ -7384,3 +7384,78 @@ No hardware, collection, tuning, review, split or training-export changes.
   tests passed after it. Full physics regression4,234 passed136.05 s in
   regression_20260913_cut_watch_all_v1.log (before the extra idle-reader test).
   Ready-state launch is not by itself a completed native cutting result.
+
+### 2026-09-13 - Revised arc-up cutting milestone (IN PROGRESS, not frozen)
+
+- User acceptance replaces the earlier limited side-edge success: A) approach,
+  left grasp with cutter clearance, correctly oriented right approach and
+  downward cut; B) independently demonstrated right-only cut; both first in
+  isolation then in the supplied greenhouse; C) responsive simulation without
+  deleting physics, surroundings or original visual detail. VLM dataset work
+  is on hold until A/B/C are demonstrated. Tonight is the requested deadline,
+  not a qualification claim. Misalignment must not yield a clean-cut label.
+- Diagnosis of native255/watch: world stroke was downward but the semantic
+  source -X side edge stood the plate upright and pointed the arc sideways.
+  Initial right pose was effectively the cut precontact pose (no visible
+  approach). Strength-only seam release credited only ~1.09 micrometres of
+  loaded travel. Those prior passes do NOT satisfy the revised milestone.
+- Added explicit experimental `source_lower_rim_v1` with
+  `loaded_downward_lower_rim_seam_v1`. Uses the original straight outer lower
+  rim; source +Z arc maps to up. All original Blade/Arc visual triangles and
+  source layers remain untouched. Requires source rim contact, signed native
+  load 0.2..0.5 N, 25 ms consecutive qualified contact, original shaft/edge
+  alignment and axial tolerances, arc-up/downward within 5 degrees, and BOTH
+  >=0.3 mm relative loaded advance and >=0.3 mm actual world-down movement.
+  Moving a target into a stationary blade, pressure only, tiny jitter, wrong
+  orientation, unrelated surfaces and insufficient force cannot trigger it.
+  Plant release independently validates the additional motion/axis evidence.
+  Old side-edge recipes remain explicit legacy diagnostics, not upgraded demos.
+- This still releases a preauthored seam. It does NOT model calibrated sharpness,
+  tissue fracture, fraying or partial incision. Bad alignment is rejected, not
+  relabeled as a realistic partial cut. Native success of the NEW mode is not
+  established. The old force-hold feed is also not yet a qualified slicing law.
+- Native257 (profiled): left grasp verified, then all 50 corrected tool corridors
+  rejected before right IK/contact. Native258 repeats exactly the same 4,271
+  steps / 8.897917 s, grip slip and contact summary after validation optimization.
+  Measured profiled tick wall time 51.264 -> 41.449 s (~19.1% lower); RTF .174 ->
+  .215. Grasp evaluator cumulative time 12.713 -> 5.014 s. No solver, force,
+  material, dt, collision or visual changes in this comparison. Not real-time.
+- Optimization: validate owned immutable current pose batches once, then reuse
+  them for each cylinder-side witness; retain every row's proximity/force checks.
+  Replace general-purpose allclose calls with equivalent finite absolute-bound
+  checks at identical tolerances. Native257/258 source/physics configuration is
+  identical. Existing 266 shaft/adapter/contact tests passed after the change.
+- Interactive clock now optionally schedules rendering by wall time (15 Hz in
+  watch), without extra physics steps or skipping controls; addresses UI input
+  starvation when physics is slower than real time. Tested with a fake clock;
+  new native watch responsiveness is not yet measured.
+- Native259: proposed arc-up start with 30-degree lower left approach failed
+  complete native startup (right upper arm vs original distal leaf), zero motion.
+  Native260: keeping original right start, 30-degree left approach grasped but
+  failed static retention prerequisite; no knife planning/execution. Native261
+  failed prelaunch due an old right-only model allowlist, corrected to accept
+  only the matching lower-rim/model pair. Native262: right-only left park open
+  and unloaded, but all 50 corrected corridors rejected; no cut/IK execution.
+- Added opt-in `--source-wrist-contacts`: eight-cell upper-bound partitioning
+  per source bracket/adapter, preserving every original triangle, replacing
+  opaque convex-decomposition carriers with explicit convex pieces shared by
+  planner and native physics. Original visible hardware unchanged. Twenty
+  focused source-preservation/lower-rim tests pass. Native263's new source-complete
+  wrist representation passes startup, but the same 50 right-only corridors are
+  rejected before IK (plate/parent, camera/parent or parked finger/arc conflicts).
+  The partitions alone do not resolve access; no new cutting pass is claimed.
+  This is an experimental contact representation, not verified CAD fastener fit.
+- Offline helper `sim_physics.lower_rim_layout` proposes arc-up starts with a
+  visible approach distance, checks whole tool and left path, and labels every
+  proposal native_tested=False/motion_authorized=False. Coarse box rejection
+  is not proof of physical infeasibility. Native guards remain authoritative.
+- Evidence: `data/sim_physics/bimanual_downward_20260912_native257..263`,
+  `lower_rim_layout_20260913_v1..v3.log`, regression logs prefixed
+  `regression_20260913_lower_rim`. First broad regression exposed legacy mock
+  API compatibility failures; corrected without weakening new-mode checks.
+  All 124 affected legacy pipeline/planning tests then passed. Full rerun:
+  4,654 passed, 2 skipped in 161.96 s (`regression_20260913_lower_rim_v2.log`).
+- Remaining: safe arc-up approach and joint posture, loaded-stroke control and
+  uncalibrated failure-law limitations, native A/B repeated successes with
+  visible evidence, full-greenhouse A/B/C requalification, post-fall material
+  warnings. No source assets, datasets, training, hardware or OS settings changed.

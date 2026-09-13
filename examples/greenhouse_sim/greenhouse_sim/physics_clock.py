@@ -23,15 +23,21 @@ class PhysicsStamp:
 class PhysicsClock:
     """Fixed-dt control with separate bounded physics/control and render timing."""
 
-    def __init__(self, context, *, physics_hz=240, render_hz=30, window=4096):
+    def __init__(self, context, *, physics_hz=240, render_hz=30, window=4096, wall_render_hz=0):
         if (type(physics_hz) is not int or type(render_hz) is not int
                 or physics_hz <= 0 or render_hz < 0
                 or (render_hz and physics_hz % render_hz)
                 or type(window) is not int or window < 1):
             raise ValueError('Positive physics rate and integer-divisor render rate required')
+        if type(wall_render_hz) is not int or not 0<=wall_render_hz<=60:
+            raise ValueError('Wall render rate must be an integer within 0..60 Hz')
         self.context = context
         self.dt = 1.0 / physics_hz
         self.render_stride = physics_hz // render_hz if render_hz else 0
+        # Interactive observation may follow wall time so slow physics does
+        # not starve input/camera updates. It NEVER advances extra physics.
+        self.wall_render_hz=wall_render_hz
+        self.last_render_wall=time.perf_counter()
         if hasattr(context, 'get_physics_dt') and not math.isclose(
                 float(context.get_physics_dt()), self.dt, rel_tol=1e-6, abs_tol=1e-9):
             raise ValueError('Context physics dt differs from controller clock')
@@ -61,12 +67,15 @@ class PhysicsClock:
         self.samples['native_step_ms'].append((physics_end-before_end)*1000)
         self.samples['after_step_ms'].append((end-physics_end)*1000)
         self.samples['physics_control_ms'].append((end-start)*1000)
-        if self.render_stride and self.step_index % self.render_stride == 0:
+        render_due=(end-self.last_render_wall>=1/self.wall_render_hz if self.wall_render_hz else
+                    bool(self.render_stride and self.step_index % self.render_stride == 0))
+        if render_due:
             if before_render is not None:
                 before_render(self.stamp)
             self.context.render()
             self.samples['render_ms'].append((time.perf_counter()-end)*1000)
             self.render_count += 1
+            self.last_render_wall=time.perf_counter()
         self.total_wall_s += time.perf_counter()-start
         return self.stamp
 
@@ -76,6 +85,7 @@ class PhysicsClock:
         self.step_index = 0
         self.total_wall_s = 0.0
         self.render_count = 0
+        self.last_render_wall=time.perf_counter()
         for samples in self.samples.values():
             samples.clear()
 
@@ -89,4 +99,5 @@ class PhysicsClock:
         return dict(physics_steps=self.step_index,simulated_seconds=self.stamp.simulation_time_s,
                     tick_wall_seconds=self.total_wall_s,renders=self.render_count,
                     real_time_factor=self.stamp.simulation_time_s/self.total_wall_s if self.total_wall_s else None,
-                    timing=timing,native_sensor_synchronization_verified=False)
+                    timing=timing,render_schedule='wall_clock' if self.wall_render_hz else 'simulation_clock',
+                    wall_render_hz=self.wall_render_hz,native_sensor_synchronization_verified=False)

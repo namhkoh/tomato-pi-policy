@@ -7,6 +7,10 @@ transition, and derive the long leading strip from actual plate cross-sections.
 """
 import numpy as np
 
+SIDE_EDGE='source_side_edge_v1'
+LOWER_EDGE='source_lower_rim_v1'
+EDGE_MODES=(SIDE_EDGE,LOWER_EDGE)
+
 
 def section_points(triangles,y):
     a=np.asarray(triangles,float).reshape(-1,3)
@@ -17,7 +21,8 @@ def section_points(triangles,y):
     return a+(b-a)*((y-a[:,1])/(b[:,1]-a[:,1]))[:,None]
 
 
-def plate_profile(points,triangles):
+def plate_profile(points,triangles,*,edge_mode=SIDE_EDGE):
+    if edge_mode not in EDGE_MODES: raise ValueError('Unknown source knife edge mode')
     points=np.asarray(points,float);triangles=np.asarray(triangles,float)
     if (points.ndim!=2 or points.shape[1:]!=(3,) or triangles.ndim!=3
             or triangles.shape[1:]!=(3,3) or not np.isfinite(points).all()
@@ -48,12 +53,20 @@ def plate_profile(points,triangles):
     edge[:3,3]=[slope*mid_y+intercept,mid_y,(top+bottom)/2]
     edge[:3,3]+=.001*x
     size=np.array([.002,(high_y-low_y)*np.sqrt(1+slope*slope),top-bottom])
+    if edge_mode==LOWER_EDGE:
+        # Restrict contact to the lower OUTER rim, not the broad plate. Source
+        # +Z faces the arc; edge -X faces the underside; edge Y follows the
+        # actual long straight rim. This volume does not sharpen the mesh.
+        edge[:3,:3]=np.column_stack([[0,0,1],y,-x])
+        edge[2,3]=bottom+.001
+        size=np.array([.002,size[1],.002])
     return dict(split_y_m=split,plate_z_range_m=[bottom,top],
-        original_box_z_range_m=[float(lo[2]),float(hi[2])],edge_frame=edge,edge_size_m=size)
+        original_box_z_range_m=[float(lo[2]),float(hi[2])],edge_frame=edge,edge_size_m=size,
+        edge_mode=edge_mode,sharpness_calibrated=False)
 
 
-def refine_blade_contacts(stage,robot_root):
-    from pxr import Usd,UsdGeom,UsdPhysics,Vt
+def refine_blade_contacts(stage,robot_root,*,edge_mode=SIDE_EDGE):
+    from pxr import Usd,UsdGeom,UsdPhysics,Vt,Sdf
     from .plant import matrix_attr,_collision
     from .mechanics import clip_mesh
     root=robot_root+'/ee_right/attachments/DeleafKnife'
@@ -65,7 +78,7 @@ def refine_blade_contacts(stage,robot_root):
     counts=np.asarray(blade.GetFaceVertexCountsAttr().Get(),int)
     indices=np.asarray(blade.GetFaceVertexIndicesAttr().Get(),int)
     if not np.all(counts==3): raise ValueError('Triangular original knife required')
-    profile=plate_profile(points,points[indices.reshape(-1,3)])
+    profile=plate_profile(points,points[indices.reshape(-1,3)],edge_mode=edge_mode)
     paths=[]
     with Usd.EditContext(stage,stage.GetSessionLayer()):
         # Disable only the superseded enclosing box; replace ALL source surface
@@ -87,6 +100,7 @@ def refine_blade_contacts(stage,robot_root):
         transform=profile['edge_frame'].copy()
         transform[:3,:3]*=profile['edge_size_m']/float(edge.GetSizeAttr().Get())
         matrix_attr(edge.GetPrim(),transform)
+        edge.GetPrim().CreateAttribute('tomato:edgeMode',Sdf.ValueTypeNames.Token).Set(edge_mode)
     return dict(model='source_triangle_plate_and_mount_convex_hulls',collider_paths=paths,
         source_visual_edited=False,source_asset_edited=False,
         **{k:(v.tolist() if isinstance(v,np.ndarray) else v) for k,v in profile.items()})

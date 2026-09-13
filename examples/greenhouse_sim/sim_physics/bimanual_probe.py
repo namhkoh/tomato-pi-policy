@@ -110,7 +110,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     if getattr(args,'step_profile',False):
         from .step_profile import MeasuredStep
         step_context=MeasuredStep(sim)
-    clock=PhysicsClock(step_context,physics_hz=args.physics_hz,render_hz=args.render_hz)
+    render_options={'wall_render_hz':15} if getattr(args,'watch_cut_trial',False) else {}
+    clock=PhysicsClock(step_context,physics_hz=args.physics_hz,render_hz=args.render_hz,**render_options)
     records=[];events=[];captures={};capture_receipts={};fault=None;stable=0;lost=0
     grasp_local=None;goal_set=False;planned=False;grasp_verified=False;cut_time=None;cut_fraction=0.
     last_right_command=('park',0.)

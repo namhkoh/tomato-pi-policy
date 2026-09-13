@@ -91,13 +91,13 @@ class PlantRig:
 
     def release_from_blade(self,evidence,*,transition=None,strategy='bimanual'):
         """Internal mechanism API: validate evidence before changing topology."""
-        from .knife import ShearParameters,CUT_MODELS,LEGACY_CUT_MODEL,KNIFE_IMPULSE_CONTRACT
+        from .knife import ShearParameters,CUT_MODELS,DOWNWARD_CUT_MODEL,KNIFE_IMPULSE_CONTRACT
         if not isinstance(evidence,dict) or evidence.get('model') not in CUT_MODELS:
             raise ValueError('Unknown explicit blade release model')
         from .cut_strategy import validate_evidence
         validate_evidence(evidence,strategy)
         p=ShearParameters(model=evidence['model'])
-        travel_required=p.model==LEGACY_CUT_MODEL
+        travel_required=p.travel_required
         if (evidence.get('target')!=self.source_target
                 or evidence.get('force_contract')!=KNIFE_IMPULSE_CONTRACT
                 or evidence.get('signed_resistance_definition')!='minus_sum_impulse_on_knife_dot_stroke_direction_over_dt'
@@ -133,10 +133,20 @@ class PlantRig:
             if (evidence['minimum_loading_travel_m']!=p.minimum_loading_travel_m
                     or evidence['loading_travel_requirement_met'] is not True
                     or v['measured_relative_loading_travel_m']<p.minimum_loading_travel_m):
-                raise ValueError('Legacy blade loading travel requirement unmet')
+                raise ValueError('Blade loading travel requirement unmet')
         elif (evidence['minimum_loading_travel_m'] is not None
                 or evidence['loading_travel_requirement_met'] is not None):
             raise ValueError('Brittle strength-only model must mark loading travel not applicable')
+        if p.model==DOWNWARD_CUT_MODEL:
+            from .blade_contacts import LOWER_EDGE
+            keys=('measured_world_downward_travel_m','minimum_world_downward_cosine','minimum_source_arc_up_cosine')
+            values=[evidence.get(k) for k in keys]
+            if (evidence.get('edge_mode')!=LOWER_EDGE
+                    or evidence.get('world_travel_definition')!='net_world_down_since_first_consecutive_qualified_contact'
+                    or any(isinstance(v,(bool,np.bool_)) or not isinstance(v,(int,float,np.integer,np.floating)) for v in values)
+                    or not np.isfinite(values).all() or values[0]<p.minimum_loading_travel_m
+                    or not all(np.cos(np.radians(5))<=v<=1 for v in values[1:])):
+                raise ValueError('Measured downward motion and actual arc-up lower-rim evidence required')
         if self.cut:
             raise ValueError('Seam cannot be released in current state')
         topology=None

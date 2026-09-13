@@ -7,7 +7,7 @@ import numpy as np
 from .full_robot import FullRobotGripper
 from .knife import (KnifeGeometry,ShearGate,ShearParameters,mount_forward,cut_plane_normal,
     transverse_stroke_offsets,knife_normal_impulse,resisting_face_normal,
-    LEGACY_CUT_MODEL,KNIFE_IMPULSE_CONTRACT)
+    LEGACY_CUT_MODEL,DOWNWARD_CUT_MODEL,KNIFE_IMPULSE_CONTRACT)
 from .contact_events import NativeNormalContact,original_order_tool_contact,NATIVE_NORMAL_ROW_CONTRACT
 
 
@@ -25,7 +25,15 @@ class BimanualRobot(FullRobotGripper):
         from .diagnostic_rate import frequency
         self.diagnostic_physics_hz=frequency(kwargs.pop('diagnostic_physics_hz',240))
         self.cut_model=kwargs.pop('cut_model',LEGACY_CUT_MODEL)
+        from .blade_contacts import SIDE_EDGE,LOWER_EDGE,EDGE_MODES
+        self.knife_edge_mode=kwargs.pop('knife_edge_mode',SIDE_EDGE)
+        source_wrist_contacts=kwargs.pop('source_wrist_contacts',False)
+        if type(source_wrist_contacts) is not bool:raise ValueError('Explicit wrist partition option required')
         self.cut_style=kwargs.pop('cut_style','legacy')
+        if (self.knife_edge_mode not in EDGE_MODES or
+                (self.knife_edge_mode==LOWER_EDGE)!=(self.cut_model==DOWNWARD_CUT_MODEL) or
+                self.knife_edge_mode==LOWER_EDGE and self.cut_style!='downward'):
+            raise ValueError('Lower rim requires the measured downward motion model and downward planner')
         self.staged_downward_transit=kwargs.pop('staged_downward_transit',False)
         self.screened_transit_modes=()
         if type(self.staged_downward_transit) is not bool or self.staged_downward_transit and self.cut_style!='downward':
@@ -121,7 +129,7 @@ class BimanualRobot(FullRobotGripper):
         if not self.sparse_contacts: raise ValueError('Bimanual test requires sparse native contacts')
         self.knife_mount=mount_forward(self.stage,self.root,alignment=self.knife_alignment)
         from .blade_contacts import refine_blade_contacts
-        self.blade_contacts=refine_blade_contacts(self.stage,self.root)
+        self.blade_contacts=refine_blade_contacts(self.stage,self.root,edge_mode=self.knife_edge_mode)
         old=self.root+'/ee_right/attachments/DeleafKnife/BladeCollision'
         self.collider_paths=[p for p in self.collider_paths if p!=old]+self.blade_contacts['collider_paths']
         from .arc_contacts import refine_arc_contacts
@@ -129,6 +137,11 @@ class BimanualRobot(FullRobotGripper):
         old_arc=self.root+'/ee_right/attachments/DeleafKnife/ArcCollision'
         self.collider_paths=[p for p in self.collider_paths if p!=old_arc]+self.arc_contacts['collider_paths']
         self.knife=KnifeGeometry(self.stage,self.root)
+        self.wrist_contacts=None
+        if source_wrist_contacts:
+            from .wrist_contacts import refine
+            self.wrist_contacts=refine(self.stage,self.root)
+            self.collider_paths=[p for p in self.collider_paths if p not in self.wrist_contacts['replaced_colliders']]+self.wrist_contacts['collider_paths']
         from pxr import UsdGeom
         radius=max(float(self.stage.GetPrimAtPath(self.rig.body_paths[i]+'/StemCollider').GetAttribute('radius').Get())
             for i in (self.rig.cut_index-1,self.rig.cut_index))
@@ -670,8 +683,9 @@ class BimanualRobot(FullRobotGripper):
                 # plate back into the parent on an upward-sloping petiole.
                 proposals=[(None,s,w) for w in wings for s in (1,-1)
                     if vertical_cut_frame(axis,s,tilt) is not None]
-                proposals += [(a,s,w) for w in wings
-                    for s in (1,-1) for a in downward_angles(axis)]
+                if getattr(self,'cut_model',LEGACY_CUT_MODEL)!=DOWNWARD_CUT_MODEL:
+                    proposals += [(a,s,w) for w in wings
+                        for s in (1,-1) for a in downward_angles(axis)]
             for degrees,normal_sign,wing in proposals:
                 vertical=downward and degrees is None
                 if vertical:d,normal=vertical_cut_frame(axis,normal_sign,tilt)
@@ -680,10 +694,8 @@ class BimanualRobot(FullRobotGripper):
                     angle=np.radians(degrees)
                     d=direction*np.cos(angle)+np.cross(axis,direction)*np.sin(angle)
                 if not vertical:normal=cut_plane_normal(d,normal_sign*axis,tilt)
-                # Mounting roll is fixed on the wrist. Both signs of a
-                # transverse cutting plane are valid wrist poses; global
-                # "arc up" is not a cut-contact criterion. Scene/tool checks
-                # still reject the support hitting the main stem or left hand.
+                # The lower-rim frame maps source +Z (arc) to edge +X (up).
+                # Both horizontal headings are proposals, not contact approval.
                 desired=self.knife.wrist_for_edge(aim+self.stroke_offsets[0]*d,d,normal,wing)
                 attempt=dict(angle=degrees,normal_sign=normal_sign,wing_m=wing,plane_tilt_degrees=tilt,
                     ik_attempted=False,ik_succeeded=False,evaluations=0)
@@ -878,12 +890,15 @@ class BimanualRobot(FullRobotGripper):
         if getattr(self,'cut_style','legacy')=='downward' and self.cut_authorized:
             if (-edge[:3,0])[2]>-np.cos(np.radians(30)):
                 raise RuntimeError('Measured cutting direction is not downward; release refused')
+        orientation={}
+        if self.cut_gate.parameters.model==DOWNWARD_CUT_MODEL:
+            orientation=dict(arc_up=self.knife.arc_up(actual),edge_mode=self.knife.edge_mode)
         decision=self.cut_gate.observe(dt=dt,edge=edge,centre=centre,axis=axis,
             points=self.edge_points,impulses=self.edge_impulses,normals=self.edge_normals,
             impulse_contract=KNIFE_IMPULSE_CONTRACT,edge_contact_verified=True,
             tool_contact_upper_bound_n=loads['allowed_tool_contact_n'],
             held=held and self.cut_authorized,slip=slip,
-            cut_only_ready=cut_only_ready and self.cut_authorized)
+            cut_only_ready=cut_only_ready and self.cut_authorized,**orientation)
         if decision:
             transition=getattr(self,'root_transition',None)
             options={}
@@ -898,7 +913,7 @@ class BimanualRobot(FullRobotGripper):
             force_contract=KNIFE_IMPULSE_CONTRACT,raw_normal_rows=[dict(r) for r in self.edge_contact_rows],
             raw_normal_row_limit=256,raw_normal_rows_complete=True,
             cut_model=self.cut_gate.parameters.model,
-            loading_travel_required=self.cut_gate.parameters.model==LEGACY_CUT_MODEL,
+            loading_travel_required=self.cut_gate.parameters.travel_required,
             gate_diagnostic=dict(self.cut_gate.diagnostic),
             gate_dwell_s=self.cut_gate.dwell,gate_travel_m=self.cut_gate.travel,cut_event=self.cut_event)
 
@@ -947,6 +962,7 @@ class BimanualRobot(FullRobotGripper):
             minimum_grasp_self_capsule_clearance_m=self.minimum_grasp_self_clearance,
             knife_mount=self.knife_mount,
             blade_contact_geometry=self.blade_contacts,
+            wrist_contact_geometry=getattr(self,'wrist_contacts',None),
             arc_contact_geometry=self.arc_contacts,
             planning_wall_seconds=getattr(self,'planning_wall_seconds',None),
             cut_plan_diagnostics=self.plan_diagnostics,

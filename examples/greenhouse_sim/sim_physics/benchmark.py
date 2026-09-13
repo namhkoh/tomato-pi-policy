@@ -149,7 +149,10 @@ def parser():
         help='Optional whole-capsule conservative native sphere union after a coarse box hit; no sampled gaps')
     p.add_argument('--native-static-planning-seconds',type=float,default=8.,
         help='Bounded synchronous diagnostic planning budget, up to 60 seconds; default 8; no physics/collision guard changes')
-    p.add_argument('--cut-model',choices=('force_qualified_pre_authored_seam_release','signed_edge_load_brittle_seam_v1'),
+    p.add_argument('--knife-edge-mode',choices=('source_side_edge_v1','source_lower_rim_v1'),default='source_side_edge_v1',
+        help='Source lower rim requires arc-up, measured downward load/travel; original mesh unchanged')
+    p.add_argument('--source-wrist-contacts',action='store_true',help='Isolated comparison: source-complete bracket hulls shared by native and planner')
+    p.add_argument('--cut-model',choices=('force_qualified_pre_authored_seam_release','signed_edge_load_brittle_seam_v1','loaded_downward_lower_rim_seam_v1'),
         default='force_qualified_pre_authored_seam_release',
         help='Opt-in engineering brittle seam strength model; neither mode is calibrated tissue fracture')
     p.add_argument('--diagnostic-grasp-dynamics',action='store_true',
@@ -346,8 +349,14 @@ def main(argv=None):
         raise ValueError('Native spring cut comparison requires explicit isolated native-spring trial')
     if args.seam_contact_compliance and not (contact_trial and args.blade_force_feed):
         raise ValueError('Seam contact compression requires isolated blade feedback diagnostic')
+    lower_rim=args.knife_edge_mode=='source_lower_rim_v1'
+    if args.source_wrist_contacts and not (contact_trial and lower_rim):
+        raise ValueError('Wrist contact comparison requires the isolated lower-rim trial')
+    if (lower_rim!=(args.cut_model=='loaded_downward_lower_rim_seam_v1')
+            or lower_rim and not (contact_trial and args.cut_style=='downward' and args.bimanual_cut)):
+        raise ValueError('Lower rim requires the isolated measured downward cut model and planner')
     if args.blade_force_feed and not (contact_trial and args.cut_style=='downward'
-            and args.cut_model=='signed_edge_load_brittle_seam_v1' and args.seconds>=40):
+            and args.cut_model in ('signed_edge_load_brittle_seam_v1','loaded_downward_lower_rim_seam_v1') and args.seconds>=40):
         raise ValueError('Blade feedback requires isolated downward signed-seam trial and >=40 seconds')
     if (not math.isfinite(args.blade_axial_aim_offset_m) or abs(args.blade_axial_aim_offset_m)>.0015
             or args.blade_axial_aim_offset_m and not (contact_trial and args.cut_style=='downward')):
@@ -683,6 +692,8 @@ def main(argv=None):
                 robot_options['native_capsule_sphere_cover']=args.native_capsule_sphere_cover
                 robot_options['native_static_planning_seconds']=getattr(args,'native_static_planning_seconds',8.)
                 robot_options['cut_model']=getattr(args,'cut_model','force_qualified_pre_authored_seam_release')
+                robot_options['knife_edge_mode']=args.knife_edge_mode
+                robot_options['source_wrist_contacts']=args.source_wrist_contacts
                 robot_options['finger_actuator_limit_n']=getattr(args,'finger_actuator_limit_n',.5)
                 robot_options['cut_proposal_json']=getattr(args,'cut_proposal_json',None)
                 robot_options['right_ik_fixed_joint']=getattr(args,'right_ik_fixed_joint',None)

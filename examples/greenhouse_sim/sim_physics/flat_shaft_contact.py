@@ -14,6 +14,17 @@ def current_side_witness(point,radius,half_height,shaft_world,pad_world,pad_half
     _number(offset,0.,.002)
     if type(axis) is not int or axis not in (0,1,2) or type(sign) is not int or sign not in (-1,1) or np.any(half<=0):
         raise ValueError('Positive pad dimensions and signed face axis required')
+    return _current_side_witness_validated(q,radius,half_height,sw,pw,half,axis,sign,offset)
+
+
+def _current_side_witness_validated(q,radius,half_height,sw,pw,half,axis,sign,offset):
+    """Internal arithmetic only, with the identical public validation upstream.
+
+    ShaftGraspEvidence owns immutable per-step _poses batches and validated
+    frozen shape descriptors. Rechecking those two matrices for EVERY contact
+    row duplicates the same checks; no contact/proximity check is skipped.
+    Public callers must use current_side_witness, not this internal function.
+    """
     rho=float(np.linalg.norm(q[:2]))
     if not rho:raise ValueError('Cylinder side point needs a radial direction')
     material=np.r_[q[:2]*(radius/rho),np.clip(q[2],-half_height,half_height)]

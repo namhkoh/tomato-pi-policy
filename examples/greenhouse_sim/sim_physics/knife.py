@@ -15,7 +15,8 @@ MAXIMUM_PLANE_TILT_DEGREES = 15.
 
 LEGACY_CUT_MODEL='force_qualified_pre_authored_seam_release'
 BRITTLE_CUT_MODEL='signed_edge_load_brittle_seam_v1'
-CUT_MODELS=(LEGACY_CUT_MODEL,BRITTLE_CUT_MODEL)
+DOWNWARD_CUT_MODEL='loaded_downward_lower_rim_seam_v1'
+CUT_MODELS=(LEGACY_CUT_MODEL,BRITTLE_CUT_MODEL,DOWNWARD_CUT_MODEL)
 KNIFE_IMPULSE_CONTRACT='world_normal_impulses_on_knife_v1'
 
 
@@ -129,6 +130,9 @@ class ShearParameters:
     axial_tolerance_m: float = .003
     model: str = LEGACY_CUT_MODEL
 
+    @property
+    def travel_required(self):return self.model!=BRITTLE_CUT_MODEL
+
     def __post_init__(self):
         if self.model not in CUT_MODELS: raise ValueError('Unknown explicit cut model')
         values=[v for k,v in vars(self).items() if k!='model']
@@ -170,6 +174,12 @@ class KnifeGeometry:
             if not prim or not prim.IsActive(): raise ValueError('Missing active knife '+name)
             return prim,inverse@np.asarray(cache.GetLocalToWorldTransform(prim)).T
         edge,matrix=local('CuttingEdge')
+        from .blade_contacts import SIDE_EDGE,LOWER_EDGE,EDGE_MODES
+        self.edge_mode=edge.GetAttribute('tomato:edgeMode').Get() or SIDE_EDGE
+        if self.edge_mode not in EDGE_MODES:raise ValueError('Unknown source knife edge mode')
+        root_matrix=inverse@np.asarray(cache.GetLocalToWorldTransform(stage.GetPrimAtPath(self.root))).T
+        self.arc_axis_local=root_matrix[:3,2].copy()
+        self.arc_axis_local/=np.linalg.norm(self.arc_axis_local)
         plate,_=local(self.collider.rsplit('/',1)[1])
         blade,_=local('Blade');arc,_=local('Arc')
         arc_contact,_=local('ArcCollision')
@@ -193,6 +203,8 @@ class KnifeGeometry:
         self.local=matrix.copy();self.local[:3,:3]/=np.linalg.norm(matrix[:3,:3],axis=0)
         if not np.allclose(self.local[:3,:3].T@self.local[:3,:3],np.eye(3),atol=1e-6):
             raise ValueError('Knife frame is not orthogonal')
+        if self.edge_mode==LOWER_EDGE and not np.allclose(self.local[:3,0],self.arc_axis_local,atol=1e-6):
+            raise ValueError('Lower rim must face away from the actual source arc')
         if not np.allclose(edge.GetAttribute('tomato:cuttingDirection').Get(),[-1,0,0]):
             raise ValueError('Unsupported source edge direction')
         # Verify original right tongs stay absent; never hide left fingers.
@@ -203,6 +215,9 @@ class KnifeGeometry:
 
     def frame(self,wrist):
         return np.asarray(wrist)@self.local
+
+    def arc_up(self,wrist):
+        return np.asarray(wrist)[:3,:3]@self.arc_axis_local
 
     def on_edge(self,point,frame):
         local=(np.asarray(point)-frame[:3,3])@frame[:3,:3]
@@ -256,10 +271,12 @@ class ShearGate:
         self.maximum_axial=0.;self.maximum_edge_dot=0.;self.maximum_direction_dot=0.
         self.minimum_step=0.;self.minimum_normal_cosine=1.
         self.signed_resistance_n=0.;self.unsigned_projection_n=0.
+        self.world_loading_origin=None;self.world_travel=0.
+        self.minimum_down_cosine=1.;self.minimum_arc_up_cosine=1.
 
     def observe(self,*,dt,edge,centre,axis,points,impulses,held,slip,
                 normals=None,impulse_contract=None,edge_contact_verified=False,
-                tool_contact_upper_bound_n=None,cut_only_ready=False):
+                tool_contact_upper_bound_n=None,cut_only_ready=False,arc_up=None,edge_mode=None):
         """Signed resistance qualifies; noncancelling magnitudes only cap load.
 
         The caller must establish exact edge/collider provenance. An unsigned
@@ -287,6 +304,16 @@ class ShearGate:
                 or np.linalg.det(edge[:3,:3])<=0 or abs(math.hypot(*axis)-1)>1e-4):
             self.reset_window();raise ValueError('Invalid native shear sample')
         relative=edge[:3,3]-centre;direction=-edge[:3,0]
+        downward=p.model==DOWNWARD_CUT_MODEL
+        down_cosine=float(-direction[2]);arc_cosine=1.
+        if downward:
+            from .blade_contacts import LOWER_EDGE
+            arc=np.asarray(arc_up,float)
+            if (edge_mode!=LOWER_EDGE or arc.shape!=(3,) or not np.isfinite(arc).all()
+                    or abs(math.hypot(*arc)-1)>1e-4):
+                self.reset_window();raise ValueError('Actual source arc axis and lower rim contract required')
+            arc_cosine=float(arc[2])
+        orientation_ok=not downward or min(down_cosine,arc_cosine)>=np.cos(np.radians(5))
         step=0. if self.previous is None else float(np.dot(relative-self.previous,direction))
         try:
             unit_normals=[knife_normal_impulse(n,j)[0] for n,j in zip(normals,impulses,strict=True)]
@@ -305,7 +332,7 @@ class ShearGate:
         valid=bool(not self.completed and support and len(points)>0 and edge_contact_verified is True
             and resistance>=p.force_n and force<=p.maximum_force_n and upper<=p.maximum_force_n
             and normal_cosine>=np.cos(np.pi/6) and edge_dot<.3 and direction_dot<.3
-            and step>=-1e-6 and axial<=p.axial_tolerance_m)
+            and step>=-1e-6 and axial<=p.axial_tolerance_m and orientation_ok)
         try: slip_ok=bool(slip is not None and np.isfinite(slip) and 0<=slip<p.maximum_grasp_slip_m)
         except (ValueError,TypeError): slip_ok=False
         checks=dict(not_already_cut=not self.completed,stable_grasp=bool(held),grasp_slip=slip_ok,
@@ -314,6 +341,7 @@ class ShearGate:
             full_load_cap=upper<=p.maximum_force_n,leading_normal=normal_cosine>=np.cos(np.pi/6),
             edge_alignment=edge_dot<.3,stroke_alignment=direction_dot<.3,
             nonreversing_relative_step=step>=-1e-6,axial_contact=axial<=p.axial_tolerance_m)
+        if downward:checks['arc_up_and_world_down']=orientation_ok
         if self.strategy=='right_only':
             checks.pop('stable_grasp');checks.pop('grasp_slip')
             checks['cut_only_park_and_current_plan']=support
@@ -332,24 +360,31 @@ class ShearGate:
             # No approach displacement is credited to the first qualifying
             # contact sample. Both ends of measured advance need a valid load.
             self.loading_origin=relative.copy();self.loading_direction=direction.copy()
+            self.world_loading_origin=edge[:3,3].copy()
         self.previous=relative.copy()
         # Net advance, not a sum of positive jitter. Tiny permitted reverse
         # steps must subtract from travel instead of ratcheting a false cut.
         self.travel=max(0.,float(np.dot(relative-self.loading_origin,self.loading_direction)))
+        self.world_travel=max(0.,float(self.world_loading_origin[2]-edge[2,3]))
+        self.minimum_down_cosine=min(self.minimum_down_cosine,down_cosine)
+        self.minimum_arc_up_cosine=min(self.minimum_arc_up_cosine,arc_cosine)
         self.dwell+=dt;self.peak=max(self.peak,force);self.steps+=1
         self.minimum_resistance=resistance if self.minimum_resistance is None else min(self.minimum_resistance,resistance)
         self.peak_resistance=max(self.peak_resistance,resistance);self.peak_tool_upper=max(self.peak_tool_upper,upper)
         self.maximum_axial=max(self.maximum_axial,axial);self.maximum_edge_dot=max(self.maximum_edge_dot,edge_dot)
         self.maximum_direction_dot=max(self.maximum_direction_dot,direction_dot);self.minimum_step=min(self.minimum_step,step)
         self.minimum_normal_cosine=min(self.minimum_normal_cosine,normal_cosine)
-        travel_required=p.model==LEGACY_CUT_MODEL
+        travel_required=p.travel_required
+        world_motion_ok=not downward or self.world_travel>=p.minimum_loading_travel_m
         self.diagnostic.update(dwell_after_s=self.dwell,net_loading_travel_m=self.travel,
             dwell_met=self.dwell>=p.dwell_s,
-            travel_met=not travel_required or self.travel>=p.minimum_loading_travel_m)
-        if self.dwell<p.dwell_s or (travel_required and self.travel<p.minimum_loading_travel_m): return None
+            travel_met=not travel_required or self.travel>=p.minimum_loading_travel_m,
+            measured_world_downward_travel_m=self.world_travel if downward else None,
+            world_downward_travel_met=world_motion_ok)
+        if self.dwell<p.dwell_s or (travel_required and self.travel<p.minimum_loading_travel_m) or not world_motion_ok:return None
         self.completed=True
         self.diagnostic['state']='evidence_emitted_not_physical_fracture_verification'
-        return dict(target=self.target,model=p.model,
+        result=dict(target=self.target,model=p.model,
             force_threshold_n=p.force_n,peak_force_n=self.peak,contact_dwell_s=self.dwell,
             force_contract=KNIFE_IMPULSE_CONTRACT,
             signed_resistance_definition='minus_sum_impulse_on_knife_dot_stroke_direction_over_dt',
@@ -369,3 +404,9 @@ class ShearGate:
             stable_left_grasp=self.strategy=='bimanual',
             grasp_slip_m=float(slip) if self.strategy=='bimanual' else None,flat_edge_contact_verified=True,
             commanded_motion_used_as_evidence=False,tissue_fracture_calibrated=False)
+        if downward:
+            result.update(edge_mode=edge_mode,measured_world_downward_travel_m=self.world_travel,
+                minimum_world_downward_cosine=self.minimum_down_cosine,
+                minimum_source_arc_up_cosine=self.minimum_arc_up_cosine,
+                world_travel_definition='net_world_down_since_first_consecutive_qualified_contact')
+        return result
