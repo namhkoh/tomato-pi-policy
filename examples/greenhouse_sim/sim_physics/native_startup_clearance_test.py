@@ -132,3 +132,56 @@ def test_nonrigid_proposed_body_is_never_queried(bad):
 def test_box_extent_keeps_margin_plus_native_roundoff_reserve():
     n,s,world,shapes=fixture(kind='box');assert n.check(world,shapes)['passed']
     assert np.all(s['queries'][1][2]>.021)
+
+
+@pytest.mark.parametrize('kind',['capsule','box'])
+@pytest.mark.parametrize('blocked',[True,False])
+def test_exact_frozen_query_reuse_keeps_rejections_and_final_controls_fresh(kind,blocked):
+    n,s,world,shapes=fixture(kind=kind,memoize_queries=True);s['hit']=blocked
+    first=n.check(world,shapes);calls=n.calls
+    assert n.check(world,shapes)==first and first['passed'] is (not blocked)
+    assert n.calls==calls and n.cache_hits>0
+    n.validate();assert n.calls==calls+1 and n.validated
+    assert not n.report()['positive_controls_cached']
+    n.close();assert not n.query_cache
+
+
+@pytest.mark.parametrize('change',['pose','margin','shape','provider'])
+def test_frozen_cache_never_rounds_or_ignores_changed_query_arguments(change):
+    n,s,world,shapes=fixture(kind='box',memoize_queries=True)
+    assert n.check(world,shapes)['passed'];calls=n.calls;options={}
+    if change=='pose':world['arm'][0,3]=np.nextafter(0.,1.)
+    if change=='margin':options['margin']=.001001
+    if change=='shape':shapes[0][4][2][0]+=.001
+    if change=='provider':n.box_query=lambda *a:['/Plant/leaf']
+    out=n.check(world,shapes,**options)
+    assert n.calls>calls
+    if change=='provider':assert not out['passed']
+
+
+@pytest.mark.parametrize('fault',['epoch','closed','missing_final_actor'])
+def test_cached_clearance_is_revoked_on_epoch_or_final_control_failure(fault):
+    n,s,world,shapes=fixture(kind='box',memoize_queries=True)
+    assert n.check(world,shapes)['passed'] and n.query_cache
+    if fault=='epoch':s['guard_fail']=True
+    if fault=='closed':n.close()
+    if fault=='missing_final_actor':
+        s['missing']=True
+        with pytest.raises(RuntimeError):n.validate()
+    with pytest.raises(RuntimeError):n.check(world,shapes)
+    assert not n.validated and not n.active
+
+
+def test_frozen_query_cache_is_bounded_and_never_owns_mutable_hit_lists():
+    n,s,world,shapes=fixture(kind='box',memoize_queries=True)
+    returned=['/Robot/arm/collision'];n.box_query=lambda *a:returned
+    assert n.check(world,shapes)['passed'];returned.append('/Plant/leaf')
+    assert n.check(world,shapes)['passed']  # Original validated snapshot copied.
+    # Different poses outside the cache capacity still make native calls.
+    n.query_cache={i:frozenset() for i in range(4096)};world['arm'][0,3]=.01
+    calls=n.calls;assert not n.check(world,shapes)['passed']
+    assert n.calls==calls+1 and len(n.query_cache)==4096
+
+
+def test_invalid_cache_option_is_not_coerced():
+    with pytest.raises(ValueError):fixture(memoize_queries=1)

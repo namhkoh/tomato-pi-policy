@@ -8431,3 +8431,32 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   camera's conservative bound intersects a distal leaf of the current target.
   Native362's reversed80mm grasp acquires bilateral contact (max slip16.597um)
   but again fails static retention (utilization2.14217); no knife motion.
+
+### 2026-09-14 continuation: exact frozen native-query reuse
+
+- Zero-motion startup SEARCH can now reuse identical validated native-query
+  inputs within its one live guarded epoch. Full float64 arguments and query
+  provider identity are retained, without rounding/extrapolation. Both hits
+  and misses are copied;4096-entry bound. Epoch/budget failures revoke results;
+  close clears the cache. Initial/final positive actor controls NEVER cache.
+  Execution startup without search retains uncached native queries.
+- Native364 repeats360's source101/row0 waiting search:12633 actual native
+  queries,10334 exact cache hits,18 base candidates instead of360's9. It reaches
+  the unchanged45s search deadline (45.110s), not the query ceiling. No station
+  proposal; all1095 scene and71 robot final controls pass, zero physics steps,
+  unchanged assets/filters. This improves explored proposals per query budget,
+  NOT runtime physics responsiveness or bimanual success.
+-78 focused tests pass under Conda and installed Isaac Python. Full regression
+  v24:4799 passed in209.87s. Covers blocked as well as clear queries, changed
+  exact poses/margins/shapes/providers, cache bounds/copies, stale epochs,
+  missing final actors and cleanup. Evidence: native364/report.json and
+  regression_20260914_frozen_query_cache_v24.log under data/sim_physics.
+- Native363's120mm/zero-pitch reversed-jaw proposal stops before grasp: left
+  finger2 versus a target leaf at approach fraction0.075. No contact/cut pass.
+  An offline40/60-degree pad-pitch sweep at344's fixed waiting stance finds no
+  full IK/self-clear candidate. This is not global grasp infeasibility.
+- Native365 is a fresh full-greenhouse right-only profiling run, not a VLM
+  episode. Profiling overhead/concurrent CPU checks mean its elapsed timing
+  must not be reported as an uninstrumented responsiveness comparison.
+- A/C remain open. No contact cap, solver rate, plant mass, source geometry,
+  surrounding visuals, tissue-calibration claim or training status changed.

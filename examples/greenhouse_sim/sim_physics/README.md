@@ -21,6 +21,10 @@ checks and left self/interarm path checks remain; no prior clearance or motion
 authority is inherited. A fresh execution must revalidate the whole moving
 path and measured grasp. The search reserves final actor controls instead of
 exhausting the native-query budget; it never increases that budget.
+Zero-motion searches also cache exact native query arguments within the one
+guarded epoch (4096 entries). Actor positive controls always query afresh.
+Native364 explores18 bases with12633 actual queries/10334 cache hits but finds
+no station. This is not a dynamic-scene cache or a physics runtime speedup.
 
 Earlier checkpoint: **native310 passes all10 isolated bimanual mechanism gates**, including
 full-section traversal, retention, unloaded reverse and a fresh clear withdrawal

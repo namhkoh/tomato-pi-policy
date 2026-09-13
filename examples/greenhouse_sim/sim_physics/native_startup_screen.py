@@ -95,7 +95,8 @@ def _screen(stage, robot, context, timeline, physx, query, epoch_factory):
         if set(active_robot)!={s[0] for s in robot.self_screen.shapes}:
             raise RuntimeError('Native startup requires exact complete robot shape inventory')
         backend=NativeStartupClearance(box,sphere,environment,active_robot,
-            guard=guard,floor_root=robot.floor_root,wall_limit_s=60.)
+            guard=guard,floor_root=robot.floor_root,wall_limit_s=60.,
+            memoize_queries=bool(getattr(robot,'startup_right_pose_search',False)))
         def robot_controls(key):
             for path,(lo,hi) in active_robot.items():
                 hits=backend._box((lo+hi)/2,np.eye(3),(hi-lo)/2+.001)
