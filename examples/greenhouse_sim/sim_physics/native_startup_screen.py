@@ -107,6 +107,9 @@ def _screen(stage, robot, context, timeline, physx, query, epoch_factory):
         result['self_screen']=self_check
         geometry=backend.check(world,robot.self_screen.shapes)
         result['geometry']=geometry
+        if getattr(robot,'startup_right_pose_search',False):
+            from .startup_pose_search import search
+            result['right_pose_search']=search(robot,backend,guard)
         backend.validate();robot_controls('final_robot_actor_controls');guard()
         after=frames()
         result['maximum_authored_pose_change_during_queries']=max(float(np.max(abs(after[p]-loaded[p]))) for p in loaded)
@@ -123,5 +126,12 @@ def _screen(stage, robot, context, timeline, physx, query, epoch_factory):
             except Exception as exc:result.update(passed=False,cleanup_error=str(exc))
         if backend is not None:result['native']=backend.report()
         if epoch is not None:result['epoch']=epoch.report()
+        if 'right_pose_search' in result:
+            controls_ok=bool(backend is not None and backend.validated and counter[0]==0
+                and 'error' not in result and 'cleanup_error' not in result
+                and result.get('maximum_authored_pose_change_during_queries')==0
+                and result['initial_robot_actor_controls']==result['final_robot_actor_controls'])
+            result['right_pose_search']['final_native_controls_passed']=controls_ok
+            if not controls_ok:result['right_pose_search']['proposed_right_ready_degrees']=None
         result.update(physics_steps=counter[0],native_query_calls=calls,wall_s=time.perf_counter()-began)
     return result

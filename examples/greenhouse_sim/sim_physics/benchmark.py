@@ -143,6 +143,8 @@ def parser():
     p.add_argument('--measured-withdrawal',action='store_true',
         help='Opt-in measured-start reverse path with fresh native geometry/hold checks; diagnostic only')
     p.add_argument('--native-static-clearance',action='store_true',help='Opt-in live native static-box refinement during the single synchronous bimanual plan')
+    p.add_argument('--native-startup-pose-search',action='store_true',
+        help='Read-only frozen-scene elbow proposals; always stops before any physics motion')
     p.add_argument('--native-startup-clearance',action='store_true',
         help='Isolated contact diagnostic: full native collider/actor validation before FIRST step; no path/contact guard is bypassed')
     p.add_argument('--native-capsule-sphere-cover',action='store_true',
@@ -350,6 +352,9 @@ def main(argv=None):
     if args.seam_contact_compliance and not (contact_trial and args.blade_force_feed):
         raise ValueError('Seam contact compression requires isolated blade feedback diagnostic')
     lower_rim=args.knife_edge_mode in ('source_lower_rim_v1','source_crossbar_edge_v1')
+    if args.native_startup_pose_search and not (args.native_startup_clearance and
+            contact_trial and args.knife_edge_mode=='source_crossbar_edge_v1'):
+        raise ValueError('Startup pose search requires isolated native crossbar diagnostics')
     if args.source_wrist_contacts and not (contact_trial and lower_rim):
         raise ValueError('Wrist contact comparison requires the isolated lower-rim trial')
     if (lower_rim!=(args.cut_model=='loaded_downward_lower_rim_seam_v1')
@@ -740,7 +745,10 @@ def main(argv=None):
             enabled=getattr(args,'solve_articulation_contact_last',False))
         if args.native_startup_clearance:
             from .native_startup_screen import screen as native_startup_screen
+            if args.native_startup_pose_search:fixture.startup_right_pose_search=True
             report['native_startup_collision_screen']=native_startup_screen(stage,fixture)
+            if args.native_startup_pose_search:
+                raise RuntimeError('Read-only startup pose search completed; relaunch and revalidate before motion')
             if not report['native_startup_collision_screen']['passed']:
                 raise RuntimeError('Complete native startup geometry not verified; no physics motion allowed')
         # One explicit scene, fixed dt. Rendering is independently scheduled.

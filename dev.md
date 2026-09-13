@@ -7524,3 +7524,12 @@ No hardware, collection, tuning, review, split or training-export changes.
   used in these native trials. Public/historical launcher and source geometry
   tests passed 23/23; watch-panel tests passed 14/14. Historical profile vectors
   remain unchanged; no existing jobs, datasets, hardware or OS settings changed.
+- Added `--native-startup-pose-search`, an explicit read-only same-wrist elbow
+  diagnostic. It keeps the stopped zero-step scene, checks the full dense left
+  self-path and every robot collider against the complete native environment,
+  retains before/after positive actor controls, and always stops before motion.
+  A proposal cannot repair the currently authored bad spawn; relaunch/startup
+  and the complete action must still be checked. Final control failure revokes
+  any provisional proposal. Native268 checked six feasible elbow alternatives;
+  all retained the right-upper-arm/Leaf_005 overlap. No actor, collision filter,
+  stage pose or physics step changed; all final native controls passed.
