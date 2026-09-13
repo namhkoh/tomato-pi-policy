@@ -6723,7 +6723,11 @@ No hardware, collection, tuning, review, split or training-export changes.
   First broad regression exposed ten legacy mock-call incompatibilities;
   restored the unchanged positional release call when no adapter is requested.
   Rerun: **3,857 passed in126.02s**, `regression_20260913_fixed_root_v2.log`.
-  Later rejection-capture tests separately pass; further guard tests ongoing.
+  Final broad rerun: **3,861 passed in127.86s**,
+  `regression_20260913_fixed_root_v3.log`; final velocity-target continuity,
+  failed-attempt latching and release-evidence checks: **64 passed in3.25s**.
+  Tests do not establish native retained-cut reliability. New fixed-root
+  options remain opt-in diagnostics, not a GUI or production default.
 - Reliable free-branch retention, withdrawal and deposit remain incomplete.
   Production scene/assets/fidelity, physical force/slip/collision limits,
   datasets/splits/reviews, training and hardware are unchanged. No reboot or
