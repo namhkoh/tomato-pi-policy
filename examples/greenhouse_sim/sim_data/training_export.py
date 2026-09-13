@@ -359,6 +359,25 @@ def build(audit_paths,output,*,allow_incomplete=False,visual_reviews=None,reconc
     return result
 
 
+def evidence_matches(stored,recomputed,*,rel_tol=1e-9,abs_tol=1e-9):
+    """Exact structural equality, tolerating only last-bit float rounding.
+
+    Server validation (2026-09-12) found 11 train rows whose recomputed
+    `local_extent_px` differed from the export platform by <=3.6e-15 (libm
+    `hypot` rounding), with every threshold decision unchanged. Booleans,
+    integers, strings, lists of reasons and dictionary keys still compare exactly;
+    no threshold is relaxed here.
+    """
+    import math
+    if isinstance(stored,dict) and isinstance(recomputed,dict):
+        return stored.keys()==recomputed.keys() and all(evidence_matches(stored[k],recomputed[k],rel_tol=rel_tol,abs_tol=abs_tol) for k in stored)
+    if isinstance(stored,list) and isinstance(recomputed,list):
+        return len(stored)==len(recomputed) and all(evidence_matches(a,b,rel_tol=rel_tol,abs_tol=abs_tol) for a,b in zip(stored,recomputed))
+    if isinstance(stored,float) and isinstance(recomputed,float):
+        return math.isclose(stored,recomputed,rel_tol=rel_tol,abs_tol=abs_tol)
+    return type(stored)==type(recomputed) and stored==recomputed
+
+
 def validate(root,*,allow_incomplete=False,progress=None):
     """Offline loader check uses only portable artifacts, never original source paths."""
     root=Path(root); manifest=read_json(root/'manifest.json')
@@ -401,7 +420,7 @@ def validate(root,*,allow_incomplete=False,progress=None):
             x,y=np.floor(label['query_pixel_uv']).astype(int)
             require(mask.shape==(408,848) and mask[y,x]==255,'Query is not on visible target')
             usability=QueryVisibility(np.asarray(rgb),mask==255).inspect(label['query_pixel_uv'])
-            require(usability['passed'] and label.get('query_usability')==usability,'Query usability failed or evidence changed')
+            require(usability['passed'] and evidence_matches(label.get('query_usability'),usability),'Query usability failed or evidence changed')
             require(sha256(safe_file(root,r['files']['rgb']))==r['rgb_sha256'],'RGB identity mismatch')
     require(seen==set(indexed),'Index rows missing from training chats')
     gates=check_release_rows(rows,gates=manifest['acceptance']['thresholds'])

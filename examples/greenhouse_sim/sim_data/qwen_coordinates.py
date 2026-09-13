@@ -9,6 +9,30 @@ import re
 from .training_contract import SYSTEM_PROMPT,user_prompt,validate_answer
 
 COORDINATE_ADAPTER='qwen3_grounding_normalized_1000.v1'
+
+
+def adapter_name(decimals=None):
+    """Convention identifier; fixed-decimal text is a distinct, declared version (same decoder)."""
+    if decimals is None: return COORDINATE_ADAPTER
+    if type(decimals) is not int or not 0<=decimals<=6: raise ValueError('Coordinate decimals must be an integer in [0,6]')
+    return f'qwen3_grounding_normalized_1000_{decimals}dp.v2'
+
+
+def format_point(point,decimals=None):
+    """Text precision for normalized coordinates in prompts/answers.
+
+    None keeps full float precision (about 16 digit tokens per coordinate, mostly
+    unpredictable noise for the model). A fixed number of decimals keeps the value
+    strictly inside [0,1000) and within half a unit of the last decimal of the
+    exact value; the decoder is unchanged.
+    """
+    if decimals is None: return list(point)
+    adapter_name(decimals); step=10.**-decimals; result=[]
+    for value in point:
+        rounded=round(value,decimals)
+        if rounded>=1000.: rounded=round(1000.-step,decimals)  # only within half a step of the excluded boundary
+        result.append(float(f'{rounded:.{decimals}f}'))
+    return result
 PIXEL_RULE='Coordinates are continuous pixels in the ORIGINAL 848x408 image, top-left edge origin, x right and y down. '
 NORMALIZED_RULE=('Coordinates (query and cut_point_uv) are normalized continuous coordinates in [0,1000), '
     'top-left edge origin, x right and y down: x_norm=1000*x/848 and y_norm=1000*y/408 '
@@ -46,7 +70,7 @@ def answer_to_pixels(answer):
     return validate_answer(result)
 
 
-def adapt_messages(messages):
+def adapt_messages(messages,decimals=None):
     if ([m.get('role') for m in messages] not in (['system','user'],['system','user','assistant'])
             or messages[0]['content']!=[dict(type='text',text=SYSTEM_PROMPT)]):
         raise ValueError('Expected original task-v3 messages, not already normalized messages')
@@ -58,7 +82,7 @@ def adapt_messages(messages):
     if not match: raise ValueError('Unrecognized original query convention')
     query=list(map(float,match.groups()))
     if text!=user_prompt(query): raise ValueError('Original query prompt changed')
-    normalized=convert_point(query,to_normalized=True)
+    normalized=format_point(convert_point(query,to_normalized=True),decimals)
     query_text=(f'The target petiole passes through normalized coordinates ({normalized[0]}, {normalized[1]}). '
         'Locate its nominal cut point if the junction and cut region are visually '
         'distinguishable; otherwise abstain. Use the original full image.')
@@ -68,6 +92,6 @@ def adapt_messages(messages):
         answer=validate_answer(json.loads(messages[2]['content'][0]['text']))
         answer=dict(answer)
         if answer['cut_point_uv'] is not None:
-            answer['cut_point_uv']=convert_point(answer['cut_point_uv'],to_normalized=True)
+            answer['cut_point_uv']=format_point(convert_point(answer['cut_point_uv'],to_normalized=True),decimals)
         result.append(dict(role='assistant',content=[dict(type='text',text=json.dumps(answer,separators=(',',':')))]))
     return result
