@@ -57,3 +57,25 @@ def test_archive_rejects_bad_final_tick_instead_of_approving_missing_measurement
     r=ProbeRecords(tmp_path/'trace.gz');r.append({'force':float('nan')})
     with pytest.raises(ValueError):r.close()
     assert r.closed and r.written==0
+
+
+@pytest.mark.parametrize('container',[list,tuple,dict])
+def test_fast_builtin_container_walk_keeps_nested_subclass_validation(container):
+    class Numbers(list):pass
+    class Mapping(dict):pass
+    good=Numbers([1.,Mapping(ok=2.)])
+    bad=Numbers([1.,Mapping(bad=float('nan'))])
+    wrap=lambda value:container(x=value) if container is dict else container([value])
+    assert json.loads(module.encode(wrap(good)))==json.loads(json.dumps(wrap(good)))
+    with pytest.raises(ValueError):module.encode(wrap(bad))
+
+
+def test_inline_leaf_walk_checks_dict_keys_shared_children_and_parent_cleanup():
+    shared=[-.0,5e-324,10**100];record={'one':shared,'two':shared}
+    parents=set();module._finite(record,parents);assert not parents
+    for bad in ({float('nan'):1.}, {'a':[{'b':float('inf')}]}, {'bad':object()}):
+        with pytest.raises((ValueError,TypeError)):module._finite(bad,parents)
+        assert not parents
+    cycle={'x':[]};cycle['x'].append(cycle)
+    with pytest.raises(ValueError,match='Circular'):module._finite(cycle,parents)
+    assert not parents

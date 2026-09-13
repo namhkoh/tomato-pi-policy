@@ -7,6 +7,7 @@ No record is rounded, sampled, omitted or changed in place.
 """
 import json
 import math
+from itertools import chain
 
 try:
     import orjson as _fast
@@ -16,6 +17,26 @@ except ImportError:
 
 def _finite(value,parents):
     kind=type(value)
+    # Diagnostic records are almost entirely builtin numeric leaves. Validate
+    # them in their parent's loop, without millions of recursive leaf calls.
+    # Subclasses retain the original generic checks below (including .items()).
+    if kind is float:
+        if not math.isfinite(value):raise ValueError('Out of range float values are not JSON compliant')
+        return
+    if kind is list or kind is tuple or kind is dict:
+        identity=id(value)
+        if identity in parents:raise ValueError('Circular reference detected')
+        parents.add(identity)
+        try:
+            elements=chain.from_iterable(value.items()) if kind is dict else value
+            for item in elements:
+                item_kind=type(item)
+                if item_kind is float:
+                    if not math.isfinite(item):raise ValueError('Out of range float values are not JSON compliant')
+                elif not (item_kind is str or item_kind is int or item_kind is bool or item is None):
+                    _finite(item,parents)
+        finally:parents.remove(identity)
+        return
     if kind in (str,int,bool,type(None)) or isinstance(value,(str,int)):return
     if isinstance(value,float):
         if not math.isfinite(value):raise ValueError('Out of range float values are not JSON compliant')

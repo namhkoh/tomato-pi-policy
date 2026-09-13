@@ -8460,3 +8460,39 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   must not be reported as an uninstrumented responsiveness comparison.
 - A/C remain open. No contact cap, solver rate, plant mass, source geometry,
   surrounding visuals, tissue-calibration claim or training status changed.
+
+### 2026-09-14 continuation: current profiling and lossless finite validation
+
+- Native365 completes the intact-greenhouse RIGHT-ONLY action with profiling:
+  all nine gates,85s/40800 steps, cut18.71875s,3439 native edge contacts,
+  unloaded reverse45.177083s and fresh post-cut egress. Passive-debris maximum
+  2.973177N; original assets unchanged. Archive40800 records complete. Native
+  close-up inspected: curved support above the straight lower cutting edge.
+  Twenty paused milestone PNGs remain diagnostics, not a continuous video.
+- Instrumented tick wall667.909s/RTF0.127263 is NOT a normal-speed comparison.
+  cProfile records596011921 calls,293.457s of profiled function time, including
+  80.798s in recursive finite validation and100.433s in record append. These
+  nested/instrumented costs are not disjoint wall-time shares. See native365
+  report.json/profile.pstats; concurrent offline CPU searches also ran.
+- Optimized strict JSON validation for builtin containers: finite builtin
+  numeric leaves are checked in their parent's loop instead of recursively
+  calling Python for each scalar/key. Original subclass handling, cycle
+  detection, finite dictionary keys, integer precision, unsupported-type
+  rejection, final-fault record and gzip-close behavior stay intact.
+- Seven repeats of180 encodes across six actual365 records: old median
+  61.274ms, inline-leaf28.087ms (2.182x). Every representative encoded packet
+  matches byte-for-byte. This is encoding-helper timing, NOT a whole-sim speed
+  result. Evidence: native365_inline_finite_timing.log under data/sim_physics.
+ 43 focused tests pass under both Conda and Isaac; full v25 regression passes
+  4803 tests in197.27s. No record sampling/dropping or physical changes.
+- Further offline source19/SubStem41 steep-pad search with right SDK park can
+  fit the left approach, but68 tested solutions cannot also clear cut entry;
+  16 fail finger/cut clearance. No native bimanual pass is inferred. Including
+  zero-normal-load rows in an OFFLINE344 capacity calculation leaves the same
+  2.1423 utilization; do not relax the original compressive-row preflight.
+- A source19/SubStem47 outer-gutter, forward-torso positive blade-plane scan
+  finds six full-left-path/self/interarm/entry/finger-clearance proposals.
+  Native366 tests the first, at original row0 and initial base x0.683841m,
+  y-5.159018m/yaw180deg. It retains80mm grasp/20mm cut and all force/retention
+  guards. Offline feasibility and a launch are NOT native success evidence.
+- A/C remain open. VLM tasks remain paused; no milestone freeze is claimed.
