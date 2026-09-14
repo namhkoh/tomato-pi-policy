@@ -1336,3 +1336,36 @@ been merged/capped with the full collection. Reviews:
 The next family is rendering. Total individual reviews so far351, with346
 accepts/five holds; this is NOT a final combined release count. No local model
 download, training or held-out model evaluation has started.
+
+### 2026-09-15 05:40 KST capped selection and next coverage pilots
+
+Orbit job002(seed103) contributed30 native frames/17 strict candidates. All17
+were individually inspected:16 accepts and1 hold. The held image
+`seed103_full_265d54eb11f2cedb994f` has a fruit-adjacent immediate attachment
+that could not be confidently judged fully exposed, despite a visible nominal
+point. Its hash-bound decision is preserved, not overridden by numerical gates.
+
+The NEW `collection_intake/clear_combined_20260915_checkpoint_v3` combines the
+first pass, both qualified pilots and orbit jobs001/002. All357 selected images
+have individual accept records; six holds are excluded and per-target view caps
+remove five otherwise accepted views. No newly selected image lacked review.
+Counts:train242/46/14, validation42/8/3, test73/11/3 (images/targets/families).
+The validator passed artifact/review checks but all coverage categories remain
+incomplete. Evidence:`clear_combined_checkpoint_v3_20260915.log`. Across reviewed
+candidates there are368 inspections,362 accepts/six holds; those uncapped counts
+must not be reported as final release size.
+
+Orbit job003(seed11) exited0 with14 native frames but zero strict clear
+candidates. Its seven exportable labels were not easy/clear; they stay excluded.
+The campaign continues without weakening visibility rules or relabeling them.
+
+Two bounded opposite-aisle orbit pilots (training seed101/job001, seed73/job019)
+are queued ONLY after the current23-job orbit campaign finishes successfully and
+all Kit processes exit. They use the existing source-bound
+`clear_capture_20260915_orbit_opposite_v1` plan, unchanged848x408 mounted camera,
+1800s worker bounds and native memory/geometry/depth checks. Queue wait is bounded
+at6h; no full opposite-side campaign or approval is automatic. Planned outputs:
+`collection_batches/clear_capture_20260915_opposite_orbit_seed101_pilot_v1` and
+`collection_batches/clear_capture_20260915_opposite_orbit_seed73_pilot_v1`.
+Log:`clear_opposite_orbit_pilots_queue_20260915_v1.log`. Native/visual qualification
+is still pending; these are static poses, not a validated aisle-crossing path.
