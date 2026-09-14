@@ -28,3 +28,17 @@ def loaded_speed(load,maximum):
     # load can use the explicit faster cap; the caller still holds/backs off
     # at 0.4 N and guards the original absolute 0.5 N limit every step.
     return .0003+(maximum-.0003)*min(1.,max(0.,(.20-load)/.10))
+
+
+def proportional_backoff(load,normal):
+    """Immediate reverse above SAME setpoints; bounded by old0.5mm/s reverse.
+
+    Experimental post-release control only. Native449's fixed reverse spikes
+    repeatedly reset acceleration near the shaft exit. This changes reverse
+    magnitude, not0.4N backoff onset,0.5N hard guard, geometry or completion.
+    """
+    if (any(isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v)
+            for v in (load,normal)) or not 0<=load<=.5 or abs(normal)>load+1e-7):
+        raise ValueError('Finite guard-bounded native full-tool and signed loads required')
+    excess=max(0.,load-.40,normal-.28)
+    return -min(.0005,.005*excess)

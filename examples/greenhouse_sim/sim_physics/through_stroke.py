@@ -8,10 +8,13 @@ import numpy as np
 
 
 class ThroughStroke:
-    def __init__(self, offsets, *, fraction, endpoint, direction, physics_hz, step, material_section=None, maximum_feed_m_s=.0003,support_aware_feed=False):
+    def __init__(self, offsets, *, fraction, endpoint, direction, physics_hz, step, material_section=None, maximum_feed_m_s=.0003,support_aware_feed=False,proportional_face_backoff=False):
         from .postrelease_feed import validate
         self.maximum_feed=validate(maximum_feed_m_s)
         if type(support_aware_feed) is not bool:raise ValueError('Explicit support-aware feed trial required')
+        if type(proportional_face_backoff) is not bool or proportional_face_backoff and (material_section is None or not support_aware_feed):
+            raise ValueError('Proportional face backoff requires explicit measured section/support-aware trial')
+        self.proportional_face_backoff=proportional_face_backoff
         from .support_aware_feed import SupportAwareFeed
         self.support_feed=SupportAwareFeed(self.maximum_feed) if support_aware_feed else None
         offsets=np.asarray(offsets,float)
@@ -105,7 +108,11 @@ class ThroughStroke:
             raise RuntimeError('Measured follow-through timed out; solid-face/clearance model unresolved')
         if self.complete: speed=0.;state='complete'
         elif not self.support: speed=0.;state='hold_support'
-        elif self.upper>.40 or self.normal>.28: speed=-.0005;state='backoff_load'
+        elif self.upper>.40 or self.normal>.28:
+            speed=-.0005;state='backoff_load'
+            if self.proportional_face_backoff:
+                from .postrelease_feed import proportional_backoff
+                speed=proportional_backoff(self.upper,self.normal)
         elif self.material_section is not None and not self.face_sliding: speed=0.;state='hold_unverified_cut_face'
         elif self.upper>.10 and self.normal<.01 and not self.face_sliding: speed=0.;state='hold_nonleading_contact'
         elif self.face_sliding:
@@ -119,4 +126,7 @@ class ThroughStroke:
         self.consumed=step
         self.receipt.update(command_state=state,command_offset_m=self.offset,
             command_speed_m_s=speed,maximum_contact_feed_m_s=self.maximum_feed,commanded_motion_used_as_completion=False)
+        if self.proportional_face_backoff:
+            self.receipt.update(proportional_face_backoff_trial=True,backoff_onset_n=.40,
+                hard_load_guard_n=.50,backoff_gain_m_per_n_s=.005,force_limits_changed=False)
         return (self.offset-self.start)/self.span

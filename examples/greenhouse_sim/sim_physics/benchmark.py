@@ -281,6 +281,7 @@ def parser():
     p.add_argument('--neutral-station-candidates',type=Path,help='Explicit frozen neutral/pregrasp/cut-entry candidate batch; no execution')
     p.add_argument('--right-entry-seed-degrees',type=float,nargs=7,default=None,
         help='Endpoint-only downward IK proposal; original transit/stroke checks remain')
+    p.add_argument('--proportional-face-backoff-trial',action='store_true',help='Explicit measured-section post-release reverse-rate comparison only')
     p.add_argument('--native-startup-grasp-search',action='store_true',help='Zero-motion grasp orientation proposals at the same material point; fresh execution required')
     p.add_argument('--station-reference-report',type=Path,help='Same-anatomy prior initial pose as zero-motion search seed; no replay authority')
     p.add_argument('--watch-auto-run',action='store_true',help='Explicitly start one watched demonstration after native startup; no reset/replay')
@@ -500,6 +501,9 @@ def main(argv=None):
     if args.support_aware_feed_trial and not (args.cut_action_trial and args.material_clearance_trial
             and args.physics_hz==480 and args.postrelease_feed_m_s>.0003):
         raise ValueError('Support-aware acceleration requires explicit faster 480 Hz material-clearance cut trial')
+    if args.proportional_face_backoff_trial and not (args.support_aware_feed_trial and args.material_clearance_trial
+            and args.through_stroke_trial and args.cut_action_trial and args.physics_hz==480):
+        raise ValueError('Proportional face backoff requires complete explicit post-release support-aware480Hz section trial')
     if args.neutral_ready_start and not (args.bimanual_cut and args.full_robot_probe and args.cut_action_trial
             and args.native_startup_clearance and args.native_static_clearance and args.physics_hz==480
             and not startup_search and not args.native_retention_trial and not args.screen_settled_waiting

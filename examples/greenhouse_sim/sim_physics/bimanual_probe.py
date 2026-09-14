@@ -438,6 +438,11 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         else:
             fixture.cut_authorized=phase=='stroke'
             fixture.command_right(phase,fraction)
+            if through is not None and through_time is None and phase=='stroke':
+                # Action computed from the preceding accepted observation;
+                # never confuse commanded feed with measured material travel.
+                records[-1]['through_stroke_command']={key:through.receipt[key] for key in
+                    ('step','command_state','command_speed_m_s','command_offset_m','commanded_motion_used_as_completion')}
             last_right_command=(phase,fraction)
         if getattr(fixture,'explicit_finger_effort',False):
             fixture.finger_effort.apply(fixture,step=int(stamp.step),dt=dt)
@@ -658,6 +663,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 endpoint=fixture.knife.frame(fixture.kin.forward('right',fixture.plan['stroke'][-1],fixture.base))[:3,3]
                 options={'maximum_feed_m_s':getattr(args,'postrelease_feed_m_s',.0003)}
                 if getattr(args,'support_aware_feed_trial',False):options['support_aware_feed']=True
+                if getattr(args,'proportional_face_backoff_trial',False):options['proportional_face_backoff']=True
                 if getattr(args,'material_clearance_trial',False):
                     parent_index=rig.cut_index-1
                     centre,axis=fixture.seam(frames)

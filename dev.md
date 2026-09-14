@@ -9320,3 +9320,59 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   pre-authored attachment release model, NOT calibrated tissue fracture.
   Diagnostic search448 intentionally ends before any motion. All native
   contact/penetration/slip limits and source visuals/geometry remain unchanged.
+
+### 2026-09-14 neutral-start direct cut passes; bimanual traversal comparison
+
+- Committed the guarded station/entry planning and one-shot UI checkpoint as
+  `b424c5f` on `koh-dev/sim-vlm`; NOT a simulator freeze or general reliability
+  claim. VLM work remains paused. No hardware, training or data decisions changed.
+- Native450 direct cut from SDK neutral PASSES all10 gates in isolation:
+  left parked/open/unloaded, full right approach, qualified release19.4375s,
+  full measured forward stroke28.114583s, unloaded retraction38.3125s and
+  final native withdrawal85s.3855 native edge contacts. Released debris peak
+  contact3.785N is reported separately under the user-permitted post-release
+  landing policy; it is not a knife-load exception. One run, not repeatability,
+  greenhouse validation, deposit or calibrated biological fracture.
+  Evidence: `data/sim_physics/bimanual_downward_20260914_native450/report.json`.
+- Read-only replay of449 versus439 observations shows no support-cap stops.
+  After32s,449 has401 fixed-rate reverse decisions; median full-knife load
+ 0.375N (peak0.428N), versus439 median0.356N andno reverse decisions in its
+  remaining forward interval. Replay is diagnostic, not native action evidence.
+  Last449 edge clearance0.361mm remains below required0.5mm. Blade contacts
+  are proximal and distal cut faces, not a neighboring leaf or gripper.
+  Evidence: `data/sim_physics/postrelease_comparison_20260914_v1.log`.
+- Added explicit `--proportional-face-backoff-trial` for a matched comparison:
+  retain0.4N reverse onset,0.5N hard native limit, signed-load onset0.28N,
+  maximum reverse0.5mm/s, original slip/penetration/35s timeout and complete
+  measured section/withdrawal requirements. Only reverse magnitude scales
+  with instantaneous excess load (gain0.005m/N/s); no filtered safety evidence
+  or collision/geometry edits. Default profile remains unchanged. Save the
+  successfully issued through-stroke command separately from observations.
+ 122 focused force-feed/section/launcher tests PASS. Complete v50 standalone
+  regression PASSES5129 tests in248.20s, including UI and feed changes.
+- Native451 matched neutral-start bimanual comparison retains449's release
+  time24.829167s,8221 edge contacts andmaximum slip1.559367mm. Gentler backoff
+  improves the observed sharp-edge clearance (about0.401mm at52s vs449's
+  final0.361mm), but FAILS the same35s traversal timeout. All retention and
+  release gates pass; full forward/withdrawal gates do not. Keep this explicit
+  comparison disabled by default. It is negative evidence against treating
+  controller-rate tuning alone as the fix; do not freeze on joint release.
+- The source crossbar is3mm thick (half1.500000013mm in440's original source
+  section receipt). Conservative whole-blade/stump clearance and the existing
+ 3mm cut window must both be respected when proposing offsets; do not remove
+  the stump collider or enlarge the acceptance window to force success.
+  Further bimanual work must address blade/cut-face accommodation while
+  retaining the branch, not rely on uncontrolled tracking error or extra time.
+- Native452 begins fresh full-greenhouse direct-cut validation using450's
+  neutral station/entry hint, original surroundings and default backoff.
+  Startup REJECTS right wrist D405 body vs neighboring Gutter1_Side2_013
+  main stem before motion. Do not reuse isolation placement without fresh
+  surrounding-plant checks. Current C remains unqualified:450 measured RTF0.22044,
+  median native physics4.596ms vs480Hz's2.083ms budget, plus controller work.
+  No visual or physical-detail reduction, VLM restart or hardware action.
+
+- Native453 runs the bounded zero-motion neutral/pregrasp/entry batch in the
+  full greenhouse with48 local placement/heading proposals around450's
+  station (`neutral_station_candidates_20260914_v2.json`). All neighbors and
+  camera geometry remain. It can only propose a fresh launch, not move the
+  robot or certify a cut. This is the current greenhouse placement check.
