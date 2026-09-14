@@ -9166,4 +9166,157 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   8882 (PIDs130120/122136/106656); confirmed ports no longer listening. No data
   or annotation files deleted. Post-stop commit headroom15.00GiB remains below
   the unchanged16GiB reserve; native retry still pending, no bypass/reboot.
+  Native438 subsequently launched after memory recovered. The corrected open
+  fingers executed, but neutral transit stopped near1.591667s on unintended
+  plant/tool contact. Last accepted wrist tracking error1.351927mm exceeded
+  the old1mm planning margin. That suggests insufficient tracking reserve;
+  the old failure log did not retain the exact rejected pair, so causality is
+  not established from438 alone. Neutral transit now plans AFTER the initial
+  native1s hold, screens complete target and both arm/context paths at5mm
+  (planning reserve only), and retains the rejected step's exact normal plus
+  friction pair loads. No force, penetration, collision or slip guard relaxed.
+  Focused transit checks:42 pass; expanded neutral ordering tests:13 pass.
+  Native439 isolated faster-insertion/original-reverse comparison PASSES all10
+  sequence gates with the original full robot/knife: release23.564583s,
+  full forward34.629167s, unloaded reverse67.158333s, final native withdrawal
+  and retention verified85s. Maximum slip1.271148mm;10741 native edge contacts.
+  Release-to-traversal11.064583s versus429's21.360417s. Measured final drive
+  handoff0.002814583deg, no compensation applied or causality inferred.
+  Tick wall438.096535s for85s simulation (RTF0.194021), NOT real time and not
+  an uncontended controlled performance comparison. Source visuals/physics
+  unchanged. One successful prepared-pose isolated trial is NOT general
+  greenhouse reliability, neutral bimanual completion or tissue calibration.
+  Native440 revised neutral approach physically PASSES at9.7375s:88-point
+  post-hold path,492 checks,23 search iterations,5mm planning clearance; fresh
+  endpoint screen passes. Last wrist tracking error0.148035mm, no native pose
+  reset. Cut continuation subsequently FAILED after62.189s planning wall time:
+  the native static-query budget expired.434 path rejections repeated the same
+  blade-body/stump/original-cut-window predicate. No cut executed in440; this
+  does not establish global target infeasibility. Preserve
+  initial motion-planning evidence separately from the endpoint recheck in
+  future receipts (440's initial88-point plan is retained in its native log).
   VLM/data/splits/review decisions, hardware and source visual assets untouched.
+
+### 2026-09-14 neutral-start bimanual demonstration retry
+
+- Defer cuRobo integration until the initial grasp/cut/performance milestone.
+  Move the unchanged source-section placement predicate before expensive
+  wrist sweeps/IK/transit-family searches; retain its defensive candidate
+  recheck and all native force, collision, penetration and slip guards.
+  Synthetic impossible sections reject before any arm solve or tool sweep.
+-90 focused tests pass in8.65s (planner, neutral, whole-target, blade aim).
+  This is not a new full-suite regression or native cut qualification.
+- Native441 launched as an explicit visible isolated bimanual trial: original
+  seed101/SubStem_41, full RBY1/knife/cameras, upright torso, SDK-ready arms,
+  guarded neutral approach,1mm/s support-aware forward feed with original
+  reverse feed. No native pose reset during execution.441 mistakenly used the
+  older D:/isaac-sim installation and failed before motion on the missing
+  PhysxMimicJointAPI.CreateNaturalFrequencyAttr API; shutdown also rejected
+  SimulationApp.close(exit_code). Do not treat441 as controller evidence.
+  Memory preflight allowed launch with16.97GiB commit headroom. No reserve
+  bypass, other-app closure, source visual edits or VLM/data changes.
+
+- Native442 retried with the verified D:/isaac-sim-6.0.1 installation. Memory
+  preflight passed, but native startup geometry rejected upright torso5 versus
+  Segment017's stem and Leaf004/Leaf005. Robot self-screen passed (5.611mm
+  minimum);361 native queries and all77 final actor controls succeeded. This
+  is a real initial-placement rejection, not an IK/cut execution failure or
+  a demonstrated memory crash. Zero controlled physics motion; no cut.
+- Read-only offline same-target left pregrasp IK with upright torso succeeds
+  at10cm and15cm initial backward station offsets; sampled endpoint interarm
+  capsule clearances249.17/248.32mm.20/25cm fail this bounded solve (not a
+  global infeasibility result).15cm candidate x=.4108916307204727,
+  y=.9273492407943318,yaw=-147.10477763841965deg. No plant or robot motion,
+  collision certificate or blade-path approval follows from this offline IK.
+  It still needs complete native startup and neutral-to-grasp/cut checks.
+- Later launch preflight at09:11:41Z has15.05GiB commit headroom, below16GiB;
+  no memory reserve bypass or unrelated process termination. Tool access had
+  intermittently failed on approval-service capacity; user-provided442 error
+  was corroborated by the recovered read-only native report.
+
+### 2026-09-14 neutral staging continuation (simulator priority; VLM held)
+
+- Native443 moved the initial base15cm back: complete native startup passed,
+  but the post-settle pregrasp goal failed5mm clearance for left finger1 vs
+  Segment006/Leaf000. No neutral arm transit or cut. Its failed watch result
+  was saved before closing only the verified owned paused kit PID68252.
+- Added explicit `ground_truth_trial --approach-distance` within the existing
+ 10..80mm constructor range, bimanual process-zone trials only. Source target,
+  grasp/cut arc, native checks and historical default20mm stay unchanged.
+ 39 launcher/neutral tests pass. Native444 (12cm retreat,40mm standoff) still
+  rejects initial torso/leaf overlap. Native445 (15cm retreat,-10deg initial
+  heading adjustment,40mm standoff) passes startup but again rejects the
+  pregrasp leaf margin. Auto-run consumed its one-shot before the user's
+  button click; it did not perform a grasp/cut. Its requested60s final pause
+  ended through normal teardown. No physical guard was bypassed.
+- Offline larger-standoff/heading proposals use original RBY1 limits and do
+  not certify motion. Native446 selects15cm initial retreat,-20deg initial
+  heading adjustment,80mm standoff, upright torso and SDK-ready arms. Same
+  original plant, camera-aligned knife, physics/visuals/contact limits.
+  Bounded14-joint neutral path passes:162 points,1388 checks,15 iterations.
+  Actual native neutral transit and fresh endpoint screen PASS at17.129167s;
+  last joint error1.4782e-5rad, right wrist error3.638e-6m, no endpoint contact
+  pairs. No native pose reset. Left-grasp continuation subsequently verifies
+  bilateral native grasp contact (7..8s continuation clock), maximum recorded
+  slip0.015156mm through8.9s. Right entry then FAILS:50 tool-frame proposals,
+  five corridor-clear IK attempts,zero converged. No blade approach or cut.
+  Full bimanual cut, direct-cut neutral completion, greenhouse reliability
+  and performance C remain unqualified. Do not freeze on this approach pass.
+- User reaffirmed stable full-motion simulator BEFORE VLM fixes. VLM work is
+  on hold; no training, collection, data/split/review edits or hardware motion.
+
+### 2026-09-14 jointly reachable neutral-start station qualification
+
+- Reconstruct446 blade-entry goals from native wrist/edge frames and its
+  settled planning snapshot, using the actual straight lower crossbar (not
+  the mounting-plate geometry).24 bounded seeds per corridor-clear pose find
+  zero IK solutions at446's station. This is finite-search evidence, not a
+  global impossibility proof; the best attempts reach a right shoulder limit.
+  Evidence: `data/sim_physics/right_entry_20260914_v1.log`.
+- Joint station search checks left pregrasp/grasp and the same right blade
+  entry with upright torso, original limits,3deg right reserve,10mm interarm
+  capsule clearance and0.8..0.98 right extension. Nine of48 sampled stations
+  pass these offline endpoint checks. No native collision or motion approval
+  is inherited. Evidence: `data/sim_physics/joint_station_20260914_v1.log`.
+- Native447 tests x=.4,y=.75,yaw=-157.10477763841965deg,80mm pregrasp,
+  explicit left IK seed and SDK-ready waiting arm. This candidate also solves
+  right entry from the SDK-ready seed offline. New isolated output only;
+  startup, full neutral path, grasp, complete cut corridor and native contact
+  checks still required. Launch reserve passed with22.59GiB commit headroom.
+  All VLM work remains held until simulator milestone evidence is complete.
+
+- Native447 rejected initial torso5 vs Segment017/Leaf004+005 before motion.
+  Endpoint reachability alone was insufficient. Added an explicit bounded
+  `--screen-station --neutral-station-candidates FILE` diagnostic: same-target
+  finite proposals only; upright SDK-neutral whole-native clearance first,
+  then5mm pregrasp clearance, both-arm IK/self/extension and complete right
+  entry geometry with left still pregrasp. No grasp-contact exceptions,
+  scene writes, physics steps, path or execution authority. Existing native
+  epoch checks and final actor-control reservation remain in effect.
+- Native448 checked nine candidates of a48-candidate batch, rejecting eight
+  torso/leaf conflicts before IK and finding x=.52,y=.75,yaw=-147.1047776384.
+  Neutral, pregrasp and entry native geometry pass; interarm capsule bound
+ 205.834mm, right extension0.967255. Final native controls PASS:71 robot actors
+  before/after,1686 native queries,zero steps andzero authored-pose changes;
+  total startup screening1.742132s. This is NOT a complete moving-path result.
+  Evidence: `data/sim_physics/bimanual_downward_20260914_native448/report.json`;
+  input `data/sim_physics/neutral_station_candidates_20260914_v1.json`.
+- Added optional `--right-entry-seed-degrees`: source-limit endpoint IK hint
+  only after the original ready-seed attempts fail. Never changes the parked
+  arm or native body poses; stroke/transit IK continues from its predecessor.
+  All existing endpoint, complete approach, rebuilt stroke and native contact
+  checks remain.88 batch/lifecycle/neutral regressions pass;93 entry/planning/
+  launcher regressions pass. Complete v49 standalone regression PASSES5108
+  tests in260.25s. Subsequently added clearer one-shot UI status/blocking-pair
+  messages (18 focused UI tests pass; native visible rendering still pending).
+- Native449 uses that station and the endpoint hint, starts from SDK neutral,
+  and revalidates from scratch. Actual neutral transit, left grasp and right
+  approach PASS. Native force-qualified crossbar release at24.829167s,8221
+  native edge contacts, maximum slip1.559367mm; retention and material
+  separation gates pass. Full through-stroke FAILS its35s post-release timeout
+  near59.829s, with roughly1.5mm remaining to the commanded endpoint and
+  sharp-edge clearance still below its0.5mm requirement. Withdrawal does not
+  begin. No end-to-end cut or performance qualification claimed. This is a
+  pre-authored attachment release model, NOT calibrated tissue fracture.
+  Diagnostic search448 intentionally ends before any motion. All native
+  contact/penetration/slip limits and source visuals/geometry remain unchanged.

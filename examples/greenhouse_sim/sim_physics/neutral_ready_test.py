@@ -66,3 +66,80 @@ def test_neutral_open_hand_uses_original_pd_ceiling_not_total_motor_budget():
     apply_open_finger_effort(f,step=0,dt=1/480)
     np.testing.assert_array_equal(f.force_limits,[[.3,.2,10.]])
     f.finger_effort.apply.assert_called_once_with(f,step=0,dt=1/480)
+
+
+def test_contact_failure_receipt_preserves_paths_and_normal_plus_friction():
+    from .neutral_ready import contact_diagnostic
+    pair=('/World/Robot/Wrist','/World/Target/Leaf')
+    m=S(pairs={pair:.006/480},normal_pairs={pair:.004/480},friction_pairs={pair:.002/480})
+    rows=contact_diagnostic(m,1/480)
+    assert rows==[dict(collider0=pair[0],collider1=pair[1],
+        normal_upper_bound_n=.004,friction_upper_bound_n=.002,total_upper_bound_n=.006)]
+    assert m.pairs[pair]==.006/480
+    with pytest.raises(ValueError):contact_diagnostic(m,0)
+
+
+def test_invalid_native_contact_load_cannot_become_valid_diagnostic():
+    from .neutral_ready import contact_diagnostic
+    pair=('/World/R/Wrist','/World/P/Leaf')
+    m=S(pairs={pair:float('nan')},normal_pairs={pair:0.},friction_pairs={pair:0.})
+    with pytest.raises(ValueError):contact_diagnostic(m,1/480)
+
+
+def run_mock_transit(tmp_path,monkeypatch,*,contact_fault=False):
+    """Controller ordering only: not a native motion/physics qualification."""
+    from . import neutral_ready as n,runtime as rt
+    frames=np.repeat(np.eye(4)[None],2,axis=0);actual=np.radians(ready_arms())[None].copy()
+    target=actual.copy();sim=S(current_time=0.,physics_sim_view=object(),is_playing=lambda:True)
+    f=S(neutral_ready={},bind=Mock(),release_grasp_observer=Mock(),cut_authorized=False,
+        left_indices=list(range(7)),right_indices=list(range(7,14)),targets=target,
+        expected_right=np.eye(4),base=np.eye(4),stop_requested=False,
+        explicit_finger_effort=False,prepare_step=Mock(),on_sample=Mock(),
+        cut_event=None,neutral_goal_pose={'marker':'goal'},pose={'marker':'neutral'},
+        restore_authored_state=Mock(),
+        check_self=lambda *a:dict(passed=True),
+        kin=S(forward=lambda *a:np.eye(4),inter_arm_clearance=lambda *a:S(clearance_m=.02)))
+    f.robot=S(get_dof_positions=lambda:actual.copy(),get_dof_velocities=lambda:np.zeros_like(actual))
+    f.palm=f.right_palm=S(get_transforms=lambda:np.eye(4)[None])
+    f.event_monitor=S(begin_step=Mock(),pairs={},normal_pairs={},friction_pairs={})
+    f._command_left_drives=lambda q,p:target.__setitem__((0,f.left_indices),np.radians(q))
+    def step(**kw):
+        actual[:]=target;sim.current_time+=1/480
+    sim.step=step
+    def metrics(*a):
+        load=.006 if contact_fault and sim.current_time>1.02 else 0.
+        pair=('/World/Robot/Wrist','/World/Target/Leaf')
+        f.event_monitor.pairs={pair:load/480}
+        f.event_monitor.normal_pairs={pair:load/960}
+        f.event_monitor.friction_pairs={pair:load/960}
+        return dict(per_finger_contact_upper_bound_n={'left1':0.,'left2':0.},
+            allowed_tool_contact_n=0.,unwanted_contact_n=load)
+    f.check=metrics;times=[]
+    def planner(fixture,seen,start):
+        times.append(sim.current_time)
+        np.testing.assert_array_equal(seen,frames)
+        return np.array([start,ready_arms()+.02]),dict(passed=True)
+    monkeypatch.setattr(n,'plan',planner);monkeypatch.setattr(rt,'pose_matrices',lambda x:x)
+    runtime=S(frames=frames,sample=lambda:(frames,np.zeros((2,6))),sync_visuals=Mock())
+    result=n.run(S(is_running=lambda:True),sim,S(cut=False,cut_index=1,rest_frames=frames),
+        runtime,S(step=Mock()),f,S(physics_hz=480,render_hz=0,coupled_fingers_trial=False),tmp_path)
+    f.restore_authored_state.assert_not_called()
+    return result,times,f
+
+
+def test_neutral_path_is_planned_after_native_hold_then_endpoint_rechecked(tmp_path,monkeypatch):
+    r,times,f=run_mock_transit(tmp_path,monkeypatch)
+    assert r['execution_passed'] and r['reobserved_after_initial_hold']
+    assert r['motion_planning']['passed'] and r['endpoint_screen']['passed']
+    assert len(times)==2 and times[0]>=1.-1e-10 and times[1]>times[0]
+    assert r['last_sample']['native_guards_passed'] and not r['native_state_reset']
+    assert f.pose==f.neutral_goal_pose and not f.cut_authorized
+
+
+def test_rejected_neutral_contact_sample_is_saved_without_cut_continuation(tmp_path,monkeypatch):
+    r,times,f=run_mock_transit(tmp_path,monkeypatch,contact_fault=True)
+    assert not r['execution_passed'] and 'Unexpected plant/tool contact' in r['error']
+    assert len(times)==1 and not r['last_sample']['native_guards_passed']
+    assert r['last_sample']['robot']['unwanted_contact_n']==.006
+    assert r['last_sample']['contact_pairs'][0]['total_upper_bound_n']==.006
+    assert f.pose=={'marker':'neutral'} and not f.cut_authorized

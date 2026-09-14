@@ -31,6 +31,7 @@ class BimanualRobot(FullRobotGripper):
         if type(source_wrist_contacts) is not bool:raise ValueError('Explicit wrist partition option required')
         self.cut_style=kwargs.pop('cut_style','legacy')
         self.cut_priority=kwargs.pop('cut_priority',None)
+        self.right_entry_seed_degrees=kwargs.pop('right_entry_seed_degrees',None)
         if (self.knife_edge_mode not in EDGE_MODES or
                 (self.knife_edge_mode in DOWNWARD_EDGES)!=(self.cut_model==DOWNWARD_CUT_MODEL) or
                 self.knife_edge_mode in DOWNWARD_EDGES and self.cut_style!='downward'):
@@ -118,6 +119,13 @@ class BimanualRobot(FullRobotGripper):
         kwargs.setdefault('station_offset',(0.,0.))
         kwargs.setdefault('approach_side',1)
         super().__init__(*args,**kwargs)
+        if self.right_entry_seed_degrees is not None:
+            q=np.asarray(self.right_entry_seed_degrees,float)
+            lo,hi=map(np.asarray,self.kin.arm_limits_degrees('right'))
+            if (self.cut_style!='downward' or q.shape!=(7,) or not np.isfinite(q).all()
+                    or np.any(q<lo) or np.any(q>hi) or getattr(self,'right_ik_fixed_joint',None) is not None):
+                raise ValueError('Finite source-limit downward entry seed without fixed-joint override required')
+            self.right_entry_seed_degrees=q.copy()
         self.rest_grasp_rotation=self.goal[:3,:3].copy()
         if self.force_closure_enabled:
             from .force_closure import ForceClosure
@@ -246,6 +254,21 @@ class BimanualRobot(FullRobotGripper):
         from .redundant_ik import solve_fixed_joint
         return solve_fixed_joint(self.kin,'right',desired,seed,self.base,
             joint_index=fixed[0],joint_degrees=fixed[1],maximum_evaluations=250)
+
+    def solve_right_entry_pose(self,desired,seed):
+        """Optional alternate endpoint IK guess, NOT a commanded or replayed pose.
+
+        Stroke and Cartesian-transit IK continue from their actual predecessor,
+        not this hint. Every endpoint still passes the unchanged complete
+        approach, self/scene collision, extension and rebuilt-stroke checks.
+        """
+        result=self.solve_right_pose(desired,seed)
+        proposal=getattr(self,'right_entry_seed_degrees',None)
+        self.entry_seed_fallback_used=False
+        if not result.succeeded and proposal is not None:
+            self.entry_seed_fallback_used=True
+            result=self.solve_right_pose(desired,np.array(proposal,copy=True))
+        return result
 
     def screen_grasp_scene(self,frames):
         """Conservative left approach/closure screen; never certifies a grasp.
@@ -763,6 +786,21 @@ class BimanualRobot(FullRobotGripper):
                         direction_world=d.tolist(),stroke_axis_dot_stem=float(abs(d@axis)),
                         edge_axis_dot_stem=float(abs(np.cross(normal,-d)@axis)))
                 attempts.append(attempt)
+                # This source-section predicate is independent of redundant
+                # arm posture, stroke translation and transit template. Native
+                # 440 repeated the same invalid section across434 IK/path
+                # attempts. Reject it before those searches; retain the SAME
+                # defensive check in _try_cut_candidate and all native guards.
+                section=self._cut_section_placement(axis,normal)
+                if section is not None:
+                    attempt['source_section_placement']=section
+                    attempt['source_section_screened_before_IK']=True
+                    if not section['passed']:
+                        attempt['rejection']='blade_body_stump_or_original_cut_window'
+                        failures.append(dict(angle=degrees,plane_tilt_degrees=tilt,
+                            normal_sign=normal_sign,wing_m=wing,rejection=attempt['rejection'],
+                            section_placement=section,rejected_before_ik=True))
+                        continue
                 # Constant orientation: translate the actual wrist frame for
                 # every <=0.5 mm stroke sample, including the final endpoint.
                 # Reject local hardware/plant conflicts before costly arm IK.
@@ -785,15 +823,16 @@ class BimanualRobot(FullRobotGripper):
                         # Do it once before those expensive previews. A failed
                         # seed cannot enter either the Cartesian or joint path
                         # branch; no accepted path or collision test is removed.
-                        solution=self.solve_right_pose(desired,self.right)
+                        solution=self.solve_right_entry_pose(desired,self.right)
                         attempt.update(ik_attempted=True,ik_succeeded=solution.succeeded,
-                            evaluations=solution.evaluations,endpoint_seed_precedes_transit=True)
+                            evaluations=solution.evaluations,endpoint_seed_precedes_transit=True,
+                            entry_seed_fallback_used=self.entry_seed_fallback_used)
                         if not solution.succeeded:
                             attempt['rejection']='endpoint_IK';continue
                     def accept_mode(mode):
                         nonlocal solution
                         if solution is None:
-                            solution=self.solve_right_pose(desired,self.right)
+                            solution=self.solve_right_entry_pose(desired,self.right)
                             attempt.update(ik_attempted=True,ik_succeeded=solution.succeeded,
                                 position_error_m=solution.position_error_m,
                                 orientation_error_rad=solution.orientation_error_rad,
@@ -815,7 +854,7 @@ class BimanualRobot(FullRobotGripper):
                         # collision-free joint path exists. Change APPROACH
                         # search only: rebuild and validate the same extended,
                         # correctly oriented downward stroke afterward.
-                        if solution is None:solution=self.solve_right_pose(desired,self.right)
+                        if solution is None:solution=self.solve_right_entry_pose(desired,self.right)
                         attempt.update(ik_attempted=True,ik_succeeded=solution.succeeded,
                             evaluations=solution.evaluations)
                         attempt['joint_fallback_attempts']=[]
@@ -848,7 +887,7 @@ class BimanualRobot(FullRobotGripper):
                     attempt['rejection']=('rigid_tool_transit' if solution is None else
                         'endpoint_IK' if not solution.succeeded else 'actual_transit_or_rebuilt_stroke')
                     continue
-                solution=self.solve_right_pose(desired,self.right)
+                solution=self.solve_right_entry_pose(desired,self.right)
                 attempt.update(ik_attempted=True,
                     position_error_m=solution.position_error_m,orientation_error_rad=solution.orientation_error_rad,
                     evaluations=solution.evaluations,ik_succeeded=solution.succeeded)
@@ -899,6 +938,13 @@ class BimanualRobot(FullRobotGripper):
             f'IK_attempted={sum(a["ik_attempted"] for a in attempts)}, IK_converged={ik}, '
             f'arm_clear_endpoints={clear_endpoints}, path_failures={failures}')
 
+    def _cut_section_placement(self,axis,normal):
+        """Existing exact section rule; no posture/path or execution authority."""
+        if getattr(self,'blade_axial_aim_offset_m',0.)<=.0015:return None
+        from .blade_aim import section_placement
+        return section_placement(axis,normal,offset_m=self.blade_axial_aim_offset_m,
+            radius=self.cut_shaft_radius,half_thickness=self.knife.source_crossbar_half_thickness_m)
+
     def _try_cut_candidate(self,left_q,centre,axis,candidate,tilt,failures):
         """Complete transit/stroke validation; no endpoint-only success.
 
@@ -910,11 +956,8 @@ class BimanualRobot(FullRobotGripper):
         from .blade_aim import edge_centre
         aim=edge_centre(centre,axis,getattr(self,'blade_axial_aim_offset_m',0.))
         failure=dict(angle=angle,plane_tilt_degrees=tilt,normal_sign=normal_sign,wing_m=wing)
-        section_aim=None
-        if getattr(self,'blade_axial_aim_offset_m',0.)>.0015:
-            from .blade_aim import section_placement
-            section_aim=section_placement(axis,normal,offset_m=self.blade_axial_aim_offset_m,
-                radius=self.cut_shaft_radius,half_thickness=self.knife.source_crossbar_half_thickness_m)
+        section_aim=self._cut_section_placement(axis,normal)
+        if section_aim is not None:
             if not section_aim['passed']:
                 failures.append(dict(failure,rejection='blade_body_stump_or_original_cut_window',
                     section_placement=section_aim));return False

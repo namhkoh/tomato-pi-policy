@@ -10,6 +10,9 @@ import numpy as np
 
 
 def search(robot,backend,guard):
+    if getattr(robot,'neutral_station_candidates',None) is not None:
+        from .neutral_station_search import search as neutral_search
+        return neutral_search(robot,backend,guard)
     if getattr(robot,'cut_station_orbit',False):
         from .cut_station_orbit import search as orbit_search
         return orbit_search(robot,backend,guard)

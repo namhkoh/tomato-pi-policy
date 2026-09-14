@@ -63,6 +63,29 @@ def idle_robot_view(sim,fixture):
     return view
 
 
+def finished_message(result):
+    """Explain a consumed one-shot without implying a reset or a verified cut."""
+    neutral=result.get('neutral_ready') or {}
+    if result.get('state')=='failed_neutral_ready_approach':
+        planning=neutral.get('planning') or {}
+        rejection=planning.get('last_rejection')
+        lines=['Neutral approach BLOCKED; grasp/cut not started.',' '.join(str(result.get('error') or neutral.get('error') or 'Native guard rejected the approach.').split())[:350]]
+        if isinstance(rejection,dict):
+            robot=str(rejection.get('robot_collider','robot')).split('/')
+            plant=str(rejection.get('plant_collider','plant')).split('/')
+            body=next((v for v in robot if v.startswith(('ee_','link_'))),'robot')
+            segment=next((v for v in plant if v.startswith('Segment_')),'plant')
+            leaf=next((v for v in plant if v.startswith('Leaf_Leaf_')),'shaft/scene')
+            lines.append(f'Clearance rejection: {body} vs {segment}/{leaf}.')
+    else:
+        passed=result.get('cut_action',{}).get('passed') is True
+        lines=['Cut action PASSED' if passed else 'Cut action FAILED',
+            'Full withdrawal: '+str(result.get('gates',{}).get('right_withdrawal_completed'))]
+        if result.get('error'):lines.append(' '.join(str(result['error']).split())[:350])
+    lines.append('Attempt finished. Run once is disabled; close and relaunch for a fresh trial. Full diagnostics: watch_result.json.')
+    return '\n'.join(lines)
+
+
 def watch(app,sim,rig,runtime,springs,fixture,args,output,run):
     import omni.ui as ui
     from omni.kit.viewport.utility import get_active_viewport
@@ -81,7 +104,9 @@ def watch(app,sim,rig,runtime,springs,fixture,args,output,run):
         with ui.VStack(spacing=5):
             ui.Label('FULL RB-Y1 A v1.2 - '+('INTACT GREENHOUSE' if getattr(args,'greenhouse_cut_trial',False) else 'ISOLATED ORIGINAL BRANCH'),word_wrap=True,height=38)
             ui.Label('Live native physics, not recorded playback. Diagnostic only: no tissue calibration or general-target qualification.',word_wrap=True,height=48)
-            status=ui.Label('Ready. Choose a view, then Run once. Use this panel, not the timeline controls.',word_wrap=True,height=70)
+            status=ui.Label('Automatic one-shot requested; Run once will be disabled after it starts.'
+                if getattr(args,'watch_auto_run',False) else
+                'Ready. Choose a view, then Run once. Use this panel, not the timeline controls.',word_wrap=True,height=130)
             start=ui.Button('Run once: right-only cut' if args.right_only_cut_trial else 'Run once: left grasp + right cut',height=32,clicked_fn=control.request)
             ui.Button('Stop trial (relaunch required)',height=26,clicked_fn=lambda:setattr(fixture,'stop_requested',True))
             for name in fixture.views:
@@ -114,16 +139,15 @@ def watch(app,sim,rig,runtime,springs,fixture,args,output,run):
                        initial_q,idle_robot.get_dof_positions())
         if control.take():
             start.enabled=False
+            start.text='Running - one attempt only'
             result=run(app,sim,rig,runtime,springs,fixture,args,output)
             result['planning_ui']=fixture.planning_heartbeat.report()
             control.finish()
             finished_at=time.monotonic()
             (output/'watch_result.json').write_text(json.dumps(result,indent=2,allow_nan=False),encoding='utf-8')
             publish(result)
-            passed=result.get('cut_action',{}).get('passed') is True
-            status.text=(('Cut action PASSED' if passed else 'Cut action FAILED')+
-                '\nFull withdrawal: '+str(result.get('gates',{}).get('right_withdrawal_completed'))+
-                '\n'+str(result.get('error') or 'Paused for inspection. Close and relaunch for another trial.'))
+            start.text='Attempt finished - relaunch required'
+            status.text=finished_message(result)
             print('CUT_WATCH_FINISHED '+str(result.get('state')),flush=True)
         if inspection_complete(control.state,finished_at,time.monotonic(),getattr(args,'watch_exit_after_s',None)):
             break  # Normal caller teardown publishes final report and closes ONLY this app.

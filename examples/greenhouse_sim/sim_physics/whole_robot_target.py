@@ -31,11 +31,11 @@ class WholeRobotTargetScreen:
         self.screen.triangle_indices={p:v for p,v in held_screen.triangle_indices.items() if p in paths}
         self.checks=0
 
-    def check(self, body_world, *, grasp=False):
+    def check(self, body_world, *, grasp=False, margin=.001):
         self.checks+=1
-        passed=self.screen.check(body_world,grasp=grasp)
+        passed=self.screen.check(body_world,grasp=grasp,margin=margin)
         return dict(model='complete_robot_current_target_subset_v1',passed=bool(passed),
             failure=self.screen.last_failure,robot_colliders=len(self.screen.shapes),
             target_colliders=len(self.screen.obstacles),checks=self.checks,
-            context_scene_checked=False,whole_scene_certified=False,
+            context_scene_checked=False,whole_scene_certified=False,margin_m=margin,
             native_contact_verified=False,motion_authorized=False)

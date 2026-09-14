@@ -5,6 +5,17 @@ from sim_physics.held_plant_screen import HeldPlantScreen
 from sim_physics.whole_robot_target import WholeRobotTargetScreen
 
 
+def test_larger_requested_transit_margin_reaches_complete_target_screen(monkeypatch):
+    screen,rig,poses=fixture()
+    whole=WholeRobotTargetScreen(screen,screen.shapes)
+    calls=[]
+    monkeypatch.setattr(whole.screen,'check',lambda world,**kw:calls.append(kw) or True)
+    assert whole.check(poses,margin=.005)['margin_m']==.005
+    assert calls==[dict(grasp=False,margin=.005)]
+    whole.check(poses)
+    assert calls[-1]==dict(grasp=False,margin=.001)
+
+
 def shape(link, centre):
     return ('/World/R/'+link+'/Shape','/World/R/'+link,link,'box',
             (np.array(centre,float),np.eye(3),np.full(3,.005)))

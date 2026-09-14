@@ -278,6 +278,9 @@ def parser():
     p.add_argument('--cut-station-orbit',action='store_true',help='Zero-motion station search checking raised waiting and cut-entry poses')
     p.add_argument('--station-waiting-search',action='store_true',help='Bounded alternate waiting poses during zero-motion station search only')
     p.add_argument('--station-left-seed-search',action='store_true',help='Alternate left elbow IK guesses during zero-motion bimanual station search only')
+    p.add_argument('--neutral-station-candidates',type=Path,help='Explicit frozen neutral/pregrasp/cut-entry candidate batch; no execution')
+    p.add_argument('--right-entry-seed-degrees',type=float,nargs=7,default=None,
+        help='Endpoint-only downward IK proposal; original transit/stroke checks remain')
     p.add_argument('--native-startup-grasp-search',action='store_true',help='Zero-motion grasp orientation proposals at the same material point; fresh execution required')
     p.add_argument('--station-reference-report',type=Path,help='Same-anatomy prior initial pose as zero-motion search seed; no replay authority')
     p.add_argument('--watch-auto-run',action='store_true',help='Explicitly start one watched demonstration after native startup; no reset/replay')
@@ -478,6 +481,22 @@ def main(argv=None):
             and args.native_startup_clearance and not args.watch_cut_trial and not args.robot_interactive):
         raise ValueError('Grasp proposals require a zero-motion unparked bimanual search')
     startup_search=any((args.native_startup_pose_search,args.native_startup_approach_search,args.native_startup_heading_search,args.native_startup_station_search,args.native_startup_grasp_search))
+    neutral_candidates=None
+    if args.right_entry_seed_degrees is not None:
+        if not (args.bimanual_cut and args.cut_style=='downward' and args.cut_action_trial
+                and args.native_startup_clearance and args.native_static_clearance
+                and args.right_ik_fixed_joint is None
+                and all(math.isfinite(v) for v in args.right_entry_seed_degrees)):
+            raise ValueError('Entry IK seed requires finite explicit guarded downward cut action')
+    if args.neutral_station_candidates is not None:
+        if not (args.native_startup_station_search and args.bimanual_cut and not cut_only
+                and not args.neutral_ready_start and not args.cut_station_orbit
+                and not args.station_waiting_search and not args.station_left_seed_search
+                and not args.station_proposal_report and not args.station_reference_report
+                and cut_priority is not None and args.torso_degrees==[0.]*6):
+            raise ValueError('Neutral station batch requires explicit upright zero-motion bimanual search and cut family')
+        from .neutral_station_search import read_candidates
+        neutral_candidates=read_candidates(args.neutral_station_candidates,plant=args.plant,target=args.target)
     if args.support_aware_feed_trial and not (args.cut_action_trial and args.material_clearance_trial
             and args.physics_hz==480 and args.postrelease_feed_m_s>.0003):
         raise ValueError('Support-aware acceleration requires explicit faster 480 Hz material-clearance cut trial')
@@ -892,6 +911,7 @@ def main(argv=None):
                 robot_options['cut_model']=getattr(args,'cut_model','force_qualified_pre_authored_seam_release')
                 robot_options['knife_edge_mode']=args.knife_edge_mode
                 robot_options['cut_priority']=cut_priority
+                robot_options['right_entry_seed_degrees']=args.right_entry_seed_degrees
                 robot_options['source_wrist_contacts']=args.source_wrist_contacts
                 robot_options['finger_actuator_limit_n']=getattr(args,'finger_actuator_limit_n',.5)
                 robot_options['cut_proposal_json']=getattr(args,'cut_proposal_json',None)
@@ -899,9 +919,11 @@ def main(argv=None):
                 robot_options['diagnostic_grasp_contacts']=getattr(args,'diagnostic_grasp_contacts',False)
                 robot_options['grasp_contact_frames']=args.grasp_contact_frames
             fixture=robot_class(stage,rig,arc=args.grasp_arc_m,friction=args.finger_friction,**robot_options)
-            if args.neutral_ready_start:
+            if args.neutral_ready_start or neutral_candidates is not None:
                 from .neutral_ready import initialize as initialize_neutral
                 report['neutral_ready_initialization']=initialize_neutral(fixture)
+            if neutral_candidates is not None:
+                fixture.neutral_station_candidates,fixture.neutral_station_candidate_source=neutral_candidates
             fixture.joint_transit_fallback=args.joint_transit_fallback
             fixture.station_reference_search=args.station_reference_report is not None
             if args.coupled_fingers_trial:

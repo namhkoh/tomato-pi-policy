@@ -7,6 +7,26 @@ from pathlib import Path
 from types import SimpleNamespace as S
 
 
+def test_finished_neutral_goal_rejection_identifies_blocking_geometry():
+    from .cut_watch import finished_message
+    result=dict(state='failed_neutral_ready_approach',error='No complete neutral-ready path',
+        neutral_ready=dict(planning=dict(last_rejection=dict(
+            robot_collider='/World/RBY1/ee_finger_l1/restored_collisions/contact_proxy',
+            plant_collider='/World/Target/Segment_006/Leaf_Leaf_000/Mesh'))))
+    message=finished_message(result)
+    assert 'grasp/cut not started' in message and 'ee_finger_l1' in message
+    assert 'Segment_006/Leaf_Leaf_000' in message and 'relaunch' in message
+    assert 'PASSED' not in message
+
+
+def test_finished_message_handles_other_faults_and_keeps_one_shot_contract():
+    from .cut_watch import finished_message
+    assert 'Native guard rejected' in finished_message(dict(state='failed_neutral_ready_approach'))
+    message=finished_message(dict(cut_action={'passed':True},gates={'right_withdrawal_completed':False}))
+    assert 'Cut action PASSED' in message and 'Full withdrawal: False' in message
+    assert 'Run once is disabled' in message
+
+
 def test_watch_only_allows_one_explicit_request_no_reset_or_automatic_run():
     s=OneShot();assert s.state=='ready' and not s.take()
     s.request();s.request();assert s.take() and not s.take()

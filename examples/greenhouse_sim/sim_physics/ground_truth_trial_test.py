@@ -58,3 +58,36 @@ def test_process_zone_cannot_use_wrong_physical_edge(tmp_path):
     with pytest.raises(SystemExit):main(['--output',str(tmp_path/'none'),'--mode','bimanual',
         '--process-zone-trial','--historical-mounting-plate'])
     assert not (tmp_path/'none').exists()
+
+
+@pytest.mark.parametrize('distance',[None,.01,.04,.08])
+def test_explicit_pregrasp_distance_preserves_target_and_guards(monkeypatch,tmp_path,distance):
+    from . import benchmark,ground_truth_trial
+    captured=[]
+    monkeypatch.setattr(benchmark,'main',lambda argv:captured.append(benchmark.parser().parse_args(argv)))
+    argv=['--output',str(tmp_path/'none'),'--mode','bimanual','--milestone','cut_action','--process-zone-trial']
+    if distance is not None:argv+=['--approach-distance',str(distance)]
+    ground_truth_trial.main(argv)
+    args=captured[0]
+    assert args.approach_distance==(.02 if distance is None else distance)
+    assert args.grasp_arc_m==.08 and args.cut_arc_m==.02
+    assert args.native_startup_clearance and args.native_static_clearance and args.require_retention_screen
+    assert args.force_closure and args.physics_hz==480
+    assert not (tmp_path/'none').exists()
+
+
+@pytest.mark.parametrize('value',['0','-.01','.081','nan','inf'])
+def test_invalid_pregrasp_distance_never_launches(tmp_path,value):
+    from .ground_truth_trial import main
+    with pytest.raises(SystemExit):
+        main(['--output',str(tmp_path/'none'),'--mode','bimanual','--process-zone-trial',
+            '--approach-distance',value])
+    assert not (tmp_path/'none').exists()
+
+
+@pytest.mark.parametrize('extra',[['--mode','right_only','--process-zone-trial'],['--mode','bimanual']])
+def test_pregrasp_distance_requires_bimanual_process_zone(tmp_path,extra):
+    from .ground_truth_trial import main
+    with pytest.raises(SystemExit):
+        main(['--output',str(tmp_path/'none'),'--approach-distance','.08',*extra])
+    assert not (tmp_path/'none').exists()

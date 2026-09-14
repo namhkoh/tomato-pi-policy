@@ -9,6 +9,26 @@ import time
 import numpy as np
 
 
+# Planning reserve only, not a changed collision shape/contact tolerance.
+# Native438 tracked the wrist 1.35 mm off a path screened at only 1 mm.
+TRANSIT_MARGIN_M=.005
+
+
+def contact_diagnostic(monitor,dt):
+    """Copy exact native pair loads for a rejected step; no contact authority."""
+    if isinstance(dt,bool) or not np.isfinite(dt) or dt<=0:
+        raise ValueError('Finite positive native contact timestep required')
+    rows=[]
+    for pair,impulse in monitor.pairs.items():
+        normal=monitor.normal_pairs[pair];friction=monitor.friction_pairs[pair]
+        if len(pair)!=2 or not np.isfinite([impulse,normal,friction]).all() or min(impulse,normal,friction)<0:
+            raise ValueError('Finite nonnegative original contact accounting required')
+        rows.append(dict(collider0=pair[0],collider1=pair[1],
+            normal_upper_bound_n=normal/dt,friction_upper_bound_n=friction/dt,
+            total_upper_bound_n=impulse/dt))
+    return rows
+
+
 def ready_arms():
     from greenhouse_sim.robot_ready_pose import SDK_READY_POSE_DEGREES as ready
     return np.array([ready[f'{arm}_arm_{i}'] for arm in ('left','right') for i in range(7)])
@@ -79,7 +99,8 @@ def plan(fixture,frames,start):
         s.workspace=screens[0].workspace;s.snapshot(frames)
     complete=WholeRobotTargetScreen(screens[0],fixture.self_screen.shapes)
     evidence=dict(model='neutral_ready_current_scene_path_v1',passed=False,
-        no_intended_contact=True,scene_margin_m=.001,self_margin_m=.003,
+        no_intended_contact=True,scene_margin_m=TRANSIT_MARGIN_M,self_margin_m=.003,
+        tracking_reserve_is_not_continuous_collision_certificate=True,
         interarm_margin_m=.01,maximum_joint_sample_degrees=1.,motion_authorized=False)
     native=None
     try:
@@ -94,11 +115,12 @@ def plan(fixture,frames,start):
                 evidence['last_rejection']='self';return False
             if fixture.kin.inter_arm_clearance(q[:7],q[7:],fixture.base).clearance_m<.01:
                 evidence['last_rejection']='interarm';return False
-            target=complete.check(world)
+            target=complete.check(world,margin=TRANSIT_MARGIN_M)
             if not target['passed']:
                 evidence['last_rejection']=target['failure'];return False
             for s in screens:
-                if not s.check(world):evidence['last_rejection']=s.last_failure;return False
+                if not s.check(world,margin=TRANSIT_MARGIN_M):
+                    evidence['last_rejection']=s.last_failure;return False
             return True
         limits=[fixture.kin.arm_limits_degrees(a) for a in ('left','right')]
         search={}
@@ -135,17 +157,27 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     try:
         if np.max(abs(q-ready_arms()))>np.degrees(.005):
             raise RuntimeError('Native initial arms do not match SDK ready pose')
-        frames,_=runtime.sample()
-        path,evidence=plan(fixture,frames,q)
-        knots=time_path(path)
-        if knots[-1]>45:raise RuntimeError('Neutral approach exceeds bounded 45 second transit')
-        receipt['planned_motion_seconds']=float(knots[-1])
+        path=None;knots=None;motion_start=None;planning_frames=None
         receipt['native_start_time_s']=begun
-        print('NEUTRAL_READY_APPROACH_READY '+json.dumps(evidence),flush=True)
         def before(stamp,dt):
+            nonlocal path,knots,motion_start,planning_frames
             if not app.is_running() or fixture.stop_requested or not sim.is_playing():
                 raise RuntimeError('Neutral approach stopped; no cut continuation')
-            desired=interpolate(path,knots,max(0.,stamp.simulation_time_s-1.))
+            if path is None and stamp.simulation_time_s>=1.:
+                # Reobserve AFTER the initial native hold. The first second
+                # of gravity response must not silently stale the cut corridor.
+                frames,_=runtime.sample();planning_frames=frames.copy()
+                current=np.degrees(fixture.robot.get_dof_positions()[0,idx])
+                path,evidence=plan(fixture,frames,current)
+                knots=time_path(path)
+                if knots[-1]>45:raise RuntimeError('Neutral approach exceeds bounded 45 second transit')
+                motion_start=stamp.simulation_time_s
+                receipt.update(planned_motion_seconds=float(knots[-1]),
+                    motion_planning=evidence,
+                    planning_native_time_s=float(sim.current_time),motion_start_phase_time_s=motion_start,
+                    reobserved_after_initial_hold=True)
+                print('NEUTRAL_READY_APPROACH_READY '+json.dumps(evidence),flush=True)
+            desired=q if path is None else interpolate(path,knots,max(0.,stamp.simulation_time_s-motion_start))
             fixture.event_monitor.begin_step()
             fixture.targets[0,fixture.right_indices]=np.radians(desired[7:])
             fixture.expected_right=fixture.kin.forward('right',desired[7:],fixture.base)
@@ -163,6 +195,16 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             right=pose_matrices(fixture.right_palm.get_transforms())[0]
             right_error=float(np.linalg.norm(right[:3,3]-fixture.expected_right[:3,3]))
             error=float(np.max(abs(positions[idx]-fixture.targets[0,idx])))
+            # Preserve the CURRENT rejected sample, not only the preceding
+            # accepted one (native438 previously lost the offending pair).
+            last=dict(phase='Neutral ready -> pregrasp / knife waiting',t=stamp.simulation_time_s,
+                absolute_native_time_s=float(sim.current_time),step=stamp.step,
+                measured_arm_degrees=measured.tolist(),commanded_arm_degrees=target.tolist(),
+                joint_error_rad=error,right_tracking_error_m=right_error,robot=metrics,
+                contact={'bilateral':False},slip_m=None,cut=bool(rig.cut),training_eligible=False,
+                native_guards_passed=False,contact_pairs=contact_diagnostic(fixture.event_monitor,dt),
+                target_translation_from_plan_m=None if planning_frames is None else
+                    float(np.max(np.linalg.norm(frames[:,:3,3]-planning_frames[:,:3,3],axis=1))))
             if (rig.cut or fixture.cut_event is not None or error>.012 or right_error>.012
                     or not np.isfinite(frames).all() or np.max(np.linalg.norm(vel[:,:3],axis=1))>20
                     or np.max(np.linalg.norm(frames[:rig.cut_index,:3,3]-rig.rest_frames[:rig.cut_index,:3,3],axis=1))>1e-5
@@ -173,22 +215,20 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             if max(loads.values())>.005 or metrics['allowed_tool_contact_n']>.005 or metrics['unwanted_contact_n']>.005:
                 raise RuntimeError('Unexpected plant/tool contact during neutral approach')
             if coupling is not None:coupling.observe(positions[fixture.finger_indices],velocities[fixture.finger_indices],step=stamp.step)
-            final=(stamp.simulation_time_s>=1.+knots[-1] and error<=.005
+            final=(motion_start is not None and stamp.simulation_time_s>=motion_start+knots[-1] and error<=.005
                 and np.max(abs(velocities[idx]))<.02)
             stable=stable+1 if final else 0
-            last=dict(phase='Neutral ready -> pregrasp / knife waiting',t=stamp.simulation_time_s,
-                absolute_native_time_s=float(sim.current_time),step=stamp.step,
-                measured_arm_degrees=measured.tolist(),commanded_arm_degrees=target.tolist(),
-                joint_error_rad=error,right_tracking_error_m=right_error,robot=metrics,
-                contact={'bilateral':False},slip_m=None,cut=False,training_eligible=False)
+            last['native_guards_passed']=True
             stream.write(json.dumps(last,allow_nan=False)+'\n')
             if time.monotonic()-last_status>.25:
                 fixture.on_sample(last);last_status=time.monotonic()
         def render(_):runtime.sync_visuals()
         with (output/'neutral_ready_trajectory.jsonl').open('w',encoding='utf-8') as stream:
-            for _ in range(int(np.ceil((knots[-1]+4)*args.physics_hz))):
+            for _ in range(49*args.physics_hz):
                 clock.tick(before=before,after=after,before_render=render)
                 if stable>=int(.1*args.physics_hz):break
+                if motion_start is not None and clock.stamp.simulation_time_s>motion_start+knots[-1]+3:
+                    raise RuntimeError('Neutral approach endpoint did not settle')
         if stable<int(.1*args.physics_hz):raise RuntimeError('Neutral approach endpoint did not settle')
         # Recheck the CURRENT target/scene at the reached endpoint. No archived
         # prelude snapshot can certify the later grasp or cut corridor.

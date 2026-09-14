@@ -6,6 +6,36 @@ import pytest
 from sim_physics.bimanual import BimanualRobot
 
 
+def test_invalid_source_section_rejected_before_any_tool_sweep_or_arm_ik(monkeypatch):
+    import sim_physics.rigid_tool_screen as module
+    from .knife import DOWNWARD_CUT_MODEL
+    robot=BimanualRobot.__new__(BimanualRobot)
+    robot.stage=None;robot.root='/World/R';robot.rig=S(root='/World/P')
+    robot.held_plant_screen=S(workspace=[np.zeros(3),np.ones(3)],static=[],snapshot=lambda f:None)
+    robot.goal=np.eye(4);robot.radius=.0033;robot.cut_shaft_radius=.0033
+    robot.right=np.zeros(7);robot.base=np.eye(4);robot.cut_style='downward'
+    robot.cut_model=DOWNWARD_CUT_MODEL;robot.blade_axial_aim_offset_m=.0023
+    robot.stroke_offsets=np.linspace(-.008,.0045,27)
+    axis=np.array([.98,0.,.18]);axis/=np.linalg.norm(axis)
+    robot.seam=lambda frames:(np.zeros(3),axis.copy())
+    def wrist(point,*unused):
+        result=np.eye(4);result[:3,3]=point;return result
+    robot.knife=S(size=np.array([.01,.05,.006]),wrist_for_edge=wrist,
+        source_crossbar_half_thickness_m=.005)
+    def forbidden(*a,**kw):raise AssertionError('Invalid section reached a redundant expensive search')
+    robot.kin=S(solve_pose=forbidden);robot.solve_right_pose=forbidden
+    class Screen:
+        def __init__(self,*a):pass
+        check=forbidden
+    monkeypatch.setattr(module,'RigidToolScreen',Screen)
+    with pytest.raises(RuntimeError,match='IK_attempted=0'):robot._plan_cut([],np.zeros(7))
+    attempts=robot.plan_diagnostics['endpoint_attempts']
+    assert len(attempts)==50 and robot.plan is None
+    assert all(not a['ik_attempted'] and a['source_section_screened_before_IK'] for a in attempts)
+    assert all(not a['source_section_placement']['passed'] for a in attempts)
+    assert all(f['rejected_before_ik'] for f in robot.plan_diagnostics['path_failures'])
+
+
 @pytest.mark.parametrize('style',['legacy','downward'])
 def test_complete_rigid_corridor_precedes_endpoint_ik(monkeypatch,style):
     import sim_physics.rigid_tool_screen as module

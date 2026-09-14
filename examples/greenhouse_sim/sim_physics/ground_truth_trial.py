@@ -76,6 +76,8 @@ def main(argv=None):
         help='Existing negative/positive X planting slot, with the displaced original backdrop retained')
     p.add_argument('--approach-vector',type=float,nargs=3,default=None,
         help='Explicit bimanual grasp-side proposal; same anatomical shaft, new native IK/clearance qualification')
+    p.add_argument('--approach-distance',type=float,default=None,
+        help='Explicit 10..80 mm bimanual pregrasp standoff; unchanged target, path and contact guards')
     p.add_argument('--grasp-roll',type=int,choices=(0,180),default=None,
         help='Equivalent parallel-jaw orientation proposal; bimanual only, fresh grasp/clearance checks')
     p.add_argument('--grasp-pitch',type=float,default=None,
@@ -88,6 +90,8 @@ def main(argv=None):
         help='Explicit new left IK seed; never a path or collision certificate')
     p.add_argument('--right-ready-degrees',type=float,nargs=7,default=None,
         help='Explicit new right waiting configuration; source limits and native startup checks required')
+    p.add_argument('--right-entry-seed-degrees',type=float,nargs=7,default=None,
+        help='Optional endpoint IK guess only; never right waiting pose or executed trajectory')
     p.add_argument('--milestone',choices=('full_sequence','cut_action'),default='full_sequence')
     p.add_argument('--capture',action='store_true',help='Paused native milestone PNGs; headless, not synchronized training RGB-D')
     p.add_argument('--watch',action='store_true',help='Open a visible Run-once panel; no automatic run, reset or hardware commands')
@@ -119,6 +123,7 @@ def main(argv=None):
     p.add_argument('--measured-jaw-backoff-trial',action='store_true',help='Unqualified half-preload backoff comparison; requires --native-retention-trial')
     p.add_argument('--screen-tool-heading',action='store_true',help='Zero-motion arc-up complete-tool heading search only')
     p.add_argument('--screen-station',action='store_true',help='Zero-motion base/two-arm proposal search; no base-motion or path authority')
+    p.add_argument('--neutral-station-candidates',type=Path,help='Bounded same-target JSON proposals for zero-motion neutral/pregrasp/entry screening; requires --screen-station')
     p.add_argument('--cut-station-orbit',action='store_true',help='Screen raised waiting and cut-entry poses; requires --screen-station; prior frame is optional')
     p.add_argument('--station-waiting-search',action='store_true',help='Explicit zero-motion search over bounded waiting offsets; full entry/path checks remain')
     p.add_argument('--station-left-seed-search',action='store_true',help='Bounded alternate left elbow IK guesses; zero-motion bimanual station search only')
@@ -169,6 +174,11 @@ def main(argv=None):
         p.error('Opposite planting side requires an explicit existing-source station and intact greenhouse trial')
     if args.approach_vector is not None and not (args.process_zone_trial and args.mode=='bimanual'):
         p.error('Grasp approach vector requires explicit bimanual process-zone trial')
+    if args.approach_distance is not None:
+        import math
+        if not (args.process_zone_trial and args.mode=='bimanual'
+                and math.isfinite(args.approach_distance) and .01<=args.approach_distance<=.08):
+            p.error('Pregrasp distance requires explicit bimanual process-zone trial and finite 10..80 mm')
     if (args.grasp_roll is not None or args.grasp_pitch is not None) and not (args.process_zone_trial and args.mode=='bimanual'):
         p.error('Grasp orientation requires explicit bimanual process-zone trial')
     if args.torso_degrees is not None and not args.process_zone_trial:
@@ -236,6 +246,7 @@ def main(argv=None):
     if args.measured_jaw_backoff_trial:options+=['--measured-jaw-backoff-trial']
     if args.screen_tool_heading:options+=['--native-startup-heading-search']
     if args.screen_station:options+=['--native-startup-station-search']
+    if args.neutral_station_candidates:options+=['--neutral-station-candidates',str(args.neutral_station_candidates)]
     if args.cut_station_orbit:options+=['--cut-station-orbit']
     if args.station_waiting_search:options+=['--station-waiting-search']
     if args.station_left_seed_search:options+=['--station-left-seed-search']
@@ -259,9 +270,11 @@ def main(argv=None):
     if args.target_row_slot!=12:options+=['--target-row-slot',str(args.target_row_slot)]
     if args.target_planting_side!=1:options+=['--target-planting-side',str(args.target_planting_side)]
     if args.approach_vector is not None:options+=['--approach-vector',*map(str,args.approach_vector)]
+    if args.approach_distance is not None:options+=['--approach-distance',str(args.approach_distance)]
     if args.grasp_roll is not None:options+=['--grasp-roll',str(args.grasp_roll)]
     if args.grasp_pitch is not None:options+=['--grasp-pitch',str(args.grasp_pitch)]
     if args.torso_degrees is not None:options+=['--torso-degrees',*map(str,args.torso_degrees)]
+    if args.right_entry_seed_degrees is not None:options+=['--right-entry-seed-degrees',*map(str,args.right_entry_seed_degrees)]
     for flag,value in (('--station-pose',args.station_pose),('--left-ik-seed-degrees',args.left_ik_seed_degrees),
                        ('--right-ready-degrees',args.right_ready_degrees)):
         if value is not None:options+=[flag,*map(str,value)]
