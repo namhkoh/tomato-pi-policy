@@ -9463,3 +9463,89 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   hardware control, unrelated application shutdown, reboot or fidelity reduction.
   This checkpoint resolves the tested isolated retained-cut blockage; the full
   greenhouse neutral A/B paths and responsive C still precede any VLM restart.
+
+### 2026-09-14 ? neutral greenhouse access search and same-fetch hand poses
+
+- Continued A/B/C engineering on `koh-dev/sim-vlm`; VLM collection/training,
+  source assets, annotations and splits remain untouched. This is NOT the
+  requested greenhouse/real-time freeze. The isolated456 checkpoint remains
+  the comparison case; no force cap, solver rate/iterations, cut angle, source
+  collider, visual detail or retention requirement has been reduced.
+- `neutral_station_search.py` now accepts bounded per-station redundant-right
+  IK exploration (0..16 steps per direction, same wrist pose, original3-degree
+  joint reserve). Every alternate arm configuration receives the same native
+  whole-robot/scene entry check. The40s search and reserved final actor controls
+  remain; search output never authorizes motion or proves global infeasibility.
+- Added explicit per-candidate cut-frame families restricted to the existing
+  vertical-crossbar orientations (0/+/-10/+/-15-degree tilt, normal sign +/-1,
+  bounded edge offset). Current anatomical direction and source edge geometry
+  still decide feasibility; all cutting/contact alignment gates are unchanged.
+  `station_proposal.py` can import a final-controlled zero-step neutral proposal
+  only into a fresh neutral-start launch. Entry IK seeds remain distinct from
+  actual ready joints. A conflicting explicit cut priority is rejected BEFORE
+  changing launch arguments; no old paths or collision approval are inherited.
+- Native457:3 local stations/51 redundant entry alternatives, no clear proposal.
+  Native458:30 station/frame combinations;20 entry/grasp IK rejections,5
+  self/extension rejections and5 entry-scene rejections; no proposal. Native459:
+  48 wider station/heading/frame combinations;44 neutral-scene collisions and4
+  entry IK failures; no proposal. Final native controls passed in all three,
+  with zero physics steps and no budget exhaustion. Reported screen wall times:
+  native457:5.680s; native458:13.982s; native459:4.993s. These are negative bounded SEARCH results,
+  not executed cuts. Local entry collisions chiefly involve the right forearm
+  and SubStem_44/Leaf_028, or neighboring fruit; the plants were not removed.
+  Evidence: `data/sim_physics/bimanual_downward_20260914_native457` through459.
+- Extended neutral station screening to the explicit parked-left direct-cut
+  strategy. In that mode the left SDK joint posture stays relative to EACH
+  candidate base; it does not solve an irrelevant old-world grasp goal. This
+  cannot replace a required bimanual grasp; mode and park flags are validated.
+  Endpoint success remains only a proposal requiring fresh full-motion testing.
+- Added `fetched_hands.py`: one local post-fetch snapshot of both finger pads
+  and both wrists, sampled anew every physics step. The identical native XYZW
+  conversion is batched once. Grasp, diagnostics, cutting and forward-traversal
+  checks share it only with matching robot identity and step ID; wrong-step
+  reuse fails closed. Arrays are owned/read-only; no persistent cache, FK pose,
+  interpolation, pre-step substitution or reduced contact sampling. Independent
+  native consumers outside this callback retain their existing reads.
+- In-memory conversion microbenchmark (NOT native latency):3000 callbacks,
+  old6 conversions158.273us/callback versus shared33.535us. This estimates only
+  a small Python conversion cost, not a real-time simulator improvement.
+  Native460 repeats the full456 neutral retained-cut recipe to check unchanged
+  behavior. Its final report and physical-record comparison are pending below.
+- Regression v53:5199 passed in258.09s
+  (`data/sim_physics/physics_regression_20260914_v53.log`). Subsequent direct-cut
+  neutral-search changes:75 focused tests passed. New tests cover invalid frame
+  families/budgets, control-reserve exhaustion, pose ownership/stale steps,
+  exact batched conversion equivalence, wrong-task imports and parked-left
+  semantics. Remaining acceptance: full greenhouse neutral grasp+cut and direct
+  cut, repeatability, and measured responsive performance at unchanged fidelity.
+- **Native460 PASS, all12 gates**, after the new post-fetch sharing. Same
+  isolated seed101/SubStem_41 neutral-start case as456: cut24.829167s,
+  reobserved retained separation28.8625s, forward traversal40.35625s, unloaded
+  reverse74.008333s, final native withdrawal85s. Same5700 native edge contacts,
+  maximum1.752025mm slip and zero released-debris contact. Complete archive:
+  40800 records,812958161 bytes. Zero-tolerance comparison against456 found
+  **40799/40800 whole records identical**. The sole changed value is the final
+  `withdrawal.native_static.epoch.simulation_time_s` (Kit query-clock metadata);
+  every recorded physical value is identical. Evidence logs:
+  `data/sim_physics/native456_native460_record_comparison_v2.log` and
+  `data/sim_physics/native456_native460_last_record_diff.log`.
+- **No overall latency gain claimed.** Native460 RTF0.175748,483.647 tick-wall
+  seconds for85 simulated seconds;456 was0.178497/476.199s. Both overlapped
+  regression work. Post-step p50 was3.664ms versus3.771ms, but native/render
+  timings varied. The measured Python microbenchmark gain is not a responsive
+  C pass. No solver frequency/iterations, graphics or contact limits changed.
+- Final regression including direct-cut station mode: **5202 passed in251.17s**,
+  `data/sim_physics/physics_regression_20260914_v54.log`.
+- Native461 tries prior greenhouse-success source seed19/SubStem_41 at original
+  end-row slot0 with the NOW upright neutral posture. It correctly stops BEFORE
+  motion: neutral right forearm overlaps two target leaves. This is not the
+  previous pre-positioned, nonzero-torso378 recipe, and378's success cannot be
+  claimed for this new start. All plants remain at original planting slots;
+  detailed target/backdrop assignment is swapped without removing plants.
+- Native462 uses the new parked-left neutral search, finding a proposal at
+  [0.3,-6.2,135 degrees] after3 candidates (27 available), in4.874s. Right
+  extension0.925753; inter-arm clearance0.248386m; final native controls pass,
+  no budget exhaustion and ZERO physics steps. This is an endpoint/station
+  proposal ONLY. Native463 rejected duplicate explicit-ready/proposal CLI
+  arguments before starting Isaac. Native464 removes that redundant argument
+  and performs fresh startup/path/execution validation from462; outcome pending.

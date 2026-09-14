@@ -16,12 +16,15 @@ def apply_to_arguments(args):
     if len(raw)>2_000_000:raise ValueError('Bounded native startup report required')
     report=json.loads(raw);screen=report.get('native_startup_collision_screen',{})
     search=screen.get('right_pose_search',{});proposal=search.get('proposed_station')
-    if (search.get('model')!='frozen_native_two_arm_station_search_v1'
+    neutral=search.get('model')=='frozen_native_neutral_station_search_v1'
+    if (search.get('model') not in ('frozen_native_two_arm_station_search_v1','frozen_native_neutral_station_search_v1')
             or search.get('final_native_controls_passed') is not True
             or search.get('physics_steps')!=0 or screen.get('physics_steps')!=0
             or search.get('original_spawn_unchanged') is not True
             or search.get('motion_authorized') is not False or not isinstance(proposal,dict)):
         raise ValueError('Unchanged zero-step final-controlled station proposal required')
+    if neutral and not getattr(args,'neutral_ready_start',False):
+        raise ValueError('Neutral station proposal requires a fresh neutral-ready start')
     config=report.get('configuration',{})
     if config.get('park_left_ready',False)!=getattr(args,'park_left_ready',False):
         raise ValueError('Station proposal task mismatch: parked-left strategy')
@@ -39,27 +42,32 @@ def apply_to_arguments(args):
     for key in keys:
         if config.get(key)!=getattr(args,key):raise ValueError('Station proposal task mismatch: '+key)
     values={}
-    for key,n in (('station_pose',3),('left_ik_seed_degrees',7),('right_ready_degrees',7)):
+    fields=[('station_pose',3),('left_ik_seed_degrees',7),('right_ready_degrees',7)]
+    if neutral:fields.append(('right_entry_seed_degrees',7))
+    for key,n in fields:
         value=proposal.get(key)
         if (not isinstance(value,list) or len(value)!=n
                 or any(type(v) not in (int,float) for v in value)
                 or not np.isfinite(value).all()):raise ValueError('Finite initial proposal required: '+key)
         values[key]=list(map(float,value))
     priority=None
+    if neutral and 'cut_frame_family' not in proposal:
+        raise ValueError('Neutral station proposal requires its cut-frame family')
     if 'cut_frame_family' in proposal:
-        family=proposal['cut_frame_family']
-        if (args.knife_edge_mode!='source_crossbar_edge_v1'
-                or not isinstance(family,dict) or set(family)!={'tilt','normal_sign','wing_m'}
-                or any(type(v) not in (int,float) for v in family.values())
-                or not np.isfinite(list(family.values())).all()
-                or family['tilt'] not in (0.,-10.,10.,-15.,15.)
-                or family['normal_sign'] not in (-1,1) or abs(family['wing_m'])>.02):
+        from .cut_priority import validate_frame_family
+        family=validate_frame_family(proposal['cut_frame_family'])
+        if args.knife_edge_mode!='source_crossbar_edge_v1':
             raise ValueError('Finite original crossbar candidate family required')
         priority=dict(tilt=float(family['tilt']),normal_sign=int(family['normal_sign']),
             wing_m=float(family['wing_m']),source_report=str(path),
             source_sha256=hashlib.sha256(raw).hexdigest(),order_only=True,
             prior_pose_or_path_replayed=False,motion_authorized=False,
             zero_motion_station_family_only=True,prior_cut_success_claimed=False)
+    if neutral and getattr(args,'cut_priority_report',None) is not None:
+        from .cut_priority import load
+        explicit=load(args.cut_priority_report,args)
+        if any(explicit[k]!=priority[k] for k in ('tilt','normal_sign','wing_m')):
+            raise ValueError('Explicit cut priority conflicts with neutral station frame family')
     for key,value in values.items():setattr(args,key,value)
     return dict(model='fresh_launch_from_unprivileged_station_proposal_v1',source_report=str(path),
         source_sha256=hashlib.sha256(raw).hexdigest(),initial_pose_proposal=values,

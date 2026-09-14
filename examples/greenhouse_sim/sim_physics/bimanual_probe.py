@@ -544,7 +544,11 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             if hasattr(springs,'work_stiffness'):
                 spring_work['scope']='explicit_bending_only_native_torsion_work_unmeasured'
         try:
-            c=fixture.contact_with_frames(dt,frames,step_id=stamp.step)
+            from .fetched_hands import FetchedHands
+            # Local post-fetch snapshot only: never reuse before-step frames or
+            # retain this object in fixture state across a simulation tick.
+            hands=FetchedHands.read(fixture,step_id=stamp.step)
+            c=fixture.contact_with_frames(dt,frames,step_id=stamp.step,post_fetch=hands)
         except Exception as exc:
             events.append(dict(t=stamp.simulation_time_s,event='post_fetch_contact_fault',
                 error=type(exc).__name__+': '+str(exc),spring_work=spring_work,
@@ -552,7 +556,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             raise
         stable=stable+1 if c['bilateral'] else 0
         lost=0 if c['bilateral'] else lost+1
-        palm=pose_matrices(fixture.palm.get_transforms())[0]
+        palm=hands.left
         grasp_point=fixture.grasp_point(frames)
         slip=None if grasp_local is None else float(np.linalg.norm((grasp_point-palm[:3,3])@palm[:3,:3]-grasp_local))
         speed=float(np.linalg.norm(velocity[:,:3],axis=1).max())
@@ -602,13 +606,13 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             if coupling_monitor is not None:
                 record['finger_mechanism']=coupling_monitor.observe(
                     positions[fixture.finger_indices],joint_velocity[fixture.finger_indices],step=int(stamp.step))
-            fingers=pose_matrices(fixture.fingers.get_transforms())[fixture.order]
+            fingers=hands.fingers
             record['grasp_dynamics']=grasp_dynamics_evidence(
                 frames,rig.body_paths,fingers,fixture.paths[1:],fixture.grasp_observer.core.rows,
                 qf=positions[fixture.finger_indices],qdotf=joint_velocity[fixture.finger_indices],
                 targetf=fixture.targets[0,fixture.finger_indices],gravityf=fixture.finger_compensation,
                 drivecapsf=fixture.force_limits[0,fixture.finger_indices],dt=dt,step_id=stamp.step)
-            record['grasp_dynamics']['right_wrist_world_m']=pose_matrices(fixture.right_palm.get_transforms())[0].tolist()
+            record['grasp_dynamics']['right_wrist_world_m']=hands.right.tolist()
             record['grasp_dynamics']['robot_joint_names']=fixture.names
             record['grasp_dynamics']['robot_joint_velocities']=joint_velocity.tolist()
             record['grasp_dynamics']['robot_joint_velocity_units']=[
@@ -626,9 +630,9 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         if cut_only:
             from .cut_only import parked_left
             record['cut_only_park']=parked_left(fixture,record,step=int(stamp.step),physics_hz=args.physics_hz)
-            record['knife']=fixture.inspect_cut(dt,frames,False,None,cut_only_ready=planned)
+            record['knife']=fixture.inspect_cut(dt,frames,False,None,cut_only_ready=planned,post_fetch=hands,step_id=stamp.step)
         else:
-            record['knife']=fixture.inspect_cut(dt,frames,stable>=int(.025*args.physics_hz),slip)
+            record['knife']=fixture.inspect_cut(dt,frames,stable>=int(.025*args.physics_hz),slip,post_fetch=hands,step_id=stamp.step)
         record['cut']=rig.cut
         # True only here: every existing callback, robot, force, penetration,
         # support, slip and knife guard above has returned without exception.
@@ -704,7 +708,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 through=ThroughStroke(fixture.stroke_offsets,fraction=cut_fraction,endpoint=endpoint,
                     direction=fixture.plan['direction'],physics_hz=args.physics_hz,step=int(stamp.step),**options)
             support=bool(c['bilateral'] and slip is not None and slip<.003) if not cut_only else 'cut_only_park' in record
-            actual=pose_matrices(fixture.right_palm.get_transforms())[0]
+            actual=hands.right
             options={}
             if section_binding is not None:
                 i,local_centre,local_axis=section_binding;parent=frames[i]

@@ -81,3 +81,42 @@ def test_bad_proposal_cannot_change_arguments(tmp_path,change):
     args.station_proposal_report.write_text(json.dumps(report))
     with pytest.raises(ValueError):apply_to_arguments(args)
     assert args.station_pose==[9,9,9] and args.right_ready_degrees==[1]*7
+
+
+def neutral_fixture(tmp_path):
+    args,report,search=fixture(tmp_path)
+    args.neutral_ready_start=True
+    search['model']='frozen_native_neutral_station_search_v1'
+    search['proposed_station'].update(right_entry_seed_degrees=[.2]*7,
+        cut_frame_family=dict(tilt=-10.,normal_sign=1,wing_m=0.))
+    return args,report,search
+
+
+def test_neutral_import_keeps_entry_seed_separate_from_actual_ready_start(tmp_path):
+    args,report,_=neutral_fixture(tmp_path)
+    args.station_proposal_report.write_text(json.dumps(report));receipt=apply_to_arguments(args)
+    assert args.right_entry_seed_degrees==[.2]*7 and args.right_ready_degrees==[0.]*7
+    assert receipt['cut_frame_priority']['tilt']==-10. and receipt['fresh_startup_and_path_required']
+    assert not receipt['motion_authorized'] and not receipt['prior_native_checks_inherited']
+
+
+@pytest.mark.parametrize('fault',['not_neutral','missing_seed','nan_seed','missing_frame','final_controls'])
+def test_neutral_import_requires_complete_paired_proposal_before_mutation(tmp_path,fault):
+    args,report,search=neutral_fixture(tmp_path);proposal=search['proposed_station']
+    if fault=='not_neutral':args.neutral_ready_start=False
+    elif fault=='missing_seed':del proposal['right_entry_seed_degrees']
+    elif fault=='nan_seed':proposal['right_entry_seed_degrees'][0]=float('nan')
+    elif fault=='missing_frame':del proposal['cut_frame_family']
+    else:search['final_native_controls_passed']=False
+    args.station_proposal_report.write_text(json.dumps(report))
+    with pytest.raises(ValueError):apply_to_arguments(args)
+    assert args.station_pose==[9,9,9] and args.right_ready_degrees==[1]*7
+
+
+def test_conflicting_explicit_priority_cannot_silently_unpair_neutral_entry_seed(tmp_path,monkeypatch):
+    from . import cut_priority
+    args,report,_=neutral_fixture(tmp_path);args.cut_priority_report=tmp_path/'prior.json'
+    monkeypatch.setattr(cut_priority,'load',lambda *a:dict(tilt=15.,normal_sign=-1,wing_m=0.))
+    args.station_proposal_report.write_text(json.dumps(report))
+    with pytest.raises(ValueError,match='conflicts'):apply_to_arguments(args)
+    assert args.station_pose==[9,9,9] and args.right_ready_degrees==[1]*7

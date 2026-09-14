@@ -9,6 +9,16 @@ import math
 from pathlib import Path
 
 
+def validate_frame_family(family):
+    """Validate only the existing crossbar proposal set; grant no authority."""
+    if (not isinstance(family,dict) or set(family)!={'tilt','normal_sign','wing_m'}
+            or any(type(v) not in (int,float) or not math.isfinite(v) for v in family.values())
+            or family['tilt'] not in (0.,-10.,10.,-15.,15.)
+            or family['normal_sign'] not in (-1,1) or abs(family['wing_m'])>.02):
+        raise ValueError('Finite original crossbar candidate family required')
+    return dict(tilt=float(family['tilt']),normal_sign=int(family['normal_sign']),wing_m=float(family['wing_m']))
+
+
 def load(path,args):
     raw=Path(path).read_bytes()
     if len(raw)>2_000_000:raise ValueError('Bounded native cut report required')

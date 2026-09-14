@@ -366,8 +366,8 @@ def main(argv=None):
         raise ValueError('Budgeted angular gravity requires the full native robot')
     if args.park_left_ready and not cut_only:
         raise ValueError('Independent left park requires the complete right-only trial')
-    if args.park_left_ready and args.native_startup_station_search and not args.cut_station_orbit:
-        raise ValueError('Task-independent left park station search requires cut-station-orbit')
+    if args.park_left_ready and args.native_startup_station_search and not (args.cut_station_orbit or args.neutral_station_candidates):
+        raise ValueError('Task-independent left park station search requires cut-station-orbit or neutral station batch')
     from .cut_watch import validate as validate_watch
     validate_watch(args)
     if args.material_clearance_trial and not args.through_stroke_trial:
@@ -491,12 +491,12 @@ def main(argv=None):
                 and all(math.isfinite(v) for v in args.right_entry_seed_degrees)):
             raise ValueError('Entry IK seed requires finite explicit guarded downward cut action')
     if args.neutral_station_candidates is not None:
-        if not (args.native_startup_station_search and args.bimanual_cut and not cut_only
+        if not (args.native_startup_station_search and args.bimanual_cut and (not cut_only or args.park_left_ready)
                 and not args.neutral_ready_start and not args.cut_station_orbit
                 and not args.station_waiting_search and not args.station_left_seed_search
                 and not args.station_proposal_report and not args.station_reference_report
                 and cut_priority is not None and args.torso_degrees==[0.]*6):
-            raise ValueError('Neutral station batch requires explicit upright zero-motion bimanual search and cut family')
+            raise ValueError('Neutral station batch requires upright zero-motion grasp/parked-left search and cut family')
         from .neutral_station_search import read_candidates
         neutral_candidates=read_candidates(args.neutral_station_candidates,plant=args.plant,target=args.target)
     if args.support_aware_feed_trial and not (args.cut_action_trial and args.material_clearance_trial

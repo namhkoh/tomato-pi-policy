@@ -411,7 +411,7 @@ class BimanualRobot(FullRobotGripper):
             observer.close()
             self.grasp_observer=None
 
-    def contact_with_frames(self,dt,frames,*,step_id):
+    def contact_with_frames(self,dt,frames,*,step_id,post_fetch=None):
         """Same-step exact shaft/pad contacts, reconciled with selected tensors.
 
         No motion command, FK pose or friction impulse is grasp evidence.
@@ -423,7 +423,8 @@ class BimanualRobot(FullRobotGripper):
         if self.event_monitor.error is not None: raise RuntimeError(self.event_monitor.error)
         if not self.event_monitor.native_full_contact_reporting:
             raise RuntimeError('Missing full native contact stream for shaft grasp')
-        fingers=pose_matrices(self.fingers.get_transforms())[self.order]
+        fingers=(pose_matrices(self.fingers.get_transforms())[self.order] if post_fetch is None
+                 else post_fetch.require(self,step_id).fingers)
         options={}
         if getattr(self,'grasp_contact_frames','post_fetch_legacy')=='pre_solve_pgs_v1':
             options['require_pre_step_frames']=True
@@ -1040,7 +1041,7 @@ class BimanualRobot(FullRobotGripper):
         self.targets[0,self.right_indices]=np.radians(q)
         self.robot.set_dof_position_targets(self.targets,self.index)
 
-    def inspect_cut(self,dt,frames,held,slip,*,cut_only_ready=False):
+    def inspect_cut(self,dt,frames,held,slip,*,cut_only_ready=False,post_fetch=None,step_id=None):
         from .runtime import pose_matrices
         if self.edge_contact_error is not None: raise RuntimeError(self.edge_contact_error)
         if not self.event_monitor.native_full_contact_reporting:
@@ -1053,7 +1054,8 @@ class BimanualRobot(FullRobotGripper):
             raise RuntimeError('Unsigned normal-plus-friction tool load exceeds 0.5 N')
         if physical['minimum_separation_m']<-.001:
             raise RuntimeError('Physical knife penetration exceeds 1 mm, including noncutting contacts')
-        actual=pose_matrices(self.right_palm.get_transforms())[0]
+        actual=(pose_matrices(self.right_palm.get_transforms())[0] if post_fetch is None
+                else post_fetch.require(self,step_id).right)
         error=float(np.linalg.norm(actual[:3,3]-self.expected_right[:3,3]))
         if error>.012: raise RuntimeError(f'Right wrist tracking error {error:.5f} m')
         edge=self.knife.frame(actual);centre,axis=self.seam(frames)

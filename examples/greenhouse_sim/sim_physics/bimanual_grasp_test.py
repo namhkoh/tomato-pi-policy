@@ -240,11 +240,15 @@ def test_probe_records_crosscheck_before_hard_stop_and_releases_before_stop(monk
     robot.command_right=lambda phase,fraction:events.append('park')
     robot.prepare_step=lambda current:None
     robot.palm=S(get_transforms=lambda:np.array([[0.,0.,0.,0.,0.,0.,1.]]))
+    robot.right_palm=S(get_transforms=lambda:np.array([[0.,0.,0.,0.,0.,0.,1.]]))
     robot.all_contacts=S(get_net_contact_forces=lambda dt:np.zeros((2,3)))
     robot.seam=lambda current:(np.zeros(3),np.array([0.,0.,1.]))
     robot.check_plant_window=lambda current:events.append('plant_guard')
     robot.check=lambda dt,palm:dict(allowed_tool_contact_n=0.,minimum_tool_separation_m=0.)
-    robot.inspect_cut=lambda *args:events.append('knife_guard') or {}
+    def inspect(*args,post_fetch,step_id):
+        post_fetch.require(robot,step_id)
+        events.append('knife_guard');return {}
+    robot.inspect_cut=inspect
     robot.on_sample=lambda record:events.append('sample_complete')
     class Clock:
         def __init__(self,sim,*,physics_hz,render_hz):
