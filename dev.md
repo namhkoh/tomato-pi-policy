@@ -9863,3 +9863,12 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
  orbit campaign and non-approving intake are queued behind the running lean
  pilot; all source, camera, quality, memory and split checks remain enabled.
  See `vlm_train_data.md` for evidence and limits; no final training release yet.
+
+- 2026-09-15 generator prototype: added deterministic TRAIN-only petiole/leaf
+  variants with coherent copied USD geometry and recomputed10?20mm cut labels.
+ 20 CPU-generated layouts/160 target instances; all pass sparse mesh-surface
+  checks. Two inherited parent-attachment warnings are withheld, leaving158
+  inspection candidates. No new native images, biological/physics certificate
+  or20k release is claimed. Original assets/splits/reviews and active collection
+  remain untouched. See `sim_data/PLANT_GENERATOR.md` under
+  `examples/greenhouse_sim` and the detailed record in `vlm_train_data.md`.

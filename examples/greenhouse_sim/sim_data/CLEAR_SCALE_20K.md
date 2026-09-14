@@ -162,7 +162,15 @@ an average of8 requires2,500. These are arithmetic scenarios, not measured yield
 
 ## Status
 
-Implemented here:read-only capacity accounting and this generator/scale design.
-Not implemented here:a new general plant generator,20k collection campaign,
-resolution-aware final20k exporter or revised review policy. Existing native
-collection and the queued higher-resolution pilot remain unchanged.
+Implemented:read-only capacity accounting and a bounded TRAIN-only component
+variant prototype. See [PLANT_GENERATOR.md](PLANT_GENERATOR.md). A20-layout CPU
+pilot generated160 target instances from16 original donor families, with156
+exact morphology hashes and138 original target identities. These counts are
+not accepted images or approved independent target diversity. All160 passed
+sparse cut-surface checks; two inherited attachment warnings are held for review.
+No source family/split, existing image decision or12-view cap was changed.
+
+Still not implemented:a general growth/curvature/node generator, generated-plant
+native collection qualification,20k campaign, resolution-aware final20k exporter
+or revised review policy. Existing native collection and the queued
+higher-resolution pilot remain unchanged.

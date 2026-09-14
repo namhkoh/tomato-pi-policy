@@ -1635,3 +1635,71 @@ job004; the native higher-resolution pair remains queued behind existing jobs.
 The most recent individually reviewed/validated checkpoint remains419 images
 (304 train/42 validation/73 test), still a draft. Code additions do not alter the
 168 existing code hashes pinned by that native pilot.
+
+### 2026-09-15 component-generator CPU pilot (not a training release)
+
+Implemented the user's requested first generator prototype on koh-dev/sim-data:
+`plant_variants.py`, `plant_variant_usd.py`, and
+`plant_variant_catalogue.py`, with their regression tests.
+Details/commands: `examples/greenhouse_sim/sim_data/PLANT_GENERATOR.md`.
+This is a bounded, source-derived petiole similarity generator, not a recovered
+original growth algorithm or a new physics implementation.
+
+Measured envelope uses only the16 frozen training donors/584 candidate
+centerlines. The engineering grid varies petiole/leaf subtree azimuth, tilt and
+uniform scale within the observed training ranges. It preserves main stems,
+protected organ geometry, source assets and frozen reservations. Mesh points,
+normals/extents and anatomical origins/axes/centerlines/radii move together.
+Nominal10mm/10?20mm labels are resampled on the new curve, never inherited
+pixel annotations. Copied static assets deliberately omit donor physics
+constants/APIs; new dynamics are NOT certified by this generator.
+
+Completed copied-asset pilot:
+`data/sim_data/generated_plants/petiole_similarity_pilot_20260915_v2`.
+20 layouts,16 donor families,160 transformed target instances,156 exact shape
+hashes,138 original donor targets;665,859,812 bytes. Four exact repeats are not
+new geometry. None are new independently sourced families; no novel-target
+approval, native image capture, image review or training eligibility is claimed.
+The conservative12-view group remains the ORIGINAL donor target.
+
+All160 targets passed24 sparse radial mesh rays at10/15/20mm. The generated
+catalogue and existing world-label projection worked in anonymous CPU USD
+stages with8,496 component instances and maximum translation error1.15e-16m.
+These are measured CPU checks, not native visual or collision validation.
+Actual source-export edge cases were found and tested: zero normals and
+faceless already-deleafed stubs are preserved/reported, not replaced with
+invented geometry. Failed intermediate attempts remain separate diagnostic
+directories; none are accepted data.
+
+The plant-wide bounds audit found75 parent-attachment warnings. Comparison
+with all16 original families found ZERO newly flagged components. Two selected
+targets inherit such warnings: seed71/SubStem_48 and seed89/SubStem_48.
+The inspection adapter withholds them, leaving158 candidates for further
+inspection. The warnings are point-to-AABB distances, not proven surface gaps.
+No existing dataset review decision was changed.
+
+Evidence:
+`diagnostics/plant_variant_pilot_inspection_20260915_v1.json`,
+`diagnostics/plant_variant_attachment_comparison_20260915_v1.json`, and
+`diagnostics/plant_variant_pilot_inspection_20260915_v2.json`, all under
+`data/sim_data`. Reproducible commands are in PLANT_GENERATOR.md.
+The legacy plan binds USD/JSON but not texture files: new copied texture bytes
+are independently verified against their generator-copy-time donor hashes.
+We do not retroactively claim the legacy plan froze textures.
+
+The first complete data regression after the adapter passed856 tests plus77
+subtests in69.29s (`clear_regression_20260915_v19.log`). The final regression
+including the inherited-attachment hold passed857 tests plus77 subtests in68.93s:
+`clear_regression_20260915_v20.log`. The v2 inspection completed all20 layouts
+with158 inspection rows and two held targets.
+
+Remaining before20k: qualify native higher-resolution camera/export contracts;
+add the explicit generated-catalogue full-greenhouse capture path; inspect
+100?200 native pilot images; validate local attachments/intersections and
+meaningful geometry novelty/near-duplicates. Then choose generator expansion,
+review policy and20k release profile based on measured yield. Mere new seeds,
+copied crops or repeated source targets do not satisfy20k diversity.
+No model weights were downloaded, training was not started, and no final
+training ZIP was produced. Existing native collection/jobs and168 pinned native
+code hashes were unchanged. Last reviewed image checkpoint remains419 total
+(304/42/73 train/validation/test), not20,000 training images.
