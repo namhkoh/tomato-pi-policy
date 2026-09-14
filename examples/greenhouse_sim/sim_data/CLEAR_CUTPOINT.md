@@ -78,7 +78,7 @@ Finalization writes a new copy and refuses incomplete coverage/reviews:
 
 ```powershell
 python -m sim_data.clear_cutpoint_release finalize --source ../../data/sim_data/training_exports/clear_cutpoint_20260914_v1 --reviews C:/path/to/clear_cutpoint_reviews.json --output ../../data/sim_data/training_exports/clear_cutpoint_final_v1
-python -m sim_data.release_archive --release ../../data/sim_data/training_exports/clear_cutpoint_final_v1 --output ../../data/sim_data/training_archives/clear_cutpoint_final_v1.zip
+python -m sim_data.clear_cutpoint_transfer --dataset ../../data/sim_data/training_exports/clear_cutpoint_final_v1 --output ../../data/sim_data/training_archives/clear_cutpoint_final_v1.zip
 ```
 
 An existing hold/reject cannot be overwritten by an accept during finalization.
@@ -148,10 +148,30 @@ training ZIP must use the completed fresh-capture release without that flag.
 Its root `DATASET_CARD.md` is generated from the actual release counts and review
 status, so it cannot silently describe the older mixed-task dataset.
 
-After verifying/transferring the final ZIP + SHA256 and extracting `grounding_release`:
+The ZIP includes matching lightweight code; a server git update is optional if
+you use that bundled snapshot. Choose a NEW extraction directory. Replace the
+example archive basename below with the delivered filename, and verify its
+adjacent checksum before extraction. Do not extract over an existing release.
 
 ```bash
-cd /path/to/tomato-pi-policy/examples/greenhouse_sim
+cd /workspace/nhkoh/tomato-vlm
+sha256sum -c clear_cutpoint_final_v1.zip.sha256 && \
+  test ! -e clear-v1 && mkdir clear-v1 && \
+  unzip -q clear_cutpoint_final_v1.zip -d clear-v1 && \
+  cd clear-v1/code/examples/greenhouse_sim
+```
+
+Stop if the checksum or new-directory check fails. Read the delivered root
+`DATASET_CARD.md` for actual counts, scope and review provenance. Use the
+Qwen/H200 environment described above; the portable validation/data adapter
+does not require an Isaac installation. A regression test validates an extracted
+fixture and prepares RGB-plus-crop inputs in an isolated Python interpreter
+using only bundled code, without importing Isaac/Omniverse/USD. That is code
+portability evidence, not an H200 model or CUDA training test.
+
+Then configure the extracted release and existing local model snapshot:
+
+```bash
 export VLM_DATA=/workspace/nhkoh/tomato-vlm/clear-v1/grounding_release
 export VLM_MODEL=/path/to/local/Qwen3-VL-8B-Instruct
 export VLM_RUNS=/workspace/nhkoh/tomato-vlm/runs/clear-v1

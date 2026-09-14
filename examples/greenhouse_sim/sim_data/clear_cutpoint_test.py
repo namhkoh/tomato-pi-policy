@@ -220,6 +220,30 @@ def test_transfer_preserves_draft_and_verifies_contents(source,tmp_path):
         assert '| train | 1 | 1 | 1 |' in card and 'draft_clear_cutpoint_not_for_training' in card
         assert sha256(out/'depth/id0.npy')==receipt['files_sha256']['grounding_release/depth/id0.npy']
         assert z.read('grounding_release/depth/id0.npy')==(source/'depth/id0.npy').read_bytes()
+        extracted=tmp_path/'isolated_transfer';z.extractall(extracted)
+    # A clean interpreter gets only the bundled code, not this repository or
+    # its test monkeypatches. H200 validation must not depend on Isaac/USD.
+    import subprocess,sys
+    script='''import sys,json
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from sim_data.clear_cutpoint_release import validate
+from sim_data.training_export import read_jsonl
+from sim_data.qwen_adapter import model_messages
+from sim_data import h200_train,h200_evaluate
+root=Path(sys.argv[2])
+result=validate(root,allow_draft=True)
+row=next(read_jsonl(root/'splits/train.jsonl'))
+messages=model_messages(row,root,coordinates='normalized_1000',decimals=2,query_crop=True)
+assert len(messages)==2 and len(messages[1]['content'])==3
+assert not any(k=='pxr' or k.startswith('omni.') or k=='isaacsim' for k in sys.modules)
+print(json.dumps({'rows':result['rows'],'state':result['state'],'bundled_code_only':True}))
+'''
+    result=subprocess.run([sys.executable,'-I','-c',script,
+        str(extracted/'code/examples/greenhouse_sim'),str(extracted/'grounding_release')],
+        cwd=extracted,capture_output=True,text=True,timeout=60)
+    assert result.returncode==0,result.stderr
+    assert json.loads(result.stdout)['bundled_code_only'] is True
     with pytest.raises(ValueError):package(out,destination,inspection_only=True)
 
 
