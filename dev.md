@@ -9849,3 +9849,10 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   proposals with unchanged mounted848x408 camera and native admission screens;
   CPU diagnostic running, native qualification pending. Tests722 +47 subtests
   passed. This is data collection, not a dynamics or robot-cut qualification.
+
+- First clear-data pass completed:523 native frames,344 strict candidates,
+ 339 assistant accepts/5 holds. Combined curated draft has224/42/73 train/val/test
+ images; coverage remains incomplete. Created a hash-verified `.inspection.zip`
+ checkpoint (not training-ready) and passed real extracted-data portability/
+ input-construction checks without Isaac/model weights. Native alternate pilots
+ continue; exact paths, hashes and limitations are in `vlm_train_data.md`.

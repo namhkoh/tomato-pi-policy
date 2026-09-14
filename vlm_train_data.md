@@ -1231,3 +1231,42 @@ and exact prepared-view reconstruction. No closer-base native run is qualified.
 An optional user question asks about a SEPARATE higher-resolution native capture
 set. No answer has been received and no resolution change has been implemented;
 current collection remains848x408. No upscaled image is counted as a new capture.
+
+### 2026-09-15 completed first-pass capture and portable checkpoint
+
+All24 original jobs finished:20 audited native batches and4 verified zero-view
+batches.523 native frames produced344 strict candidates. Every344 original RGB
+was inspected by the assistant:339 accepts/5 holds. The NEW curated derivative
+preserves the five negative decisions and passes all339 review/hash checks, with
+no newly selected unreviewed image. Exact combined counts:
+
+| Split | Images | Targets | Families |
+|---|---:|---:|---:|
+| train |224|43|12|
+| validation |42|8|3|
+| test |73|11|3|
+
+Coverage is still below the declared500/100/100-image,60/15/15-target and16/4/4-family
+gates. No final training release is claimed. Curated files and review page:
+`data/sim_data/collection_intake/clear_capture_20260915_overnight_v2/curation_v1`.
+Evidence: `clear_firstpass_curation_20260915_v1.log`.
+
+A clearly marked INSPECTION checkpoint was created, not substituted for the
+requested final training ZIP:
+`data/sim_data/transfers/clear_firstpass_339_reviewed_20260915.inspection.zip`
+(776812080 bytes, code52477b5).
+SHA256 `26d61677c74b55b27a694ced72218fcf75ec937291f8d3709af8f9a92608f735`.
+All ZIP member hashes were verified. Independently extracted REAL data validated
+with bundled code in Python isolated mode, including normalized full-frame/crop
+inference input construction, no answer turn, no Isaac imports, and correct draft
+training refusal. No model weights/training were loaded. Evidence:
+`clear_firstpass_transfer_20260915_v1.log` and
+`clear_firstpass_portability_20260915_v1.log`.
+
+The bounded seed47 closer-base CPU diagnostic completed with explicit native
+exit0 in995.83s: original/near/near-orbit/near-opposite-orbit all found zero
+geometry-admissible candidates in72 proposals/target;864 original decisions
+matched native reference. This is negative diagnostic evidence, not a global
+infeasibility claim. No near-mode native capture is qualified. The original
+campaign is complete and the queued seed53 orbit native pilot is now running;
+seed47 lean-oblique remains next. No larger alternate campaign has launched.
