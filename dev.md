@@ -9381,3 +9381,85 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   This finite local grid is not a global infeasibility proof. Both a fully
   clear greenhouse station/path and retained-branch blade accommodation still
   need implementation/validation before the requested A/B/C simulator freeze.
+
+### 2026-09-14: neutral retained-cut accommodation (native454/455)
+
+- Added the default-OFF `--retained-separation-trial`, restricted to the guarded
+  480 Hz bimanual measured-section cut action. This addresses native449/451's
+  post-release full-blade-passage stall without relaxing load limits, extending
+  the traversal timeout, enlarging the 3 mm cut window or removing cut faces.
+  `sim_physics/retained_separation.py` plans a 2 mm **palm command** along the
+  current blade normal toward the detachable side after verified native release.
+  Seventeen sampled left-arm/branch configurations check the whole robot, every
+  original right stroke sample, protected plant and static context. The branch
+  sweep is a conservative rigid-translation proposal, not a deformation model.
+  Only the already released adjacent shaft pair has its existing contact
+  allowance; the proposed translation must not decrease cut-face separation.
+- Normal joint drives execute the left path, at at most0.5mm/s, with unchanged
+  force-controlled fingers. No grasp weld or plant/robot pose assignment. Positive
+  knife feed waits while overload backoff remains. Same-step native contact,
+  slip, tool/finger load and tracking evidence is mandatory. Both palm and held
+  material must actually move for25ms; a new frozen-native corridor check must
+  pass before downward feed resumes. The original full-section traversal,
+  unloaded reverse, egress and final native withdrawal checks remain mandatory.
+  A separate `retained_separation_reobserved` gate is included from455 onward.
+- **Native454 and native455 both PASS isolated neutral-start bimanual action**
+  on the same source seed101_full/SubStem_41 and station [.52,.75,-147.1047776384].
+  Exact common timings (protocol seconds after the neutral approach): native
+  release24.829167; separation/reobservation28.8625; full sharp-edge
+  traversal40.35625; unloaded reverse74.008333; final native withdrawal85.
+  Native454 has all11 existing gates true plus verified separation;455 has all12
+  including its explicit separation gate. Both record5700 native edge contacts,
+  maximum grasp slip1.752025mm (<3mm), and no released-debris landing contact.
+  At separation completion the actual palm moved1.978312mm and held material
+  2.531387mm:2mm is the command bound, NOT a clamp/teleport of the physical plant.
+  Blade clearance at completed traversal is0.500735mm, within the original3mm
+  seam. This is two repetitions of ONE isolated fixture, not a population-level
+  reliability result, greenhouse qualification, deposit or calibrated fracture.
+- Comparison to449 is controlled: same neutral posture, source geometry, force
+  limits, IK hints and pre-release timing.449 failed full traversal at35s after
+  release while retaining.454/455 relieve that blockage through actual held
+  target motion. Default proportional-backoff experiment stays OFF. No source
+  meshes, visual fidelity, collision filtering, hardware or VLM data changed.
+- Speed remains OPEN:454 RTF0.175325 with overlapping offline regressions;
+  455 RTF0.181859 (85 simulated seconds/467.396 tick-wall seconds). These are
+  not real-time passes. Greenhouse startup/access failures452/453 remain
+  unresolved; A/B/C is NOT frozen and VLM collection/training remains paused.
+- Added `examples/greenhouse_sim/run_neutral_cut_demo.cmd` with explicit
+  `bimanual`/`right_only` modes and a mandatory NEW output directory. Uses the
+  measured neutral station/IK hints, correct Isaac6.0.1, original memory preflight
+  and a manual Run-once panel. The local native293 report is still required only
+  for cut-family ordering; this launcher does not inherit an old clearance/path.
+  The direct mode matches450 and does not enable retained-target movement.
+- Visual audit found the old knife/plane diagnostic cameras remained aimed at
+  the INITIAL neutral knife, sometimes photographing the base instead of the
+  action. `knife_inspection.py` retargets ONLY those three external cameras from
+  the fetched native right wrist at milestone capture. Robot D405 views,
+  calibration and physics are untouched. These are paused diagnostic images,
+  not synchronized training data or motion video. Native456 is the final
+  recapture/qualification run with this diagnostic correction.
+- Regression evidence so far: full suite5153 passed in264.35s
+  (`physics_regression_20260914_v51.log`); subsequent protected-neighbor,
+  launcher-mode and camera tests pass in focused runs. Final full-suite v52 and
+  native456 results will be recorded below before committing the checkpoint.
+- **Final native456 PASS, all12 gates**, with identical release/traversal/
+  retraction timings and maximum1.752025mm slip. This is3/3 repetitions of the
+  same isolated fixture, not target/randomization robustness qualification.
+  Final source/camera run RTF0.178497 (476.199 tick-wall seconds for85 simulated
+  seconds, overlapping offline regression load). Corrected front/back close-ups
+  were inspected: they now centre the actual tool/target rather than the base;
+  gripper/plant occlusion remains visible in some angles. Capture receipts prove
+  no plant motion during each paused image. `full_forward_stroke_blade_back.png`
+  is step19371/t40.35625 with bilateral contact,0.926825mm slip and full-forward
+  verification; it does NOT claim withdrawal already complete at that step.
+  Final withdrawal is separately verified at85s. Evidence directory:
+  `data/sim_physics/bimanual_downward_20260914_native456` (`report.json`, full-rate
+  gzip trajectory and native milestone PNGs). These are not motion videos.
+- Final complete regression: **5160 passed in257.53s**,
+  `data/sim_physics/physics_regression_20260914_v52.log`; `git diff --check` clean.
+  The demo launcher's no-argument usage guard was tested; the new captures are
+  from headless native execution, not a claimed manual UI acceptance test.
+  All owned validation jobs completed. No dataset/review/training changes,
+  hardware control, unrelated application shutdown, reboot or fidelity reduction.
+  This checkpoint resolves the tested isolated retained-cut blockage; the full
+  greenhouse neutral A/B paths and responsive C still precede any VLM restart.

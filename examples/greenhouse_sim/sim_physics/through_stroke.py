@@ -100,8 +100,8 @@ class ThroughStroke:
                 endpoint_unloaded_dwell_s=None,withdrawal_unloading_still_required=True)
         return dict(self.receipt)
 
-    def command(self, *, step, dt):
-        if (step!=self.step or self.consumed==step or not np.isfinite(dt)
+    def command(self, *, step, dt, hold_forward=False):
+        if (type(hold_forward) is not bool or step!=self.step or self.consumed==step or not np.isfinite(dt)
                 or isinstance(dt,bool) or abs(dt-1/self.hz)>1e-12):
             raise RuntimeError('Follow-through decision is missing, stale or reused')
         if not self.complete and (step-self.first_step)/self.hz>=35:
@@ -113,6 +113,7 @@ class ThroughStroke:
             if self.proportional_face_backoff:
                 from .postrelease_feed import proportional_backoff
                 speed=proportional_backoff(self.upper,self.normal)
+        elif hold_forward: speed=0.;state='hold_retained_target_separation'
         elif self.material_section is not None and not self.face_sliding: speed=0.;state='hold_unverified_cut_face'
         elif self.upper>.10 and self.normal<.01 and not self.face_sliding: speed=0.;state='hold_nonleading_contact'
         elif self.face_sliding:

@@ -40,6 +40,8 @@ def capture_milestone(name,capture,fixture,viewport):
     capture(name)
     previous=str(viewport.camera_path)
     try:
+        if diagnostic_detail_views(name) and hasattr(fixture,'refresh_inspection_views'):
+            fixture.refresh_inspection_views()
         for view,suffix in diagnostic_detail_views(name):
             fixture.select_view(view);capture(name+'_'+suffix)
     finally:
@@ -148,6 +150,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     last_right_command=('park',0.)
     through_requested=bool(getattr(args,'through_stroke_trial',False))
     through=None;through_time=None;through_fraction=None;section_binding=None
+    separation=None;separation_verified=False
     retraction=None;retraction_time=None
     blade_feed=None
     seam_yield=None
@@ -312,6 +315,11 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         # fresh clearance screen authorize a separate transport/reposition.
         # A release+1 s timer cannot establish a clear blade corridor.
         if cut_only:fixture.hold_left_park()
+        elif separation is not None:
+            q=separation.command(step=int(stamp.step),dt=dt)
+            if fixture.event_monitor is not None:fixture.event_monitor.begin_step()
+            fixture._command_left_drives(q,fixture.kin.forward('left',q,fixture.base))
+            records[-1]['retained_separation_command']=dict(separation.receipt)
         else:fixture.target_palm(goal)
         if force_closure: fixture.close(0. if cut_only else ramp(t,2,3),step=int(stamp.step),dt=dt)
         else: fixture.close(ramp(t,2,3))
@@ -416,7 +424,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 reverse_time=cut_time if not through_requested else through_time
                 if through_requested and through_time is None:
                     if through is None:raise RuntimeError('No measured through-stroke release binding')
-                    phase='stroke';fraction=through.command(step=int(stamp.step),dt=dt)
+                    phase='stroke';fraction=through.command(step=int(stamp.step),dt=dt,
+                        hold_forward=separation is not None and not separation_verified)
                 elif getattr(args,'material_clearance_trial',False):
                     if retraction is None:raise RuntimeError('Missing guarded post-severance retraction')
                     if retraction_time is None:
@@ -511,6 +520,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         nonlocal stable,lost,cut_time,cut_fraction,withdrawal
         nonlocal through,through_time,through_fraction,section_binding
         nonlocal retraction,retraction_time
+        nonlocal separation,separation_verified
         nonlocal previous_prediction
         frames,velocity=runtime.sample();frame=frames[fixture.body_index]
         prediction_record=None
@@ -655,6 +665,20 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 record['withdrawal_failure']=dict(error=type(exc).__name__+': '+str(exc),
                     native_receipt=withdrawal.adapter.last_receipt)
                 raise
+        if rig.cut and getattr(args,'retained_separation_trial',False):
+            from .retained_separation import plan as plan_separation,recheck as recheck_separation
+            if separation is None:
+                separation=plan_separation(fixture,frames,record=record,step=int(stamp.step),
+                    read_frames=lambda:pose_matrices(runtime.bodies.get_transforms()[runtime.order]))
+                events.append(dict(t=stamp.simulation_time_s,event='retained_separation_planned',
+                    evidence=fixture.retained_separation_evidence))
+            record['retained_separation']=separation.observe(record,step=int(stamp.step),target=frames[fixture.body_index])
+            if separation.complete and not separation_verified:
+                evidence=recheck_separation(fixture,frames,record=record,step=int(stamp.step),
+                    read_frames=lambda:pose_matrices(runtime.bodies.get_transforms()[runtime.order]))
+                separation_verified=True
+                events.append(dict(t=stamp.simulation_time_s,event='retained_separation_measured_and_reobserved',
+                    evidence=evidence,measurement=dict(separation.receipt)))
         if rig.cut and through_requested and through_time is None:
             from .through_stroke import ThroughStroke
             if through is None:
@@ -798,6 +822,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     if getattr(args,'material_clearance_trial',False):
         gates['contact_paced_retraction_unloaded']=retraction_time is not None
     if ready is not None:gates['neutral_ready_approach']=ready['execution_passed']
+    if getattr(args,'retained_separation_trial',False):
+        gates['retained_separation_reobserved']=separation_verified
     passed_state='passed_cut_only_mechanism_not_robot_task' if cut_only else 'passed_bimanual_mechanism_not_robot_task'
     result=dict(state=passed_state if all(gates.values()) else 'failed_cut_only_qualification' if cut_only else 'failed_bimanual_qualification',
         cut_strategy='right_only' if cut_only else 'bimanual',left_grasp_verified=grasp_verified,
@@ -823,6 +849,8 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         measured_withdrawal_completed=helper_complete,
         negative_control_no_right_motion=hold_control,
         requested_pre_cut_reposition_m=reposition,
+        retained_separation=getattr(fixture,'retained_separation_evidence',None),
+        retained_separation_verified=separation_verified,
         measured_finger_mechanism=None if not records else records[-1].get('finger_mechanism'),
         postcut_egress=getattr(fixture,'postcut_egress_evidence',None),
         grasp_acquisition=dict(feedback_event_driven=force_closure,

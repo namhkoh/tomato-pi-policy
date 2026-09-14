@@ -282,6 +282,7 @@ def parser():
     p.add_argument('--right-entry-seed-degrees',type=float,nargs=7,default=None,
         help='Endpoint-only downward IK proposal; original transit/stroke checks remain')
     p.add_argument('--proportional-face-backoff-trial',action='store_true',help='Explicit measured-section post-release reverse-rate comparison only')
+    p.add_argument('--retained-separation-trial',action='store_true',help='Explicit physically held target separation after native release, before full blade passage')
     p.add_argument('--native-startup-grasp-search',action='store_true',help='Zero-motion grasp orientation proposals at the same material point; fresh execution required')
     p.add_argument('--station-reference-report',type=Path,help='Same-anatomy prior initial pose as zero-motion search seed; no replay authority')
     p.add_argument('--watch-auto-run',action='store_true',help='Explicitly start one watched demonstration after native startup; no reset/replay')
@@ -504,6 +505,10 @@ def main(argv=None):
     if args.proportional_face_backoff_trial and not (args.support_aware_feed_trial and args.material_clearance_trial
             and args.through_stroke_trial and args.cut_action_trial and args.physics_hz==480):
         raise ValueError('Proportional face backoff requires complete explicit post-release support-aware480Hz section trial')
+    if args.retained_separation_trial and not (args.bimanual_cut and not cut_only and args.cut_action_trial
+            and args.through_stroke_trial and args.material_clearance_trial and args.support_aware_feed_trial
+            and args.native_static_clearance and args.physics_hz==480 and args.bimanual_reposition_m==0):
+        raise ValueError('Retained separation requires explicit bimanual 480 Hz measured cut/clearance and native scene guards')
     if args.neutral_ready_start and not (args.bimanual_cut and args.full_robot_probe and args.cut_action_trial
             and args.native_startup_clearance and args.native_static_clearance and args.physics_hz==480
             and not startup_search and not args.native_retention_trial and not args.screen_settled_waiting

@@ -1103,6 +1103,10 @@ class BimanualRobot(FullRobotGripper):
         if hasattr(self,'planning_slides'): del self.planning_slides
         self.expected_right=self.kin.forward('right',self.right,self.base)
 
+    def refresh_inspection_views(self):
+        from .knife_inspection import refresh
+        return refresh(self)
+
     def setup_views(self,viewport):
         from pxr import Gf,UsdGeom
         super().setup_views(viewport)

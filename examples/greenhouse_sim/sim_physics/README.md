@@ -6,7 +6,56 @@ environment. Do not collect training demonstrations from this harness.
 
 ## September 14 current status - A/B/C NOT frozen
 
-Latest continuation: isolated A/B retain their native passes; full-greenhouse
+Latest neutral-start checkpoint: native450 passes isolated direct cutting;
+native454/455/456 pass isolated grasp/retained-separation/downward-cut/full-traversal/
+unloaded-withdrawal. The latter uses the default-OFF `--retained-separation-trial`:
+after native force-qualified release, the left hand moves its drive target 2 mm
+along the blade normal toward the detached side, retaining real finger contact.
+The right positive feed waits; overload backoff remains enabled. Seventeen
+left/branch proposals are screened against the full robot, original cut stroke,
+protected plant and static surroundings. Actual palm AND target travel must be
+observed for 25 ms, followed by fresh native-scene validation before cutting
+continues. This is not a weld, target teleport, collider removal or weaker force
+gate. The branch sweep is a conservative rigid-translation proposal, not a plant
+deformation prediction; native contact/slip/tracking guards remain mandatory.
+
+Native454: release24.829s; reobserved separation28.863s (palm1.978mm,
+target2.531mm); full sharp-edge traversal40.356s; unloaded reverse74.008s;
+fresh final withdrawal check85s. Maximum grasp slip1.752mm, below3mm. All11
+existing gates pass, with separation separately verified.455/456 also include
+an explicit reobserved-separation gate (all12 pass). These are three repeats of
+one isolated case, not general reliability. The final full suite has5160 passes.
+This does not establish
+general reliability, greenhouse access, calibrated tissue fracture or deposit.
+Native452/453 still reject greenhouse placement/access. Native454 RTF0.1753
+was measured with overlapping offline tests; it is NOT real-time performance.
+VLM collection/training remains paused pending the A/B/C milestone.
+
+Native456 includes corrected external blade-inspection cameras, centred on the
+fetched native wrist instead of its initial neutral pose. Robot D405 cameras are
+unchanged. Inspect `data/sim_physics/bimanual_downward_20260914_native456` for the
+report and precontact/full-forward/unloaded/final captures; some angles remain
+occluded by the real gripper/plant geometry. The image receipts label the actual
+measured milestone, and do not promote a still image into motion evidence.
+
+Visible one-shot reproduction from the repository root (choose a NEW folder):
+
+```bat
+examples\greenhouse_sim\run_neutral_cut_demo.cmd bimanual data\sim_physics\my_new_neutral_grasp_cut
+examples\greenhouse_sim\run_neutral_cut_demo.cmd right_only data\sim_physics\my_new_neutral_direct_cut
+```
+
+Launch one at a time; press **Run once** after the panel is ready. The existing
+Windows memory preflight and all native guards remain. This local launcher
+requires Isaac6.0.1 and the retained `native293/report.json` under
+`data/sim_physics/bimanual_downward_20260914_native293`; that report only orders
+candidate orientations and confers no pose, path or clearance approval. Local
+run artifacts are not included by a Git pull. Captured milestone PNGs are
+paused diagnostic views, not synchronized training RGB-D or a motion video.
+
+Historical checkpoints below (read root `dev.md` for the latest run evidence):
+
+Earlier continuation: isolated A/B retain their native passes; full-greenhouse
 right-only B passes331/340/349/355. Greenhouse A and responsive C remain OPEN.
 Native344 grasps but fails static post-cut retention preflight before knife
 motion. Native360's expanded waiting search finds no station; its final native
