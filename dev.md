@@ -8922,3 +8922,43 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   experiment and all original cut/force/scene guards; pending, not a pass.
   A/C remain open; B's prior direct-cut evidence remains separate. VLM work
   remains paused and the simulator is not frozen as a finished milestone.
+
+### 2026-09-14 continued: invariant forearm corridor rejection before IK
+
+- Native417 physically repeats the source19/100mm/rolled20-degree grasp,
+  maximum material slip16.998003um. In the explicit native-retention experiment
+  the failed static assessment stays recorded. Cut planning times out after
+  60.223246s at the FIRST blade placement: endpoint IK converges in11 evaluations,
+  but rebuilt strokes repeatedly fail the unchanged3mm self-clearance margin.
+  LeftWristCamera/D405/BodyCollision versus right-arm5 capsule_00 gives2.700536mm
+  at stroke offset0.780798mm;30 joint-fallback members were considered,29 with
+  clear endpoints. No knife motion, cut, traversal or retention qualification.
+- Traced the repeated geometry through actual Model A1.2: the arm5 capsule is
+  coaxial with revolute right_arm_6; tool_right is a fixed transform. At a fixed
+  blade pose this volume cannot move with elbow redundancy. Added a necessary
+  subset test to RigidToolScreen before expensive endpoint/transit IK. It proves
+  the chain and cached native capsule alignment; unknown chains, off-axis shapes
+  or boxes are NOT treated as invariant. Numerical radial error is projected
+  and subtracted from radius, making a contained rejection subset. Original
+  collider identity/pair filters stay intact; no stage or native shape edits.
+  Full original arm/plant/native checks remain necessary for any accepted path.
+-52 focused tests pass in Conda2.69s and Isaac2.77s, including80 arbitrary
+  actual-model FK configurations, unknown/noncoaxial rejection and source-state
+  preservation. Full v38 before this change:4961 passed in262.46s. v39 pending.
+  Native418 repeats417 with this planning change only; pending, not a cut pass.
+  Native FPS, A and C remain open; no safety margin, force cap or visual-fidelity
+  reduction. Direct-cut B remains supported by the separate prior native runs.
+
+- Native418 reaches the seventh placement in14.970s and executes the right
+  approach while maintaining left contact. True vertical stroke, tilt0,
+  normal+1, edge wing-9.158993mm; independent original joint transit passes.
+  Force-qualified source-crossbar release occurs at24.141667s: peak signed
+  resistance0.231081N, all-tool bound0.378111N, measured loading travel0.300249mm,
+  arc-up cosine0.999390, downward cosine0.999999999, grasp slip13.862682um at
+  release. This is modeled attachment release, not calibrated tissue fracture.
+- The complete trial FAILS at24.245833s: per-finger all-contact bound0.567389N
+  exceeds the unchanged0.5N cap. Maximum slip0.985996mm; full forward traversal,
+  retention and withdrawal remain unverified. No successful-A claim. This
+  materially advances beyond417's planning failure but is not a freeze point.
+- Full directory regression v39:4972 passed in261.13s. Native418 was concurrent
+  with this regression, so wall-step timings are not an uncontended benchmark.

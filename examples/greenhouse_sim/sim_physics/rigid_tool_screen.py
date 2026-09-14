@@ -11,17 +11,24 @@ import numpy as np
 class RigidToolScreen:
     def __init__(self,robot,left):
         source=robot.self_screen
+        from .wrist_invariant import capsule_in_wrist
+        invariant={i:converted for i,s in enumerate(source.shapes)
+            if (converted:=capsule_in_wrist(s,getattr(robot,'kin',None))) is not None}
+        right={i for i,s in enumerate(source.shapes) if s[2]=='ee_right'}|set(invariant)
         selected=[i for i,s in enumerate(source.shapes)
-            if s[2]=='ee_right' or s[2].startswith(('link_left_arm_','ee_left','ee_finger_l'))]
+            if i in right or s[2].startswith(('link_left_arm_','ee_left','ee_finger_l'))]
         remap={old:new for new,old in enumerate(selected)}
         self.self_screen=copy(source)
-        self.self_screen.shapes=[source.shapes[i] for i in selected]
+        self.self_screen.shapes=[invariant.get(i,source.shapes[i]) for i in selected]
         self.self_screen.pairs=[(remap[i],remap[j]) for i,j in source.pairs
-            if i in remap and j in remap and (source.shapes[i][2]=='ee_right')!=(source.shapes[j][2]=='ee_right')]
+            if i in remap and j in remap and (i in right)!=(j in right)]
         self.self_screen.box_paths=[s[0] for s in self.self_screen.shapes if s[3]=='box']
         if not self.self_screen.pairs: raise ValueError('Missing left-versus-right-tool pairs')
         self.plant_screen=copy(robot.held_plant_screen)
-        self.plant_screen.shapes=[s for s in self.plant_screen.shapes if s[2]=='ee_right']
+        converted={s[0]:s for s in invariant.values()}
+        self.plant_screen.shapes=[converted.get(s[0],s) for s in self.plant_screen.shapes
+            if s[2]=='ee_right' or s[0] in converted]
+        self.invariant_paths=list(converted)
         if not self.plant_screen.shapes or not hasattr(self.plant_screen,'obstacles'):
             raise ValueError('Current plant snapshot and fitted right tool required')
         self.world=robot.body_world(left,robot.right)
@@ -32,7 +39,8 @@ class RigidToolScreen:
         if frames.ndim!=3 or frames.shape[1:]!=(4,4) or not len(frames) or not np.isfinite(frames).all():
             raise ValueError('Nonempty finite wrist-frame sequence required')
         result=dict(passed=False,checked_frames=0,whole_arm_path_certified=False,
-            native_validated=False,training_eligible=False)
+            native_validated=False,training_eligible=False,
+            wrist_invariant_capsules=self.invariant_paths)
         world=dict(self.world)
         for i,frame in enumerate(frames):
             world['ee_right']=frame

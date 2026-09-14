@@ -1488,3 +1488,20 @@ candidates in68.128s. Native416 completes all50 candidates in14.852s:25 rigid
 tool conflicts and25 failed endpoint IK solves, no accepted path or cut.
 This removes redundant planning work without changing physical stepping or
 claiming that the current bimanual pose is feasible.
+
+The rigid wrist corridor also includes a proven coaxial right-arm5 capsule.
+The Model A1.2 chain has one final revolute wrist joint followed by a fixed
+tool transform; a capsule on that rotation axis is independent of elbow/roll
+at a fixed wrist pose. Its cached actual geometry and parsed chain must prove
+this relation. Unknown/noncoaxial shapes remain for full-arm screening. A tiny
+contained subset handles numerical roundoff; no native collider is modified.
+This rejects impossible forearm-versus-left-camera corridors before repeated
+IK/transit work, retaining all full-path/native checks. Native417 had spent
+60.223s at one placement repeatedly failing2.701mm versus the3mm margin.
+Native418 is the pending physical comparison; this is not an FPS or cut claim.
+
+Native418 subsequently checks7 placements in14.970s and performs the downward
+source-crossbar release at24.141667s with left contact retained at that instant.
+It stops0.104s later on a0.567389N finger load (>0.5N), before completing traversal
+and withdrawal. This is a partial physical result, NOT reliable full greenhouse
+grasp-and-cut qualification. Full regression v39:4972 pass.
