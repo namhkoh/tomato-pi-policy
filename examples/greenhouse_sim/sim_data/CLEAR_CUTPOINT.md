@@ -282,6 +282,14 @@ radius, fixed camera mount, head joint limits and all floor/geometry/visibility
 screens remain checked. This is explicit static pose diversity, not a safe
 navigation route or physical balance claim. Native qualification is pending.
 
+`--near-clear` is a separate opt-in .20-.40m base-to-target X separation
+proposal. With oblique capture it requires `--orbit-clear` and uses the same
+.20-.40m XY radius instead. It does not change optics/resolution, source
+geometry, real joint limits, floor support, the 10mm geometry margin or native
+visibility/label gates. This is a closer candidate search, not permission for
+robot/plant intersection, a transit motion or a hardware command. Native
+qualification is pending; the original .30-.55m preset remains unchanged.
+
 Defer partial/hidden classes, RGB-D training, action guidance and larger collection
 until this visible task is demonstrably learnable. Keep native depth available
 for subsequent geometry and visibility checks; never reconstruct it from RGB.

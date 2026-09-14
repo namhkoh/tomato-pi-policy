@@ -19,6 +19,9 @@ MODES={'original':{},'opposite':{'opposite_aisle':True},
        'oblique':{'oblique_clear':True},'opposite_oblique':{'opposite_aisle':True,'oblique_clear':True},
        'lean':{'lean_clear':True},'lean_oblique':{'lean_clear':True,'oblique_clear':True},
        'lean_opposite':{'lean_clear':True,'opposite_aisle':True},
+       'near':{'near_clear':True},
+       'near_orbit':{'near_clear':True,'oblique_clear':True,'orbit_clear':True},
+       'near_orbit_opposite':{'near_clear':True,'oblique_clear':True,'orbit_clear':True,'opposite_aisle':True},
        'orbit':{'oblique_clear':True,'orbit_clear':True},
        'orbit_opposite':{'oblique_clear':True,'orbit_clear':True,'opposite_aisle':True},
        'orbit_lean':{'oblique_clear':True,'orbit_clear':True,'lean_clear':True},
@@ -60,7 +63,7 @@ def run(plan_path,job_id,output,reference_path,modes=('original','opposite','obl
     require(plan['configuration'].get('clear_capture')=='robot_head_close_diffuse_v1' and
             not plan['configuration'].get('view_offset') and not plan['configuration'].get('opposite_aisle') and
             not plan['configuration'].get('oblique_clear') and not plan['configuration'].get('lean_clear') and
-            not plan['configuration'].get('orbit_clear'),'Unmodified original-side clear plan required')
+            not plan['configuration'].get('orbit_clear') and not plan['configuration'].get('near_clear'),'Unmodified original-side clear plan required')
     job=next(j for j in plan['jobs'] if j['job_id']==job_id)
     require(job['split']=='train','Probe only training families; no model/test selection')
     require(not output.exists() and not output.is_relative_to(Path(plan['package'])),'New output outside source package required')

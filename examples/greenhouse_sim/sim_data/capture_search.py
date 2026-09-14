@@ -87,12 +87,17 @@ def run_refined_capture(stage, rep, args, manifest, robot, records, reports, var
         if plan.get('lean_clear'):
             manifest['viewpoint_selection'].update(torso_forward_lean_degrees=[5,30],
                 torso_3_equals_bend_plus_lean=True,balance_or_motion_certified=False)
+        if plan.get('near_clear'):
+            manifest['viewpoint_selection'].update(closer_base_proposal='bounded_20_40cm_v1',
+                base_target_x_separation_range_m=[-.40,-.20] if plan.get('opposite_aisle') else [.20,.40],
+                admission_screens_unchanged=True,motion_between_snapshots_validated=False)
         if plan.get('oblique_clear'):
-            minimum=.30*float(np.cos(np.deg2rad(70)))
+            rmin,rmax=(.20,.40) if plan.get('near_clear') else (.30,.55)
+            minimum=rmin*float(np.cos(np.deg2rad(70)))
             manifest['viewpoint_selection'].update(oblique_proposal='bounded_lateral_ring_v1',
-                base_target_xy_distance_range_m=[.30,.55],bearing_about_selected_side_degrees=[-70,70],
-                base_target_x_separation_range_m=[-.55,-minimum] if plan.get('opposite_aisle') else [minimum,.55],
-                y_offset_absolute_max_m=.55*float(np.sin(np.deg2rad(70))),
+                base_target_xy_distance_range_m=[rmin,rmax],bearing_about_selected_side_degrees=[-70,70],
+                base_target_x_separation_range_m=[-rmax,-minimum] if plan.get('opposite_aisle') else [minimum,rmax],
+                y_offset_absolute_max_m=rmax*float(np.sin(np.deg2rad(70))),
                 admission_screens_unchanged=True,motion_between_snapshots_validated=False)
         if plan.get('orbit_clear'):
             manifest['viewpoint_selection'].update(root_heading_tracks_target_bearing=True,
@@ -155,6 +160,7 @@ def run_refined_capture(stage, rep, args, manifest, robot, records, reports, var
                 if planned.get('opposite_aisle'): spec['opposite_aisle']=True
                 if planned.get('oblique_clear'): spec['oblique_clear']=True
                 if planned.get('orbit_clear'): spec['orbit_clear']=True
+                if planned.get('near_clear'): spec['near_clear']=True
                 decision = {"target_review_id": row["draft_id"], **spec, "state": "screening"}
                 manifest["viewpoint_selection"]["all_candidate_decisions"].append(decision)
                 try:
@@ -162,7 +168,8 @@ def run_refined_capture(stage, rep, args, manifest, robot, records, reports, var
                     pose = set_snapshot_pose(stage, robot_for_spec(robot,spec), world["nominal_world_m"], spec["y_offset_m"],
                         spec["desired_pixel_xy"], root_x_m=spec["root_x_m"], root_yaw_degrees=spec.get("root_yaw_degrees"),
                         **({'opposite_aisle':True} if spec.get('opposite_aisle') else {}),
-                        **({'orbit_clear':True} if spec.get('orbit_clear') else {}))
+                        **({'orbit_clear':True} if spec.get('orbit_clear') else {}),
+                        **({'near_clear':True} if spec.get('near_clear') else {}))
                 except ValueError as exc:
                     decision.update(state="rejected_pose", reason=str(exc))
                     print("VIEWPOINT_REJECTED " + json.dumps(decision), flush=True)

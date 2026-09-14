@@ -21,7 +21,7 @@ from .depth_preview import sha256
 SCHEMA = 'greenhouse.grounding_collection_plan.v1'
 
 
-def configuration(targets=12, views=64, seed=0, *, vary_torso=False, renderer_mode=None, view_offset=0, clear_capture=False, opposite_aisle=False, oblique_clear=False, lean_clear=False, orbit_clear=False):
+def configuration(targets=12, views=64, seed=0, *, vary_torso=False, renderer_mode=None, view_offset=0, clear_capture=False, opposite_aisle=False, oblique_clear=False, lean_clear=False, orbit_clear=False, near_clear=False):
     require(type(targets) is int and 1 <= targets <= 36, 'Invalid target cap')
     require(type(views) is int and 1 <= views <= 160, 'Invalid view cap')
     require(type(seed) is int and seed == 0, 'Preserve the reviewed seed-0 family reservations')
@@ -31,6 +31,8 @@ def configuration(targets=12, views=64, seed=0, *, vary_torso=False, renderer_mo
     require(type(oblique_clear) is bool and (not oblique_clear or clear_capture),'Oblique views require explicit clear capture')
     require(type(lean_clear) is bool and (not lean_clear or clear_capture),'Lean requires explicit clear capture')
     require(type(orbit_clear) is bool and (not orbit_clear or oblique_clear),'Target-facing orbit requires oblique clear capture')
+    require(type(near_clear) is bool and (not near_clear or clear_capture),'Closer base requires explicit clear capture')
+    require(not near_clear or not oblique_clear or orbit_clear,'Closer oblique proposals require target-facing orbit bounds')
     require(renderer_mode in (None,'RaytracedLighting','RealTimePathTracing'),'Unsupported native renderer')
     require(type(view_offset) is int and 0<=view_offset<=2048,'Invalid view shard offset')
     config=dict(targets_per_plant=targets, render_views_per_target=views, seed=seed,
@@ -44,6 +46,7 @@ def configuration(targets=12, views=64, seed=0, *, vary_torso=False, renderer_mo
     if oblique_clear: config['oblique_clear']=True
     if lean_clear: config['lean_clear']=True
     if orbit_clear: config['orbit_clear']=True
+    if near_clear: config['near_clear']=True
     return config
 
 
@@ -51,7 +54,7 @@ def schedule(reports, rule, config):
     require(config == configuration(config['targets_per_plant'], config['render_views_per_target'], config['seed'],
                                     vary_torso=config.get('vary_torso',False),renderer_mode=config.get('renderer_mode'),
                                     view_offset=config.get('view_offset',0),clear_capture=bool(config.get('clear_capture')),
-                                    opposite_aisle=config.get('opposite_aisle',False),oblique_clear=config.get('oblique_clear',False),lean_clear=config.get('lean_clear',False),orbit_clear=config.get('orbit_clear',False)),
+                                    opposite_aisle=config.get('opposite_aisle',False),oblique_clear=config.get('oblique_clear',False),lean_clear=config.get('lean_clear',False),orbit_clear=config.get('orbit_clear',False),near_clear=config.get('near_clear',False)),
             'Changed grounding configuration')
     assignments = family_splits([r['plant_id'] for r in reports], config['seed'])
     jobs, decisions = [], []
@@ -71,7 +74,7 @@ def schedule(reports, rule, config):
     return dict(family_assignments=assignments, jobs=jobs, selection_audit=decisions)
 
 
-def view_specs(original_x, target_x, target_id, count, *, vary_torso=False, view_offset=0, clear_capture=False, opposite_aisle=False, oblique_clear=False, lean_clear=False, orbit_clear=False):
+def view_specs(original_x, target_x, target_id, count, *, vary_torso=False, view_offset=0, clear_capture=False, opposite_aisle=False, oblique_clear=False, lean_clear=False, orbit_clear=False, near_clear=False):
     require(np.isfinite([original_x,target_x]).all() and original_x>target_x, 'Expected original +X aisle')
     require(type(count) is int and 1 <= count <= 160, 'Invalid sample count')
     require(type(clear_capture) is bool and (not clear_capture or vary_torso and count<=12),'Invalid clear view configuration')
@@ -79,6 +82,8 @@ def view_specs(original_x, target_x, target_id, count, *, vary_torso=False, view
     require(type(oblique_clear) is bool and (not oblique_clear or clear_capture),'Invalid oblique view selection')
     require(type(lean_clear) is bool and (not lean_clear or clear_capture),'Invalid lean selection')
     require(type(orbit_clear) is bool and (not orbit_clear or oblique_clear),'Invalid target-facing orbit')
+    require(type(near_clear) is bool and (not near_clear or clear_capture),'Invalid closer base proposal')
+    require(not near_clear or not oblique_clear or orbit_clear,'Closer oblique proposals require target-facing orbit bounds')
     require(type(view_offset) is int and 0<=view_offset<=2048,'Invalid view shard offset')
     seed = int.from_bytes(hashlib.sha256(('grounding-v1:'+target_id).encode()).digest()[:8], 'little')
     rng = np.random.default_rng(seed)
@@ -86,9 +91,9 @@ def view_specs(original_x, target_x, target_id, count, *, vary_torso=False, view
     result=[]
     proposals=24 if clear_capture else 3
     for i in range((view_offset+count)*proposals):
-        approach=original_x-(target_x+float(rng.uniform(.30,.55))) if clear_capture else float(rng.uniform(.15,.40))
+        approach=original_x-(target_x+float(rng.uniform(.20,.40) if near_clear else rng.uniform(.30,.55))) if clear_capture else float(rng.uniform(.15,.40))
         root_x=original_x-approach
-        if root_x-target_x<(.30-1e-9 if clear_capture else .35):
+        if root_x-target_x<((.20 if near_clear else .30)-1e-9 if clear_capture else .35):
             continue
         result.append(dict(candidate_id=f'ground_{i:04d}', root_x_m=root_x,
             approach_from_original_m=approach, y_offset_m=float(rng.uniform(-.20,.20) if clear_capture else rng.uniform(-.4,.4)),
@@ -128,6 +133,8 @@ def view_specs(original_x, target_x, target_id, count, *, vary_torso=False, view
             if not opposite_aisle and bearing<0:bearing+=360
             jitter=s['root_yaw_degrees']-(0 if opposite_aisle else 180)
             s.update(root_yaw_degrees=bearing+jitter,orbit_clear=True,candidate_id='orbit_'+s['candidate_id'])
+    if near_clear:
+        result=[dict(s,near_clear=True,candidate_id='near_'+s['candidate_id']) for s in result]
     # Offset counts proposal windows, not accepted labels. New shards never
     # repeat a previous window merely to fill a desired class/size quota.
     return result[view_offset*proposals:]
@@ -155,7 +162,7 @@ def prepared_view_specs(plan,target_id,original_x):
     return {s['candidate_id']:s for s in view_specs(original_x,plan['target_world_m'][target_id][0],
         target_id,plan['requested_views_per_target'],
         **{k:plan.get(k,False) for k in ('vary_torso','clear_capture','opposite_aisle',
-                                       'oblique_clear','lean_clear','orbit_clear')},
+                                       'oblique_clear','lean_clear','orbit_clear','near_clear')},
         view_offset=plan.get('view_offset',0))}
 
 
@@ -187,9 +194,10 @@ def main(argv=None):
     p.add_argument('--oblique-clear',action='store_true',help='Opt-in .30-.55m root-distance ring with +/-70 degree bearings; all admission screens unchanged')
     p.add_argument('--lean-clear',action='store_true',help='Opt-in 5-30 degree real torso forward lean; not a motion or balance validation')
     p.add_argument('--orbit-clear',action='store_true',help='Turn the root toward the target for oblique snapshots; unchanged head limits and scene checks')
+    p.add_argument('--near-clear',action='store_true',help='Opt-in .20-.40m base separation proposals; unchanged real camera and native geometry/visibility admission')
     a=p.parse_args(argv)
     r=build_plan(a.package,a.output,configuration(a.targets,a.views,vary_torso=a.vary_torso,
-                                                renderer_mode=a.renderer_mode,view_offset=a.view_offset,clear_capture=a.clear_capture,opposite_aisle=a.opposite_aisle,oblique_clear=a.oblique_clear,lean_clear=a.lean_clear,orbit_clear=a.orbit_clear))
+                                                renderer_mode=a.renderer_mode,view_offset=a.view_offset,clear_capture=a.clear_capture,opposite_aisle=a.opposite_aisle,oblique_clear=a.oblique_clear,lean_clear=a.lean_clear,orbit_clear=a.orbit_clear,near_clear=a.near_clear))
     print('GROUNDING_PLAN',len(r['jobs']),sum(len(j['targets'])*j['max_rendered_views_per_target'] for j in r['jobs']),flush=True)
 
 

@@ -1208,3 +1208,26 @@ Two additional immutable plans are prepared but NOT launched:
 `clear_capture_20260915_original_shard2_v1` (new offset12 proposal windows) and
 `clear_capture_20260915_orbit_opposite_v1`. Their24 family assignments exactly
 match the frozen first plan. The prior alternate native pilots remain queued.
+
+### 2026-09-15 04:19 KST review and closer-base search checkpoint
+
+Seed61 added46 native frames /42 strict candidates; all42 originals individually
+assistant-inspected and accepted. Completed review totals343,338 accepts/5 holds.
+The original campaign has reached its final seed97 family. Counts are per-job
+screening totals, not a completed/approved aggregate. No model training/evaluation
+has run. Reviews are in `dataset_reviews/clear_capture_20260915_overnight_v1`;
+new intake artifacts are under `collection_intake/clear_capture_20260915_overnight_v2`.
+
+The seed47 CPU original/orbit/opposite-orbit probe found zero candidates in its
+small72-proposal/target window;864 original decisions matched native reference.
+Native process exit was explicitly0. This does not prove no valid view exists.
+A separate .20-.40m closer-base opt-in is now CPU-tested against the same source,
+without changing camera mount/optics/resolution or admission screens. Near-oblique
+requires target-facing orbit so radius bounds are checked consistently. Default
+proposals remain unchanged. Full data regression722 tests +47 subtests passed
+in48.17s (`clear_regression_20260915_v13.log`), including real robot mount/FK/floor
+and exact prepared-view reconstruction. No closer-base native run is qualified.
+
+An optional user question asks about a SEPARATE higher-resolution native capture
+set. No answer has been received and no resolution change has been implemented;
+current collection remains848x408. No upscaled image is counted as a new capture.

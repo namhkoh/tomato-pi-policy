@@ -9843,3 +9843,9 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
  explicitly validated zero-eligible-label batches without approving them; other
  failures remain fatal. Old stopped intake receipt preserved. Full data tests714
  +47 subtests passed in46.19s. See `vlm_train_data.md`; no final training ZIP yet.
+
+- 04:19 KST data checkpoint:343 individual image reviews,338 accepts/5 holds;
+  original capture is on its final family. Added opt-in closer-base static
+  proposals with unchanged mounted848x408 camera and native admission screens;
+  CPU diagnostic running, native qualification pending. Tests722 +47 subtests
+  passed. This is data collection, not a dynamics or robot-cut qualification.
