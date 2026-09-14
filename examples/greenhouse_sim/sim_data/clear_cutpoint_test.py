@@ -120,6 +120,31 @@ def test_visible_training_and_crop_inference_do_not_leak_answer(source,tmp_path)
     with pytest.raises(ValueError):model_messages(row,out,query_crop=True,depth_input=True)
 
 
+def test_explicit_assistant_review_is_attributed_and_not_human_validation(source,tmp_path):
+    from sim_data.clear_cutpoint_review import build as review
+    out=tmp_path/'assistant';m=build(source,out,review_policy='assistant_reviewed_experiment_v1')
+    rows=list(read_jsonl(out/'index.jsonl'))
+    records=[dict(id=r['id'],rgb_sha256=r['rgb_sha256'],reviewer='test',reviewer_type='assistant',decision='accept',reason='Inspected original and target interval') for r in rows]
+    qa=check_reviews(rows,records,'assistant_reviewed_experiment_v1')
+    assert qa['passed'] and not qa['independent_human_validation_claimed']
+    assert qa['reviewer_counts']=={'assistant':3}
+    assert not check_reviews(rows,records)['passed']
+    assert not m['acceptance']['passed'] and m['state']=='draft_clear_cutpoint_not_for_training'
+    page=Path(review(out,tmp_path/'review')['path']).read_text()
+    assert 'not independent human validation' in page
+    records[0]['decision']='hold'
+    assert not check_reviews(rows,records,'assistant_reviewed_experiment_v1')['passed']
+    records[0]['rgb_sha256']='changed'
+    with pytest.raises(ValueError,match='image changed'):check_reviews(rows,records,'assistant_reviewed_experiment_v1')
+
+
+def test_review_policy_cannot_be_silently_changed_in_manifest(source,tmp_path):
+    out=tmp_path/'draft';m=build(source,out)
+    m['review_policy']='assistant_reviewed_experiment_v1'
+    (out/'manifest.json').write_text(json.dumps(m))
+    with pytest.raises(ValueError,match='policy/contract'):validate(out,allow_draft=True)
+
+
 def test_metrics_penalize_missing_invalid_abstain_and_preserve_macros(source,tmp_path):
     from sim_data.clear_cutpoint_evaluate import metrics
     out=tmp_path/'draft';build(source,out);rows=list(read_jsonl(out/'index.jsonl'))

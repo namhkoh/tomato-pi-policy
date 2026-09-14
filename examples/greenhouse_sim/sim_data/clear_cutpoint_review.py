@@ -15,7 +15,7 @@ PAGE = r'''<!doctype html><meta charset="utf-8"><title>Clear cut-point review</t
 <h1>Clear cut-point review ? not a motion authorization</h1>
 <p>Original robot-head RGB. Cyan = input query; yellow = nominal cut; magenta = acceptable interval.
 Confirm attachment, target identity, visibility and legibility. Toggle marks OFF to judge the RGB itself.
-Held-out images require human review. Do not train on this page or overlays.</p>
+__REVIEW_POLICY__ Do not train on this page or overlays.</p>
 <button onclick="step(-1)">Previous</button><button onclick="step(1)">Next</button>
 <input id="jump" type="number" min="1" style="width:80px"><button onclick="go()">Go</button>
 <label><input id="marks" type="checkbox" onchange="draw()">Show diagnostic marks</label>
@@ -53,7 +53,10 @@ def build(root,output):
         cards.append(dict(id=r['id'],split=r['split'],rgb_sha256=r['rgb_sha256'],legibility=r['legibility'],
                           rgb=rel(r['files']['rgb']),crop=rel(r['files']['crop']),query=r['query_pixel_uv'],
                           cut=r['answer']['cut_point_uv'],interval=label['accepted_interval_uv']))
-    (output/'index.html').write_text(PAGE.replace('__ROWS__',json.dumps(cards).replace('<','\\u003c')),encoding='utf-8')
+    policy=read_json(root/'manifest.json').get('review_policy','human_holdout_v1')
+    notice=('Assistant-reviewed synthetic experiment; not independent human validation.'
+            if policy=='assistant_reviewed_experiment_v1' else 'Held-out images require human review.')
+    (output/'index.html').write_text(PAGE.replace('__REVIEW_POLICY__',notice).replace('__ROWS__',json.dumps(cards).replace('<','\\u003c')),encoding='utf-8')
     return dict(path=str(output/'index.html'),images=len(cards))
 
 

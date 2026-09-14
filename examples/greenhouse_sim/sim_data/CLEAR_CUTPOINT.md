@@ -82,6 +82,34 @@ Holds or failed coverage require a separately audited selection/recollection;
 the finalizer is not an exclusion or gate-bypass tool. Drafts cannot train or
 be published by `release_archive`. No final ZIP is implied until it succeeds.
 
+## Overnight fresh collection and review attribution
+
+The2026-09-15 pilot used the native `robot_head_close_diffuse_v1` preset.
+Pilot-v3 seed103:15 independently audited captures,8 strict clear candidates.
+These are NEW RGB/depth frames, not the47 survivors of the old release scan.
+The24-family serial campaign is
+`data/sim_data/collection_campaigns/clear_capture_20260915_overnight_v1`.
+It preserves failed searches, stops on native errors, and never auto-approves.
+
+For a user-requested assistant-reviewed synthetic experiment, build a NEW draft
+with `--audited-source --assistant-reviewed-experiment` from a separately
+validated fresh-capture engineering pool. This records
+`review_policy=assistant_reviewed_experiment_v1` and
+`independent_human_validation_claimed=false`. Review all held-out images and at
+least two selected training images per target explicitly, with exact RGB hash,
+named reviewer, type `assistant`, decision and image-specific reason. Missing
+reviews or any hold/reject block finalization. Assistant acceptance is not human
+annotation, physical safety approval or proof of anatomy against real plants.
+The default remains `human_holdout_v1`; do not silently edit existing manifests
+to change review policy. A human can later review the same immutable release.
+
+Native-depth and geometry audits cover every exported row independently of this
+visual review sampling. Additional visual inspection is encouraged. Minimum
+coverage remains500/100/100 images,60/15/15 targets and16/4/4 plant families.
+These are initial experiment gates, not a guarantee of generalization. If fresh
+data cannot meet them, report the shortfall instead of packaging a draft as a
+training release. Keep test predictions sealed until the model is locked.
+
 ## H200 experiment ? user-launched, no local weight downloads
 
 Use the existing known-working Qwen3-VL-8B-Instruct BF16 snapshot and environment

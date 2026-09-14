@@ -13,6 +13,33 @@ dense-context entry at the end and
 [`PROOF_OF_LIFE.md`](examples/greenhouse_sim/sim_physics/PROOF_OF_LIFE.md)
 for the revised no-teleoperated-demonstrations VLM + feedback-controller plan.
 
+## Clear-target overnight collection checkpoint, 2026-09-15
+
+- User requested NEW clearer native captures, review/annotation and a training
+  ZIP, not repackaging the47 old easy-image candidates. No training is started.
+- Pilot `clear_capture_20260915_pilot_v3/job_002`:15 captures, exit0,
+  independent native audit passed,8 strict clear-task survivors from3 targets.
+  Original robot-head RGB for all8 was visually inspected; attributed assistant
+  reviews are under `data/sim_data/dataset_reviews/clear_native_pilot_20260915_v1`.
+  This small pilot is not a training release or an independent human evaluation.
+- Serial overnight campaign `clear_capture_20260915_overnight_v1`:24 reserved
+  source families,297 eligible height-band targets, at most12 captured views per
+  target (3564 theoretical maximum, NOT an accepted-data count). One native
+  renderer at a time; disk/memory reserve checks and real worker-exit receipts.
+  Verified no-screened-viewpoint exits can be recorded and skipped; errors stop
+  without automatic retry. First family exited0 with7 audited captures.
+- Whole greenhouse context, camera mount/optics,848x408 original RGB and native
+  optical-Z remain. Uniform diffuse scene lighting is a declared new capture
+  condition; no RGB retouching or target-specific spotlight.
+- Added opt-in assistant-reviewed experimental release policy, explicit GUI
+  attribution and contract consistency checks. Human-heldout remains default;
+  assistant mode does not bypass clarity, coverage, holds or split integrity.
+- Regression:665 tests plus47 subtests passed (43.83s), log
+  `data/sim_data/clear_regression_20260915_v3.log`.
+- Pending: complete collection, per-image QA, coverage/diversity assessment,
+  review finalization, portable validation and verified ZIP. Do not claim the
+  final dataset exists from this checkpoint. Physics implementation unchanged.
+
 ## VLM source checkpoint before simulator integration, 2026-09-10
 
 - Checkpoint the pending VLM work on `koh-dev/sim-data` before creating

@@ -37,7 +37,8 @@ def review_ids(rows):
     return sorted(ids)
 
 
-def check_reviews(rows, reviews):
+def check_reviews(rows, reviews, review_policy='human_holdout_v1'):
+    require(review_policy in ('human_holdout_v1','assistant_reviewed_experiment_v1'),'Unknown review policy')
     by_id={r['id']:r for r in rows}; seen=set(); accepted=set(); holds=[]
     for rec in reviews:
         require(rec['id'] in by_id and rec['id'] not in seen,'Unknown/duplicate review')
@@ -46,10 +47,14 @@ def check_reviews(rows, reviews):
         require(rec['reviewer_type'] in ('human','assistant') and bool(rec['reviewer'].strip()),'Review attribution required')
         require(rec['decision'] in ('accept','hold','reject') and bool(rec['reason'].strip()),'Explicit reason/decision required')
         if rec['decision'] in ('hold','reject'): holds.append(rec['id'])
-        elif rec['reviewer_type']=='human' or row['split']=='train': accepted.add(rec['id'])
+        elif review_policy=='assistant_reviewed_experiment_v1' or rec['reviewer_type']=='human' or row['split']=='train': accepted.add(rec['id'])
     missing=sorted(set(review_ids(rows))-accepted)
-    return dict(passed=not missing and not holds,missing=missing,holds=holds,
-                heldout_human_review_required=True,reviewed=len(seen))
+    result=dict(passed=not missing and not holds,missing=missing,holds=holds,
+                heldout_human_review_required=review_policy=='human_holdout_v1',reviewed=len(seen))
+    if review_policy!='human_holdout_v1':
+        result.update(review_policy=review_policy,independent_human_validation_claimed=False,
+                      reviewer_counts=dict(Counter(r['reviewer_type'] for r in reviews)))
+    return result
 
 
 def scan(source, progress=None):
@@ -78,7 +83,7 @@ def chat(r,label):
     return row
 
 
-def build(source, output, *, reviews=None, progress=None, audited_source=False):
+def build(source, output, *, reviews=None, progress=None, audited_source=False, review_policy='human_holdout_v1'):
     from .training_export import validate as validate_source
     source,output=Path(source).resolve(),Path(output).resolve()
     require(not output.exists() and not output.is_relative_to(source) and not source.is_relative_to(output),'Choose a new disjoint output')
@@ -96,7 +101,7 @@ def build(source, output, *, reviews=None, progress=None, audited_source=False):
     require(rows,'No sufficiently clear candidates; collect better observations, do not relax silently')
     original=read_json(source/'manifest.json')
     records=read_json(reviews) if reviews else []
-    qa=check_reviews(rows,records)
+    qa=check_reviews(rows,records,review_policy)
     output.mkdir(parents=True)
     for folder in ('images','depth','labels','crops','splits'): (output/folder).mkdir()
     files={}; chats=defaultdict(list)
@@ -121,7 +126,7 @@ def build(source, output, *, reviews=None, progress=None, audited_source=False):
                        ('exclusions.json',exclusions),('reviews.json',records),
                        ('contract.json',dict(profile=PROFILE,policy=POLICY,gates=GATES,
                             crop_coordinate_frame='original_full_image',native_depth='copied_byte_for_byte',
-                            human_review_required_on_heldout=True,physical_execution_approved=False))]:
+                            review_policy=review_policy,human_review_required_on_heldout=review_policy=='human_holdout_v1',physical_execution_approved=False))]:
         write_json(output/name,value);files[name]=sha256(output/name)
     files['index.jsonl']=sha256(output/'index.jsonl')
     acceptance=coverage(rows)
@@ -129,7 +134,7 @@ def build(source, output, *, reviews=None, progress=None, audited_source=False):
                   state='complete_clear_cutpoint_release' if acceptance['passed'] and qa['passed'] else 'draft_clear_cutpoint_not_for_training',
                   acceptance=acceptance,review=qa,source_manifest_sha256=digest,
                   source_manifest_copy_sha256=files['source_manifest.json'],files_sha256=files,
-                  source_release=str(source),audited_source=audited_source,synthetic_perception_only=True,physical_execution_approved=False)
+                  source_release=str(source),audited_source=audited_source,review_policy=review_policy,synthetic_perception_only=True,physical_execution_approved=False)
     require(sha256(source/'manifest.json')==digest,'Source manifest changed')
     write_json(output/'manifest.json',manifest)
     validate(output,allow_draft=True)
@@ -143,6 +148,11 @@ def validate(root, *, allow_draft=False, progress=None):
     require(m['state']=='complete_clear_cutpoint_release' or
             allow_draft and m['state']=='draft_clear_cutpoint_not_for_training','Clear-cutpoint visual review/coverage incomplete')
     for p,h in m['files_sha256'].items(): require(sha256(safe_file(root,p))==h,'Changed clear artifact: '+p)
+    contract=read_json(safe_file(root,'contract.json'))
+    require(contract['policy']==m['policy'] and contract['gates']==m['gates'] and
+            contract.get('review_policy','human_holdout_v1')==m.get('review_policy','human_holdout_v1') and
+            contract['human_review_required_on_heldout']==(m.get('review_policy','human_holdout_v1')=='human_holdout_v1'),
+            'Review policy/contract mismatch')
     source=read_json(safe_file(root,'source_manifest.json'))
     require(sha256(root/'source_manifest.json')==m['source_manifest_copy_sha256']==m['source_manifest_sha256'],'Source receipt changed')
     if m.get('audited_source'):
@@ -177,7 +187,7 @@ def validate(root, *, allow_draft=False, progress=None):
     require(rows and max(counts.values())<=12,'Empty release or view cap exceeded')
     for split in ('train','validation','test'):
         require(list(read_jsonl(safe_file(root,f'splits/{split}.jsonl')))==expected[split],'Changed training chat')
-    acceptance=coverage(rows);qa=check_reviews(rows,read_json(safe_file(root,'reviews.json')))
+    acceptance=coverage(rows);qa=check_reviews(rows,read_json(safe_file(root,'reviews.json')),m.get('review_policy','human_holdout_v1'))
     require(acceptance==m['acceptance'] and qa==m['review'],'Changed coverage/review summary')
     complete=acceptance['passed'] and qa['passed']
     require((m['state']=='complete_clear_cutpoint_release')==complete,'Incorrect release state')
@@ -190,13 +200,16 @@ def main(argv=None):
     p.add_argument('--source',type=Path);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--reviews',type=Path);p.add_argument('--allow-draft',action='store_true')
     p.add_argument('--audited-source',action='store_true',help='Fresh clear-capture engineering pool, validated separately; final clear gates still mandatory')
+    p.add_argument('--assistant-reviewed-experiment',action='store_true',help='Explicit assistant-reviewed synthetic experiment, not independent human evaluation')
     a=p.parse_args(argv)
     if a.command=='finalize':
         require(a.source is not None and a.reviews is not None,'Draft and explicit reviews required')
         result=finalize(a.source,a.output,a.reviews)
     elif a.command=='build':
         require(a.source is not None,'Source release required')
-        result=build(a.source,a.output,reviews=a.reviews,audited_source=a.audited_source,progress=lambda x:print(json.dumps(x),flush=True))
+        result=build(a.source,a.output,reviews=a.reviews,audited_source=a.audited_source,
+                     review_policy='assistant_reviewed_experiment_v1' if a.assistant_reviewed_experiment else 'human_holdout_v1',
+                     progress=lambda x:print(json.dumps(x),flush=True))
     else: result=validate(a.output,allow_draft=a.allow_draft)
     print(json.dumps({k:result[k] for k in ('state','acceptance','review')},indent=2))
 
@@ -213,7 +226,7 @@ def finalize(draft,output,reviews):
         previous=records.get(rec['id'])
         require(not previous or previous['decision']=='accept' or rec==previous,'Existing hold/reject cannot be overridden')
         records[rec['id']]=rec
-    rows=list(read_jsonl(draft/'index.jsonl'));qa=check_reviews(rows,list(records.values()))
+    rows=list(read_jsonl(draft/'index.jsonl'));qa=check_reviews(rows,list(records.values()),read_json(draft/'manifest.json').get('review_policy','human_holdout_v1'))
     require(coverage(rows)['passed'] and qa['passed'],'Coverage or required reviews incomplete; no final release written')
     shutil.copytree(draft,output)
     # Own new copy only; never update the draft or original review file.

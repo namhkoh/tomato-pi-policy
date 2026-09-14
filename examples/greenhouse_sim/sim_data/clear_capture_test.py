@@ -30,3 +30,16 @@ def test_memory_failure_does_not_spawn_native_worker(tmp_path,monkeypatch):
     monkeypatch.setattr(host_memory,'preflight',lambda:dict(allowed=False,reasons=['unit reserve']))
     monkeypatch.setattr(runner.subprocess,'Popen',lambda *a,**k:pytest.fail('Must not launch'))
     with pytest.raises(ValueError,match='memory'):runner.run_jobs(p,tmp_path/'out')
+
+
+def test_serial_campaign_skips_only_verified_empty_viewpoint_search(tmp_path):
+    from sim_data.clear_collection_campaign import outcome
+    import json
+    folder=tmp_path/'job_001'/'capture';folder.mkdir(parents=True)
+    (folder/'manifest.json').write_text(json.dumps(dict(state='blocked_no_screened_viewpoints',samples=[],source_assets_unchanged=True)))
+    job=dict(job_id='job_001',returncode=3,timed_out=False,sample_count=0,capture_state='blocked_no_screened_viewpoints')
+    result=dict(state='stopped_worker_nonzero_exit',jobs=[job])
+    assert outcome(result,tmp_path)=='no_clear_screened_view'
+    job['returncode']=1;assert outcome(result,tmp_path)=='failure'
+    job['returncode']=3;job['timed_out']=True;assert outcome(result,tmp_path)=='failure'
+    assert outcome(dict(state='complete_bounded_batch_pending_visual_review'),tmp_path)=='audited'

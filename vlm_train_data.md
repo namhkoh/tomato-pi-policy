@@ -16,7 +16,20 @@ optical-Z, unchanged head optics, frozen source-family splits and10mm nominal /
 Overnight scope: capture clearer observations, audit/review/annotate them with
 honest reviewer attribution, then package a status-accurate ZIP. No training,
 physical robot actions, fabricated human reviews or relabeling hidden cuts.
-Native closer-view lighting preset is in pilot qualification, not yet proven.
+Native closer-view lighting pilot is qualified: seed103 pilot-v3 exited cleanly,
+independent native audit passed15 captures, and8 passed the stricter clear-task
+screen. All8 have image-bound assistant visual assessments, not human approval.
+Serial24-family collection is running under
+`data/sim_data/collection_campaigns/clear_capture_20260915_overnight_v1`.
+The first family produced7 independently audited captures; retained clear-task
+counts and final coverage are not known yet. No final training ZIP exists yet.
+
+The explicit `assistant_reviewed_experiment_v1` review mode permits overnight
+assistant review of held-out label quality, while recording that independent
+human validation was NOT performed. It does not change splits, optical size,
+legibility thresholds, coverage gates or failed/held review decisions. Default
+release review still requires human held-out review. All held-out records and
+at least two training views per target require explicit hash-bound assessment.
 
 ## Current increment: reviewable active perception (2026-09-10)
 
