@@ -20,8 +20,22 @@ def with_postures(specs,target_id):
 
 
 def robot_for_spec(robot,spec):
-    if 'torso_bend_degrees' not in spec: return robot
+    if 'torso_bend_degrees' not in spec:
+        require('torso_lean_degrees' not in spec,'Lean requires a complete torso pose')
+        return robot
     bend=spec['torso_bend_degrees']
     require(type(bend) in (int,float) and np.isfinite(bend) and 0<=bend<=45,'Invalid static torso pose')
-    pose={**robot['pose_degrees'],'torso_1':float(bend),'torso_2':float(-2*bend),'torso_3':float(bend)}
+    lean=spec.get('torso_lean_degrees',0)
+    require(type(lean) in (int,float) and np.isfinite(lean) and 0<=lean<=30,'Invalid static torso lean')
+    pose={**robot['pose_degrees'],'torso_1':float(bend),'torso_2':float(-2*bend),'torso_3':float(bend+lean)}
     return {**robot,'pose_degrees':pose}
+
+
+def with_lean(specs,target_id):
+    """Opt-in static forward lean; exact FK/floor/scene checks remain mandatory.
+
+    No motion, balance or self-collision certification is implied.
+    """
+    seed=int.from_bytes(hashlib.sha256(('lean-clear-v1:'+target_id).encode()).digest()[:8],'little')
+    rng=np.random.default_rng(seed)
+    return [dict(s,candidate_id='lean_'+s['candidate_id'],torso_lean_degrees=float(rng.uniform(5,30))) for s in specs]

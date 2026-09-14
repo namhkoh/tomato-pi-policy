@@ -11,7 +11,7 @@ from .dataset_review import require, verify_bindings, write_json
 from .depth_preview import sha256
 
 
-def prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary_torso=False, view_offset=0, clear_capture=False, opposite_aisle=False, oblique_clear=False):
+def prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary_torso=False, view_offset=0, clear_capture=False, opposite_aisle=False, oblique_clear=False, lean_clear=False):
     """Search disposable poses, then restore the full root/link snapshot even on failure."""
     import numpy as np
     from pxr import Usd, UsdGeom
@@ -23,7 +23,7 @@ def prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary_
                  for prim in [root, *root.GetChildren()] if prim.IsA(UsdGeom.Xformable)]
     try:
         if grounding:
-            return _prepare_views(stage, robot, variants, rows, count, grounding=True, vary_torso=vary_torso, view_offset=view_offset,clear_capture=clear_capture,opposite_aisle=opposite_aisle,oblique_clear=oblique_clear)
+            return _prepare_views(stage, robot, variants, rows, count, grounding=True, vary_torso=vary_torso, view_offset=view_offset,clear_capture=clear_capture,opposite_aisle=opposite_aisle,oblique_clear=oblique_clear,lean_clear=lean_clear)
         return _prepare_views(stage, robot, variants, rows, count)
     finally:
         with Usd.EditContext(stage, stage.GetSessionLayer()):
@@ -31,7 +31,7 @@ def prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary_
                 _set_transform(prim, matrix[:3,:3], matrix[:3,3])
 
 
-def _prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary_torso=False, view_offset=0, clear_capture=False, opposite_aisle=False, oblique_clear=False):
+def _prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary_torso=False, view_offset=0, clear_capture=False, opposite_aisle=False, oblique_clear=False, lean_clear=False):
     # All USD imports stay AFTER SimulationApp startup in this module.
     import numpy as np
     from pxr import UsdGeom
@@ -55,6 +55,7 @@ def _prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary
         if clear_capture:result['clear_capture']=True
         if opposite_aisle:result['opposite_aisle']=True
         if oblique_clear:result['oblique_clear']=True
+        if lean_clear:result['lean_clear']=True
     for row in rows:
         world = target_world_geometry(stage, by_variant[row['variant_id']], row)
         result['target_world_m'][row['draft_id']] = world['nominal_world_m']
@@ -62,7 +63,7 @@ def _prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary
         if grounding:
             from .training_plan import view_specs
             specs = view_specs(original, world['nominal_world_m'][0], row['draft_id'], count,
-                               vary_torso=vary_torso, view_offset=view_offset,clear_capture=clear_capture,opposite_aisle=opposite_aisle,oblique_clear=oblique_clear)
+                               vary_torso=vary_torso, view_offset=view_offset,clear_capture=clear_capture,opposite_aisle=opposite_aisle,oblique_clear=oblique_clear,lean_clear=lean_clear)
         else:
             specs = focus_specs(original, world['nominal_world_m'][0])
         for spec in specs:
@@ -176,7 +177,7 @@ def capture_job(app, args, plan, reports, job, manifest):
     prepared = prepare_views(stage, robot, variants, job['targets'], job['max_rendered_views_per_target'],
         grounding=plan['schema_version']=='greenhouse.grounding_collection_plan.v1',
         vary_torso=plan['configuration'].get('vary_torso',False),view_offset=plan['configuration'].get('view_offset',0),clear_capture=clear_capture,
-        opposite_aisle=plan['configuration'].get('opposite_aisle',False),oblique_clear=plan['configuration'].get('oblique_clear',False))
+        opposite_aisle=plan['configuration'].get('opposite_aisle',False),oblique_clear=plan['configuration'].get('oblique_clear',False),lean_clear=plan['configuration'].get('lean_clear',False))
     write_json(args.output/'planned_views.json', prepared)
     # Keep the existing validated native writer, masks, freshness gates and output format.
     args.package, args.view_plan = package, None

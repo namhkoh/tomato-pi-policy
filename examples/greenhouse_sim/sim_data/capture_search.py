@@ -86,6 +86,9 @@ def run_refined_capture(stage, rep, args, manifest, robot, records, reports, var
         if plan.get('opposite_aisle'):
             manifest['viewpoint_selection'].update(aisle_side='negative_x',base_yaw_range_degrees=[-30,30],
                 base_target_x_separation_range_m=[-.55,-.30],motion_between_aisles_validated=False)
+        if plan.get('lean_clear'):
+            manifest['viewpoint_selection'].update(torso_forward_lean_degrees=[5,30],
+                torso_3_equals_bend_plus_lean=True,balance_or_motion_certified=False)
         if plan.get('oblique_clear'):
             minimum=.30*float(np.cos(np.deg2rad(70)))
             manifest['viewpoint_selection'].update(oblique_proposal='bounded_lateral_ring_v1',
@@ -146,6 +149,7 @@ def run_refined_capture(stage, rep, args, manifest, robot, records, reports, var
                 if "root_yaw_degrees" in planned:
                     spec["root_yaw_degrees"] = planned["root_yaw_degrees"]
                 if 'torso_bend_degrees' in planned: spec['torso_bend_degrees']=planned['torso_bend_degrees']
+                if 'torso_lean_degrees' in planned: spec['torso_lean_degrees']=planned['torso_lean_degrees']
                 if planned.get('opposite_aisle'): spec['opposite_aisle']=True
                 if planned.get('oblique_clear'): spec['oblique_clear']=True
                 decision = {"target_review_id": row["draft_id"], **spec, "state": "screening"}

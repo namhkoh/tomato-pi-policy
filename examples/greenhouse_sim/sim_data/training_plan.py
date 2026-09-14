@@ -21,7 +21,7 @@ from .depth_preview import sha256
 SCHEMA = 'greenhouse.grounding_collection_plan.v1'
 
 
-def configuration(targets=12, views=64, seed=0, *, vary_torso=False, renderer_mode=None, view_offset=0, clear_capture=False, opposite_aisle=False, oblique_clear=False):
+def configuration(targets=12, views=64, seed=0, *, vary_torso=False, renderer_mode=None, view_offset=0, clear_capture=False, opposite_aisle=False, oblique_clear=False, lean_clear=False):
     require(type(targets) is int and 1 <= targets <= 36, 'Invalid target cap')
     require(type(views) is int and 1 <= views <= 160, 'Invalid view cap')
     require(type(seed) is int and seed == 0, 'Preserve the reviewed seed-0 family reservations')
@@ -29,6 +29,7 @@ def configuration(targets=12, views=64, seed=0, *, vary_torso=False, renderer_mo
     require(type(clear_capture) is bool and (not clear_capture or vary_torso and views<=12),'Clear capture requires torso sampling and <=12 views per target')
     require(type(opposite_aisle) is bool and (not opposite_aisle or clear_capture),'Opposite aisle requires explicit clear capture')
     require(type(oblique_clear) is bool and (not oblique_clear or clear_capture),'Oblique views require explicit clear capture')
+    require(type(lean_clear) is bool and (not lean_clear or clear_capture),'Lean requires explicit clear capture')
     require(renderer_mode in (None,'RaytracedLighting','RealTimePathTracing'),'Unsupported native renderer')
     require(type(view_offset) is int and 0<=view_offset<=2048,'Invalid view shard offset')
     config=dict(targets_per_plant=targets, render_views_per_target=views, seed=seed,
@@ -40,6 +41,7 @@ def configuration(targets=12, views=64, seed=0, *, vary_torso=False, renderer_mo
     if clear_capture: config['clear_capture']='robot_head_close_diffuse_v1'
     if opposite_aisle: config['opposite_aisle']=True
     if oblique_clear: config['oblique_clear']=True
+    if lean_clear: config['lean_clear']=True
     return config
 
 
@@ -47,7 +49,7 @@ def schedule(reports, rule, config):
     require(config == configuration(config['targets_per_plant'], config['render_views_per_target'], config['seed'],
                                     vary_torso=config.get('vary_torso',False),renderer_mode=config.get('renderer_mode'),
                                     view_offset=config.get('view_offset',0),clear_capture=bool(config.get('clear_capture')),
-                                    opposite_aisle=config.get('opposite_aisle',False),oblique_clear=config.get('oblique_clear',False)),
+                                    opposite_aisle=config.get('opposite_aisle',False),oblique_clear=config.get('oblique_clear',False),lean_clear=config.get('lean_clear',False)),
             'Changed grounding configuration')
     assignments = family_splits([r['plant_id'] for r in reports], config['seed'])
     jobs, decisions = [], []
@@ -67,12 +69,13 @@ def schedule(reports, rule, config):
     return dict(family_assignments=assignments, jobs=jobs, selection_audit=decisions)
 
 
-def view_specs(original_x, target_x, target_id, count, *, vary_torso=False, view_offset=0, clear_capture=False, opposite_aisle=False, oblique_clear=False):
+def view_specs(original_x, target_x, target_id, count, *, vary_torso=False, view_offset=0, clear_capture=False, opposite_aisle=False, oblique_clear=False, lean_clear=False):
     require(np.isfinite([original_x,target_x]).all() and original_x>target_x, 'Expected original +X aisle')
     require(type(count) is int and 1 <= count <= 160, 'Invalid sample count')
     require(type(clear_capture) is bool and (not clear_capture or vary_torso and count<=12),'Invalid clear view configuration')
     require(type(opposite_aisle) is bool and (not opposite_aisle or clear_capture),'Invalid opposite aisle selection')
     require(type(oblique_clear) is bool and (not oblique_clear or clear_capture),'Invalid oblique view selection')
+    require(type(lean_clear) is bool and (not lean_clear or clear_capture),'Invalid lean selection')
     require(type(view_offset) is int and 0<=view_offset<=2048,'Invalid view shard offset')
     seed = int.from_bytes(hashlib.sha256(('grounding-v1:'+target_id).encode()).digest()[:8], 'little')
     rng = np.random.default_rng(seed)
@@ -91,6 +94,9 @@ def view_specs(original_x, target_x, target_id, count, *, vary_torso=False, view
     if vary_torso:
         from .training_views import with_postures
         result=with_postures(result,target_id)
+    if lean_clear:
+        from .training_views import with_lean
+        result=with_lean(result,target_id)
     if oblique_clear:
         # A separate proposal distribution, not a relaxed admission screen.
         # Reuse the old deterministic draws: radial root distance .30-.55 m,
@@ -159,9 +165,10 @@ def main(argv=None):
     p.add_argument('--view-offset',type=int,default=0)
     p.add_argument('--opposite-aisle',action='store_true',help='Separate negative-X static viewpoints; unchanged camera/joint/floor/overlap checks, not a base-motion route')
     p.add_argument('--oblique-clear',action='store_true',help='Opt-in .30-.55m root-distance ring with +/-70 degree bearings; all admission screens unchanged')
+    p.add_argument('--lean-clear',action='store_true',help='Opt-in 5-30 degree real torso forward lean; not a motion or balance validation')
     a=p.parse_args(argv)
     r=build_plan(a.package,a.output,configuration(a.targets,a.views,vary_torso=a.vary_torso,
-                                                renderer_mode=a.renderer_mode,view_offset=a.view_offset,clear_capture=a.clear_capture,opposite_aisle=a.opposite_aisle,oblique_clear=a.oblique_clear))
+                                                renderer_mode=a.renderer_mode,view_offset=a.view_offset,clear_capture=a.clear_capture,opposite_aisle=a.opposite_aisle,oblique_clear=a.oblique_clear,lean_clear=a.lean_clear))
     print('GROUNDING_PLAN',len(r['jobs']),sum(len(j['targets'])*j['max_rendered_views_per_target'] for j in r['jobs']),flush=True)
 
 

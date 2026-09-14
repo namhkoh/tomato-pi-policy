@@ -1091,3 +1091,40 @@ non-approving completed-batch intake, review provenance, portable RGB/crop adapt
 release validator and manifest-generated ZIP dataset card. Latest CPU regression:
 671 tests plus 47 subtests passed (`data/sim_data/clear_regression_20260915_v5.log`).
 No new-model accuracy, throughput or successful final ZIP is claimed here.
+
+### 2026-09-15 02:59 KST collection/review checkpoint
+
+The original-side serial campaign has completed 15 training-family attempts:
+300 native frames, 194 strict candidates / 38 targets / 11 represented families.
+All194 original RGBs were individually assistant-inspected: 192 accepts and two
+holds in seed83 (immediate junction uncertain behind foreground leaf despite
+native proximal-visibility pass). These are interim counts, not training-ready
+coverage. The last training family and eight reserved held-out families remain.
+No old47 images were substituted, no model training/weights were downloaded.
+
+New hash-bound negative-review exclusion preserves holds in a separate NEW
+derivative with the original source index and image hashes. Source reviews are
+not overwritten. Evidence: `job_022_reviews.json` in the overnight review folder.
+The strict quality/coverage gates and family split reservations stay unchanged.
+Target-conditioned full RGB plus query-centred crop remains the proposed input;
+the crop may omit the cut, so full RGB is always supplied. Native metric Z is a
+sidecar, not an RGB-derived estimate or current model input.
+
+CPU-only seed47 probe (matching Isaac USD0.25.11) matched all864 original
+decisions against the native run; original/opposite/oblique/opposite-oblique
+each found zero geometry-admissible views. A separate opt-in forward-torso-lean
+probe found one lean+oblique candidate so far. That is NOT rendered visibility
+or native qualification. See `data/sim_data/geometry_probes/clear_seed47_20260915_v1`
+and `clear_seed47_20260915_lean_v1`. No source geometry or camera mounting moved.
+
+Data regression before negative-review exclusion:682 tests +47 subtests passed
+(`clear_regression_20260915_v7.log`); exclusion/release focused suite:27 passed
+(`clear_exclusion_tests_20260915_v2.log`). ZIP packaging already has a measured
+isolated extracted-code validation/model-input smoke test, but no real release
+ZIP or Qwen training performance is claimed until coverage and reviews pass.
+
+Post-exclusion full data regression passed688 tests +47 subtests in48.21s
+(`clear_regression_20260915_v8.log`). The completed lean probe found one
+lean+oblique geometry candidate, zero in lean-original or lean-opposite. One
+native seed47 lean+oblique pilot is queued after the existing serial pilots;
+it has not run or approved any image at this checkpoint.

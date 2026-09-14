@@ -260,6 +260,20 @@ must not be described as proven to improve yield. Original-side proposal hashes
 remain regression-checked; the first oblique data-code regression passed672 tests
 and47 subtests (`data/sim_data/clear_regression_20260915_v6.log`).
 
+Additional opt-in `--lean-clear` proposes 5-30 degree forward torso lean by
+setting torso_3 to bend+lean, with the same exact URDF/head/floor/scene checks.
+The camera stays fixed to its real bracket. It can combine with oblique views;
+it does not validate dynamic balance, self-collision or transit motions.
+`clear_geometry_probe` uses Isaac's USD build without SimulationApp/rendering
+to diagnose proposals; its original decisions must match a completed native
+reference before alternate modes are evaluated. It cannot approve training data.
+
+Explicit uncertain visual reviews can be passed to a NEW build with
+`--visual-exclusions holds.json`. Only attributed, RGB-hash-bound hold/reject
+records are accepted. They and the source index are retained in the derivative;
+held images are excluded before the view cap. This does not overturn a decision,
+change an answer, or relax coverage. Existing drafts and sources are untouched.
+
 Defer partial/hidden classes, RGB-D training, action guidance and larger collection
 until this visible task is demonstrably learnable. Keep native depth available
 for subsequent geometry and visibility checks; never reconstruct it from RGB.

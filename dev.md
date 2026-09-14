@@ -9815,3 +9815,11 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   tests plus47 subtests. Generated captures/reviews remain under ignored `data/`.
   Simulator contact/cutting limitations documented above remain open; this data
   task is not a claim that greenhouse bimanual physics has been qualified.
+
+- 02:59 KST additional data checkpoint:300 fresh native frames,194 strict
+  candidates,192 assistant accepts and two holds; still incomplete held-out
+  capture and coverage. Details/paths in `vlm_train_data.md`. Added bounded
+  CPU/native-matched viewpoint diagnosis, opt-in real torso-lean proposals and
+  immutable negative-review exclusions. None bypasses native quality checks or
+  claims robot dynamics/physical cutting validation. Full data regression before
+  exclusion changes:682 tests +47 subtests; focused exclusion/release27 passed.

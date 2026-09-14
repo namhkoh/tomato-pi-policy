@@ -57,9 +57,21 @@ def check_reviews(rows, reviews, review_policy='human_holdout_v1'):
     return result
 
 
-def scan(source, progress=None):
+def exclusion_records(rows, records):
+    """Validate explicit negative decisions; never convert a hold to approval."""
+    check_reviews(rows,records,'assistant_reviewed_experiment_v1')
+    require(all(r['decision'] in ('hold','reject') for r in records),'Only negative reviews may exclude images')
+    by_id={r['id']:r for r in rows}
+    return [dict(review=r,source_rgb_file=by_id[r['id']]['files']['rgb']) for r in records]
+
+
+def scan(source, progress=None, visual_exclusions=()):
     candidates=[]; exclusions=[]
+    excluded={r['review']['id']:r for r in visual_exclusions}
     for i,r in enumerate(read_jsonl(source/'index.jsonl')):
+        if r['id'] in excluded:
+            exclusions.append(dict(id=r['id'],reason='explicit_visual_hold_or_reject',**excluded[r['id']]))
+            continue
         if r['difficulty'] != 'easy':
             exclusions.append(dict(id=r['id'],reason='not_easy')); continue
         label=read_json(safe_file(source,r['files']['label']))
@@ -83,7 +95,7 @@ def chat(r,label):
     return row
 
 
-def build(source, output, *, reviews=None, progress=None, audited_source=False, review_policy='human_holdout_v1'):
+def build(source, output, *, reviews=None, progress=None, audited_source=False, review_policy='human_holdout_v1', visual_exclusions=None):
     from .training_export import validate as validate_source
     source,output=Path(source).resolve(),Path(output).resolve()
     require(not output.exists() and not output.is_relative_to(source) and not source.is_relative_to(output),'Choose a new disjoint output')
@@ -97,7 +109,9 @@ def build(source, output, *, reviews=None, progress=None, audited_source=False, 
         for p,h in plans.items():
             require(sha256(p)==h and read_json(p)['configuration'].get('clear_capture')=='robot_head_close_diffuse_v1',
                     'Fresh clearer native captures required for this source mode')
-    rows,exclusions=scan(source,progress)
+    negative=read_json(visual_exclusions) if visual_exclusions else []
+    excluded=exclusion_records(list(read_jsonl(source/'index.jsonl')),negative)
+    rows,exclusions=scan(source,progress,excluded)
     require(rows,'No sufficiently clear candidates; collect better observations, do not relax silently')
     original=read_json(source/'manifest.json')
     records=read_json(reviews) if reviews else []
@@ -122,6 +136,12 @@ def build(source, output, *, reviews=None, progress=None, audited_source=False, 
         for r in rows: f.write(json.dumps(r,allow_nan=False)+'\n')
     shutil.copyfile(source/'manifest.json',output/'source_manifest.json')
     files['source_manifest.json']=sha256(output/'source_manifest.json')
+    if negative:
+        require(sha256(source/'index.jsonl')==original['files_sha256'].get('index.jsonl'),'Source index must be bound for negative-review exclusion')
+        shutil.copyfile(source/'index.jsonl',output/'source_index.jsonl')
+        files['source_index.jsonl']=sha256(output/'source_index.jsonl')
+        write_json(output/'visual_exclusions.json',negative)
+        files['visual_exclusions.json']=sha256(output/'visual_exclusions.json')
     for name,value in [('source_validation.json',receipt),
                        ('exclusions.json',exclusions),('reviews.json',records),
                        ('contract.json',dict(profile=PROFILE,policy=POLICY,gates=GATES,
@@ -185,6 +205,17 @@ def validate(root, *, allow_draft=False, progress=None):
                 require(np.array_equal(np.asarray(crop),np.asarray(crop_image(rgb,r['query_pixel_uv']))),'Crop not query-derived')
         expected[r['split']].append(chat(r,label))
     require(rows and max(counts.values())<=12,'Empty release or view cap exceeded')
+    if 'visual_exclusions.json' in m['files_sha256']:
+        require(sha256(safe_file(root,'source_index.jsonl'))==source['files_sha256'].get('index.jsonl'),'Unbound source index for exclusions')
+        negative=read_json(safe_file(root,'visual_exclusions.json'))
+        checked=exclusion_records(list(read_jsonl(root/'source_index.jsonl')),negative)
+        require(negative and not ids.intersection(r['id'] for r in negative),'Held/rejected image was included')
+        logged=[r for r in read_json(safe_file(root,'exclusions.json')) if r['reason']=='explicit_visual_hold_or_reject']
+        require(sorted(logged,key=lambda r:r['id'])==sorted(
+            [dict(id=r['review']['id'],reason='explicit_visual_hold_or_reject',**r) for r in checked],key=lambda r:r['id']),
+            'Negative review provenance mismatch')
+        for r in checked:
+            require(source['files_sha256'].get(r['source_rgb_file'])==r['review']['rgb_sha256'],'Excluded RGB source binding changed')
     for split in ('train','validation','test'):
         require(list(read_jsonl(safe_file(root,f'splits/{split}.jsonl')))==expected[split],'Changed training chat')
     acceptance=coverage(rows);qa=check_reviews(rows,read_json(safe_file(root,'reviews.json')),m.get('review_policy','human_holdout_v1'))
@@ -199,6 +230,7 @@ def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('command',choices=('build','validate','finalize'))
     p.add_argument('--source',type=Path);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--reviews',type=Path);p.add_argument('--allow-draft',action='store_true')
+    p.add_argument('--visual-exclusions',type=Path,help='Explicit attributed hash-bound holds/rejects; preserved in a new derivative, never overwritten')
     p.add_argument('--audited-source',action='store_true',help='Fresh clear-capture engineering pool, validated separately; final clear gates still mandatory')
     p.add_argument('--assistant-reviewed-experiment',action='store_true',help='Explicit assistant-reviewed synthetic experiment, not independent human evaluation')
     a=p.parse_args(argv)
@@ -207,7 +239,7 @@ def main(argv=None):
         result=finalize(a.source,a.output,a.reviews)
     elif a.command=='build':
         require(a.source is not None,'Source release required')
-        result=build(a.source,a.output,reviews=a.reviews,audited_source=a.audited_source,
+        result=build(a.source,a.output,reviews=a.reviews,audited_source=a.audited_source,visual_exclusions=a.visual_exclusions,
                      review_policy='assistant_reviewed_experiment_v1' if a.assistant_reviewed_experiment else 'human_holdout_v1',
                      progress=lambda x:print(json.dumps(x),flush=True))
     else: result=validate(a.output,allow_draft=a.allow_draft)
