@@ -9656,6 +9656,51 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   VLM work may resume after the requested demonstration; no collection,
   dataset mutation or training was started during this continuation.
 
+### 2026-09-15: visible cut-point dataset rebuild (overnight work)
+
+- Checkpoint update: full data suite660 passed +47 subtests (45.20s), log
+  `data/sim_data/clear_regression_20260915_v2.log`;22 focused new-source/capture
+  checks passed afterward. Pilot_v1 exited1 before any frames because source
+  scene overrode explicit RaytracedLighting. No renderer check was bypassed.
+  Corrected pilot_v2 uses source-selected renderer; one seed101 job is running.
+  No native new-capture success, trainable new dataset or ZIP claimed yet.
+- Fresh-capture export can explicitly consume an integrity-validated engineering
+  pool from new bound clear-capture plans; this does NOT waive the new clear
+  release's coverage or visual review gates. Existing training releases remain
+  untouched and no old source may masquerade as a fresh capture pool.
+
+- User requested a simpler visible-target VLM task, H200 instructions and a ZIP,
+  then explicitly chose NEW clearer native captures instead of packaging the
+  old geometrically-easy images. No training or physical robot commands started.
+- Implemented a separate `clear_cutpoint_v1` derivative, explicit legacy/new
+  validator dispatch, query-only384px crop magnified to768px, deterministic
+ 12-view/target cap, strict visible-interval/width/exposure proxies, review GUI,
+  immutable finalization and status-preserving ZIP transfer. Original RGB and
+  native optical-Z bytes, canonical10mm labels and16/4/4 family splits remain.
+- Qwen trainer supports explicit visible-only smoke/overfit and crop comparison;
+  saved input mode is reused for inference. Clear scorer counts invalid/missing/
+  abstaining/truncated predictions as failures, reports interval+target hits,
+  target/family macro averages and latency/token cost. Test requires explicit
+  access. Instructions: `examples/greenhouse_sim/sim_data/CLEAR_CUTPOINT.md`.
+- Complete old-release scan: only47 strict candidates (train28/9targets/7families;
+  validation15/3/2; test4/4/3). Preserved as
+  `data/sim_data/training_exports/clear_cutpoint_20260914_v1`, explicitly DRAFT
+  and not trainable. No ZIP of this diagnostic set is offered as training data.
+  Earlier101-image train-only preliminary sample had0 passes; full scan is the
+  authoritative count. No existing reviews, splits or old releases were edited.
+- Added default-OFF `--clear-capture`: closer original-aisle base proposals,
+  bounded real torso/head pose sampling, predicted8px petiole/12px interval,
+  uniform dome fill6000 (from1200), unchanged sun1500. No per-target spotlights,
+  RGB postprocessing, sensor changes or hidden scene geometry. Existing scene
+  overlap rejection remains. Existing Windows memory preflight runs per job.
+  This preset is NOT yet natively qualified; pilot plan creation is running.
+- Tests before capture changes:652 passed +47 subtests;17 focused clear-release/
+  transfer tests subsequently passed. Capture/plan focused regression69 passed.
+  Actual Qwen processor/training performance on the new crop remains unmeasured.
+- All selected held-out images currently require human review in the release
+  policy; assistant review is explicitly attributed. User has authorized overnight
+  collection/review/annotation and packaging, not fabricated human acceptance.
+
 ### 2026-09-14: faster-cut trial checkpoint and VLM branch handoff
 
 - Added default-OFF `--faster-cut-trial` through the ground-truth launcher,

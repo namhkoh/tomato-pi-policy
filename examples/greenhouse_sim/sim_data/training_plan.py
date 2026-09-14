@@ -21,11 +21,12 @@ from .depth_preview import sha256
 SCHEMA = 'greenhouse.grounding_collection_plan.v1'
 
 
-def configuration(targets=12, views=64, seed=0, *, vary_torso=False, renderer_mode=None, view_offset=0):
+def configuration(targets=12, views=64, seed=0, *, vary_torso=False, renderer_mode=None, view_offset=0, clear_capture=False):
     require(type(targets) is int and 1 <= targets <= 36, 'Invalid target cap')
     require(type(views) is int and 1 <= views <= 160, 'Invalid view cap')
     require(type(seed) is int and seed == 0, 'Preserve the reviewed seed-0 family reservations')
     require(type(vary_torso) is bool,'Invalid torso sampling flag')
+    require(type(clear_capture) is bool and (not clear_capture or vary_torso and views<=12),'Clear capture requires torso sampling and <=12 views per target')
     require(renderer_mode in (None,'RaytracedLighting','RealTimePathTracing'),'Unsupported native renderer')
     require(type(view_offset) is int and 0<=view_offset<=2048,'Invalid view shard offset')
     config=dict(targets_per_plant=targets, render_views_per_target=views, seed=seed,
@@ -34,13 +35,14 @@ def configuration(targets=12, views=64, seed=0, *, vary_torso=False, renderer_mo
     if vary_torso: config['vary_torso']=True
     if renderer_mode is not None: config['renderer_mode']=renderer_mode
     if view_offset: config['view_offset']=view_offset
+    if clear_capture: config['clear_capture']='robot_head_close_diffuse_v1'
     return config
 
 
 def schedule(reports, rule, config):
     require(config == configuration(config['targets_per_plant'], config['render_views_per_target'], config['seed'],
                                     vary_torso=config.get('vary_torso',False),renderer_mode=config.get('renderer_mode'),
-                                    view_offset=config.get('view_offset',0)),
+                                    view_offset=config.get('view_offset',0),clear_capture=bool(config.get('clear_capture'))),
             'Changed grounding configuration')
     assignments = family_splits([r['plant_id'] for r in reports], config['seed'])
     jobs, decisions = [], []
@@ -60,21 +62,23 @@ def schedule(reports, rule, config):
     return dict(family_assignments=assignments, jobs=jobs, selection_audit=decisions)
 
 
-def view_specs(original_x, target_x, target_id, count, *, vary_torso=False, view_offset=0):
+def view_specs(original_x, target_x, target_id, count, *, vary_torso=False, view_offset=0, clear_capture=False):
     require(np.isfinite([original_x,target_x]).all() and original_x>target_x, 'Expected original +X aisle')
     require(type(count) is int and 1 <= count <= 160, 'Invalid sample count')
+    require(type(clear_capture) is bool and (not clear_capture or vary_torso and count<=12),'Invalid clear view configuration')
     require(type(view_offset) is int and 0<=view_offset<=2048,'Invalid view shard offset')
     seed = int.from_bytes(hashlib.sha256(('grounding-v1:'+target_id).encode()).digest()[:8], 'little')
     rng = np.random.default_rng(seed)
     # Stratified continuous framing; label position is never a fixed three-point grid.
     result=[]
-    for i in range((view_offset+count)*3):
-        approach=float(rng.uniform(.15,.40))
+    proposals=24 if clear_capture else 3
+    for i in range((view_offset+count)*proposals):
+        approach=original_x-(target_x+float(rng.uniform(.30,.55))) if clear_capture else float(rng.uniform(.15,.40))
         root_x=original_x-approach
-        if root_x-target_x<.35:
+        if root_x-target_x<(.30-1e-9 if clear_capture else .35):
             continue
         result.append(dict(candidate_id=f'ground_{i:04d}', root_x_m=root_x,
-            approach_from_original_m=approach, y_offset_m=float(rng.uniform(-.4,.4)),
+            approach_from_original_m=approach, y_offset_m=float(rng.uniform(-.20,.20) if clear_capture else rng.uniform(-.4,.4)),
             root_yaw_degrees=float(rng.uniform(150,210)),
             desired_pixel_xy=[float(rng.uniform(.15,.85)*848),float(rng.uniform(.15,.85)*408)]))
     if vary_torso:
@@ -82,7 +86,7 @@ def view_specs(original_x, target_x, target_id, count, *, vary_torso=False, view
         result=with_postures(result,target_id)
     # Offset counts proposal windows, not accepted labels. New shards never
     # repeat a previous window merely to fill a desired class/size quota.
-    return result[view_offset*3:]
+    return result[view_offset*proposals:]
 
 
 def build_plan(package, output, config):
@@ -123,11 +127,12 @@ def main(argv=None):
     p.add_argument('--targets',type=int,default=12)
     p.add_argument('--views',type=int,default=64)
     p.add_argument('--vary-torso',action='store_true')
+    p.add_argument('--clear-capture',action='store_true',help='Opt-in closer real robot snapshots and uniform diffuse lighting; unchanged sensors/overlap guards')
     p.add_argument('--renderer-mode',choices=['RaytracedLighting','RealTimePathTracing'])
     p.add_argument('--view-offset',type=int,default=0)
     a=p.parse_args(argv)
     r=build_plan(a.package,a.output,configuration(a.targets,a.views,vary_torso=a.vary_torso,
-                                                renderer_mode=a.renderer_mode,view_offset=a.view_offset))
+                                                renderer_mode=a.renderer_mode,view_offset=a.view_offset,clear_capture=a.clear_capture))
     print('GROUNDING_PLAN',len(r['jobs']),sum(len(j['targets'])*j['max_rendered_views_per_target'] for j in r['jobs']),flush=True)
 
 

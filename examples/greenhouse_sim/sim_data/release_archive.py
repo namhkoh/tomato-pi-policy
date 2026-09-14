@@ -9,7 +9,7 @@ import zipfile
 
 from .dataset_review import read_json,require,safe_file
 from .depth_preview import sha256
-from .training_export import validate
+from .release_validation import validate
 
 
 def archive(release,destination):

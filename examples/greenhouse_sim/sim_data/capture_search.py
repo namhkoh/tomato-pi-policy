@@ -45,7 +45,7 @@ def run_refined_capture(stage, rep, args, manifest, robot, records, reports, var
                 from .training_plan import view_specs
                 bound=plan['requested_views_per_target']
                 allowed={s['candidate_id']:s for s in view_specs(original_x, plan['target_world_m'][target_id][0], target_id, bound,
-                                                                vary_torso=plan.get('vary_torso',False),view_offset=plan.get('view_offset',0))}
+                                                                vary_torso=plan.get('vary_torso',False),view_offset=plan.get('view_offset',0),clear_capture=plan.get('clear_capture',False))}
             else:
                 bound=3
                 allowed = {s["candidate_id"]:s for s in focus_specs(original_x, plan["target_world_m"][target_id][0])}
@@ -77,6 +77,11 @@ def run_refined_capture(stage, rep, args, manifest, robot, records, reports, var
         if plan.get('vary_torso'):
             manifest['viewpoint_selection'].update(arm_and_torso_joint_pose_unchanged=False,
                 arm_joint_pose_unchanged=True,torso_pose_protocol='real_base_head_and_torso_snapshots.v1')
+        if plan.get('clear_capture'):
+            manifest['viewpoint_selection'].update(clear_capture_profile='robot_head_close_diffuse_v1',
+                maximum_approach_m=None,base_target_x_separation_range_m=[.30,.55],
+                minimum_predicted_diameter_px=8,minimum_predicted_interval_px=12,
+                lighting_unchanged_across_candidates=True)
     product = rep.create.render_product(HEAD_CAMERA, RESOLUTION)
     writer = make_writer(rep, include_instances=True, instance_backend=getattr(args,'instance_backend','legacy'))
     writer.attach([product])

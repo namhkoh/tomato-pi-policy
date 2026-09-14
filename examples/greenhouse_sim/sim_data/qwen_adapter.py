@@ -11,12 +11,13 @@ from PIL import Image
 
 from .dataset_review import require,safe_file
 from .training_contract import SYSTEM_PROMPT,validate_answer
-from .training_export import read_jsonl,validate
+from .training_export import read_jsonl
+from .release_validation import validate
 
 MODEL_ID='Qwen/Qwen3-VL-8B-Instruct'
 
 
-def model_messages(row,root,*,include_answer=False,coordinates='pixels',decimals=None,depth_input=False):
+def model_messages(row,root,*,include_answer=False,coordinates='pixels',decimals=None,depth_input=False,query_crop=False):
     """The same prompt/RGB conversion for supervised training and inference."""
     turns=row.get('messages',[])
     require(len(turns)==3 and [t.get('role') for t in turns]==['system','user','assistant'],
@@ -45,6 +46,19 @@ def model_messages(row,root,*,include_answer=False,coordinates='pixels',decimals
     else:
         require(decimals is None,'Fixed decimals apply to normalized coordinates only')
         require(coordinates=='pixels','Unknown model coordinate convention')
+    require(not (depth_input and query_crop),'Depth/crop factorial experiment not implemented')
+    if query_crop:
+        from .clear_cutpoint_contract import PROFILE,crop_box,crop_image
+        info=row.get('clear_cutpoint',{})
+        require(info.get('profile')==PROFILE,'Query crop requires explicit clear-cutpoint release')
+        require(info['crop_box_xyxy']==crop_box(info['query_pixel_uv']),'Crop bounds not query-derived')
+        from .training_contract import user_prompt
+        require(user[len('<image>\n'):]==user_prompt(info['query_pixel_uv']),'Crop query differs from prompt')
+        require(info['crop']==f"crops/{row['id']}.png",'Unexpected crop input path')
+        cropped=crop_image(rgb,info['query_pixel_uv'])
+        text=messages[1]['content'][-1]['text'];bounds=info['crop_box_xyxy']
+        text+=f' Image 1 is the full frame. Image 2 magnifies the query-centred region with original pixel bounds {bounds}. Return coordinates in image 1, never crop coordinates. The crop adds no new sensor detail.'
+        messages[1]['content']=[messages[1]['content'][0],dict(type='image',image=cropped),dict(type='text',text=text)]
     if depth_input:
         # Explicit RGB-D variant: native depth rendered as a second image + query depth text.
         import re
@@ -59,7 +73,7 @@ def model_messages(row,root,*,include_answer=False,coordinates='pixels',decimals
     return messages
 
 
-def encode_supervised(row,root,processor,*,maximum_tokens=2048,coordinates='pixels',decimals=None,depth_input=False):
+def encode_supervised(row,root,processor,*,maximum_tokens=2048,coordinates='pixels',decimals=None,depth_input=False,query_crop=False):
     """Mask every prompt/image token using a verified generation-prefix match.
 
     Two processor calls intentionally favor an auditable boundary over guessed
@@ -68,7 +82,7 @@ def encode_supervised(row,root,processor,*,maximum_tokens=2048,coordinates='pixe
     """
     import torch
     require(type(maximum_tokens) is int and maximum_tokens>0,'Invalid token budget')
-    messages=model_messages(row,root,include_answer=True,coordinates=coordinates,decimals=decimals,depth_input=depth_input)
+    messages=model_messages(row,root,include_answer=True,coordinates=coordinates,decimals=decimals,depth_input=depth_input,query_crop=query_crop)
     full=processor.apply_chat_template(messages,tokenize=True,return_dict=True,return_tensors='pt')
     prefix=processor.apply_chat_template(messages[:-1],tokenize=True,return_dict=True,
         return_tensors='pt',add_generation_prompt=True)

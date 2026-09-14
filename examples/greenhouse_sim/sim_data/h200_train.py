@@ -13,8 +13,16 @@ import os
 from pathlib import Path
 
 
-def choose_rows(rows,mode):
+def choose_rows(rows,mode,*,visible_only=False):
     """Smoke/overfit use only deterministic train examples of both statuses."""
+    if visible_only:
+        if not rows or any(json.loads(r['messages'][2]['content'])['status']!='localized' for r in rows):
+            raise ValueError('Visible-only experiment contains non-localized answers')
+        if mode=='train': return rows
+        if mode not in ('smoke','overfit'): raise ValueError('Unknown server mode')
+        count=2 if mode=='smoke' else 32
+        if len(rows)<count: raise ValueError('Insufficient visible-only training examples')
+        return sorted(rows,key=lambda r:hashlib.sha256(r['id'].encode()).hexdigest())[:count]
     if mode=='train': return rows
     if mode not in ('smoke','overfit'): raise ValueError('Unknown server mode')
     per_status=1 if mode=='smoke' else 16
@@ -70,13 +78,15 @@ def answer_token_weights(labels,tokenizer,row,class_weights=None,status_token_we
 
 class SingleImageCollator:
     """Batch one avoids unverified multi-image padding/grid concatenation."""
-    def __init__(self,root,processor,coordinates='normalized_1000',decimals=None,class_weights=None,status_token_weight=1.,depth_input=False):
+    def __init__(self,root,processor,coordinates='normalized_1000',decimals=None,class_weights=None,status_token_weight=1.,depth_input=False,query_crop=False):
         self.root=root;self.processor=processor;self.coordinates=coordinates;self.decimals=decimals
         self.class_weights=class_weights;self.status_token_weight=status_token_weight;self.depth_input=depth_input
+        self.query_crop=query_crop
     def __call__(self,rows):
         from .qwen_adapter import encode_supervised
         if len(rows)!=1: raise ValueError('Verified single-image microbatch only')
-        encoded=encode_supervised(rows[0],self.root,self.processor,maximum_tokens=2048,coordinates=self.coordinates,decimals=self.decimals,depth_input=self.depth_input)
+        extra={'query_crop':True} if self.query_crop else {}
+        encoded=encode_supervised(rows[0],self.root,self.processor,maximum_tokens=2048,coordinates=self.coordinates,decimals=self.decimals,depth_input=self.depth_input,**extra)
         if self.class_weights or self.status_token_weight!=1.:
             encoded['token_weights']=answer_token_weights(encoded['labels'],self.processor.tokenizer,rows[0],self.class_weights,self.status_token_weight)
         return encoded
@@ -98,6 +108,7 @@ def arguments(argv=None):
     parser.add_argument('--class-balance',action='store_true',help='Weight each example loss by inverse train-split status frequency')
     parser.add_argument('--status-token-weight',type=float,default=1.,help='Extra loss weight on answer tokens through the status value')
     parser.add_argument('--depth-input',action='store_true',help='RGB-D variant: native depth rendered as a second image (explicit experiment outside the RGB-only contract)')
+    parser.add_argument('--query-crop',action='store_true',help='Clear-cutpoint full RGB plus query-derived crop; no depth input')
     # Full-parameter fine-tuning (user-requested 2026-09-12) as an explicit alternative to the LoRA recipe.
     parser.add_argument('--method',choices=('lora','full'),default='lora',help='lora: language-attention LoRA (default recipe); full: every weight trainable')
     parser.add_argument('--deepspeed',type=Path,default=None,help='DeepSpeed JSON (ZeRO-2 recommended for --method full on 4xH200)')
@@ -110,6 +121,7 @@ def arguments(argv=None):
     parser.add_argument('--wandb-entity',default=None,help='Weights & Biases entity/team for --wandb-project')
     parser.add_argument('--run-name',default=None,help='Tracker run name; defaults to the output directory name')
     args=parser.parse_args(argv)
+    if args.query_crop and args.depth_input: parser.error('Choose crop or depth, not both')
     import math
     if (not math.isfinite(args.epochs) or not 0<args.epochs<=10
             or not math.isfinite(args.learning_rate) or not 0<args.learning_rate<=1e-3
@@ -144,7 +156,8 @@ def main(argv=None):
     from transformers import AutoProcessor,Qwen3VLForConditionalGeneration,Trainer,TrainingArguments,TrainerCallback,set_seed
     from peft import LoraConfig,get_peft_model
     from .dataset_review import write_json
-    from .training_export import validate,read_jsonl
+    from .training_export import read_jsonl
+    from .release_validation import validate
     from .qwen_adapter import model_messages
     from .qwen_coordinates import COORDINATE_ADAPTER,adapter_name
     from .depth_input import DEPTH_INPUT
@@ -164,6 +177,10 @@ def main(argv=None):
         try:
             root,model_path,output=check_paths(args.dataset,args.model,args.output)
             validated=validate(root,progress=lambda row:print(json.dumps(row),flush=True))
+            clear=validated['release_profile']=='clear_cutpoint_v1'
+            if args.query_crop and not clear: raise ValueError('Query crop requires clear_cutpoint_v1')
+            if clear and (args.depth_input or args.class_balance or args.status_token_weight!=1.):
+                raise ValueError('Clear experiment uses RGB and unweighted coordinate supervision')
             digest=hashlib.sha256((root/'manifest.json').read_bytes()).hexdigest()
             output.mkdir(parents=True,exist_ok=False)
             status[0]=dict(ok=True,validation=validated,manifest_sha256=digest)
@@ -176,17 +193,18 @@ def main(argv=None):
     set_seed(args.seed)
     processor=AutoProcessor.from_pretrained(str(model_path),local_files_only=True,trust_remote_code=False)
     all_train=list(read_jsonl(root/'splits/train.jsonl'))
-    train_rows=choose_rows(all_train,args.mode)
+    visible_only=status[0]['validation']['release_profile']=='clear_cutpoint_v1'
+    train_rows=choose_rows(all_train,args.mode,visible_only=visible_only)
     counts=Counter(json.loads(r['messages'][2]['content'])['status'] for r in all_train)
     class_weights={s:len(all_train)/(len(counts)*n) for s,n in counts.items()} if args.class_balance else None
     # Exercise real template/image-grid/assistant-loss boundary before weights.
-    collator=SingleImageCollator(root,processor,args.coordinates,args.coordinate_decimals,class_weights,args.status_token_weight,args.depth_input)
+    collator=SingleImageCollator(root,processor,args.coordinates,args.coordinate_decimals,class_weights,args.status_token_weight,args.depth_input,args.query_crop)
     processor_samples=[]
-    for row in choose_rows(all_train,'smoke'):
+    for row in choose_rows(all_train,'smoke',visible_only=visible_only):
         encoded=collator([row])
         n=int((encoded['labels']!=-100).sum())
         text=processor.tokenizer.decode(encoded['labels'][encoded['labels']!=-100],skip_special_tokens=True).strip()
-        expected=model_messages(row,root,include_answer=True,coordinates=args.coordinates,decimals=args.coordinate_decimals,depth_input=args.depth_input)[-1]['content'][0]['text']
+        expected=model_messages(row,root,include_answer=True,coordinates=args.coordinates,decimals=args.coordinate_decimals,depth_input=args.depth_input,query_crop=args.query_crop)[-1]['content'][0]['text']
         if json.loads(text)!=json.loads(expected):
             raise RuntimeError('Supervised tokens do not decode to exactly the dataset answer')
         processor_samples.append(dict(id=row['id'],tokens=encoded['input_ids'].shape[1],
@@ -301,7 +319,7 @@ def main(argv=None):
             train_ids=[r['id'] for r in train_rows],world_size=state.num_processes,
             coordinates=args.coordinates,coordinate_adapter=adapter_name(args.coordinate_decimals) if args.coordinates=='normalized_1000' else 'canonical_task_v3_pixels',
             coordinate_decimals=args.coordinate_decimals,class_weights=class_weights,status_token_weight=args.status_token_weight,
-            depth_input=DEPTH_INPUT if args.depth_input else None,
+            depth_input=DEPTH_INPUT if args.depth_input else None,query_crop=args.query_crop,visible_only=visible_only,
             train_status_counts=dict(counts),effective_examples_per_step=state.num_processes*accumulation,
             trainable_parameters=sum(p.numel() for _,p in trainable),lora_targets=targets,method=args.method,
             vision_tower_parameters=sum(p.numel() for p in vision_parameters),vision_learning_rate=args.vision_learning_rate if args.method=='full' else None,
@@ -321,7 +339,7 @@ def main(argv=None):
         processor.save_pretrained(artifact)
         write_json(artifact/'grounding_adapter.json',dict(method=args.method,coordinates=args.coordinates,
             coordinate_adapter=adapter_name(args.coordinate_decimals) if args.coordinates=='normalized_1000' else 'canonical_task_v3_pixels',
-            coordinate_decimals=args.coordinate_decimals,depth_input=DEPTH_INPUT if args.depth_input else None,
+            coordinate_decimals=args.coordinate_decimals,depth_input=DEPTH_INPUT if args.depth_input else None,query_crop=args.query_crop,
             canonical_resolution=[848,408],release_manifest_sha256=status[0]['manifest_sha256']))
         write_json(output/'completed.json',dict(state='completed_server_training_recipe',mode=args.mode,
             metrics=result.metrics,experiment_tracker=tracker,checkpoint_reload_verified=False,generation_accuracy_measured=False,

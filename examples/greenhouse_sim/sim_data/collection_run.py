@@ -103,6 +103,10 @@ def run_jobs(plan_path, output, *, max_jobs=1, timeout_s=1200, job_ids=None, ren
                                      'profile_first_render':profile_first_render,'instance_backend':instance_backend,'render_budget':render_budget})
     try:
         for job in selected:
+            if plan.get('configuration',{}).get('clear_capture'):
+                from sim_physics.host_memory import preflight
+                reserve=preflight()
+                require(reserve['allowed'],'Clear capture blocked by native host-memory reserve: '+str(reserve['reasons']))
             require(sha256(plan_path) == ledger['plan_sha256'], 'Schedule changed during batch')
             folder = output/job['job_id']
             folder.mkdir()

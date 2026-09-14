@@ -11,7 +11,7 @@ from .dataset_review import require, verify_bindings, write_json
 from .depth_preview import sha256
 
 
-def prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary_torso=False, view_offset=0):
+def prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary_torso=False, view_offset=0, clear_capture=False):
     """Search disposable poses, then restore the full root/link snapshot even on failure."""
     import numpy as np
     from pxr import Usd, UsdGeom
@@ -23,7 +23,7 @@ def prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary_
                  for prim in [root, *root.GetChildren()] if prim.IsA(UsdGeom.Xformable)]
     try:
         if grounding:
-            return _prepare_views(stage, robot, variants, rows, count, grounding=True, vary_torso=vary_torso, view_offset=view_offset)
+            return _prepare_views(stage, robot, variants, rows, count, grounding=True, vary_torso=vary_torso, view_offset=view_offset,clear_capture=clear_capture)
         return _prepare_views(stage, robot, variants, rows, count)
     finally:
         with Usd.EditContext(stage, stage.GetSessionLayer()):
@@ -31,7 +31,7 @@ def prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary_
                 _set_transform(prim, matrix[:3,:3], matrix[:3,3])
 
 
-def _prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary_torso=False, view_offset=0):
+def _prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary_torso=False, view_offset=0, clear_capture=False):
     # All USD imports stay AFTER SimulationApp startup in this module.
     import numpy as np
     from pxr import UsdGeom
@@ -52,6 +52,7 @@ def _prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary
         result.update(schema_version='greenhouse.grounding_job_view_plan.v1', requested_views_per_target=count)
         if vary_torso: result['vary_torso']=True
         if view_offset: result['view_offset']=view_offset
+        if clear_capture:result['clear_capture']=True
     for row in rows:
         world = target_world_geometry(stage, by_variant[row['variant_id']], row)
         result['target_world_m'][row['draft_id']] = world['nominal_world_m']
@@ -59,7 +60,7 @@ def _prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary
         if grounding:
             from .training_plan import view_specs
             specs = view_specs(original, world['nominal_world_m'][0], row['draft_id'], count,
-                               vary_torso=vary_torso, view_offset=view_offset)
+                               vary_torso=vary_torso, view_offset=view_offset,clear_capture=clear_capture)
         else:
             specs = focus_specs(original, world['nominal_world_m'][0])
         for spec in specs:
@@ -75,7 +76,7 @@ def _prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary
                 length = float(np.linalg.norm(np.diff([p['pixel_xy'] for p in interval], axis=0), axis=1).sum())
                 decision.update(predicted_diameter_px=diameter, predicted_interval_px=length,
                     base_xy_m=np.asarray(pose['robot_root_to_world_usd_row_vectors'])[3, :2].tolist())
-                if diameter < (4 if vary_torso else 3) or length < (6 if vary_torso else 5) or not all(p['projection_status']=='in_frame' for p in interval):
+                if diameter < (8 if clear_capture else 4 if vary_torso else 3) or length < (12 if clear_capture else 6 if vary_torso else 5) or not all(p['projection_status']=='in_frame' for p in interval):
                     decision['state'] = 'rejected_projected_sampling'
                     continue
                 bounds=visible_bounds(stage,robot['root'])
@@ -136,7 +137,12 @@ def capture_job(app, args, plan, reports, job, manifest):
     freeze_rigid_bodies(stage)
     sys.path.insert(0, str(package/'env_panel'))
     from tomato_env import daylight
-    lighting = daylight.apply(stage, day=172, minutes=13*60, intensity=1500, dome_intensity=1200)
+    clear_capture=bool(plan['configuration'].get('clear_capture'))
+    lighting = daylight.apply(stage, day=172, minutes=13*60, intensity=1500, dome_intensity=6000 if clear_capture else 1200)
+    if clear_capture:
+        manifest['clear_capture_profile']=dict(name='robot_head_close_diffuse_v1',dome_intensity=6000,
+            sun_intensity=1500,target_specific_lights=False,postprocessed_rgb=False,
+            optics_or_camera_mount_changed=False,all_scene_geometry_retained=True)
     settings=carb.settings.get_settings()
     requested_mode=plan['configuration'].get('renderer_mode')
     if requested_mode is not None:
@@ -166,7 +172,7 @@ def capture_job(app, args, plan, reports, job, manifest):
         target_family_split=job['split'], split_scope=plan['split_scope'], source_geometry_modified=False)
     prepared = prepare_views(stage, robot, variants, job['targets'], job['max_rendered_views_per_target'],
         grounding=plan['schema_version']=='greenhouse.grounding_collection_plan.v1',
-        vary_torso=plan['configuration'].get('vary_torso',False),view_offset=plan['configuration'].get('view_offset',0))
+        vary_torso=plan['configuration'].get('vary_torso',False),view_offset=plan['configuration'].get('view_offset',0),clear_capture=clear_capture)
     write_json(args.output/'planned_views.json', prepared)
     # Keep the existing validated native writer, masks, freshness gates and output format.
     args.package, args.view_plan = package, None
@@ -179,7 +185,7 @@ def capture_job(app, args, plan, reports, job, manifest):
     require(sha256(args.plan)==manifest['source_collection_plan_sha256'], 'Collection plan changed during capture')
     manifest['source_assets_unchanged'] = True
     lines = ['# Native multi-plant robot-head pilot', '',
-        'Full greenhouse, unchanged source components and lighting, mounted RB-Y1 A v1.2 head D405 at 848x408.',
+        'Full greenhouse, unchanged source components, mounted RB-Y1 A v1.2 head D405 at 848x408. Lighting configuration is recorded in manifest.json.',
         'Prototype labels only. No human confirmation, training eligibility, arm reach or physical cutting approval.',
         'Depth is native optical-axis Z; colour maps and overlays are review-only. No difficulty labels assigned.', '',
         '| Sample | Target | Numerical clear-view gate |', '|---|---|---|']

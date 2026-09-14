@@ -31,6 +31,9 @@ def arguments(argv=None):
     g.add_argument('--split',choices=('train','validation','test'),default='validation')
     g.add_argument('--ids-file',type=Path,default=None,help='JSON with train_ids (e.g. an overfit run_contract.json) to restrict rows')
     g.add_argument('--coordinates',choices=('normalized_1000','pixels'),default='normalized_1000')
+    g.add_argument('--query-crop',action='store_true',default=None,help='Explicit crop baseline; tuned models inherit saved input mode')
+    g.add_argument('--coordinate-decimals',type=int,default=None)
+    g.add_argument('--allow-test',action='store_true',help='Explicit final test access after protocol lock')
     g.add_argument('--shard-index',type=int,default=0)
     g.add_argument('--shard-count',type=int,default=1)
     g.add_argument('--limit',type=int,default=None,help='Only the first N rows of this shard (smoke use)')
@@ -40,6 +43,8 @@ def arguments(argv=None):
     s.add_argument('--run',type=Path,required=True,help='Directory holding predictions-shard-*.jsonl')
     s.add_argument('--output',type=Path,required=True,help='New report JSON path')
     args=parser.parse_args(argv)
+    if args.command=='generate' and args.split=='test' and not args.allow_test:
+        parser.error('Test is sealed by default; final evaluation requires --allow-test')
     if args.command=='generate' and not (args.shard_count>=1 and 0<=args.shard_index<args.shard_count):
         parser.error('Invalid shard')
     if args.command=='generate' and args.adapter and args.tuned_model: parser.error('Choose --adapter or --tuned-model')
@@ -56,6 +61,8 @@ def generate(args):
     from .qwen_coordinates import COORDINATE_ADAPTER
     root=args.dataset.resolve();model_path=args.model.resolve();output=args.output.resolve()
     if not (root/'manifest.json').is_file(): raise ValueError('Local release required')
+    from .release_validation import validate
+    validated=validate(root)
     if output==root or output.is_relative_to(root) or output.is_relative_to(model_path):
         raise ValueError('Keep outputs separate from dataset and model')
     if args.split=='test': print('WARNING: generating on TEST; only do this after locking the configuration',flush=True)
@@ -71,16 +78,20 @@ def generate(args):
     target=output/f'predictions-shard-{args.shard_index}-of-{args.shard_count}.jsonl'
     if target.exists(): raise ValueError(f'{target} exists; choose a new run directory')
     tuned=args.tuned_model.resolve() if args.tuned_model else None
-    decimals=None;depth_input=False
+    decimals=args.coordinate_decimals;depth_input=False;query_crop=bool(args.query_crop)
     if args.adapter or tuned:
         adapter=args.adapter.resolve() if args.adapter else None
         contract=json.loads(((adapter or tuned)/'grounding_adapter.json').read_text())
         if contract['coordinates']!=args.coordinates: raise ValueError('Adapter coordinate convention differs from request')
         decimals=contract.get('coordinate_decimals');depth_input=bool(contract.get('depth_input'))
+        query_crop=bool(contract.get('query_crop'))
+        if args.query_crop is not None and args.query_crop!=query_crop: raise ValueError('Saved input mode differs')
+        if args.coordinate_decimals is not None and args.coordinate_decimals!=decimals: raise ValueError('Saved coordinate decimals differ')
         processor=AutoProcessor.from_pretrained(str(adapter or tuned),local_files_only=True,trust_remote_code=False)
     else:
         adapter=None
         processor=AutoProcessor.from_pretrained(str(model_path),local_files_only=True,trust_remote_code=False)
+    if query_crop and validated['release_profile']!='clear_cutpoint_v1': raise ValueError('Crop requires clear release')
     model=Qwen3VLForConditionalGeneration.from_pretrained(str(tuned or model_path),local_files_only=True,
         trust_remote_code=False,dtype=torch.bfloat16,attn_implementation='sdpa')
     if adapter:
@@ -90,14 +101,16 @@ def generate(args):
     versions={name:importlib.metadata.version(name) for name in ('torch','transformers','peft','accelerate')}
     from .qwen_coordinates import adapter_name
     header=dict(kind='header',split=args.split,model_path=str(model_path),adapter=str(adapter) if adapter else None,
-        tuned_model=str(tuned) if tuned else None,coordinate_decimals=decimals,depth_input=depth_input,
+        tuned_model=str(tuned) if tuned else None,coordinate_decimals=decimals,depth_input=depth_input,query_crop=query_crop,
+        release_manifest_sha256=__import__('hashlib').sha256((root/'manifest.json').read_bytes()).hexdigest(),
+        test_access_authorized=args.allow_test,limited_run=bool(args.ids_file or args.limit is not None),
         coordinates=args.coordinates,coordinate_adapter=adapter_name(decimals) if args.coordinates=='normalized_1000' else 'canonical_task_v3_pixels',
         shard_index=args.shard_index,shard_count=args.shard_count,rows=len(rows),max_new_tokens=args.max_new_tokens,
         decoding='greedy',versions=versions)
     with open(target,'w') as handle:
         handle.write(json.dumps(header)+'\n')
         for n,row in enumerate(rows,1):
-            messages=model_messages(row,root,coordinates=args.coordinates,decimals=decimals,depth_input=depth_input)
+            messages=model_messages(row,root,coordinates=args.coordinates,decimals=decimals,depth_input=depth_input,query_crop=query_crop)
             assert [m['role'] for m in messages]==['system','user']
             inputs=processor.apply_chat_template(messages,tokenize=True,add_generation_prompt=True,
                 return_dict=True,return_tensors='pt').to('cuda')
@@ -154,6 +167,9 @@ def _metrics(rows,predictions,root):
 
 
 def score_run(args):
+    if json.loads((args.dataset/'manifest.json').read_text()).get('release_profile')=='clear_cutpoint_v1':
+        from .clear_cutpoint_evaluate import score_run as clear_score
+        return clear_score(args)
     from .dataset_review import write_json
     from .training_export import read_jsonl
     root=args.dataset.resolve();run=args.run.resolve()

@@ -4,6 +4,20 @@ Date: 2026-09-06
 
 Branch: `koh-dev/sim-data`
 
+## Current priority: newly captured clear localization (2026-09-15)
+
+User chose fresh clearer robot-head captures over reusing the old easy-image
+pilot. The strict scan retained only47 images (28train/15validation/4test),
+insufficient coverage and unreviewed; it is NOT the new training release.
+The new `clear_cutpoint_v1` implementation and H200 workflow are documented in
+`examples/greenhouse_sim/sim_data/CLEAR_CUTPOINT.md`. Original native Isaac
+optical-Z, unchanged head optics, frozen source-family splits and10mm nominal /
+10-20mm evaluation interval remain. Crop input is derived only from the query.
+Overnight scope: capture clearer observations, audit/review/annotate them with
+honest reviewer attribution, then package a status-accurate ZIP. No training,
+physical robot actions, fabricated human reviews or relabeling hidden cuts.
+Native closer-view lighting preset is in pilot qualification, not yet proven.
+
 ## Current increment: reviewable active perception (2026-09-10)
 
 Goal remains a robot-view VLM that can localize an observable petiole cut,
