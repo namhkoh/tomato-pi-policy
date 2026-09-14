@@ -9375,4 +9375,9 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   full greenhouse with48 local placement/heading proposals around450's
   station (`neutral_station_candidates_20260914_v2.json`). All neighbors and
   camera geometry remain. It can only propose a fresh launch, not move the
-  robot or certify a cut. This is the current greenhouse placement check.
+  robot or certify a cut. All48 candidates were checked in9.870488s with18670
+  queries and successful final native controls. No proposal:30 neutral scene
+  conflicts,6 pregrasp IK failures,12 entry scene conflicts. No physics motion.
+  This finite local grid is not a global infeasibility proof. Both a fully
+  clear greenhouse station/path and retained-branch blade accommodation still
+  need implementation/validation before the requested A/B/C simulator freeze.
