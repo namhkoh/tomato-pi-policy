@@ -36,6 +36,19 @@ for the revised no-teleoperated-demonstrations VLM + feedback-controller plan.
   assistant mode does not bypass clarity, coverage, holds or split integrity.
 - Regression:665 tests plus47 subtests passed (43.83s), log
   `data/sim_data/clear_regression_20260915_v3.log`.
+- Follow-up intake reads completed audit/exit/hash receipts only and creates
+  separate per-family engineering pools, strict clear drafts and static review
+  pages; it cannot launch Isaac, approve labels, finalize a release or train.
+  Run: `python -m sim_data.clear_collection_intake --campaign <campaign>
+  --output <new-intake-directory>`. It also builds an aggregate draft only after
+  successful campaign completion. Errors and incomplete receipts fail safely.
+- First2 completed families:62 native captures,41 strict clear candidates from
+  8 targets. Required visual sampling is complete for these batches:7/7 seed101
+  frames and11/34 seed103 frames, explicit assistant records outside Git. Every
+  exported frame additionally has native numerical/identity/depth checks; do
+  not describe uninspected training views as manually reviewed.
+- Follow-up regression:669 tests plus47 subtests passed (44.67s), log
+  `data/sim_data/clear_regression_20260915_v4.log`.
 - Pending: complete collection, per-image QA, coverage/diversity assessment,
   review finalization, portable validation and verified ZIP. Do not claim the
   final dataset exists from this checkpoint. Physics implementation unchanged.

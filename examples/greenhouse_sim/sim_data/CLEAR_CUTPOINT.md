@@ -91,6 +91,15 @@ The24-family serial campaign is
 `data/sim_data/collection_campaigns/clear_capture_20260915_overnight_v1`.
 It preserves failed searches, stops on native errors, and never auto-approves.
 
+`clear_collection_intake --campaign <campaign> --output <new-directory>` may run
+alongside that one native worker. It reads only completed bound audit receipts,
+then builds per-job `source/`, `draft/` and `review/index.html`. After successful
+campaign completion it builds `aggregate/` in the same form. These are all
+pending-review engineering artifacts, never automatic training releases. It
+does not change capture jobs or their source files. Failed campaigns are not
+silently aggregated as completed ones. Visual decisions stay in separate JSON
+files and must match selected row IDs and exact RGB hashes before finalization.
+
 For a user-requested assistant-reviewed synthetic experiment, build a NEW draft
 with `--audited-source --assistant-reviewed-experiment` from a separately
 validated fresh-capture engineering pool. This records
