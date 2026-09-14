@@ -1405,3 +1405,37 @@ correctly refused normal training validation for the draft. No weights or traini
 were loaded. Evidence:`clear_checkpoint_369_transfer_20260915_v1.log` and
 `clear_checkpoint_369_portability_20260915_v1.log`. The prior339-image ZIP is
 preserved. Native collection and the queued opposite-side qualification continue.
+
+### 2026-09-15 06:30 KST continued collection and individual review
+
+Orbit job011(seed41) exited0 after721.83s, with84 native frames and41 strict
+clear candidates. All41 original RGBs were individually inspected and accepted;
+existing query-centred crops resolved four fruit-adjacent attachment details.
+These decisions concern visual localization only, not blade clearance or safety.
+Job012(seed43) exited0 after661.52s, with seven native frames/four strict
+candidates; all four were individually inspected and accepted, including a
+closer check of the leaf-adjacent attachment. Decisions are hash-bound in
+`dataset_reviews/clear_capture_20260915_orbit_v2/job_011_reviews.json` and
+`job_012_reviews.json`. No source labels, native depth, splits or earlier holds
+were changed. Unique candidate reviews now total430:424 accepts/six holds,
+before combined per-target capping.
+
+The NEW `collection_intake/clear_combined_20260915_checkpoint_v5` includes
+job011 (job012 is reviewed separately, not yet aggregated). It validates393
+selected images with393 individual accepts and zero missing reviews:
+train278/50/14, validation42/8/3, test73/11/3 (images/targets/families).
+All nine coverage categories still fail. It remains a draft, not a training
+release; the latest verified transfer is still the369-image inspection ZIP.
+Evidence:`clear_combined_checkpoint_v5_20260915.log`.
+
+Training-only diagnostic `diagnostics/clear_sampling_training_diagnosis_20260915_v1.json`
+records why seed23 is absent. Original/orbit searches rejected3048/2950
+proposals for approximate projected size,374/470 for possible geometry overlap,
+and33/36 for pose; only the original search admitted one geometry candidate,
+which did not yield a strict clear image. Some rejected size estimates lie near
+the thresholds, but those views have neither passed subsequent geometry checks
+nor been rendered. This is not evidence to lower any gate. No new resolution,
+optics, source-geometry, pre-screen or final-quality change was made. Native
+collection, conservative launch reserves and the two bounded opposite-side
+pilots remain in place. No model download, training or model-based held-out
+selection has occurred.
