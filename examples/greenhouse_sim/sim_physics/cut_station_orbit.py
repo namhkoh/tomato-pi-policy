@@ -50,6 +50,30 @@ def right_independent_obstruction(robot,native):
     return True
 
 
+def left_seed_proposals(initial,expanded=False):
+    """At most six IK initial guesses; never measured or commanded postures.
+
+    Changing the seed may expose a different elbow solution for the SAME
+    pregrasp wrist frame. Every returned solution still needs all original
+    native endpoint and moving-path checks. No limit clipping or pose writes.
+    """
+    q=np.array(initial,dtype=float,copy=True)
+    if type(expanded) is not bool or q.shape!=(7,) or not np.isfinite(q).all():
+        raise ValueError('Explicit seed search mode and finite seven-joint seed required')
+    values=[q]
+    if expanded:
+        from greenhouse_sim.robot_ready_pose import SDK_READY_POSE_DEGREES
+        ready=np.array([SDK_READY_POSE_DEGREES[f'left_arm_{i}'] for i in range(7)])
+        values.append(ready)
+        for source in (q,ready):
+            for wrist in (-120.,120.):
+                seed=source.copy();seed[6]=wrist;values.append(seed)
+    unique=[]
+    for seed in values:
+        if not any(np.array_equal(seed,old) for old in unique):unique.append(seed)
+    return unique
+
+
 def waiting_poses(entry,direction,normal,expanded=False):
     """Bounded INITIAL wrist proposals, not collision-free approach paths."""
     if type(expanded) is not bool:raise ValueError('Explicit waiting-pose search option required')
@@ -98,6 +122,10 @@ def search(robot,backend,guard):
     d,normal=frame
     aim=edge_centre(centre,axis,robot.blade_axial_aim_offset_m)
     expanded_waiting=getattr(robot,'station_waiting_search',False)
+    expanded_left=getattr(robot,'station_left_seed_search',False)
+    left_seeds=left_seed_proposals(robot.initial_q,expanded_left)
+    if expanded_left and getattr(robot,'park_left_ready',False):
+        raise ValueError('Left IK seed search cannot change the right-only parked arm')
     entry_frames={}
     for sign in (priority['normal_sign'],-priority['normal_sign']):
         candidate_frame=vertical_cut_frame(axis,sign,priority['tilt'])
@@ -132,7 +160,11 @@ def search(robot,backend,guard):
         # A new explicit/IK-derived initial station may lie between coarse
         # orbit radii. Do not discard it before checking its two endpoints.
         choices=chain(((robot.base.copy(),dict(original_station=True)),),choices)
-    for base,meta in choices:
+    # Evaluate alternate left elbows locally, not only another robot station.
+    # The same global wall deadline and reserved final native controls apply.
+    seeded_choices=((base,dict(**meta,left_seed_index=i) if expanded_left else meta,seed)
+                    for base,meta in choices for i,seed in enumerate(left_seeds))
+    for base,meta,left_seed in seeded_choices:
         if not check_time():expired=True;break
         candidate=copy(robot);candidate.base=base
         row=dict(**meta,native_startup_clear=False,native_cut_entry_clear=False,
@@ -146,7 +178,7 @@ def search(robot,backend,guard):
                 raise ValueError('Independent left park requires right-only strategy')
             lq=np.asarray(robot.initial_q).copy()
         else:
-            left=robot.kin.solve_pose('left',poses[0],robot.initial_q,base,
+            left=robot.kin.solve_pose('left',poses[0],left_seed,base,
                 maximum_evaluations=200,joint_limit_margin_degrees=3.)
             if not left.succeeded:row['rejection']='left_initial_ik';continue
             lq=np.asarray(left.joint_degrees)
@@ -217,7 +249,10 @@ def search(robot,backend,guard):
         if proposal is not None or expired:break
     guard()
     return dict(model='frozen_native_two_arm_station_search_v1',search_strategy='cut_frame_orbit_v1',
-        candidates=rows,proposed_station=proposal,maximum_candidates=315 if reference else 295,
+        candidates=rows,proposed_station=proposal,
+        maximum_candidates=(315 if reference else 295)*len(left_seeds),
+        maximum_base_stations=315 if reference else 295,
+        expanded_left_seed_search=expanded_left,left_seed_candidates=len(left_seeds),
         reference_local_seed_search=reference,
         expanded_waiting_pose_search=expanded_waiting,
         waiting_pose_candidates_per_frame=12 if expanded_waiting else 1,

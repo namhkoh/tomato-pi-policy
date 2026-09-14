@@ -1381,3 +1381,18 @@ before owned scene parsing, verified after reset and restored on exit. Solver
 iterations, timesteps, contacts, forces and visuals remain unchanged. A native
 matched sequence and physical-outcome comparison are required before adoption;
 the setting's readback alone is not speed or native scheduler evidence.
+
+Native378, with `--physics-dispatcher physx --physics-threads 4`, completes all9
+greenhouse direct-cut gates. All40800 trajectory records and report measurements
+exactly match367. It takes484.902s for85 simulated seconds (RTF0.175293), about
+3.84% less wall time than367. This is still far below real time; default settings
+are unchanged. Earlier one-worker375 stalled during reset, so do not infer that
+all dispatcher/worker combinations work. Explicit selection now also occurs
+before Kit boot; exclusive startup checkpoints do not certify task success.
+
+`--station-left-seed-search` is an optional ZERO-MOTION bimanual search extension
+with `--screen-station --cut-station-orbit`. It tries at most6 initial IK guesses
+per station for the same left wrist frame, with all native endpoint/path checks
+and the same45s/global query budget. Never used for right-only parked arms.
+Native379 finds different elbows but no collision-free station for its source71
+case. A remains OPEN; this is not an executed grasp, cut or retention result.

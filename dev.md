@@ -8597,3 +8597,50 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   and no clear waiting pose. No bimanual success or geometry removal.
 - A/C remain OPEN; isolated A passes use the explicit main-stem/selected-branch
   contact fixture, not full intact-plant access. B's latest physical pass is367.
+
+### 2026-09-14 continuation: identical physical repeat and alternate left elbows
+
+- Native378 uses the explicit pre-Kit physx dispatcher and four workers. Unlike
+  the earlier stalled one-worker375, it completes startup and all9 full-greenhouse
+  right-only cut-action gates. This does not isolate which setting resolved375.
+  All40,800 parsed trajectory records EXACTLY match367, including contacts,
+  robot joints and plant dynamics; all report measurements also match. Native
+  stepping, original source geometry/visuals,480Hz and128/0 PGS are unchanged.
+  Evidence: bimanual_downward_20260914_native378/report.json and
+  native378_vs367_20260914.log under data/sim_physics.
+-378 tick wall time484.901786s for85s simulated (RTF0.175293), versus367's
+  504.274315s (about3.84% less wall time). This one comparison is NOT real-time
+  qualification, a general scheduler guarantee or a default change. Startup
+  checkpoints now identify completed parse/reset phases. C remains OPEN.
+- Static patch audit on344: adding a hypothetical central normal-force ray
+  reduces utilization2.142288 to2.009449, STILL above the unchanged budget.
+  A virtual rotation of that fixed patch also fails to establish an adequate
+  grasp. Those were read-only mathematical proposals, not native contacts.
+  No friction, force cap, tissue model, retention prerequisite or LP changed.
+- Added opt-in --station-left-seed-search, restricted to zero-motion bimanual
+  cut-station searches. At most6 exact-deduplicated initial guesses (original,
+  SDK ready and bounded wrist seed variants) can expose different elbow
+  solutions for the SAME pregrasp wrist frame. Seeds are not commanded poses.
+  Every solution still receives native waiting/entry checks, left path/self/
+  inter-arm screens, original45s deadline and reserved final actor controls.
+  Right-only parked arms cannot use this option. Defaults are unchanged.
+- Native379 exercises that search on source71/SubStem42 at existing row23:
+  19 seed/station candidates in45.094s, no clear native waiting pose. Some
+  alternate elbows change the blocking link from left arm4 to arm3, but both
+  intersect the original opposite-side backdrop006 foliage. All final native
+  controls pass; zero physical steps and no motion proposal. This is NOT an
+  A pass or a proof that every target is infeasible.
+- Full regression v28 before the left-seed addition:4879 passed in240.07s.
+  Forty focused search/seed tests pass in both Conda and Isaac Python,
+  including input immutability, bounded candidates, required fresh native
+  checks, inter-arm rejection, query reserve and invalid-mode no-output tests.
+  Full v29 after the addition:4892 passed in240.27s. An added public forwarding
+  check is tested separately. No dataset/training/hardware changes.
+- Offline source19 larger pad-span proposals found no combined kinematic
+  candidate in their bounded scans. Source41/SubStem41 supplies9 arm/self/path
+  proposals, not native certificates. Native380 is the fresh intact-greenhouse
+  test of its80mm grasp/40deg pitch/180deg roll at original end-row23. Startup
+  rejects left arm3 versus the original SubStem39/Leaf017; all1042 scene and71
+  robot final controls complete, no physics motion. Native381 searches the
+  alternate approach direction with left-elbow seeds; its result is pending.
+  A/C are not frozen or complete; VLM work remains paused.

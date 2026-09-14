@@ -112,6 +112,7 @@ def main(argv=None):
     p.add_argument('--screen-station',action='store_true',help='Zero-motion base/two-arm proposal search; no base-motion or path authority')
     p.add_argument('--cut-station-orbit',action='store_true',help='Screen raised waiting and cut-entry poses; requires --screen-station; prior frame is optional')
     p.add_argument('--station-waiting-search',action='store_true',help='Explicit zero-motion search over bounded waiting offsets; full entry/path checks remain')
+    p.add_argument('--station-left-seed-search',action='store_true',help='Bounded alternate left elbow IK guesses; zero-motion bimanual station search only')
     p.add_argument('--park-left-ready',action='store_true',help='Explicit right-only SDK left park, independent of grasp reachability')
     p.add_argument('--budgeted-joint-gravity',action='store_true',help='Experimental source-effort angular gravity compensation, unchanged contact guards')
     p.add_argument('--station-proposal-report',type=Path,help='Explicit new initial station in greenhouse or isolation; all native startup/path checks run again')
@@ -130,6 +131,8 @@ def main(argv=None):
     p.add_argument('--physics-dispatcher',choices=('carb','physx'),default=None,
         help='Explicit process-local CPU dispatcher comparison; unchanged physical profile')
     args=p.parse_args(argv)
+    if args.station_left_seed_search and not (args.mode=='bimanual' and args.screen_station and args.cut_station_orbit):
+        raise ValueError('Left elbow proposals require a zero-motion bimanual station search')
     if args.process_zone_trial and args.historical_mounting_plate:
         p.error('Process-zone trial cannot use the historical mounting plate')
     if args.source_station_trial and not args.process_zone_trial:
@@ -198,6 +201,7 @@ def main(argv=None):
     if args.screen_station:options+=['--native-startup-station-search']
     if args.cut_station_orbit:options+=['--cut-station-orbit']
     if args.station_waiting_search:options+=['--station-waiting-search']
+    if args.station_left_seed_search:options+=['--station-left-seed-search']
     if args.park_left_ready:options+=['--park-left-ready']
     if args.budgeted_joint_gravity:options+=['--budgeted-joint-gravity']
     if args.station_proposal_report:options+=['--station-proposal-report',str(args.station_proposal_report)]
