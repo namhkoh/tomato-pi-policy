@@ -34,6 +34,10 @@ Coverage gates are500/100/100 images and60/15/15 targets for train/validation/te
 with all16/4/4 reserved plant families. Thresholds were chosen before the clear
 scan; insufficient coverage calls for better observations, not silent relaxation.
 The shared greenhouse background is not scene-disjoint or evidence of real transfer.
+RGB alone does not uniquely establish metric scale in arbitrary scenes. The
+10mm rule supplies synthetic 2D supervision here; pixel accuracy is not proof of
+a metrically correct or safe knife pose. Execution still requires depth/geometry,
+fresh visibility checks and the separate tool/controller validation.
 
 ## Local build and review (from `examples/greenhouse_sim`)
 

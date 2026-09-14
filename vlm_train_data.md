@@ -1312,3 +1312,27 @@ workers inherit `sys.executable`. The active replacement is
 `collection_campaigns/clear_capture_20260915_orbit_v2`, with non-approving intake
 at `collection_intake/clear_capture_20260915_orbit_v2`; logs have matching v2
 suffixes. No memory/geometry checks were bypassed and no source dataset changed.
+
+### 2026-09-15 05:15 KST reviewed aggregate checkpoint
+
+The NEW `collection_intake/clear_combined_20260915_checkpoint_v2` merges only
+the completed first-pass audits and the two qualified pilots. All342 selected
+RGBs have individual attributed accept records; the original five holds remain
+excluded. Validation passed, but coverage still fails: train227/45/14,
+validation42/8/3, test73/11/3 (images/targets/families). Review page:
+`review/index.html`; evidence:`clear_combined_342_curation_20260915_v1.log`.
+The earlier339-image inspection ZIP remains unchanged; no final training ZIP.
+
+Read-only TRAIN input characterization found that218/227 query-centred crops
+contain the complete accepted interval. The full RGB is always supplied for
+all227. No answer-centred recropping or held-out model selection occurred.
+Evidence:`diagnostics/clear_checkpoint_342_train_input_quality_20260915_v1.json`.
+
+The corrected orbit campaign's first job exited0 in699.91s: eight native images,
+four strict candidates, all four individually inspected and accepted. They add
+one petiole not represented in the prior aggregate; these four have not yet
+been merged/capped with the full collection. Reviews:
+`dataset_reviews/clear_capture_20260915_orbit_v2/job_001_reviews.json`.
+The next family is rendering. Total individual reviews so far351, with346
+accepts/five holds; this is NOT a final combined release count. No local model
+download, training or held-out model evaluation has started.
