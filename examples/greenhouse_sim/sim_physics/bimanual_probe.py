@@ -13,23 +13,37 @@ from .gripper_probe import ramp,setup_probe_camera
 from .runtime import pose_matrices
 
 
-def diagnostic_milestones(*,grasp_verified,grasp_time,hold_control,stroke_start,stroke_end,delay,cut_time):
+def diagnostic_milestones(*,grasp_verified,grasp_time,hold_control,stroke_start,stroke_end,delay,cut_time,
+                          through_time=None,retraction_time=None):
     """Observed grasp/cut events, not a nominal time mislabeled as contact."""
     milestones=[('grasp',grasp_time)] if grasp_verified else []
     milestones+=([('hold_10s',10),('hold_20s',20)] if hold_control else [
         ('knife_precontact',stroke_start-.1),('stroke_midpoint',(stroke_start+stroke_end)/2),
         ('late_sequence',17.5+delay)])
     if cut_time is not None:milestones+=[('severed',cut_time),('post_cut_2s',cut_time+2)]
+    if through_time is not None:milestones.append(('full_forward_stroke',through_time))
+    if retraction_time is not None:milestones.append(('knife_unloaded',retraction_time))
     return milestones
 
 
 def diagnostic_detail_views(name):
-    if name in ('grasp','hold_20s'):
+    if name in ('grasp','hold_20s','final'):
         return [('Grasp close-up','close'),('Grasp plant-side','plant_side')]
-    if name in ('knife_precontact','severed','post_cut_2s'):
+    if name in ('knife_precontact','severed','post_cut_2s','full_forward_stroke','knife_unloaded'):
         return [('Right knife mount','knife'),('Grasp plant-side','plant_side'),
                 ('Blade plane front','blade_front'),('Blade plane back','blade_back')]
     return []
+
+
+def capture_milestone(name,capture,fixture,viewport):
+    """Paused diagnostic views only; restore the user's selected camera."""
+    capture(name)
+    previous=str(viewport.camera_path)
+    try:
+        for view,suffix in diagnostic_detail_views(name):
+            fixture.select_view(view);capture(name+'_'+suffix)
+    finally:
+        viewport.set_active_camera(previous)
 
 
 def released_stroke_fraction(last_command):
@@ -95,6 +109,13 @@ def experimental_spring_phase(enabled,grasp_verified,started):
 
 def run(app,sim,rig,runtime,springs,fixture,args,output):
     from greenhouse_sim.physics_clock import PhysicsClock
+    ready=None
+    if getattr(args,'neutral_ready_start',False):
+        from .neutral_ready import run as approach_from_ready
+        ready=approach_from_ready(app,sim,rig,runtime,springs,fixture,args,output)
+        if not ready['execution_passed']:
+            return dict(state='failed_neutral_ready_approach',error=ready['error'],neutral_ready=ready,
+                gates={'neutral_ready_approach':False},cut_action={'passed':False},training_eligible=False)
     if (getattr(fixture,'diagnostic_grasp_contacts',False)
             and not getattr(args,'bimanual_hold_control',False)):
         raise ValueError('Raw contact diagnostic is restricted to a right-parked hold control')
@@ -225,6 +246,11 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         captures[name]=name+'.png'
         capture_receipts[name]=dict(step_id=clock.stamp.step,t=clock.stamp.simulation_time_s,
             camera_path=str(viewport.camera_path),cut=rig.cut,left_grasp_verified=grasp_verified,
+            bilateral_contact=records[-1]['contact']['bilateral'] if records else None,
+            slip_m=records[-1]['slip_m'] if records else None,
+            full_forward_stroke_verified=through_time is not None,
+            stroke_retraction_unloaded=retraction_time is not None,
+            final_withdrawal_verified=bool(records and records[-1].get('withdrawal',{}).get('right_withdrawal_completed') is True),
             native_guards_passed=records[-1].get('native_guards_passed') if records else None,
             plant_pose_unchanged_during_capture=True,synchronized_rgbd_observation=False,
             purpose='paused_native_viewport_diagnostic_not_training_data')
@@ -631,6 +657,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                     raise RuntimeError('Through-stroke requires validated native release transition')
                 endpoint=fixture.knife.frame(fixture.kin.forward('right',fixture.plan['stroke'][-1],fixture.base))[:3,3]
                 options={'maximum_feed_m_s':getattr(args,'postrelease_feed_m_s',.0003)}
+                if getattr(args,'support_aware_feed_trial',False):options['support_aware_feed']=True
                 if getattr(args,'material_clearance_trial',False):
                     parent_index=rig.cut_index-1
                     centre,axis=fixture.seam(frames)
@@ -667,11 +694,16 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 events.append(dict(t=through_time,event='measured_forward_stroke_complete',evidence=dict(through.receipt)))
         if through_time is not None and getattr(args,'material_clearance_trial',False) and retraction_time is None:
             from .cut_retraction import CutRetraction
+            from .postrelease_feed import reverse_maximum
             if retraction is None:
                 endpoint=fixture.knife.frame(fixture.kin.forward('right',fixture.plan['stroke'][0],fixture.base))[:3,3]
                 retraction=CutRetraction(fixture.stroke_offsets,fraction=through_fraction,endpoint=endpoint,
                     direction=fixture.plan['direction'],step=int(stamp.step),section=through.material_section,
-                    maximum_feed_m_s=getattr(args,'postrelease_feed_m_s',.0003))
+                    # Qualify faster INSERTION separately. Native435's faster
+                    # reverse recontacted during egress; retain the original
+                    # reverse profile in the support-aware insertion trial.
+                    maximum_feed_m_s=reverse_maximum(getattr(args,'postrelease_feed_m_s',.0003),
+                        support_aware_insertion=getattr(args,'support_aware_feed_trial',False)))
             support=bool(c['bilateral'] and slip is not None and slip<.003) if not cut_only else 'cut_only_park' in record
             record['cut_retraction']=retraction.observe(record,step=int(stamp.step),support_ready=support)
             if retraction.complete:
@@ -728,16 +760,12 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             if viewport and args.capture_milestones:
                 milestones=diagnostic_milestones(grasp_verified=grasp_verified,grasp_time=grasp_time,
                     hold_control=hold_control,stroke_start=stroke_start,stroke_end=stroke_end,
-                    delay=delay,cut_time=cut_time)
+                    delay=delay,cut_time=cut_time,through_time=through_time,retraction_time=retraction_time)
                 for name,t in milestones:
                     if clock.stamp.simulation_time_s>=t and name not in captures:
-                        capture(name)
-                        if diagnostic_detail_views(name):
-                            previous=str(viewport.camera_path)
-                            for view,suffix in diagnostic_detail_views(name):
-                                fixture.select_view(view);capture(name+'_'+suffix)
-                            viewport.set_active_camera(previous)
-                if clock.stamp.step==int(args.seconds*args.physics_hz):capture('final')
+                        capture_milestone(name,capture,fixture,viewport)
+                if clock.stamp.step==int(args.seconds*args.physics_hz):
+                    capture_milestone('final',capture,fixture,viewport)
             if args.gui: time.sleep(max(0,1/args.physics_hz-(time.monotonic()-tick)))
     except Exception as exc:
         fault=str(exc)
@@ -763,6 +791,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     if through_requested:gates['full_forward_cut_stroke_verified']=through_time is not None
     if getattr(args,'material_clearance_trial',False):
         gates['contact_paced_retraction_unloaded']=retraction_time is not None
+    if ready is not None:gates['neutral_ready_approach']=ready['execution_passed']
     passed_state='passed_cut_only_mechanism_not_robot_task' if cut_only else 'passed_bimanual_mechanism_not_robot_task'
     result=dict(state=passed_state if all(gates.values()) else 'failed_cut_only_qualification' if cut_only else 'failed_bimanual_qualification',
         cut_strategy='right_only' if cut_only else 'bimanual',left_grasp_verified=grasp_verified,
@@ -795,6 +824,9 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             required_native_bilateral_dwell_s=.1,verified_time_s=grasp_time if grasp_verified else None,
             sequence_schedule=times if grasp_verified else None),
         target_source='privileged_test_fixture_not_perception_verified',training_eligible=False)
+    if ready is not None:
+        result['neutral_ready']=ready
+        result['cut_protocol_native_time_origin_s']=ready['native_end_time_s']
     if getattr(args,'material_clearance_trial',False):
         result['right_withdrawal_schedule_elapsed']=bool(retraction_time is not None
             and records and records[-1]['t']>=retraction_time+4)

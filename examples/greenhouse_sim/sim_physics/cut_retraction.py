@@ -10,9 +10,12 @@ import numpy as np
 
 
 class CutRetraction:
-    def __init__(self,offsets,*,fraction,endpoint,direction,step,section,maximum_feed_m_s=.0003):
+    def __init__(self,offsets,*,fraction,endpoint,direction,step,section,maximum_feed_m_s=.0003,support_aware_feed=False):
         from .postrelease_feed import validate
         self.maximum_feed=validate(maximum_feed_m_s)
+        if type(support_aware_feed) is not bool:raise ValueError('Explicit support-aware feed trial required')
+        from .support_aware_feed import SupportAwareFeed
+        self.support_feed=SupportAwareFeed(self.maximum_feed) if support_aware_feed else None
         a=np.asarray(offsets,float);p=np.asarray(endpoint,float);d=np.asarray(direction,float)
         if (a.ndim!=1 or len(a)<2 or not np.isfinite(a).all() or not np.all(np.diff(a)>0)
                 or not -.025<=a[0]<0<a[-1]<=.02 or isinstance(fraction,bool)
@@ -33,6 +36,7 @@ class CutRetraction:
                 or step>self.first and self.consumed!=self.step
                 or record.get('cut') is not True or record.get('native_guards_passed') is not True):
             raise RuntimeError('Fresh guarded post-severance support sample required')
+        if self.support_feed is not None:self.support_feed.observe(record,step=step)
         k=record['knife'];edge=np.asarray(k['edge_frame'],float);upper=k['tool_contact_upper_bound_n']
         if (k.get('force_contract')!=KNIFE_IMPULSE_CONTRACT or edge.shape!=(4,4)
                 or not np.isfinite(edge).all() or not np.allclose(edge[3],[0,0,0,1],rtol=0,atol=1e-8)
@@ -68,6 +72,9 @@ class CutRetraction:
             from .postrelease_feed import loaded_speed
             speed=loaded_speed(self.upper,self.maximum_feed);state='loaded_reverse'
         else:speed=.002;state='unloaded_reverse'
+        if self.support_feed is not None:
+            speed=self.support_feed.command(speed,step=step,dt=dt)
+            self.receipt['support_aware_feed']=dict(self.support_feed.receipt)
         self.offset=max(self.start,self.offset-speed*dt);self.consumed=step
         self.receipt.update(command_state=state,command_speed_m_s=speed,command_offset_m=self.offset,
             maximum_contact_feed_m_s=self.maximum_feed)

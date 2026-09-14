@@ -51,6 +51,10 @@ class BimanualRobot(FullRobotGripper):
         self.preload_force_servo=kwargs.pop('preload_force_servo',False)
         if type(self.preload_force_servo) is not bool or self.preload_force_servo and not self.effort_bounded_grasp_target:
             raise ValueError('Preload force servo requires explicit effort-bounded grasp target')
+        self.measured_jaw_backoff_trial=kwargs.pop('measured_jaw_backoff_trial',False)
+        if (type(self.measured_jaw_backoff_trial) is not bool
+                or self.measured_jaw_backoff_trial and not self.preload_force_servo):
+            raise ValueError('Measured jaw backoff experiment requires explicit preload force servo')
         if type(self.effort_bounded_grasp_target) is not bool:
             raise ValueError('Explicit effort-bounded grasp target required')
         if type(self.physical_grasp_span) is not bool:
@@ -424,8 +428,12 @@ class BimanualRobot(FullRobotGripper):
             if getattr(self,'finger_target_antiwindup',False):
                 from .finger_target_antiwindup import project
                 backoff={}
-                if (self.force_closer.preload_force_servo
+                if (getattr(self,'measured_jaw_backoff_trial',False)
+                        and self.force_closer.preload_force_servo
                         and np.max(self.force_closer.loads)>self.force_closer.backoff_contact_n):
+                    # Explicit unqualified experiment ONLY. Native428 showed
+                    # that this strong response can lose an otherwise stable
+                    # isolated grasp; never enable it via preload servo alone.
                     # Fresh, guard-accepted ALL-contact loads, not desired or
                     # normal-only force. Reduce squeeze to half the existing
                     # preload while the external load is high. The ordinary
@@ -1104,6 +1112,7 @@ class BimanualRobot(FullRobotGripper):
             cut_style=getattr(self,'cut_style','legacy'),
             closure_control='native_force_closure_v1' if getattr(self,'force_closure_enabled',False) else 'geometric_compression',
             finger_target_antiwindup=getattr(self,'finger_target_antiwindup',False),
+            measured_jaw_backoff_trial=getattr(self,'measured_jaw_backoff_trial',False),
             retention_preload=self.retention_preload,symmetric_finger_closure=self.symmetric_finger_closure,
             live_grasp_placement=getattr(self,'live_grasp_placement',None),
             grasp_elbow_replan=getattr(self,'grasp_elbow_replan',None),

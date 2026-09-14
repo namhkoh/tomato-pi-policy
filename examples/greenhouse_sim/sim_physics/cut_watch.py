@@ -9,6 +9,10 @@ import numpy as np
 
 
 def validate(args):
+    delay=getattr(args,'watch_exit_after_s',None)
+    if delay is not None and not (getattr(args,'watch_cut_trial',False) and getattr(args,'watch_auto_run',False)
+            and not isinstance(delay,bool) and np.isfinite(delay) and 1<=delay<=300):
+        raise ValueError('Watch exit requires an automatic watched trial and 1..300 second final pause')
     if getattr(args,'watch_auto_run',False) and not getattr(args,'watch_cut_trial',False):
         raise ValueError('Automatic watched demonstration requires explicit watch mode')
     if not getattr(args,'watch_cut_trial',False):return
@@ -33,6 +37,17 @@ class OneShot:
         self.state='finished'
 
 
+def inspection_complete(state,finished_at,now,delay):
+    """Only a finished owned demo can auto-close; never advance another trial."""
+    if delay is None:return False
+    if (isinstance(delay,bool) or not np.isfinite(delay) or not 1<=delay<=300
+            or not np.isfinite(now)):raise ValueError('Finite bounded inspection clock required')
+    if state!='finished':return False
+    if finished_at is None or not np.isfinite(finished_at) or now<finished_at:
+        raise ValueError('Monotone finished-demo clock required')
+    return now-finished_at>=delay
+
+
 def check_idle(playing,plant_before,plant_now,q_before,q_now):
     if (not playing or not np.allclose(plant_before,plant_now,atol=1e-8,rtol=0)
             or not np.allclose(q_before,q_now,atol=1e-8,rtol=0)):
@@ -53,8 +68,9 @@ def watch(app,sim,rig,runtime,springs,fixture,args,output,run):
     from omni.kit.viewport.utility import get_active_viewport
     validate(args)
     mode='right_only' if args.right_only_cut_trial else 'bimanual'
-    control=OneShot();result=None;last_update=0.
-    fixture.setup_views(get_active_viewport());fixture.select_view('Grasp close-up')
+    control=OneShot();result=None;last_update=0.;finished_at=None
+    fixture.setup_views(get_active_viewport())
+    fixture.select_view('Full robot' if getattr(args,'neutral_ready_start',False) else 'Grasp close-up')
     runtime.sample();runtime.sync_visuals()
     idle_robot=idle_robot_view(sim,fixture)
     initial_frames=runtime.frames.copy();initial_q=idle_robot.get_dof_positions().copy()
@@ -101,6 +117,7 @@ def watch(app,sim,rig,runtime,springs,fixture,args,output,run):
             result=run(app,sim,rig,runtime,springs,fixture,args,output)
             result['planning_ui']=fixture.planning_heartbeat.report()
             control.finish()
+            finished_at=time.monotonic()
             (output/'watch_result.json').write_text(json.dumps(result,indent=2,allow_nan=False),encoding='utf-8')
             publish(result)
             passed=result.get('cut_action',{}).get('passed') is True
@@ -108,5 +125,7 @@ def watch(app,sim,rig,runtime,springs,fixture,args,output,run):
                 '\nFull withdrawal: '+str(result.get('gates',{}).get('right_withdrawal_completed'))+
                 '\n'+str(result.get('error') or 'Paused for inspection. Close and relaunch for another trial.'))
             print('CUT_WATCH_FINISHED '+str(result.get('state')),flush=True)
+        if inspection_complete(control.state,finished_at,time.monotonic(),getattr(args,'watch_exit_after_s',None)):
+            break  # Normal caller teardown publishes final report and closes ONLY this app.
         sim.render();time.sleep(.01)
     return result or dict(state='watch_closed_without_trial',training_eligible=False)

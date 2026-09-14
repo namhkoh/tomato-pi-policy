@@ -8,9 +8,12 @@ import numpy as np
 
 
 class ThroughStroke:
-    def __init__(self, offsets, *, fraction, endpoint, direction, physics_hz, step, material_section=None, maximum_feed_m_s=.0003):
+    def __init__(self, offsets, *, fraction, endpoint, direction, physics_hz, step, material_section=None, maximum_feed_m_s=.0003,support_aware_feed=False):
         from .postrelease_feed import validate
         self.maximum_feed=validate(maximum_feed_m_s)
+        if type(support_aware_feed) is not bool:raise ValueError('Explicit support-aware feed trial required')
+        from .support_aware_feed import SupportAwareFeed
+        self.support_feed=SupportAwareFeed(self.maximum_feed) if support_aware_feed else None
         offsets=np.asarray(offsets,float)
         endpoint=np.asarray(endpoint,float);direction=np.asarray(direction,float)
         if (offsets.ndim!=1 or len(offsets)<2 or not np.isfinite(offsets).all()
@@ -36,6 +39,7 @@ class ThroughStroke:
                 or record.get('native_guards_passed') is not True or record.get('cut') is not True
                 or type(support_ready) is not bool):
             raise RuntimeError('Fresh guarded released-target sample required for follow-through')
+        if self.support_feed is not None:self.support_feed.observe(record,step=step)
         k=record['knife'];edge=np.asarray(k['edge_frame'],float);arc=np.asarray(arc_up,float)
         if (k.get('force_contract')!=KNIFE_IMPULSE_CONTRACT or k.get('raw_normal_rows_complete') is not True
                 or edge.shape!=(4,4) or arc.shape!=(3,) or not np.isfinite(np.r_[edge.flat,arc]).all()
@@ -108,6 +112,9 @@ class ThroughStroke:
             from .postrelease_feed import loaded_speed
             speed=loaded_speed(self.upper,self.maximum_feed)*min(1.,max(0.,(.40-self.upper)/.10));state='guarded_cut_face_sliding'
         else: speed=.0003;state='forward'
+        if self.support_feed is not None:
+            speed=self.support_feed.command(speed,step=step,dt=dt)
+            self.receipt['support_aware_feed']=dict(self.support_feed.receipt)
         self.offset=float(np.clip(self.offset+speed*dt,self.start,self.end))
         self.consumed=step
         self.receipt.update(command_state=state,command_offset_m=self.offset,

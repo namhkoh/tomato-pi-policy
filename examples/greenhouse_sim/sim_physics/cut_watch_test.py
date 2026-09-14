@@ -60,3 +60,28 @@ def test_watch_cannot_enable_other_unqualified_modes(tmp_path,change):
     argv=arguments(out,'bimanual','cut_action',watch=True)+change
     with pytest.raises(ValueError,match='Watch requires'):main(argv)
     assert not out.exists()
+
+
+def test_auto_close_never_ends_a_running_trial_or_default_inspection():
+    from .cut_watch import inspection_complete
+    for state in ('ready','requested','running'):
+        assert not inspection_complete(state,None,1000.,1.)
+    assert not inspection_complete('finished',100.,1000.,None)
+    assert not inspection_complete('finished',100.,129.9,30.)
+    assert inspection_complete('finished',100.,130.,30.)
+    for delay in (0.,301.,float('nan'),True):
+        with pytest.raises(ValueError):inspection_complete('finished',100.,130.,delay)
+
+
+def test_auto_exit_requires_explicit_automatic_watch_before_output(tmp_path,monkeypatch):
+    from . import ground_truth_trial,benchmark
+    for flags in ([],['--watch']):
+        with pytest.raises(SystemExit):ground_truth_trial.main(['--output',str(tmp_path/'none'),
+            '--mode','bimanual','--milestone','cut_action','--watch-exit-after-s','30',*flags])
+    with pytest.raises(ValueError,match='Watch exit'):
+        main(['--output',str(tmp_path/'none'),'--watch-exit-after-s','30'])
+    seen=[];monkeypatch.setattr(benchmark,'main',lambda a:seen.append(parser().parse_args(a)))
+    ground_truth_trial.main(['--output',str(tmp_path/'none'),'--mode','bimanual','--milestone','cut_action',
+        '--watch','--watch-auto-run','--watch-exit-after-s','30'])
+    assert seen[0].watch_exit_after_s==30 and seen[0].watch_auto_run
+    assert not (tmp_path/'none').exists()

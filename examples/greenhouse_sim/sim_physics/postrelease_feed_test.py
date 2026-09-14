@@ -1,5 +1,5 @@
 import pytest
-from .postrelease_feed import loaded_speed,validate
+from .postrelease_feed import loaded_speed,validate,reverse_maximum
 from .cut_retraction_test import fixture,observe,command
 from .cut_section_test import contact
 
@@ -32,3 +32,18 @@ def test_faster_command_never_means_observed_completion():
     observe(f,contact(z=-.0031,upper=.08));command(f)
     assert f.receipt['command_speed_m_s']==.001
     assert not f.complete and not f.receipt['commanded_motion_used_as_completion']
+
+
+@pytest.mark.parametrize('maximum',[.0003,.001,.002])
+def test_support_aware_insertion_keeps_original_reverse_rate(maximum):
+    assert reverse_maximum(maximum,support_aware_insertion=True)==.0003
+    assert reverse_maximum(maximum,support_aware_insertion=False)==maximum
+
+
+@pytest.mark.parametrize('flag',[None,0,1,'true'])
+def test_reverse_profile_cannot_be_implicitly_enabled(flag):
+    with pytest.raises(ValueError):reverse_maximum(.001,support_aware_insertion=flag)
+
+
+def test_bad_maximum_is_not_hidden_by_slow_reverse_selection():
+    with pytest.raises(ValueError):reverse_maximum(float('nan'),support_aware_insertion=True)

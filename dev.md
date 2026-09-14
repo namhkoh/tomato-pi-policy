@@ -9086,3 +9086,84 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   step7.293ms versus2.083ms requested timestep; this is historical timing, not
   a new speed measurement. Full greenhouse A and responsiveness C remain open.
   No milestone freeze, new dataset collection or VLM training.
+
+### 2026-09-14 visible replay regression, neutral-start requirement and rate trials
+
+- Fresh visible native428 exposed a regression: the half-preload measured-jaw
+  backoff added for the unqualified greenhouse419 experiment also affected the
+  otherwise stable isolated recipe. Release23.564583s was followed by grasp
+  loss24.072917s. This was NOT shown as a successful end-to-end replay.
+- Quarantined that response behind `--measured-jaw-backoff-trial`, requiring
+  an explicit non-watched native-retention experiment. Original preload servo,
+  ordinary load backoff,0.3N PD,0.5N all-contact and3mm slip limits remain.
+  Native429 replays the corrected default visibly: all10 sequence gates pass,
+  release23.564583s, complete forward section44.925s, unloaded reverse78.789583s,
+  final withdrawal and retained branch85s. Maximum slip1.286446mm,19079 native
+  edge contacts. This is a privileged isolated original-branch fixture, NOT
+  intact-greenhouse bimanual qualification, neutral-start qualification,
+  calibrated tissue fracture, deposit or a broadly reliable robot task.
+- Native429 tick timing:85sim seconds /512.770wall seconds, RTF0.16577; median
+  native step4.332ms. Regression work overlapped part of this run, so this is
+  not an uncontended performance comparison or a real-time claim. Full v45:
+  5025 passed275.89s, before the new neutral/rate trial modules below.
+- Optional `--watch-exit-after-s` closes only a completed explicitly automatic
+  watched run after1..300wall seconds of inspection; default stays open.429
+  verified normal report publication and owned-app teardown.428 was stopped
+  by exact PID/command verification AFTER its failed result was saved; its
+  ignored demo_stop_receipt.json records this. No other apps were stopped.
+- Diagnostic captures now add full_forward_stroke and knife_unloaded detail
+  views at measured events, plus final grasp close-ups. Receipts include
+  current contact/slip and traversal/unloading/final-withdrawal state. Capture
+  remains paused native viewport output, not video or synchronized RGB-D.
+- Visible greenhouse direct-cut430: release18.718750s, forward section39.525s,
+  unloaded reverse45.177083s. It was stopped at48.331250s (`Stopped; reset
+  required`) before final withdrawal validation, so it is NOT a full pass.
+  User reported the downward motion was not evident and requested neutral
+  ready start plus faster cutting. Neither429 nor430 satisfies neutral start:
+  their archived torso/arm recipes are prepared near-target configurations.
+- Added explicit `--neutral-ready-start`: SDK arm-ready joints with an upright
+  fixed torso/base, complete source-shape/current-target/static-scene sampled
+  planning, effort-limited native drive transit, no intended plant contact,
+  fresh endpoint check, then fresh grasp/cut sensing without native pose reset.
+  Phase clocks are separately reported; no old observation authorizes a cut.
+  Native431/432 reject a tilted inherited torso before launch;433 rejects a
+  report-based station/torso mismatch.434 uses explicit upright initialization:
+  self margin5.611491mm passes, but native startup rejects right-arm5 versus
+  original target Leaf_006 on Segment_022. Zero physics steps, no approach/cut.
+  This feature is experimental, NOT an executed neutral-to-cut demonstration.
+- Added explicit `--support-aware-feed-trial` for faster post-release commands:
+  fresh knife AND left-finger all-contact state, bilateral grasp/slip or an
+  independently verified unloaded cut-only park, control-only stability history,
+  bounded1mm/s^2 acceleration and immediate slowdown/stop/backoff. Independent
+  unsmoothed force/contact/slip/orientation/travel guards stay unchanged. This
+  addresses native311's failed naive1mm/s trial; it is not tissue calibration.
+  New focused Isaac checks:36 neutral/capture/watch tests and67 support-rate/
+  traversal/retraction/neutral tests pass. Full v46:5049 passed in258.01s.
+  Native435 faster isolated insertion reached full forward traversal34.629167s
+  (11.064583s after release versus21.360417s in429), while retaining the branch.
+  Reverse completed54.0375s, but final escape failed54.066667s at0.010063504N
+  against the unchanged0.01N unloaded limit. Maximum slip1.071436mm. This is
+  a partial phase improvement, NOT a full-sequence pass or a qualified default.
+  The experimental profile now accelerates insertion ONLY; reverse returns to
+  the original0.0003m/s contact feed. Native validation of that change pending.
+  Native436 places the initial base10cm farther back (no runtime base motion):
+  neutral startup and the74-point/330-check current-scene path screen pass.
+  Before the first controlled step, explicit open-finger PD rejected the
+  inherited0.8N total motor limit instead of its normal0.3N PD allowance.
+  The prelude now applies the SAME bounded PD ceiling used during closure,
+  preserving smaller limits and open targets;20 focused tests pass. Native437
+  retry did NOT start:14.69GiB commit headroom is below the16GiB launch reserve.
+  Reserve, contact limits and assets were not bypassed. Neutral execution and
+  neutral-to-cut completion remain UNVERIFIED.
+  Follow-up:96 focused controller tests pass, including insertion-only reverse
+  rate selection and passive previous-drive-versus-measured-start diagnostics.
+  Handoff diagnostics change no commands and establish no contact causality.
+  Full v47 under Isaac's launcher:5055 pass,7 child-process import failures
+  (bare kit.exe lacks NumPy). The unchanged full suite rerun with installed
+  standalone Python (v48):5062 passed in246.53s. No tests were skipped to hide
+  those failures. Log:physics_regression_20260914_v48.log. With explicit user
+  approval after saved reviews, stopped ONLY verified review servers8880/8881/
+  8882 (PIDs130120/122136/106656); confirmed ports no longer listening. No data
+  or annotation files deleted. Post-stop commit headroom15.00GiB remains below
+  the unchanged16GiB reserve; native retry still pending, no bypass/reboot.
+  VLM/data/splits/review decisions, hardware and source visual assets untouched.

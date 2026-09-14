@@ -41,6 +41,23 @@ def test_dense_joint_samples_include_both_endpoints():
     assert np.max(abs(np.diff(q,axis=0)))<=.25
 
 
+def test_handoff_records_reference_jump_without_mutating_or_authorizing_motion():
+    previous=np.arange(7,dtype=float);start=previous+np.linspace(-.02,.04,7)
+    original=previous.copy();planned=start.copy()
+    receipt=e.drive_handoff(previous,start)
+    assert receipt['maximum_absolute_reference_change_degrees']==pytest.approx(.04)
+    np.testing.assert_array_equal(receipt['start_minus_previous_degrees'],start-previous)
+    assert not receipt['drive_compensation_applied'] and not receipt['motion_authorized']
+    assert not receipt['contact_cause_established']
+    np.testing.assert_array_equal(previous,original);np.testing.assert_array_equal(start,planned)
+
+
+@pytest.mark.parametrize('bad',[np.zeros(6),np.full(7,float('nan')),np.full(7,float('inf'))])
+def test_invalid_handoff_state_fails_closed(bad):
+    with pytest.raises(ValueError):e.drive_handoff(bad,np.zeros(7))
+    with pytest.raises(ValueError):e.drive_handoff(np.zeros(7),bad)
+
+
 def setup(monkeypatch,*,blocked=False,epoch_fault=False,drift=False):
     import sim_physics.native_static_clearance as n
     names=e.RIGHT+e.LEFT;q=np.zeros((1,len(names)));world={'base':np.eye(4),'ee_right':np.eye(4)}
@@ -90,6 +107,7 @@ def test_every_path_sample_has_normal_clearance_and_no_command(monkeypatch):
     assert len(s.checks)==2*(1+len(path))
     assert all(c['stroke'] is False for c in s.checks)
     assert np.array_equal(f.robot.get_dof_positions(),np.zeros((1,14))) and not f.plan
+    assert report['drive_handoff']['maximum_absolute_reference_change_degrees']==0
 
 
 def test_initial_overlap_is_not_treated_as_escape_permission(monkeypatch):

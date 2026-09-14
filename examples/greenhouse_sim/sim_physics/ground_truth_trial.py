@@ -92,6 +92,9 @@ def main(argv=None):
     p.add_argument('--capture',action='store_true',help='Paused native milestone PNGs; headless, not synchronized training RGB-D')
     p.add_argument('--watch',action='store_true',help='Open a visible Run-once panel; no automatic run, reset or hardware commands')
     p.add_argument('--watch-auto-run',action='store_true',help='Explicit one-shot visible demo; requires --watch')
+    p.add_argument('--watch-exit-after-s',type=float,help='Close this owned demo after a bounded final inspection pause; requires --watch-auto-run')
+    p.add_argument('--neutral-ready-start',action='store_true',help='Checked SDK-arm-ready approach before grasp/cut; upright torso and fixed base')
+    p.add_argument('--support-aware-feed-trial',action='store_true',help='Explicit faster post-release comparison using both knife and left-hand loads')
     p.add_argument('--historical-mounting-plate',action='store_true',
         help='Reproduce the superseded mounting-plate contact test, NOT the physical knife edge')
     p.add_argument('--process-zone-trial',action='store_true',
@@ -113,6 +116,7 @@ def main(argv=None):
     p.add_argument('--screen-approach-start',action='store_true',help='Zero-motion higher/lateral waiting-pose search only')
     p.add_argument('--screen-settled-waiting',action='store_true',help='Diagnostic proposals after native gravity settling, then stop before grasp/cut')
     p.add_argument('--native-retention-trial',action='store_true',help='Explicit native retention experiment; static failure remains reported, live guards unchanged')
+    p.add_argument('--measured-jaw-backoff-trial',action='store_true',help='Unqualified half-preload backoff comparison; requires --native-retention-trial')
     p.add_argument('--screen-tool-heading',action='store_true',help='Zero-motion arc-up complete-tool heading search only')
     p.add_argument('--screen-station',action='store_true',help='Zero-motion base/two-arm proposal search; no base-motion or path authority')
     p.add_argument('--cut-station-orbit',action='store_true',help='Screen raised waiting and cut-entry poses; requires --screen-station; prior frame is optional')
@@ -136,6 +140,13 @@ def main(argv=None):
     p.add_argument('--physics-dispatcher',choices=('carb','physx'),default=None,
         help='Explicit process-local CPU dispatcher comparison; unchanged physical profile')
     args=p.parse_args(argv)
+    if args.watch_exit_after_s is not None:
+        import math
+        if not (args.watch and args.watch_auto_run and math.isfinite(args.watch_exit_after_s)
+                and 1<=args.watch_exit_after_s<=300):
+            p.error('Watch exit needs automatic watched mode and a finite 1..300 second inspection pause')
+    if args.measured_jaw_backoff_trial and not args.native_retention_trial:
+        p.error('Measured jaw backoff requires an explicit native-retention experiment')
     if args.native_retention_trial and not (args.mode=='bimanual' and args.process_zone_trial
             and args.milestone=='cut_action' and args.through_stroke_trial and not args.watch
             and not args.screen_settled_waiting and not any((args.screen_ready_pose,args.screen_approach_start,
@@ -189,6 +200,9 @@ def main(argv=None):
             p.error('Grasp comparison requires bimanual process-zone trial and finite 60..180 mm arc')
     options=arguments(args.output,args.mode,args.milestone,args.capture,args.watch)
     if args.watch_auto_run:options+=['--watch-auto-run']
+    if args.neutral_ready_start:options+=['--neutral-ready-start']
+    if args.support_aware_feed_trial:options+=['--support-aware-feed-trial']
+    if args.watch_exit_after_s is not None:options+=['--watch-exit-after-s',str(args.watch_exit_after_s)]
     if not args.historical_mounting_plate:
         from .blade_contacts import CROSSBAR_EDGE
         from .knife import DOWNWARD_CUT_MODEL
@@ -219,6 +233,7 @@ def main(argv=None):
     if args.screen_approach_start:options+=['--native-startup-approach-search']
     if args.screen_settled_waiting:options+=['--screen-settled-waiting']
     if args.native_retention_trial:options+=['--native-retention-trial']
+    if args.measured_jaw_backoff_trial:options+=['--measured-jaw-backoff-trial']
     if args.screen_tool_heading:options+=['--native-startup-heading-search']
     if args.screen_station:options+=['--native-startup-station-search']
     if args.cut_station_orbit:options+=['--cut-station-orbit']

@@ -1506,13 +1506,44 @@ It stops0.104s later on a0.567389N finger load (>0.5N), before completing traver
 and withdrawal. This is a partial physical result, NOT reliable full greenhouse
 grasp-and-cut qualification. Full regression v39:4972 pass.
 
-The explicit symmetric preload-force servo now uses measured jaw position
-and velocity when backing off high (>0.4N) all-contact loads. Its temporary
+The unqualified `--measured-jaw-backoff-trial` experiment uses measured jaw
+position and velocity when backing off high (>0.4N) all-contact loads. Its temporary
 closing-effort reference ceiling is0.12N; original0.3N PD,0.5N native contact,
 aperture, bilateral and3mm slip guards remain. No physical state/contact is
 edited. Native419 avoids418's overload stop but exceeds3mm slip after release,
 so a load-capable grasp is still needed. Full regression v40:4989 pass. Neither
 the new controller nor these partial cuts qualify full bimanual completion.
+
+Native428 later exposed a grasp-loss regression when this response was enabled
+by preload servo alone. It now requires the explicit non-watched retention
+experiment above. Corrected default native429 passes all10 isolated gates,
+including full blade traversal and withdrawal with the branch still retained
+at85s. It starts near the target with a prepared torso/arm pose, NOT neutral.
+
+`--neutral-ready-start` is a separately guarded experimental approach from SDK
+arm-ready with the torso fixed upright. It does not teleport into the old pose.
+Native434 rejects a wrist/target-leaf startup conflict before motion. Native436
+screens a74-point path with the initial base10cm farther back, but stopped before
+the first controlled step on an open-finger PD limit mismatch. That setup error
+is corrected and regression-tested; native437 retry was blocked by the unchanged
+16GiB Windows commit reserve. No neutral execution/cut success is claimed.
+`--support-aware-feed-trial` with explicit
+`--postrelease-feed-m-s` above0.0003 adds bounded acceleration based on both
+knife and grasp state. Native435 reduced release-to-full-traversal from21.3604s
+to11.0646s with retention, but failed final egress at0.0100635N against the strict
+0.01N unloaded threshold. The trial now accelerates insertion only and restores
+the original0.0003m/s reverse feed; this combination awaits native validation.
+Default speed and all force/slip/collision thresholds are unchanged. Neither
+option is a frozen demo. Latest focused controller checks:96 pass. Full v48 in
+standalone Python:5062 passed in246.53s; v47's7 isolated-import failures under
+bare Kit were missing NumPy in child processes, not skipped tests. Post-cut
+egress now records the previous drive target versus measured path start for
+handoff diagnosis only; no compensation or contact-cause claim is made.
+
+Visible one-shot trials can use `--watch --watch-auto-run` and optionally
+`--watch-exit-after-s 30`. Only the owned completed app closes after inspection;
+the default remains open. New measured traversal/unloading and final close-up
+PNGs are diagnostic evidence, not continuous video or VLM training captures.
 
 The explicit public `--grasp-arc-m` proposal range is60..180mm from attachment
 (default80mm unchanged). Exact source-segment membership, detachable-side and

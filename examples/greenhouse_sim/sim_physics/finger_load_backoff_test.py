@@ -48,7 +48,8 @@ def test_no_intersection_refuses_instead_of_relaxing_effort_or_geometry():
 @pytest.mark.parametrize('loads,servo,expected',[
     ([.35,.39],True,None),([.4,.3],True,None),([.41,.39],False,None),
     ([.41,.39],True,.12),([.1,.49],True,.12)])
-def test_native_close_uses_fresh_all_contact_load_not_mean_support(loads,servo,expected):
+@pytest.mark.parametrize('experiment',[False,True])
+def test_native_close_uses_fresh_all_contact_load_only_in_explicit_experiment(loads,servo,expected,experiment):
     from .bimanual import BimanualRobot
     from .force_closure import ForceClosure
     c=ForceClosure(.003,.0005,retention_preload=True,symmetric=True,
@@ -57,9 +58,11 @@ def test_native_close_uses_fresh_all_contact_load_not_mean_support(loads,servo,e
     a=Mock();a.get_dof_positions.return_value=np.array([recorded()[1]])
     a.get_dof_velocities.return_value=np.array([recorded()[2]])
     r=S(force_closure_enabled=True,finger_target_antiwindup=True,force_closer=c,
+        measured_jaw_backoff_trial=experiment,
         force_limits=np.array([[.3,.3]]),finger_indices=[0,1],targets=np.zeros((1,2)),index=[0],robot=a)
     BimanualRobot.close(r,1.,step=0,dt=1/480)
     receipt=c.receipt['antiwindup']
+    if not experiment:expected=None
     assert receipt['closing_effort_backoff_cap_n']==expected
     assert receipt['closing_effort_backoff_uses_measured_state']==(expected is not None)
     np.testing.assert_array_equal(r.force_limits,[[.3,.3]])
@@ -67,3 +70,19 @@ def test_native_close_uses_fresh_all_contact_load_not_mean_support(loads,servo,e
     # The existing contiguous observation contract remains mandatory.
     with pytest.raises(RuntimeError,match='Fresh preceding'):
         BimanualRobot.close(r,1.,step=1,dt=1/480)
+
+
+def test_backoff_experiment_not_in_default_or_watched_profile(tmp_path,monkeypatch):
+    from .benchmark import parser,main
+    from .ground_truth_trial import main as public,arguments
+    assert not parser().parse_args(arguments('unused','bimanual','cut_action',watch=True)).measured_jaw_backoff_trial
+    out=tmp_path/'unused'
+    with pytest.raises(ValueError,match='Measured jaw backoff'):
+        main(['--output',str(out),'--measured-jaw-backoff-trial'])
+    with pytest.raises(SystemExit):public(['--output',str(out),'--mode','bimanual','--measured-jaw-backoff-trial'])
+    assert not out.exists()
+    import sim_physics.benchmark as benchmark
+    calls=[];monkeypatch.setattr(benchmark,'main',lambda argv:calls.append(parser().parse_args(argv)))
+    public(['--output',str(out),'--mode','bimanual','--milestone','cut_action',
+        '--process-zone-trial','--through-stroke-trial','--native-retention-trial','--measured-jaw-backoff-trial'])
+    assert calls[0].measured_jaw_backoff_trial and calls[0].native_retention_trial

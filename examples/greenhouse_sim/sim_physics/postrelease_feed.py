@@ -8,6 +8,18 @@ def validate(maximum):
     return float(maximum)
 
 
+def reverse_maximum(maximum, *, support_aware_insertion):
+    """Qualify faster insertion without also accelerating the loaded reverse.
+
+    The old explicit rate comparison remains reproducible when the insertion
+    trial is disabled. Neither profile is evidence of physical completion.
+    """
+    maximum=validate(maximum)
+    if type(support_aware_insertion) is not bool:
+        raise ValueError('Explicit support-aware insertion profile required')
+    return .0003 if support_aware_insertion else maximum
+
+
 def loaded_speed(load,maximum):
     maximum=validate(maximum)
     if isinstance(load,bool) or not isinstance(load,(int,float)) or not math.isfinite(load) or not 0<=load<=.5:

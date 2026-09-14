@@ -48,6 +48,24 @@ def prerequisites(record, receipt, step):
             raise ValueError('Measured unloaded full tool required before egress')
 
 
+def drive_handoff(previous,planned_start):
+    """Report the drive-reference discontinuity; no motion or safety authority.
+
+    A measured pose can differ from the still-active position target. Preserve
+    both to diagnose recontact instead of silently compensating that error or
+    raising the unloaded force limit. This does not establish causality.
+    """
+    a,b=np.asarray(previous,float),np.asarray(planned_start,float)
+    if a.shape!=(7,) or b.shape!=(7,) or not np.isfinite([a,b]).all():
+        raise ValueError('Finite previous and planned seven-joint targets required')
+    return dict(model='measured_egress_drive_handoff_diagnostic_v1',
+        previous_drive_degrees=a.tolist(),planned_start_degrees=b.tolist(),
+        start_minus_previous_degrees=(b-a).tolist(),
+        maximum_absolute_reference_change_degrees=float(np.max(abs(b-a))),
+        drive_compensation_applied=False,motion_authorized=False,
+        contact_cause_established=False)
+
+
 def plan(f, frames, *, step, record, retraction):
     prerequisites(record,retraction,step)
     if f.rig.cut is not True or f.plan is None:
@@ -60,6 +78,7 @@ def plan(f, frames, *, step, record, retraction):
     if any(k not in predicted or not _attained(v,predicted[k]) for k,v in world.items()):
         raise ValueError('Full current native robot/FK mismatch; no egress')
     actual=world['ee_right'];start=np.degrees([values[n] for n in RIGHT])
+    handoff=drive_handoff(np.degrees(targets[0,[names.index(n) for n in RIGHT]]),start)
     left_q=np.degrees([values[n] for n in LEFT])
     low,high=f.kin.arm_limits_degrees('right')
     if np.any(start<=low) or np.any(start>=high):raise ValueError('In-limit measured start required')
@@ -73,7 +92,8 @@ def plan(f, frames, *, step, record, retraction):
     evidence=dict(model='fresh_unloaded_postcut_egress_v1',step=step,attempts=[],
         passed=False,clearance_margin_m=.001,self_margin_m=.003,interarm_margin_m=.01,
         cut_face_allowance=False,source_assets_changed=False,pose_overwrite=False,
-        motion_authorized=False,whole_path_certified=False,training_eligible=False)
+        motion_authorized=False,whole_path_certified=False,training_eligible=False,
+        drive_handoff=handoff)
     f.postcut_egress_evidence=evidence
     from .native_static_clearance import current_scene_query
     native=None;path=None;escape=None

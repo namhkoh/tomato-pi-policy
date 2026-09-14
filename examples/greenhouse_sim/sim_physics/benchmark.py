@@ -162,6 +162,11 @@ def parser():
         help='Explicit isolated comparison with unchanged native spring/contact drives in all phases')
     p.add_argument('--finger-target-antiwindup',action='store_true',
         help='Isolated explicit-finger trial: bound target windup using fresh native position/velocity and existing PD caps')
+    p.add_argument('--watch-exit-after-s',type=float,help='Bounded inspection pause before closing an explicitly automatic watched demonstration')
+    p.add_argument('--neutral-ready-start',action='store_true',help='Explicit checked SDK-arm-ready transit before the existing grasp/cut protocol; fixed upright torso')
+    p.add_argument('--support-aware-feed-trial',action='store_true',help='Experimental faster post-release feed with fresh grasp/load feedback and bounded acceleration')
+    p.add_argument('--measured-jaw-backoff-trial',action='store_true',
+        help='Unqualified half-preload response; explicit native-retention experiment only, not the stable default')
     p.add_argument('--retention-preload',action='store_true',
         help='Isolated comparison: 0.24 N support setpoint / 0.30 N PD cap; unchanged 0.5 N native contact and 0.8 N motor guards')
     p.add_argument('--symmetric-finger-closure',action='store_true',
@@ -473,6 +478,19 @@ def main(argv=None):
             and args.native_startup_clearance and not args.watch_cut_trial and not args.robot_interactive):
         raise ValueError('Grasp proposals require a zero-motion unparked bimanual search')
     startup_search=any((args.native_startup_pose_search,args.native_startup_approach_search,args.native_startup_heading_search,args.native_startup_station_search,args.native_startup_grasp_search))
+    if args.support_aware_feed_trial and not (args.cut_action_trial and args.material_clearance_trial
+            and args.physics_hz==480 and args.postrelease_feed_m_s>.0003):
+        raise ValueError('Support-aware acceleration requires explicit faster 480 Hz material-clearance cut trial')
+    if args.neutral_ready_start and not (args.bimanual_cut and args.full_robot_probe and args.cut_action_trial
+            and args.native_startup_clearance and args.native_static_clearance and args.physics_hz==480
+            and not startup_search and not args.native_retention_trial and not args.screen_settled_waiting
+            and not args.robot_interactive and not args.gui and not args.bimanual_hold_control
+            and args.bimanual_reposition_m==0
+            and (args.torso_degrees if args.torso_degrees is not None else [0.,0.,0.,0.,0.,args.torso_yaw])==[0.,0.,0.,0.,0.,0.]):
+        raise ValueError('Neutral ready requires guarded upright fixed-torso 480 Hz cut action; no diagnostic search or retention bypass')
+    if args.measured_jaw_backoff_trial and not (args.native_retention_trial and args.preload_force_servo
+            and args.finger_target_antiwindup and args.explicit_finger_effort):
+        raise ValueError('Measured jaw backoff requires an explicit native-retention preload experiment')
     if args.native_retention_trial and not (args.cut_action_trial and args.bimanual_cut
             and not cut_only and args.require_retention_screen and args.settle_retention_preload
             and args.through_stroke_trial and args.native_startup_clearance and args.native_static_clearance
@@ -862,6 +880,7 @@ def main(argv=None):
                 robot_options['physical_grasp_span']=args.physical_grasp_span
                 robot_options['effort_bounded_grasp_target']=args.effort_bounded_grasp_target
                 robot_options['preload_force_servo']=args.preload_force_servo
+                robot_options['measured_jaw_backoff_trial']=args.measured_jaw_backoff_trial
                 robot_options['staged_downward_transit']=args.staged_downward_transit
                 robot_options['explicit_finger_effort']=args.explicit_finger_effort
                 robot_options['finger_target_antiwindup']=args.finger_target_antiwindup
@@ -880,6 +899,9 @@ def main(argv=None):
                 robot_options['diagnostic_grasp_contacts']=getattr(args,'diagnostic_grasp_contacts',False)
                 robot_options['grasp_contact_frames']=args.grasp_contact_frames
             fixture=robot_class(stage,rig,arc=args.grasp_arc_m,friction=args.finger_friction,**robot_options)
+            if args.neutral_ready_start:
+                from .neutral_ready import initialize as initialize_neutral
+                report['neutral_ready_initialization']=initialize_neutral(fixture)
             fixture.joint_transit_fallback=args.joint_transit_fallback
             fixture.station_reference_search=args.station_reference_report is not None
             if args.coupled_fingers_trial:
