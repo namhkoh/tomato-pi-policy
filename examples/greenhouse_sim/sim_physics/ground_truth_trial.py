@@ -130,7 +130,7 @@ def main(argv=None):
     p.add_argument('--blade-aim-offset-m',type=float,default=None,
         help='Explicit bounded contact-placement comparison, -1.5..+2.5 mm; distal extension requires full section preflight')
     p.add_argument('--grasp-arc-m',type=float,default=None,
-        help='Explicit bimanual grasp proposal 60..120 mm from attachment; all native clearance and retention checks remain')
+        help='Explicit bimanual grasp proposal 60..180 mm from attachment; exact shaft, native clearance and retention checks remain')
     p.add_argument('--physics-threads',type=int,choices=(1,2,4,8),default=None,
         help='Controlled scheduler comparison; unchanged physics rate, solver, iterations and geometry')
     p.add_argument('--physics-dispatcher',choices=('carb','physx'),default=None,
@@ -185,8 +185,8 @@ def main(argv=None):
     if args.grasp_arc_m is not None:
         import math
         if not (args.process_zone_trial and args.mode=='bimanual' and math.isfinite(args.grasp_arc_m)
-                and .06<=args.grasp_arc_m<=.12):
-            p.error('Grasp comparison requires bimanual process-zone trial and finite 60..120 mm arc')
+                and .06<=args.grasp_arc_m<=.18):
+            p.error('Grasp comparison requires bimanual process-zone trial and finite 60..180 mm arc')
     options=arguments(args.output,args.mode,args.milestone,args.capture,args.watch)
     if args.watch_auto_run:options+=['--watch-auto-run']
     if not args.historical_mounting_plate:

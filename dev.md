@@ -8994,3 +8994,32 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   the hold point farther along the same detachable petiole, retaining the
   original cut location and surrounding geometry, and REQUIRES the default
   static-retention prerequisite before cutter planning. No dynamic override.
+
+### 2026-09-14 continued: distal hold geometry, static gate retained
+
+- Native420 did NOT start: the public experimental arc range stopped at120mm.
+  Expanded that proposal-only range to60..180mm; default80mm is unchanged.
+  The backend's exact in-segment material point, detachable side, complete
+  finger/cut clearance, IK, native contacts and retention checks still apply.
+  This is not a force, collision or tissue-limit change. The larger distance
+  is a deliberate tradeoff against the preference for holding near the cut:
+  reducing the detached branch's gravity lever may permit safer retention.
+- Native421:160mm with the previous20-degree pitch fails initial left IK;
+  no native motion. A read-only source-geometry/Model A screen checks nearby
+  arcs and pitches with original robot shapes, all47 self/inter-arm knots and
+  finger/cut bounds. v2 finds6 kinematic proposals in13.594s, NOT native scene
+  or grasp approval. v1 failed on a diagnostic configuration-key typo and
+  produced no result. Logs: distal_grasp_screen_20260914_v1/v2.log.
+- Native422:160mm/-20-degree pitch passes kinematic screening but native
+  startup rejects the left forearm against original Fruit_00 and Truss_00.
+  Native423:160mm/0-degree pitch passes startup; after0.9s settling, Leaf_000
+  on Segment_007 obstructs the left finger corridor. No grasp/cut in either.
+  These results show why kinematics alone is insufficient; no foliage removed.
+- Native424's45.032s zero-motion native orientation search proposes one above-
+  shaft approach (shaft rotation-90 degrees,pitch0,roll180), with final native
+  actor controls passing. It does not certify settled approach/contact or
+  retention. Native425 tests this proposal at160mm, with the original default
+  static-retention prerequisite and without --native-retention-trial; pending.
+-25 public-launcher tests pass in Isaac0.41s. Full v41:4993 passed in256.59s.
+  Grasp-plus-release is measured in418/419, but full greenhouse A and overall
+  responsiveness C remain OPEN. No freeze, dataset collection or VLM training.

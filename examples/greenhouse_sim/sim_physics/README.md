@@ -1513,3 +1513,12 @@ aperture, bilateral and3mm slip guards remain. No physical state/contact is
 edited. Native419 avoids418's overload stop but exceeds3mm slip after release,
 so a load-capable grasp is still needed. Full regression v40:4989 pass. Neither
 the new controller nor these partial cuts qualify full bimanual completion.
+
+The explicit public `--grasp-arc-m` proposal range is60..180mm from attachment
+(default80mm unchanged). Exact source-segment membership, detachable-side and
+full finger/cut clearance, IK, native scene/contact checks and static retention
+are still required by the normal bimanual recipe. Farther holding can reduce
+gravity torque but may worsen foliage access: native422 hits a fruit/truss at
+startup and423 rejects a settled leaf obstruction. Native424 finds a different
+above-shaft INITIAL-pose proposal;425 is pending physical validation. These
+are privileged engineering tests, never perception-derived execution labels.
