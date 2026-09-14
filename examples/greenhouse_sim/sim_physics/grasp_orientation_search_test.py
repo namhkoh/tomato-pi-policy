@@ -60,6 +60,12 @@ def clear_fingers(monkeypatch):
     monkeypatch.setattr(grasp_target,'finger_seam_clearance',lambda *a:dict(minimum_finger_to_cut_plane_m=.02))
 
 
+@pytest.fixture(autouse=True)
+def rigid_hand_stub(monkeypatch):
+    from . import rigid_grasp_screen
+    monkeypatch.setattr(rigid_grasp_screen,'RigidGraspScreen',lambda *a:S(check=lambda *a:dict(passed=True)))
+
+
 def test_proposal_needs_native_start_and_full_self_path_but_grants_no_motion(monkeypatch):
     clear_fingers(monkeypatch);r=fixture();calls=[];original=r.goal.copy()
     def native(world,shapes):
@@ -80,6 +86,17 @@ def test_native_obstruction_cannot_be_accepted(monkeypatch):
     out=search(fixture(),S(check=lambda *a:dict(passed=False)),lambda:None)
     assert out['proposed_grasp'] is None and len(out['candidates'])==111
     assert not any(row['native_startup_clear'] for row in out['candidates'])
+
+
+def test_blocked_rigid_hand_never_spends_arm_ik_or_native_queries(monkeypatch):
+    from . import rigid_grasp_screen
+    clear_fingers(monkeypatch);r=fixture()
+    monkeypatch.setattr(rigid_grasp_screen,'RigidGraspScreen',lambda *a:S(check=lambda *a:dict(passed=False)))
+    r.kin.solve_pose=lambda *a,**k:pytest.fail('Blocked hand cannot be fixed by elbow IK')
+    out=search(r,S(check=lambda *a:pytest.fail('Blocked hand cannot be a proposal')),lambda:None)
+    assert out['proposed_grasp'] is None
+    assert all(row['rejection']=='hand_target_corridor' for row in out['candidates'])
+    assert out['rigid_hand_target_screened'] and not out['settled_target_checked']
 
 
 def test_finger_cut_clearance_failure_never_reaches_native(monkeypatch):

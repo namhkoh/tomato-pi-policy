@@ -9048,3 +9048,41 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   Isaac focused check:50 passed in9.59s. Full v43:5007 passed in227.12s.
   Native426 preceded that initial-knot guard correction (its collision was at
   knot37, not0). No native-FPS claim, milestone freeze or VLM work.
+
+### 2026-09-14 continued: reject obstructed grasp hands before arm IK
+
+- Committed settled elbow replanning as d33a155. Added a target-only rigid
+  hand approach/closure screen to the frozen grasp-orientation search. Original
+  palm, fingers and wrist attachments are transformed with the actual Model A
+  prismatic-finger chain. Complete sampled approach (<=1mm translation/1degree
+  rotation) and <=1mm closure increments use the existing native-target convex
+  hulls and shaft shapes with the unchanged1mm margin. Only the existing
+  contiguous detachable shaft/finger allowance applies; leaves remain obstacles.
+  No stage, native state, contact filter, force threshold or visual edits.
+- The screen is a necessary sampled target subset, NOT a full-robot/context,
+  native grasp, retention or continuous-time certificate. All original native
+  startup and later settled whole-scene checks remain mandatory. This closes
+  the earlier search gap that could propose a clear initial arm configuration
+  despite an obstructed subsequent hand approach.
+- Native427 completes the zero-motion diagnostic:111 tested orientations at
+ 160mm all reject in0.328s;81 hit Leaf_000, with other leaves/support/shaft
+  accounting for the rest. Final native actor controls pass. Its diagnostic
+  exit is intentionally nonzero; NO grasp or cut was executed, and no global
+  infeasibility is claimed. Unlike the earlier45s search, the hand rejection
+  occurs before arm IK/native candidate queries. Not a native-FPS improvement.
+-26 focused tests pass in Isaac0.88s, including actual-model FK equivalence,
+  complete hand shapes, leaf refusal, closure/intermediate samples and invalid
+  mechanisms/frames. Full v44:5017 passed in235.17s. Initial randomized FK test
+  sampled outside URDF limits; corrected the test sampling to actual limits.
+- Read-only offline settled-grasp diagnostic reconstructs the original source
+  geometry and checks the archived guard-accepted native4260.9s snapshot.
+  v1 failed from a diagnostic variable-name collision; v2 stopped on the
+  existing10-degree observed-axis guard. v3 preserves that guard, skips those
+  arcs, and returns5 kinematic/hand-subset proposals in36.203s. These do NOT
+  certify surrounding-plant access or retention, and require fresh native tests.
+  Evidence: data/sim_physics/settled_grasp_screen_20260914_v1.py and v1/v2/v3.log.
+- Inspected native426 stopped_on_fault image; original full greenhouse remains
+  visible. Existing native378 timing remains0.175x real time, median native
+  step7.293ms versus2.083ms requested timestep; this is historical timing, not
+  a new speed measurement. Full greenhouse A and responsiveness C remain open.
+  No milestone freeze, new dataset collection or VLM training.

@@ -40,6 +40,8 @@ def search(robot,backend,guard):
     began=time.monotonic();rows=[];proposals=[];expired=False;reserved=False
     centre,axis=robot.seam(robot.rig.rest_frames)
     seeds=left_seed_proposals(robot.initial_q,True)
+    from .rigid_grasp_screen import RigidGraspScreen
+    hand_screen=RigidGraspScreen(robot,robot.rig.rest_frames)
     def time_ok():
         guard()
         return time.monotonic()-began<45.
@@ -51,6 +53,10 @@ def search(robot,backend,guard):
             row['finger_cut_clearance']=finger_seam_clearance(robot.stage,robot.root,goal,centre,axis)
         except ValueError as exc:
             row.update(rejection='finger_cut_clearance',detail=str(exc));continue
+        row['rigid_hand_target_screen']=hand_screen.check(start,goal)
+        if not time_ok():expired=True;break
+        if row['rigid_hand_target_screen']['passed'] is not True:
+            row['rejection']='hand_target_corridor';continue
         for seed_index,seed in enumerate(seeds):
             if not time_ok():expired=True;break
             solved=robot.kin.solve_pose('left',start,seed,robot.base,
@@ -94,6 +100,7 @@ def search(robot,backend,guard):
     return dict(model='frozen_native_grasp_orientation_search_v1',candidates=rows,
         proposed_grasp=proposals[0] if proposals else None,proposed_grasps=proposals,
         maximum_proposals=8,maximum_orientations=112,maximum_seeds_per_orientation=6,
+        rigid_hand_target_screened=True,settled_target_checked=False,
         budget_exhausted=expired,query_budget_reserved_for_final_controls=reserved,
         wall_seconds=time.monotonic()-began,original_spawn_unchanged=True,
         anatomical_grasp_point_unchanged=True,physics_steps=0,motion_authorized=False,
