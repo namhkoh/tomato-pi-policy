@@ -1374,3 +1374,10 @@ move with any right joint. Final actor/epoch controls remain mandatory. Native
 373/374 explore61/86 candidates but find no clear station; neither proves global
 infeasibility. Native344/362's bilateral contact still does not pass post-cut
 retention. Full-greenhouse A remains OPEN; no milestone freeze or VLM restart.
+
+`--physics-dispatcher physx` (or `carb`) is an explicit process-local CPU
+scheduling comparison. Omit it to preserve the current preference. It is set
+before owned scene parsing, verified after reset and restored on exit. Solver
+iterations, timesteps, contacts, forces and visuals remain unchanged. A native
+matched sequence and physical-outcome comparison are required before adoption;
+the setting's readback alone is not speed or native scheduler evidence.

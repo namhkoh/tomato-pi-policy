@@ -94,6 +94,8 @@ def parser():
         help='Isolated comparison: original native torsional drives, coupled implicit bending; not production qualified')
     p.add_argument('--force-newton',type=float,default=.02)
     p.add_argument('--physics-threads',type=int,choices=(1,2,4,8,16))
+    p.add_argument('--physics-dispatcher',choices=('carb','physx'),default=None,
+        help='Process-local CPU scheduler comparison before parsing; no physics-quality change')
     p.add_argument('--fabric',action='store_true')
     p.add_argument('--render-hz',type=int,choices=(0,15,30,60),default=0)
     p.add_argument('--seconds',type=float,default=6.)
@@ -698,7 +700,11 @@ def main(argv=None):
     if args.no_physics_profiler: process_settings.set_bool(profiler_setting,False)
     if args.physics_threads is not None:
         process_settings.set_int(thread_setting,args.physics_threads)
+    dispatcher=None
     try:
+        from .dispatcher_setting import DispatcherSetting
+        dispatcher=DispatcherSetting(process_settings,args.physics_dispatcher)
+        report['cpu_dispatcher']=dispatcher.apply()
         import numpy as np
         import omni.usd
         from pxr import Gf,Usd,UsdGeom,UsdPhysics,PhysxSchema
@@ -921,6 +927,7 @@ def main(argv=None):
                 or not np.isclose(report['effective_scene']['gravity_m_s2'],args.gravity,rtol=1e-6,atol=1e-8)):
             raise RuntimeError('Simulation initialization changed explicit scene configuration')
         sim.reset()
+        report['cpu_dispatcher_after_reset']=dispatcher.verify()
         if 'uniform_solver_iterations' in report:
             from .solver_configuration import verify_iterations
             verify_iterations(stage,report['uniform_solver_iterations'])
@@ -1117,6 +1124,13 @@ def main(argv=None):
         if args.physics_threads is not None:
             if previous_threads is None: process_settings.destroy_item(thread_setting)
             else: process_settings.set(thread_setting,previous_threads)
+        if dispatcher is not None:
+            try:dispatcher.close()
+            except Exception:
+                report.update(state='error',error='CPU dispatcher restoration failed: '+traceback.format_exc())
+                try:(output/'report.json').write_text(json.dumps(report,indent=2,allow_nan=False),encoding='utf-8')
+                finally:app.close(exit_code=2)
+                raise
         # Fast Kit shutdown otherwise exits with zero even after an exception.
         app.close(exit_code=report_exit_code(report,args))
 

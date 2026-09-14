@@ -127,6 +127,8 @@ def main(argv=None):
         help='Explicit bimanual grasp proposal 60..120 mm from attachment; all native clearance and retention checks remain')
     p.add_argument('--physics-threads',type=int,choices=(1,2,4,8),default=None,
         help='Controlled scheduler comparison; unchanged physics rate, solver, iterations and geometry')
+    p.add_argument('--physics-dispatcher',choices=('carb','physx'),default=None,
+        help='Explicit process-local CPU dispatcher comparison; unchanged physical profile')
     args=p.parse_args(argv)
     if args.process_zone_trial and args.historical_mounting_plate:
         p.error('Process-zone trial cannot use the historical mounting plate')
@@ -209,6 +211,7 @@ def main(argv=None):
         options+=['--blade-axial-aim-offset-m',str(args.blade_aim_offset_m)]
     if args.grasp_arc_m is not None:options+=['--grasp-arc-m',str(args.grasp_arc_m)]
     if args.physics_threads is not None:options+=['--physics-threads',str(args.physics_threads)]
+    if args.physics_dispatcher is not None:options+=['--physics-dispatcher',args.physics_dispatcher]
     if args.source_station_trial:
         from .source_station_trial import configure
         options=configure(options,args.source_station_trial)

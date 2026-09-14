@@ -8551,3 +8551,17 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   Conda and Isaac. Evidence: native369..374 report.json and
   regression_20260914_invariant_obstruction_v26.log under data/sim_physics.
 - A/C remain open; B's latest full physical pass is367. VLM remains paused.
+
+### 2026-09-14 continuation: explicit CPU scheduler comparison
+
+- Added optional `--physics-dispatcher carb|physx` to the owned native trial.
+  Default is unchanged. Sets only the process-local /physics/physxDispatcher
+  preference before scene parsing, verifies requested readback after reset and
+  restores the prior value (or absence) on exit. Restoration faults cannot be
+  published as successful trials. No solver/iteration/rate/contact/visual edits.
+- NVIDIA documents this scheduler setting in the [Omni Physics settings](https://docs.omniverse.nvidia.com/kit/docs/omni_physics/110.0/dev_guide/settings.html).
+  Configured readback is not a native scheduler getter or measured speed claim.
+  Native367 used carb/false; a fresh physx/true comparison is still required.
+-86 focused dispatcher/CLI/search/exit tests pass. Covers default no-write,
+  true/false/missing prior settings, lost readback and failed setter restoration.
+  This experimental switch is not a new qualified default or A/C completion.
