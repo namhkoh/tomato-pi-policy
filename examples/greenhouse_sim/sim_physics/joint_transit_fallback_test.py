@@ -56,3 +56,24 @@ def test_native_query_exception_restores_dispatch_and_propagates(monkeypatch):
     r,calls=setup(monkeypatch,full_result=RuntimeError('native epoch invalidated'))
     with pytest.raises(RuntimeError,match='epoch'):r._plan_cut([],np.zeros(7))
     assert len(calls)==1 and not r._joint_transit_proposal and r.plan is None
+
+
+def test_known_endpoint_ik_failure_does_not_repeat_useless_rigid_transits(monkeypatch):
+    import sim_physics.rigid_tool_screen as rigid
+    r,calls=setup(monkeypatch);solves=[];transits=[]
+    def solve(*a):
+        solves.append(1)
+        return S(succeeded=False,joint_degrees=np.zeros(7),evaluations=1,
+            position_error_m=.1,orientation_error_rad=.2)
+    r.solve_right_pose=solve
+    class Rigid:
+        def __init__(self,*a):pass
+        def check(self,path,*,stroke=True):
+            if not stroke:transits.append(1)
+            return dict(passed=True)
+    monkeypatch.setattr(rigid,'RigidToolScreen',Rigid)
+    with pytest.raises(RuntimeError,match='No bimanual'):r._plan_cut([],np.zeros(7))
+    attempts=r.plan_diagnostics['endpoint_attempts']
+    assert len(solves)==len(transits)==len(attempts)==50
+    assert all(a['rejection']=='endpoint_IK' for a in attempts)
+    assert not calls and r.plan is None

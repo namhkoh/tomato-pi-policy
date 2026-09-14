@@ -114,13 +114,17 @@ def screen_modes(screen,start,end):
     return tuple(allowed),evidence
 
 
-def try_modes(screen,start,end,accept,evidence):
+def try_modes(screen,start,end,accept,evidence,*,stop=None):
     """Lazily try FULL paths; a clear tool preview alone never stops search.
 
     Preserve every fallback after an arm/IK/stroke failure, but do not screen
     unused templates after one complete candidate has already passed.
+    An optional caller may stop after proving a shared prerequisite (such as
+    the identical endpoint IK) failed. This returns False, never clearance.
+    It does not skip any template after an ordinary full-path rejection.
     """
     for mode in MODES:
+        if stop is not None and stop():return False
         result=screen.check(frames(start,end,mode=mode),stroke=False)
         evidence[mode]=result
         if result['passed'] and accept(mode):return True

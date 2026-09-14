@@ -1472,3 +1472,11 @@ scene, full stroke and measured withdrawal guards remain. Native retention
 qualification still requires actual retained bilateral contact and bounded
 slip after cutting. Neither this option nor a static solver result proves a
 successful cut or retention. NOT a production-qualified faster demo default.
+
+The staged planner stops remaining nominal wrist templates only after the
+shared endpoint IK has actually failed. Previously each template could repeat
+rigid-sweep screening despite reusing that same failed solve. Ordinary full
+arm/path/stroke failures still try every fallback, and blocked rigid strokes
+still reject before IK. No native query/force/scene check is waived for a
+candidate that can proceed. Unit checks prove reduced redundant calls, not
+faster physical stepping; native planning latency remains to be measured.

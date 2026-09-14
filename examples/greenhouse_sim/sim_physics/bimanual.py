@@ -761,7 +761,12 @@ class BimanualRobot(FullRobotGripper):
                         candidate=(float(np.linalg.norm(np.asarray(solution.joint_degrees)-self.right)),
                             degrees,d,np.asarray(solution.joint_degrees),normal_sign,wing,normal)
                         return self._try_cut_candidate(left_q,centre,axis,candidate,tilt,failures)
-                    if try_modes(rigid_screen,start,desired,accept_mode,detail):
+                    # Every template has the SAME wrist endpoint and uses the
+                    # SAME cached solve result. Once that solve fails, further
+                    # tool-only sweeps cannot make accept_mode succeed. Keep
+                    # all alternatives after actual path/stroke rejection.
+                    if try_modes(rigid_screen,start,desired,accept_mode,detail,
+                            stop=lambda:solution is not None and not solution.succeeded):
                         self.plan['stroke_basis']=attempt['stroke_basis'];return
                     if getattr(self,'joint_transit_fallback',False):
                         # Cartesian template failure is not proof that no

@@ -3,6 +3,23 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 from sim_physics.wrist_transit import frames,screen_modes,try_modes,MODES,LIFT_OFFSETS,RETREAT_OFFSETS,GOAL_SIDE_OFFSETS
+
+
+def test_failed_shared_prerequisite_stops_without_claiming_clearance():
+    from types import SimpleNamespace as S
+    a,b=endpoints();calls=[];blocked=[False];evidence={}
+    def check(*a,**k):calls.append('screen');return dict(passed=True)
+    def accept(mode):calls.append('endpoint_failed');blocked[0]=True;return False
+    assert not try_modes(S(check=check),a,b,accept,evidence,stop=lambda:blocked[0])
+    assert calls==['screen','endpoint_failed'] and list(evidence)==[MODES[0]]
+
+
+def test_ordinary_path_failure_still_tries_every_fallback_with_stop_hook():
+    from types import SimpleNamespace as S
+    evidence={};accepted=[]
+    def accept(mode):accepted.append(mode);return False
+    assert not try_modes(S(check=lambda *a,**k:dict(passed=True)),*endpoints(),accept,evidence,stop=lambda:False)
+    assert accepted==list(MODES) and list(evidence)==list(MODES)
 from sim_physics.downward_cut import cartesian_transit
 
 

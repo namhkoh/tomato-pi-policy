@@ -8873,3 +8873,27 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   paged pool. Existing severe host memory pressure remains a timing confounder;
   no reboot, unrelated app shutdown or launch-reserve bypass. A/C remain open,
   milestone unfrozen; VLM/dataset/training/hardware untouched.
+
+### 2026-09-14 continued: prune redundant transit work after failed endpoint IK
+
+- Native414 repeats413's actual stable bilateral grasp, max slip18.651873um.
+  The explicit native-retention experiment records the failed static patch
+  and continues only to independent planning. It does NOT reach knife motion:
+  native static query wall budget expires; plan remains null and no cut occurs.
+  Planning68.387814s;18 endpoint candidates,8 IK attempts,0 converged. Nine
+  rigid-stroke rejections involve the two wrist-camera envelopes. No retention
+  or cut result exists for this experimental mode yet.
+- Found redundant staged-planner work: after one nominal wrist template called
+  the shared endpoint IK and it failed, remaining templates repeated expensive
+  rigid sweeps before consulting the same failed result. Added an optional
+  stop predicate to try_modes and bound it only to that known failed solve.
+  It returns failure, not clearance. Other paths still try every fallback;
+  rigid-stroke conflicts still reject before IK, so existing collision-order
+  safeguards remain. No change to source geometry, force/slip caps, blade
+  gates, templates, candidate order, IK guesses or physical timestep.
+-86 focused planner/transit/fallback tests pass in Isaac12.45s and Conda8.74s.
+  The new synthetic complete-planner case checks one sweep rather than all17
+  modes for each of50 failed endpoints. Full directory v36 before this change:
+  4957 passed in234.97s. Full v37 and physical native415 are pending.
+  Native415 repeats414 to assess actual search coverage/outcome, not to claim
+  native physics FPS improvement. A/C remain open; no full milestone freeze.
