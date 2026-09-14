@@ -21,7 +21,7 @@ qualified. Native472 is the visible direct-cut repetition. The user elected
 to defer broader A/B/C completion and move toward VLM after this demonstration;
 no training/data collection is authorized by a passing mechanism trial alone.
 
-Latest neutral-start checkpoint: native450 passes isolated direct cutting;
+Isolated neutral-start evidence: native450 passes isolated direct cutting;
 native454/455/456/460 pass isolated grasp/retained-separation/downward-cut/full-traversal/
 unloaded-withdrawal. The latter uses the default-OFF `--retained-separation-trial`:
 after native force-qualified release, the left hand moves its drive target 2 mm
@@ -37,14 +37,15 @@ deformation prediction; native contact/slip/tracking guards remain mandatory.
 Native454: release24.829s; reobserved separation28.863s (palm1.978mm,
 target2.531mm); full sharp-edge traversal40.356s; unloaded reverse74.008s;
 fresh final withdrawal check85s. Maximum grasp slip1.752mm, below3mm. All11
-existing gates pass, with separation separately verified.455/456 also include
-an explicit reobserved-separation gate (all12 pass). These are three repeats of
+existing gates pass, with separation separately verified.455/456/460 also include
+an explicit reobserved-separation gate (all12 pass). These are four repeats of
 one isolated case, not general reliability. The latest full suite has5222 passes.
 This does not establish
 general reliability, greenhouse access, calibrated tissue fracture or deposit.
 Native452/453 still reject greenhouse placement/access. Native454 RTF0.1753
 was measured with overlapping offline tests; it is NOT real-time performance.
-VLM collection/training remains paused pending the A/B/C milestone.
+At that checkpoint VLM work was paused pending A/B/C; the newer scoped
+demonstration decision is described above. A/B/C itself remains incomplete.
 
 Native456 includes corrected external blade-inspection cameras, centred on the
 fetched native wrist instead of its initial neutral pose. Robot D405 cameras are
