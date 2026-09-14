@@ -1369,3 +1369,27 @@ at6h; no full opposite-side campaign or approval is automatic. Planned outputs:
 `collection_batches/clear_capture_20260915_opposite_orbit_seed73_pilot_v1`.
 Log:`clear_opposite_orbit_pilots_queue_20260915_v1.log`. Native/visual qualification
 is still pending; these are static poses, not a validated aisle-crossing path.
+
+### 2026-09-15 06:05 KST fresh-data checkpoint
+
+Orbit job005(seed17) supplied nine strict candidates and job006(seed19) eight;
+all17 originals were individually inspected and accepted, using existing review
+crops where attachment detail needed closer inspection. No blade-clearance or
+physical safety approval is implied by these visibility reviews. Job007(seed23)
+finished as a verified zero-screened-viewpoint result and was skipped without
+relaxing admission checks. Job011(seed41) is collecting next.
+
+The NEW `collection_intake/clear_combined_20260915_checkpoint_v4` validates
+369 selected images with369 attributed accept records and no unreviewed newly
+selected image. Six holds remain excluded. Counts:train254/48/14,
+validation42/8/3, test73/11/3 (images/targets/families). Coverage still fails;
+this remains `draft_clear_cutpoint_not_for_training`. Evidence:
+`clear_combined_checkpoint_v4_20260915.log`. Individual reviewed-candidate totals
+are385 images,379 accepts/six holds before combined view capping; do not confuse
+these with the369 selected images.
+
+A separate second look at all six held original RGBs retained every hold,
+including the borderline fruit-adjacent example; it neither changed decisions
+nor increased unique review counts. This is the same assistant, not independent
+validation. Hash-bound notes:
+`diagnostics/clear_holds_secondary_20260915_v1.json`.
