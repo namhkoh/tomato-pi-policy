@@ -1270,3 +1270,29 @@ matched native reference. This is negative diagnostic evidence, not a global
 infeasibility claim. No near-mode native capture is qualified. The original
 campaign is complete and the queued seed53 orbit native pilot is now running;
 seed47 lean-oblique remains next. No larger alternate campaign has launched.
+
+### 2026-09-15 alternate native capture qualification
+
+The seed53 target-facing orbit pilot completed native capture with exit0 in
+587.79s. Its one image passed the native depth/identity audit, strict clear
+screen and individual original-RGB visual review. The exposed petiole joins its
+diagonal parent near(638,320); the nominal point(650,328) is connected to the
+query(728,350), away from the tomato below-left. Review attribution is assistant,
+not independent human or physical cutting approval. This is one newly represented
+training family, not proof that every orbit pose or family is suitable.
+
+Evidence: `collection_batches/clear_capture_20260915_orbit_pilot_v1`,
+`collection_intake/clear_orbit_pilot_20260915_v1`, and
+`dataset_reviews/clear_capture_20260915_orbit_v1/job_014_reviews.json` under
+`data/sim_data`. The original339-image curated draft/inspection ZIP is unchanged.
+The additional image has not yet been merged into a new aggregate release.
+
+A serial23-job orbit campaign is queued behind the still-running seed47
+lean-oblique pilot, omitting only the already captured seed53 job014. It requires
+the prior pilot to have a validated audited/empty outcome and no remaining Kit
+process before launch. Each worker retains the1800s bound, memory reserve,
+unchanged full greenhouse/mounted848x408 camera and native admission checks.
+Campaign: `collection_campaigns/clear_capture_20260915_orbit_v1`; log:
+`clear_capture_20260915_orbit_campaign_v1.log`. A separate non-approving intake
+watcher is queued at `collection_intake/clear_capture_20260915_orbit_v1`.
+There is no automatic visual acceptance, source/split mutation or training.

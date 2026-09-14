@@ -9856,3 +9856,10 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
  checkpoint (not training-ready) and passed real extracted-data portability/
  input-construction checks without Isaac/model weights. Native alternate pilots
  continue; exact paths, hashes and limitations are in `vlm_train_data.md`.
+
+- Alternate-view native qualification:seed53 orbit pilot exited0 and added one
+ strict, individually assistant-reviewed clear image from a previously missing
+ family. The339-image aggregate/inspection ZIP remains unchanged. A serial23-job
+ orbit campaign and non-approving intake are queued behind the running lean
+ pilot; all source, camera, quality, memory and split checks remain enabled.
+ See `vlm_train_data.md` for evidence and limits; no final training release yet.

@@ -239,7 +239,7 @@ before ONE final test evaluation, which requires explicit `--split test --allow-
 Compare crop versus full frame on identical cases; report extra image tokens/
 compute so a crop improvement is not portrayed as a free accuracy gain.
 
-## Alternate static viewpoints (native qualification pending)
+## Alternate static viewpoints (bounded native qualification)
 
 The close original-side campaign can reject an entire family when the head is
 too far away for legibility or the torso envelope intersects foliage. An empty
@@ -280,7 +280,10 @@ the position-only oblique proposals, root yaw can span80-280 degrees on the
 original side or -100 to100 degrees on the opposite side. The .30-.55m root
 radius, fixed camera mount, head joint limits and all floor/geometry/visibility
 screens remain checked. This is explicit static pose diversity, not a safe
-navigation route or physical balance claim. Native qualification is pending.
+navigation route or physical balance claim. A seed53 native pilot produced one
+strict, individually assistant-reviewed clear image (exit0,587.79s); this is
+single-family evidence, not a general yield guarantee. See `vlm_train_data.md`
+for active campaign status and immutable capture/review paths.
 
 `--near-clear` is a separate opt-in .20-.40m base-to-target X separation
 proposal. With oblique capture it requires `--orbit-clear` and uses the same
