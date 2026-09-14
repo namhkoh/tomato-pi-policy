@@ -72,6 +72,8 @@ def main(argv=None):
     p.add_argument('--source-station-trial',help='Explicit existing plant/SubStem_N; derive a new station and use SDK right ready, with fresh guards')
     p.add_argument('--target-row-slot',type=int,choices=(0,12,23),default=12,
         help='Explicit end-row target/backdrop swap; preserves original plant count and spacing')
+    p.add_argument('--target-planting-side',type=int,choices=(-1,1),default=1,
+        help='Existing negative/positive X planting slot, with the displaced original backdrop retained')
     p.add_argument('--approach-vector',type=float,nargs=3,default=None,
         help='Explicit bimanual grasp-side proposal; same anatomical shaft, new native IK/clearance qualification')
     p.add_argument('--grasp-roll',type=int,choices=(0,180),default=None,
@@ -139,6 +141,8 @@ def main(argv=None):
         p.error('Existing-source station trial requires the explicit process-zone profile')
     if args.target_row_slot!=12 and not (args.source_station_trial and args.greenhouse_trial):
         p.error('End-row swap requires an explicit existing-source station and intact greenhouse trial')
+    if args.target_planting_side!=1 and not (args.source_station_trial and args.greenhouse_trial):
+        p.error('Opposite planting side requires an explicit existing-source station and intact greenhouse trial')
     if args.approach_vector is not None and not (args.process_zone_trial and args.mode=='bimanual'):
         p.error('Grasp approach vector requires explicit bimanual process-zone trial')
     if (args.grasp_roll is not None or args.grasp_pitch is not None) and not (args.process_zone_trial and args.mode=='bimanual'):
@@ -220,6 +224,7 @@ def main(argv=None):
         from .source_station_trial import configure
         options=configure(options,args.source_station_trial)
     if args.target_row_slot!=12:options+=['--target-row-slot',str(args.target_row_slot)]
+    if args.target_planting_side!=1:options+=['--target-planting-side',str(args.target_planting_side)]
     if args.approach_vector is not None:options+=['--approach-vector',*map(str,args.approach_vector)]
     if args.grasp_roll is not None:options+=['--grasp-roll',str(args.grasp_roll)]
     if args.grasp_pitch is not None:options+=['--grasp-pitch',str(args.grasp_pitch)]

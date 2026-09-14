@@ -76,6 +76,8 @@ def parser():
     p.add_argument('--target',default='SubStem_41')
     p.add_argument('--target-row-slot',type=int,choices=(0,12,23),default=12,
         help='Swap target with an original end-row backdrop; retain all plants and original spacing')
+    p.add_argument('--target-planting-side',type=int,choices=(-1,1),default=1,
+        help='Select original negative/positive X gutter side; full context and fresh native qualification required')
     p.add_argument('--physics-hz',type=int,choices=(120,240,480,1920),default=240)
     p.add_argument('--cut-convergence-trial',action='store_true',
         help='Default-OFF isolated native-release comparison at480 Hz; same SI material/force limits and controller dwell durations, not production qualification')
@@ -340,6 +342,8 @@ def main(argv=None):
     greenhouse_trial=validate_greenhouse(args)
     if args.target_row_slot!=12 and not (args.scene=='package' and args.full_robot_probe and args.context_gutters):
         raise ValueError('End-row swap requires full package robot and preserved context planting')
+    if args.target_planting_side!=1 and not greenhouse_trial:
+        raise ValueError('Opposite planting side requires intact greenhouse cut trial')
     contact_scope=args.isolate_station or greenhouse_trial
     from .cut_only import validate_profile
     cut_only=validate_profile(args)
@@ -751,7 +755,7 @@ def main(argv=None):
                 raise RuntimeError('Cannot open supplied greenhouse')
             stage=context.get_stage();stage.SetEditTarget(stage.GetSessionLayer())
             record,height,scene_report=prepare(stage,DEFAULT_PACK,args.plant,sparse_backdrop=not args.context_gutters,
-                target_row_slot=args.target_row_slot)
+                target_row_slot=args.target_row_slot,target_planting_side=args.target_planting_side)
             report['greenhouse']=scene_report
             if args.rectilinear_floor_contacts:
                 from .floor_contacts import apply as apply_floor_contacts
@@ -871,7 +875,7 @@ def main(argv=None):
                 report['collision_window']=configure(stage,fixture,half_extent=args.physics_window_half_m)
             if args.context_gutters:
                 from .greenhouse_context import populate as populate_context
-                context_options=dict(target_row_slot=args.target_row_slot)
+                context_options=dict(target_row_slot=args.target_row_slot,target_planting_side=args.target_planting_side)
                 if greenhouse_trial:
                     # Match launch_sim_data.populate's ordered second detailed
                     # plant, not a lower-detail backdrop at the adjacent station.

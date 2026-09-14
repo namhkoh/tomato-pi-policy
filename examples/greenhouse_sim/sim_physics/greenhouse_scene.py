@@ -5,9 +5,12 @@ import numpy as np
 from pxr import Gf,Usd,UsdGeom,UsdLux,UsdPhysics
 
 
-def prepare(stage,package,plant,*,sparse_backdrop=True,target_row_slot=12):
-    from .planting_slots import target_y
+def prepare(stage,package,plant,*,sparse_backdrop=True,target_row_slot=12,target_planting_side=1):
+    from .planting_slots import target_y,validate_side
     row_y=target_y(target_row_slot)
+    validate_side(target_planting_side)
+    if target_planting_side!=1 and sparse_backdrop:
+        raise ValueError('Opposite planting side requires preserved full context')
     from launch_sim_data import load_local_payloads
     from sim_data.audit import audit_manifest
     from sim_data.geometry import assemble_plant
@@ -42,7 +45,7 @@ def prepare(stage,package,plant,*,sparse_backdrop=True,target_row_slot=12):
         paths=assemble_plant(stage,'/World/Plant',audit)
         # Exact foreground station used by launch_sim_data.populate. Neither
         # the gutter height nor the original plant geometry is changed.
-        position=np.array([cx+.195,row_y,.90])
+        position=np.array([cx+target_planting_side*.195,row_y,.90])
         UsdGeom.Xformable(stage.GetPrimAtPath('/World/Plant')).AddTranslateOp(opSuffix='greenhouseStation').Set(Gf.Vec3d(*position))
         # Distant context on the SAME gutter, with instanced supplied assets.
         # The near interaction area contains one detailed plant initially.
@@ -62,7 +65,8 @@ def prepare(stage,package,plant,*,sparse_backdrop=True,target_row_slot=12):
     record=dict(manifest_path=str(manifest),component_paths=paths,plant_root='/World/Plant')
     report=dict(scene=str(package/'house/green_house_base.usd'),selected_gutter=gutter,
         plant_position_world_m=position.tolist(),target_row_slot=target_row_slot,
-        placement='same_foreground_station_as_package_preview' if target_row_slot==12 else 'original_end_row_slot_swap_no_density_reduction',
+        target_planting_side=target_planting_side,
+        placement='same_foreground_station_as_package_preview' if target_row_slot==12 and target_planting_side==1 else 'original_planting_slot_swap_no_density_reduction',
         greenhouse_geometry_moved=False,gutters_in_asset=len(stations),
         detailed_plants=1,distant_instanced_plants=4 if sparse_backdrop else 0,near_neighbors='see_context_report' if not sparse_backdrop else 'not_yet_added',
         static_infrastructure_bodies=fixed_bodies,static_infrastructure_joints_disabled=disabled_joints,

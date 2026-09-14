@@ -27,9 +27,9 @@ def collision_prototype(asset):
     return stage,count
 
 
-def populate(stage,package,robot,rows=3,*,detailed_neighbor_manifest=None,target_row_slot=12):
-    from .planting_slots import validate,backdrop_source_slot
-    validate(target_row_slot)
+def populate(stage,package,robot,rows=3,*,detailed_neighbor_manifest=None,target_row_slot=12,target_planting_side=1):
+    from .planting_slots import validate,validate_side,backdrop_source_address
+    validate(target_row_slot);validate_side(target_planting_side)
     if rows not in (1,3,5): raise ValueError('Select 1, 3 or 5 context gutters')
     if robot.window is None: raise ValueError('Context requires a guarded fixed collision window')
     if stage.GetPrimAtPath('/World/PhysicsBackdrop'):
@@ -48,10 +48,12 @@ def populate(stage,package,robot,rows=3,*,detailed_neighbor_manifest=None,target
         for gi,(cx,_) in enumerate(selected):
             for side in (-1,1):
                 for i in range(24):
-                    source_slot=backdrop_source_slot(i,target_row_slot,
-                        target_side=bool(cx==stations[center][0] and side==1))
-                    if source_slot is None:continue
-                    asset=assets[(source_slot+gi*7+(5 if side>0 else 0))%len(assets)]
+                    address=backdrop_source_address(side,i,target_row_slot,
+                        target_planting_side=target_planting_side,
+                        selected_gutter=bool(cx==stations[center][0]))
+                    if address is None:continue
+                    source_side,source_slot=address
+                    asset=assets[(source_slot+gi*7+(5 if source_side>0 else 0))%len(assets)]
                     if asset not in bounds:
                         source=Usd.Stage.Open(str(asset))
                         bound=cache.ComputeWorldBound(source.GetDefaultPrim()).ComputeAlignedRange()
@@ -87,11 +89,12 @@ def populate(stage,package,robot,rows=3,*,detailed_neighbor_manifest=None,target
                         prim.GetPrim().GetReferences().AddReference(str(asset));far+=1
                     prim.GetPrim().SetInstanceable(True)
                     instances.append(dict(path=path,source=str(asset),position_m=pos.tolist(),
-                        static_contact=contact))
+                        static_contact=contact,original_backdrop_address=list(address)))
     # Keep anonymous referenced layers alive for the whole diagnostic.
     robot.context_layers=[v[0] for v in layers.values()]
     return dict(populated_gutters=len(selected),context_plants=near+far+detailed,
-        target_row_slot=target_row_slot,planting_asset_assignment='original' if target_row_slot==12 else 'detailed_target_and_existing_backdrop_swapped',
+        target_row_slot=target_row_slot,target_planting_side=target_planting_side,
+        planting_asset_assignment='original' if target_row_slot==12 and target_planting_side==1 else 'detailed_target_and_existing_backdrop_swapped',
         detailed_target_plants=1,detailed_neighbor_plants=detailed,static_contact_plants=near+detailed,render_only_distant_plants=far,
         source_layout='same_0.5m_spacing_and_two_sides_as_launch_sim_data.populate',
         compliance='selected_petiole_only_context_is_static',

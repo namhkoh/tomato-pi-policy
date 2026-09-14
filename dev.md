@@ -8674,3 +8674,35 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   must swap the same backdrop into the old target slot and keep all plants,
   spacing, source geometry and independent native checks. Not implemented or
   qualified by the results above. VLM/data/training remain paused.
+
+### 2026-09-14 continuation: original planting-side selection, no foliage removal
+
+- Native384 repeats379's frozen search with exact right-IK reuse:71 candidates
+  versus19 in the same45s budget;813 requests,194 solves and619 cache hits.
+  All1053 scene and71 robot final controls complete;3071 actual native queries.
+  Still no collision-free station or physics motion. This is useful search
+  coverage, not an A pass or faster physical simulation.
+- Implemented explicit --target-planting-side -1 (negative X) or1 (default
+  positive X), restricted to an intact greenhouse trial with an existing source.
+  The selected detailed plant occupies the ORIGINAL cx +/-195mm slot; no plant
+  rotation, gutter height, spacing or geometry changes. The exact displaced
+  backdrop, including its original side-dependent asset identity, occupies the
+  old (+X,row12) detailed-target slot. The detailed neighbor remains (+X,row13).
+  All other planting positions remain. Old station proposals cannot cross sides;
+  any accepted new proposal still requires full fresh native qualification.
+- Native385 confirms source71 at existing negative-X/end-row23 root
+  [-0.395,5.5,0.9]m. Its143 context plants plus detailed target have EXACTLY the
+  same144 world planting positions and source-asset multiplicities as376.
+  Native startup now rejects left arm5 versus the TARGET's Leaf034, rather
+  than the old opposite-row backdrop. No physical step/cut is authorized.
+  Native386's lower approach instead intersects target Leaf031 with the palm.
+  These are access failures, not reasons to remove the leaves or force a grasp.
+-79 focused side/layout/source/proposal tests pass in Conda (11.10s) and
+  Isaac (13.06s), including original package placement, immutable source layer,
+  all side/row permutations, exact displaced-asset identity, full context and
+  mode/proposal rejection. Full v31:4932 passed in251.45s. Source USDs, datasets,
+  reviews, splits, collection, training and hardware remain untouched.
+- Native387 tests the above-branch approach on that same intact planting side;
+  pending. Full-greenhouse A and responsiveness C remain OPEN. No full milestone
+  freeze or reliable-tissue-fracture claim; current cuts remain force-qualified
+  authored-joint release, not calibrated biological fracture.

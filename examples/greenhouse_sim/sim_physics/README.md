@@ -1396,3 +1396,18 @@ per station for the same left wrist frame, with all native endpoint/path checks
 and the same45s/global query budget. Never used for right-only parked arms.
 Native379 finds different elbows but no collision-free station for its source71
 case. A remains OPEN; this is not an executed grasp, cut or retention result.
+
+The expanded search now reuses only identical stock right-chain IK computations,
+with fixed parsed-model/torso/solver binding and fresh epoch checks. Native384
+checks71 candidates versus379's19 in45s, with619 exact IK hits; all native scene
+and robot final controls pass. It still finds no motion proposal. Collision and
+contact results are not inherited from this kinematic cache.
+
+`--target-planting-side -1` selects the original negative-X gutter slot; `1`
+remains the default. Requires `--source-station-trial` and `--greenhouse-trial`.
+Together with `--target-row-slot 0|12|23`, this swaps the detailed target with
+one existing backdrop, retaining that exact asset at the old target position.
+No density, source geometry, spacing or gutter-height reduction. The detailed
+neighbor stays in its original slot. Native385 verifies all144 positions and
+asset counts match the original-side trial; its proposed grasp still collides
+with a target leaf. Side selection is not proof of robot access or safe cutting.

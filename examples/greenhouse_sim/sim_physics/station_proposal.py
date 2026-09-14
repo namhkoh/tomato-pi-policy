@@ -27,6 +27,9 @@ def apply_to_arguments(args):
         raise ValueError('Station proposal task mismatch: parked-left strategy')
     if config.get('target_row_slot',12)!=getattr(args,'target_row_slot',12):
         raise ValueError('Station proposal task mismatch: original planting slot')
+    from .planting_slots import validate_side
+    if validate_side(config.get('target_planting_side',1))!=validate_side(getattr(args,'target_planting_side',1)):
+        raise ValueError('Station proposal task mismatch: original planting side')
     for key in ('approach_vector','approach_distance'):
         if config.get(key)!=getattr(args,key,None):
             raise ValueError('Station proposal task mismatch: '+key)
