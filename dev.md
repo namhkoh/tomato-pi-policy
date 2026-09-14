@@ -8770,3 +8770,52 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   Initial added negative test changed an overridden earlier argv occurrence;
   corrected test changes the effective last value and confirms pre-launch
   rejection. No application was started by that failing Conda test.
+- Native401 finds a native-clear above-branch grasp / withdrawn right waiting
+  proposal at world offset[0,-0.05,0.03]m from SDK ready, with final controls.
+  Native402 starts physics but stops at0.9s reobservation: the conservative
+  complete-current-target screen overlaps right ArcContacts/Part_11 with distal
+  Leaf006. This is a planning rejection, NOT a measured damaging contact or
+  a grasp. Native403's additional50mm wrist retreat/20mm lift fails IK before
+  native startup. None grants cut authority.
+- Full sim_physics directory v33 passes4913 tests in236.64s. Native404 is the
+  explicit96/0 greenhouse right-only comparison against378's128/0 recipe,
+  using the same physx dispatcher/four workers,480Hz and all original scene/
+  contact checks. Pending result; default remains128/0. It cannot qualify
+  bimanual retention or calibrated tissue fidelity even if its direct cut passes.
+
+### 2026-09-14 continued: waiting-pose clearance and measured gravity settling
+
+- Native404 completes all9 direct-cut gates at96/0,85 simulated seconds,
+  40800 steps and1275 renders. Tick wall498.997912s,RTF0.170341 versus
+  native378's484.901786s/0.175293 at128/0. No measured speed benefit; default
+  stays128/0. Cut at18.71875s,3438 edge contacts; passive debris peak3.476720N.
+  This is not exact numerical equivalence or bimanual qualification. Full A/B/C
+  was not finished by the requested noon KST deadline; no milestone freeze.
+- Native405's20mm wrist-axis retreat fails complete native startup: knife
+  ArcContacts/Part_10 versus original target Leaf006. No physical step.
+- Implemented improved explicit stopped waiting search: complete right-arm/tool
+  conservative5mm clearance from original resting target, no seam exception;
+  up to8 alternatives;10/20mm local refinement around native-clear coarse poses,
+  bounded120 candidate inventory and unchanged30s/final-control reserve. Each
+  keeps the original47-knot left self/inter-arm screen and whole native startup
+  query. No live movement, contact exclusions, source or force changes. Final
+  native-control failure revokes the entire proposed_waiting_poses list.
+- Native406 checks the24 coarse poses and returns the same401 proposal.
+  Native407 checks34 coarse/refined poses and finds4 waiting alternatives,
+  with final native controls. This is zero-motion search evidence only.
+- Read-only native402 trajectory comparison finds40.487094mm maximum body
+  centre displacement from first fetch to0.9s; body22 moves[-19.113,-7.334,
+  -34.930]mm and rotates. Knife edge moves only0.201789mm. The5mm rest margin
+  cannot certify this gravity settling. No hidden pose compensation or relaxed
+  moving-target screen was added. Native408's+10mm world-X alternative clears
+  startup but still stops at0.9s on BladePlateContact versus settled Leaf006.
+  Native409 tests the-20mm alternative with fresh physical checks; pending.
+-34 focused waiting/owner tests pass in Conda and Isaac, including source/pose
+  immutability, real shaft/leaf blocking, no waiting-seam exception, native
+  query requirement, multiple alternatives, stale epoch rejection and final
+  revocation. No claim that these unit tests prove physical retention or cuts.
+- Installed SimulationContext/PhysicsContext source confirms physics-only
+  ticks call native simulate directly (no per-tick app/render update), and
+  native404 already has Fabric/USD transform updates disabled. Neither a
+  presumed UI update nor enabling Fabric again is a demonstrated speed fix.
+  Full-greenhouse A and responsiveness C remain open; VLM/data/training paused.

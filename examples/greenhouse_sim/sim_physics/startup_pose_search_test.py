@@ -75,7 +75,15 @@ def test_cli_requires_complete_native_diagnostic_before_output_creation(tmp_path
     assert not out.exists()
 
 
-def test_approach_proposals_change_only_desired_initial_translation():
+def clear_waiting_target(monkeypatch):
+    from . import startup_pose_search
+    screen=S(check=lambda *a,**kw:True,last_failure=None)
+    monkeypatch.setattr(startup_pose_search,'waiting_target_screen',lambda r:screen)
+    return screen
+
+
+def test_approach_proposals_change_only_desired_initial_translation(monkeypatch):
+    clear_waiting_target(monkeypatch)
     from .startup_pose_search import search
     q=np.arange(7,dtype=float);requested=[];checks=[];guard_calls=[]
     def solve(arm,pose,seed,base,**kwargs):
@@ -95,7 +103,8 @@ def test_approach_proposals_change_only_desired_initial_translation():
     assert len(guard_calls)>=6
 
 
-def test_approach_search_never_accepts_self_collision():
+def test_approach_search_never_accepts_self_collision(monkeypatch):
+    clear_waiting_target(monkeypatch)
     from .startup_pose_search import approach_start_search
     q=np.zeros(7)
     robot=S(right=q,base=np.eye(4),initial_q=q,path_q=[q],
@@ -107,7 +116,8 @@ def test_approach_search_never_accepts_self_collision():
     assert out['maximum_translation_m']==pytest.approx(.2)
 
 
-def test_farther_waiting_proposal_still_gets_every_native_shape_check():
+def test_farther_waiting_proposal_still_gets_every_native_shape_check(monkeypatch):
+    clear_waiting_target(monkeypatch)
     from .startup_pose_search import approach_start_search
     q=np.zeros(7);poses=[];checks=[]
     def solve(arm,pose,seed,base,**kwargs):
@@ -120,7 +130,7 @@ def test_farther_waiting_proposal_still_gets_every_native_shape_check():
         assert shapes==['all'];checks.append(1);return dict(passed=len(checks)==17)
     out=approach_start_search(robot,S(check=check),lambda:None)
     assert out['proposed_wrist_offset_world_m']==[0.,0.,.08]
-    assert len(checks)==17 and out['physics_steps']==0
+    assert 24<len(checks)<=36 and out['physics_steps']==0
     assert not out['motion_authorized'] and out['original_spawn_unchanged']
     np.testing.assert_array_equal(robot.right,q)
 
@@ -158,3 +168,62 @@ def test_heading_profile_is_explicit_and_mutually_exclusive(tmp_path,monkeypatch
         '--process-zone-trial','--greenhouse-trial','--screen-tool-heading']
     with pytest.raises(Validated):main(args)
     with pytest.raises(SystemExit):main(args+['--screen-ready-pose'])
+
+
+def waiting_robot():
+    q=np.zeros(7)
+    return S(right=q.copy(),base=np.eye(4),initial_q=q.copy(),path_q=[q.copy()],
+        kin=S(forward=lambda *a:np.eye(4),solve_pose=lambda *a,**k:S(succeeded=True,joint_degrees=q.copy()),
+            inter_arm_clearance=lambda *a:S(clearance_m=.02)),
+        check_self=lambda *a:dict(passed=True),body_world=lambda *a:{},self_screen=S(shapes=['all']))
+
+
+def test_waiting_target_gap_is_required_before_native_query(monkeypatch):
+    from .startup_pose_search import approach_start_search
+    screen=clear_waiting_target(monkeypatch);calls=[]
+    def reject(world,**kwargs):
+        assert kwargs=={'margin':.005};calls.append(world);return False
+    screen.check=reject;screen.last_failure=dict(plant_collider='target_leaf')
+    out=approach_start_search(waiting_robot(),S(check=lambda *a:pytest.fail('Rejected target gap')),lambda:None)
+    assert len(calls)==24 and out['proposed_waiting_poses']==[]
+    assert out['proposed_right_ready_degrees'] is None
+    assert all(r['rejection']=='right_waiting_rest_target_margin' for r in out['candidates'])
+    assert not out['settled_scene_checked'] and not out['motion_authorized']
+
+
+def test_multiple_waiting_alternatives_keep_native_checks_and_bounded_inventory(monkeypatch):
+    from .startup_pose_search import approach_start_search
+    clear_waiting_target(monkeypatch);calls=[];r=waiting_robot();before=r.right.copy()
+    def check(world,shapes):
+        assert shapes==['all'];calls.append(1);return dict(passed=True)
+    out=approach_start_search(r,S(check=check),lambda:None)
+    assert len(calls)==len(out['proposed_waiting_poses'])==out['maximum_proposals']==8
+    assert out['proposed_right_ready_degrees']==out['proposed_waiting_poses'][0]['right_ready_degrees']
+    assert out['rest_target_margin_m']==.005 and out['relaunch_required']
+    assert not out['whole_path_certified'] and not out['grasp_or_cut_verified']
+    np.testing.assert_array_equal(r.right,before)
+
+
+def test_waiting_target_uses_unchanged_rest_geometry_and_no_seam_exception():
+    from .held_plant_screen_test import fixture
+    from .startup_pose_search import waiting_target_screen
+    original,rig,world=fixture('box',blade=True)
+    before=rig.stage.GetRootLayer().ExportToString();frames=rig.rest_frames.copy()
+    r=S(rig=rig,self_screen=S(shapes=original.shapes),knife=S(collider=original.blade_path))
+    screen=waiting_target_screen(r)
+    assert not screen.check(world,margin=.005)  # Original leaf is still present.
+    world['ee_right'][0,3]=-.1
+    assert not screen.check(world,margin=.005)  # No waiting-tool/shaft exception.
+    assert screen.workspace is None and screen.static==[]
+    assert rig.stage.GetRootLayer().ExportToString()==before
+    np.testing.assert_array_equal(rig.rest_frames,frames)
+
+
+def test_waiting_search_guard_failure_never_returns_alternatives(monkeypatch):
+    from .startup_pose_search import approach_start_search
+    clear_waiting_target(monkeypatch);calls=[]
+    def guard():
+        calls.append(1)
+        if len(calls)>7:raise RuntimeError('stale epoch')
+    with pytest.raises(RuntimeError,match='stale epoch'):
+        approach_start_search(waiting_robot(),S(check=lambda *a:dict(passed=True)),guard)

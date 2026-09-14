@@ -117,8 +117,10 @@ def test_failed_final_controls_revoke_every_grasp_proposal(monkeypatch):
     args,state=fixture();args[1].startup_right_pose_search=True
     def search(*unused):
         state.missing='/World/Plant/collider'
-        return dict(proposed_grasp={'left':[1]*7},proposed_grasps=[{'left':[1]*7}])
+        return dict(proposed_grasp={'left':[1]*7},proposed_grasps=[{'left':[1]*7}],
+            proposed_waiting_poses=[{'right_ready_degrees':[2]*7}])
     monkeypatch.setattr(startup_pose_search,'search',search)
     result=_screen(*args);out=result['right_pose_search']
     assert out['proposed_grasp'] is None and out['proposed_grasps'] is None
+    assert out['proposed_waiting_poses'] is None
     assert not out['final_native_controls_passed'] and not result['passed']

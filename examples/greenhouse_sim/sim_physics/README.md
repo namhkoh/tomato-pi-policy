@@ -1431,3 +1431,19 @@ plant receive96/0 instead of128/0, while480Hz, all original contact/visual
 geometry and every force/slip/retention/cut gate stay unchanged. A full native
 matched outcome and accuracy/performance comparison is required before any
 adoption. Merely passing CLI/readback tests establishes no fidelity equivalence.
+
+Native404 completes all9 direct-cut gates at96/0, but takes498.998s for85s
+of simulation versus378's484.902s at128/0. No speed benefit was measured;
+default128/0 remains unchanged. This does not qualify bimanual96/0 behavior.
+
+The explicit `--screen-approach-start` search now checks a5mm conservative
+rest-target margin for the whole waiting right arm/tool, without seam contact
+exceptions. It returns up to8 `proposed_waiting_poses`, retaining the first
+proposal's legacy fields. If coarse poses yield fewer options, bounded10/20mm
+translations around native-clear coarse poses receive the same checks. The
+30s deadline, original source geometry, all native actors and final validation
+remain mandatory. These are INITIAL-pose proposals, never live commands.
+All proposed fields are revoked on failed final controls. The margin is not
+a deformation prediction: native402 records approximately40mm distal plant
+movement during its initial0.9s. Moving-scene reobservation remains essential.
+Native407 finds4 zero-motion alternatives; none is a physical grasp/cut pass.

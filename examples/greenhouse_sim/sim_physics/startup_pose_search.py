@@ -72,6 +72,20 @@ def search(robot,backend,guard):
         motion_authorized=False,whole_path_certified=False,grasp_or_cut_verified=False)
 
 
+def waiting_target_screen(robot):
+    """Conservative rest-target clearance, NOT a settled-scene certificate.
+
+    Keep the whole right arm/tool away from the intended compliant target
+    while the left arm approaches. No contact exceptions apply while waiting.
+    A 5 mm proposal margin does not bound deformation; live reobservation and
+    all native contact guards must still pass on a fresh physical launch.
+    """
+    from .held_plant_screen import HeldPlantScreen
+    screen=HeldPlantScreen(robot.rig,robot.self_screen.shapes,robot.knife.collider)
+    screen.snapshot(np.array(robot.rig.rest_frames,float,copy=True))
+    return screen
+
+
 def approach_start_search(robot,backend,guard):
     """Bounded higher/lateral waiting poses; no teleport or path authorization.
 
@@ -90,8 +104,24 @@ must still plan and verify the entire right approach and cutting sequence.
     # must clear every original shape and are NEVER commands on a live robot.
     offsets += [(0.,0.,z) for z in (.08,.12,.16,.20)]
     offsets += [(x,y,.06) for x,y in ((.10,0.),(-.10,0.),(0.,.10),(0.,-.10))]
-    started=time.monotonic();rows=[];candidate=None;selected=None
-    for offset in offsets:
+    # Refine around native-clear coarse stations if fewer than eight choices
+    # survive. Coarse IK can miss narrow safe waiting regions between leaves.
+    # Candidates remain initial poses, never a live retreat or a sag prediction.
+    coarse_count=len(offsets);refined=False
+    started=time.monotonic();rows=[];proposals=[]
+    guard();target_screen=waiting_target_screen(robot);guard()
+    index=0
+    while True:
+        if index==coarse_count and not refined:
+            refined=True;seen={tuple(np.round(o,9)) for o in offsets}
+            for proposal in list(proposals):
+                centre=np.array(proposal['wrist_offset_world_m'])
+                for distance in (.01,.02):
+                    for delta in np.r_[np.eye(3),-np.eye(3)]*distance:
+                        value=tuple(np.round(centre+delta,9))
+                        if value not in seen:offsets.append(value);seen.add(value)
+        if index>=len(offsets):break
+        offset=offsets[index];index+=1
         guard()
         if time.monotonic()-started>=30:break
         desired=base_pose.copy();desired[:3,3]+=offset
@@ -110,14 +140,28 @@ must still plan and verify the entire right approach and cutting sequence.
                 row.update(rejection='left_self_path',interarm_m=float(clearance),self_screen=check);break
         else:
             row['left_self_path_clear']=True
-            geometry=backend.check(robot.body_world(robot.initial_q,q),robot.self_screen.shapes)
-            row['native_startup_geometry']=geometry;row['native_startup_clear']=geometry['passed'] is True
-            if geometry['passed']:
-                candidate=q.tolist();selected=list(offset);break
+            world=robot.body_world(robot.initial_q,q)
+            target_clear=target_screen.check(world,margin=.005)
+            row['rest_target_clearance']=dict(passed=bool(target_clear),margin_m=.005,
+                failure=target_screen.last_failure,native_contact_verified=False,
+                settled_scene_checked=False)
+            if not target_clear:row['rejection']='right_waiting_rest_target_margin'
+            else:
+                guard()
+                geometry=backend.check(world,robot.self_screen.shapes)
+                row['native_startup_geometry']=geometry;row['native_startup_clear']=geometry['passed'] is True
+                if geometry['passed']:
+                    proposals.append(dict(right_ready_degrees=q.tolist(),wrist_offset_world_m=list(offset)))
+                    if len(proposals)>=8:break
     guard()
-    return dict(model='frozen_native_approach_start_search_v1',candidates=rows,
-        proposed_right_ready_degrees=candidate,proposed_wrist_offset_world_m=selected,
+    first=proposals[0] if proposals else {}
+    return dict(model='frozen_native_approach_start_search_v2',candidates=rows,
+        proposed_right_ready_degrees=first.get('right_ready_degrees'),
+        proposed_wrist_offset_world_m=first.get('wrist_offset_world_m'),
+        proposed_waiting_poses=proposals,maximum_proposals=8,
+        rest_target_margin_m=.005,settled_scene_checked=False,
         maximum_candidates=len(offsets),maximum_translation_m=max(float(np.linalg.norm(o)) for o in offsets),
+        maximum_candidate_bound=120,coarse_candidates=coarse_count,local_refinement_added=refined,
         original_spawn_unchanged=True,orientation_changed=False,relaunch_required=True,
         physics_steps=0,motion_authorized=False,whole_path_certified=False,grasp_or_cut_verified=False)
 
