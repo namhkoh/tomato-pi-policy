@@ -241,6 +241,13 @@ compute so a crop improvement is not portrayed as a free accuracy gain.
 
 ## Alternate static viewpoints (bounded native qualification)
 
+Local collection controllers MUST run with Isaac's own Python bootstrap, e.g.
+`D:/isaac-sim-6.0.1/python.bat -m sim_data.clear_collection_campaign ...`, not
+conda/system Python: isolated workers inherit `sys.executable`. Plan generation,
+non-approving intake and portable H200 data validation do not start Isaac and
+may use the ordinary data environment. A failed launch must retain its directory
+and exit evidence; use a new output for a corrected launch, never overwrite it.
+
 The close original-side campaign can reject an entire family when the head is
 too far away for legibility or the torso envelope intersects foliage. An empty
 family is not a reason to disable the geometry or visibility checks.
@@ -264,6 +271,8 @@ Additional opt-in `--lean-clear` proposes 5-30 degree forward torso lean by
 setting torso_3 to bend+lean, with the same exact URDF/head/floor/scene checks.
 The camera stays fixed to its real bracket. It can combine with oblique views;
 it does not validate dynamic balance, self-collision or transit motions.
+A seed47 lean-oblique native pilot produced two strict, individually assistant-
+reviewed images (exit0,687.08s). Larger-family yield remains unmeasured.
 `clear_geometry_probe` uses Isaac's USD build without SimulationApp/rendering
 to diagnose proposals; its original decisions must match a completed native
 reference before alternate modes are evaluated. It cannot approve training data.

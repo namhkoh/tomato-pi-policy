@@ -1296,3 +1296,19 @@ Campaign: `collection_campaigns/clear_capture_20260915_orbit_v1`; log:
 `clear_capture_20260915_orbit_campaign_v1.log`. A separate non-approving intake
 watcher is queued at `collection_intake/clear_capture_20260915_orbit_v1`.
 There is no automatic visual acceptance, source/split mutation or training.
+
+The lean-oblique seed47 pilot subsequently exited0 in687.08s. Both original
+RGBs passed the strict screen and individual assistant review; the petiole-parent
+junction is exposed in both, at nominal(302,290) and(712,147). New reviews are in
+`dataset_reviews/clear_capture_20260915_lean_oblique_v1/job_013_reviews.json`.
+These two images and the seed53 image remain separate from the339-image aggregate.
+
+The first orbit campaign launch used the wrong controller interpreter (conda);
+its first child stopped before rendering with `ModuleNotFoundError: isaacsim`.
+No samples were accepted, and the stopped campaign/intake v1 directories and
+exit receipts are preserved. The corrected launch explicitly uses
+`D:/isaac-sim-6.0.1/python.bat -m sim_data.clear_collection_campaign`, because
+workers inherit `sys.executable`. The active replacement is
+`collection_campaigns/clear_capture_20260915_orbit_v2`, with non-approving intake
+at `collection_intake/clear_capture_20260915_orbit_v2`; logs have matching v2
+suffixes. No memory/geometry checks were bypassed and no source dataset changed.
