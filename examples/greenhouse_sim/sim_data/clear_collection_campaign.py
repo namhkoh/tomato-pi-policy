@@ -25,17 +25,29 @@ def outcome(result,batch):
     return 'failure'
 
 
-def run(plan_path,output,*,timeout=3600):
+def selected_jobs(plan,job_ids=None):
+    jobs=plan['jobs']
+    if job_ids is not None:
+        known={j['job_id'] for j in jobs}
+        require(isinstance(job_ids,(list,tuple)) and job_ids and len(set(job_ids))==len(job_ids) and
+                set(job_ids)<=known,'Explicit unique known job subset required')
+        jobs=[j for j in jobs if j['job_id'] in job_ids]
+    return sorted(jobs,key=lambda j:(j['split']!='train',j['job_id']))
+
+
+def run(plan_path,output,*,timeout=3600,job_ids=None):
     plan_path,output=Path(plan_path).resolve(),Path(output).resolve();plan,_=load_plan(plan_path)
+    jobs=selected_jobs(plan,job_ids)
     require(plan['configuration'].get('clear_capture')=='robot_head_close_diffuse_v1','Only the explicit clear-capture plan')
     require(not output.exists() and not output.is_relative_to(Path(plan['package'])),'New campaign outside sources required')
     require(type(timeout) is int and 60<=timeout<=14400,'Invalid timeout')
     output.mkdir(parents=True);digest=sha256(plan_path)
     write_json(output/'request.json',dict(plan=str(plan_path),plan_sha256=digest,workers=1,timeout_s=timeout,
-        native_depth_required=True,automatic_retries=False,source_geometry_changes=False,training_started=False))
+        native_depth_required=True,automatic_retries=False,source_geometry_changes=False,training_started=False,
+        selected_jobs=[j['job_id'] for j in jobs],full_plan_job_count=len(plan['jobs'])))
     records=[];state='running'
     try:
-        for job in sorted(plan['jobs'],key=lambda j:(j['split']!='train',j['job_id'])):
+        for job in jobs:
             require(sha256(plan_path)==digest,'Plan changed')
             require(shutil.disk_usage(output).free>=40*2**30,'Insufficient disk reserve; no deletion or launch')
             batch=output/job['job_id']
@@ -61,7 +73,8 @@ def run(plan_path,output,*,timeout=3600):
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--plan',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True);p.add_argument('--timeout',type=int,default=3600)
-    a=p.parse_args(argv);run(a.plan,a.output,timeout=a.timeout)
+    p.add_argument('--jobs',nargs='+',help='Explicit existing job IDs only; omissions do not change source plan/splits or count as collected')
+    a=p.parse_args(argv);run(a.plan,a.output,timeout=a.timeout,job_ids=a.jobs)
 
 
 if __name__=='__main__':main()

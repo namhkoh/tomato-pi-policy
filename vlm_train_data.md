@@ -1160,3 +1160,17 @@ Replacement queue `clear_replacement_pilots_queue_20260915_v1.log` waits for the
 original campaign's success and zero Kit processes, then tests seed53 orbit
 and seed47 lean-oblique sequentially, with the existing memory/exit/audit guards.
 Neither pilot nor any scaled alternate campaign is yet native-qualified.
+
+Additional checkpoint: the first seed31 test capture completed with53 native
+frames and31 strict candidates (visual review in progress). Through this job:
+472 raw /300 strict candidates;269 individually reviewed so far with265 accepts
+and4 holds. These are incomplete per-job counts, not a released training set.
+No model was evaluated on these held-out images. Collection continues.
+
+`clear_collection_campaign --jobs` can select explicit unique existing job IDs
+without modifying the frozen source plan. It preserves train-first ordering,
+records omitted versus selected jobs, and does not count omitted jobs as
+collected. This avoids recapturing an already-qualified pilot when scaling an
+alternate viewpoint campaign; no alternate scale-up has been launched yet.
+Full data regression696 tests +47 subtests passed in47.13s
+(`data/sim_data/clear_regression_20260915_v10.log`).

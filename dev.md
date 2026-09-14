@@ -9830,3 +9830,9 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   and native qualification pending. Full data regression691 +47 subtests passed.
   Replaced only3 still-waiting assistant pilot queues; active native collection
   was untouched. See `vlm_train_data.md` for exact provenance and limitations.
+
+- Subsequent collection checkpoint:472 fresh native frames /300 strict
+  candidates through seed31;269 visually reviewed (265 accepts/4 holds), with
+  test-family review ongoing. No final coverage/ZIP claim. Added explicit
+  campaign job subsets to avoid duplicate pilot capture without changing
+  source plans/splits. Full data tests696 +47 subtests passed in47.13s.
