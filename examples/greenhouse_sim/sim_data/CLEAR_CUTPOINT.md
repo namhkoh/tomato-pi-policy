@@ -8,6 +8,11 @@ not autonomous target selection, metric XYZ, occlusion reasoning or robot action
 Higher-resolution native capture is a separate qualification path; this existing
 848x408 release contract has not changed. See [NATIVE_RESOLUTION.md](NATIVE_RESOLUTION.md).
 
+The user now requires **20,000 training images plus held-out sets**. This file's
+small qualification gates are not that final milestone. See
+[CLEAR_SCALE_20K.md](CLEAR_SCALE_20K.md) for measured capacity and the proposed
+generator-based expansion; existing release manifests are not rewritten.
+
 ## Fixed task and candidate rules
 
 - Source for the new dataset: independently audited fresh native captures,

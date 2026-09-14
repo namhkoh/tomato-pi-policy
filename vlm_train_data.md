@@ -1580,3 +1580,58 @@ Evidence:`data/sim_data/clear_combined_checkpoint_v9_20260915.log`;
 review:`data/sim_data/collection_intake/clear_combined_20260915_checkpoint_v9/review/index.html`.
 No final training ZIP, training run or model download is claimed. The prior
 369-image inspection-only ZIP remains separate from training readiness.
+
+### 2026-09-15 07:50 KST confirmed20k TRAINING requirement and generator assessment
+
+User confirmed **at least20,000 training images plus separate held-out sets**.
+The exact held-out sizes were not specified;2,000 validation/2,000 test is a
+working proposal. Original counts/splits/review decisions and the small
+`clear_cutpoint_v1` qualification gates remain unchanged. That old qualification
+release must not be presented as fulfillment of this new20k milestone.
+
+Added read-only`clear_scale_capacity.py` and21 tests. It checks recorded target
+identities/counts and computes capacity without importing Isaac, changing
+collection or approving data. The confirmed-goal report is NEW
+`data/sim_data/diagnostics/clear_20k_capacity_20260915_v2.json`; v1 preserves the
+earlier pre-clarification scenarios. Source plan SHA256:
+`0fb6409073ada123e52af73620886d622a2f63f493a04d34962b999b98957f21`.
+These are recorded-plan counts, not a fresh native visibility/geometry audit.
+
+The active schedule has297 targets across24 families, at most3,564 images under
+the12-view cap. Training alone:198 scheduled targets/max2,376 images.
+All recorded anatomical candidates:870 overall/max10,440 images;584 in training/
+max7,008 images. The latter includes out-of-band/unverified candidates and is an
+optimistic upper bound.20k training needs at least1,667 training target geometries,
+i.e.1,083 beyond all recorded training-family candidates, before rejections.
+Higher resolution, repeated shards, crop copies or new IDs for cloned branches
+do not remove this diversity limit.
+
+User asked whether we can create a generator because the original is unavailable.
+Inspected the package README, seed101 component manifest, `candidate_branches.py`,
+`audit.py`, `cut_regions.py`, collection/split code and H200 recommendations.
+The assets include meshes/materials, topology, attachments, axes and capsule
+centerlines/radii; manifests identify generator1.1.0 and some physical constants,
+but not its full morphology/growth algorithm. Existing branch-preview code is
+limited to three recipes on each of two plants. A new parametric component
+generator is feasible in principle, but not already implemented or botanically
+validated. The current manifest audit accepts translation only, so generated
+mesh transforms and anatomical metadata must be updated together.
+
+Design/acceptance plan:`examples/greenhouse_sim/sim_data/CLEAR_SCALE_20K.md`.
+Proposed20-layout/100?200-native-view pilot before scaling. New junction geometry,
+consistent rendered/label geometry, protected structures, donor lineage,
+morphology deduplication, immutable original splits, and full-greenhouse native
+sensing are required. Generated-layout counts are separate from original donor
+families; no claim that random seeds create independent real plants. Source
+distribution fitting should use training assets, with original held-outs retained
+as a separate transfer check. A larger review policy and20k export profile must
+be explicit; no automatic acceptance of unseen images or gate weakening.
+
+Validation:`data/sim_data/clear_regression_20260915_v17.log` records
+**827 tests plus47 subtests passed in49.52s**.
+No generator assets, new collection campaign, model download or training was
+started in this assessment. Existing serial collection advanced to held-out
+job004; the native higher-resolution pair remains queued behind existing jobs.
+The most recent individually reviewed/validated checkpoint remains419 images
+(304 train/42 validation/73 test), still a draft. Code additions do not alter the
+168 existing code hashes pinned by that native pilot.
