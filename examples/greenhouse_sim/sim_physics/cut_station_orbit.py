@@ -139,6 +139,8 @@ def search(robot,backend,guard):
     right_seeds=[robot.right]
     if not np.array_equal(robot.right,ready):right_seeds.append(ready)
     rows=[];proposal=None;began=time.monotonic();expired=False;query_limited=False
+    from .frozen_pose_solver import FrozenRightPoseSolver
+    right_solver=FrozenRightPoseSolver(robot.kin,guard,enabled=expanded_left)
     def native_check(candidate,left,right):
         nonlocal expired,query_limited
         world=candidate.body_world(left,right)
@@ -192,8 +194,7 @@ def search(robot,backend,guard):
             if not check_time():expired=True;break
             attempt=dict(cut_plane_normal_sign=sign,waiting_offset_world_m=offset.tolist())
             row['right_attempts'].append(attempt)
-            solved=robot.kin.solve_pose('right',waiting,seed,base,
-                maximum_evaluations=200,joint_limit_margin_degrees=3.)
+            solved=right_solver.solve(waiting,seed,base)
             if not solved.succeeded:attempt['rejection']='raised_waiting_ik';continue
             rq=np.asarray(solved.joint_degrees)
             if not candidate.check_self(lq,rq)['passed']:
@@ -209,8 +210,7 @@ def search(robot,backend,guard):
                     break
                 continue
             row['native_startup_clear']=True
-            endpoint=robot.kin.solve_pose('right',entry,rq,base,
-                maximum_evaluations=200,joint_limit_margin_degrees=3.)
+            endpoint=right_solver.solve(entry,rq,base)
             if not endpoint.succeeded:attempt['rejection']='entry_ik';continue
             eq=np.asarray(endpoint.joint_degrees)
             from .downward_cut import arm_extension
@@ -253,6 +253,7 @@ def search(robot,backend,guard):
         maximum_candidates=(315 if reference else 295)*len(left_seeds),
         maximum_base_stations=315 if reference else 295,
         expanded_left_seed_search=expanded_left,left_seed_candidates=len(left_seeds),
+        right_ik_reuse=right_solver.receipt(),
         reference_local_seed_search=reference,
         expanded_waiting_pose_search=expanded_waiting,
         waiting_pose_candidates_per_frame=12 if expanded_waiting else 1,

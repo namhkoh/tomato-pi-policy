@@ -8644,3 +8644,33 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   robot final controls complete, no physics motion. Native381 searches the
   alternate approach direction with left-elbow seeds; its result is pending.
   A/C are not frozen or complete; VLM work remains paused.
+
+### 2026-09-14 continuation: reuse identical IK without reusing clearance
+
+- Native381's alternate source41 approach/elbow search finds no complete
+  native station in45.047s. Native382's horizontal pad proposal is rejected
+  at the left palm by original SubStem39/Leaf013 and shaft geometry. Native383
+  moves the base farther out and leans the torso30deg; left arm3 still hits
+  the original Leaf017. None moves or changes foliage/force limits.
+- Implemented bounded exact right-arm IK reuse only for the optional frozen
+  left-elbow search. Original solver methods, complete parsed right-chain
+  transforms/axes/ancestry, limits and torso are bound; any model/epoch change
+  revokes reuse. Exact base/goal/seed inputs key up to128 immutable IK results,
+  including failed IK attempts. No native clearance, self/inter-arm outcome,
+  contact or motion authorization is cached. Every candidate retains those
+  checks, the45s deadline and final native controls. Unknown/custom IK objects
+  do not use this optimization; default non-expanded search stays uncached.
+- A24-request helper comparison takes2.633323s uncached versus0.403211s with
+  4 actual solves/20 exact hits. All result fields match exactly. This measures
+  repeated IK only, NOT simulator dynamics, native collision latency or A/C.
+  Evidence: data/sim_physics/frozen_right_ik_helper_20260914_v1.log.
+-58 focused tests pass in both Conda and Isaac. Full regression v30:4910
+  passed in237.23s. Includes model/torso/axis/limit/method mutation, stale epoch,
+  mid-solve changes, nonfinite input, saturation, exact results and mode guards.
+  Native384 is the original379 scene/search repeated with this reuse; pending.
+- Work continues on original authored planting-slot selection. Current code
+  fixes the detailed target to the positive-X gutter side; opposite-facing
+  petioles can point into the other row. Selecting an existing negative-X slot
+  must swap the same backdrop into the old target slot and keep all plants,
+  spacing, source geometry and independent native checks. Not implemented or
+  qualified by the results above. VLM/data/training remain paused.
