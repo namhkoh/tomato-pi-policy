@@ -171,7 +171,21 @@ class BimanualRobot(FullRobotGripper):
         super().plan_approach()
         # The parent also calls this before the cached screen is constructed.
         # Later gravity-settled replans must receive the same screening.
-        if hasattr(self,'self_screen'): self.check_grasp_path()
+        if hasattr(self,'self_screen'):
+            from .grasp_path_replan import GraspPathSelfCollision,replan
+            self.grasp_elbow_replan=None
+            try:self.check_grasp_path()
+            except GraspPathSelfCollision as fault:
+                if fault.path_index==0:raise  # Never repair an already-invalid starting pose.
+                # A nominal seed is not a proof that no elbow can realize the
+                # SAME reobserved wrist path. Publish only a fully checked
+                # continuous alternative. The caller's current plant/native
+                # corridor screen still follows, before any arm motion.
+                fractions,path,receipt=replan(self)
+                self.fractions=fractions;self.path_q=path
+                self.minimum_interarm=receipt['minimum_interarm_m']
+                self.grasp_elbow_replan=receipt
+                self.check_grasp_path()
 
     def refresh_grasp_goal(self,frames):
         if getattr(self,'force_closure_enabled',False):
@@ -184,11 +198,12 @@ class BimanualRobot(FullRobotGripper):
         self.live_grasp_placement=finger_seam_clearance(self.stage,self.root,self.goal,centre,axis)
 
     def check_grasp_path(self):
+        from .grasp_path_replan import GraspPathSelfCollision
         minimum=float('inf')
         for index,q in enumerate(self.path_q):
             result=self.check_self(q,self.right)
             if not result['passed']:
-                raise RuntimeError(f'Pregrasp self-collision screen at path index {index}: '+str(result))
+                raise GraspPathSelfCollision(f'Pregrasp self-collision screen at path index {index}: '+str(result),index=index)
             minimum=min(minimum,result['minimum_clearance_m'])
         self.minimum_grasp_self_clearance=minimum
 
@@ -1091,6 +1106,7 @@ class BimanualRobot(FullRobotGripper):
             finger_target_antiwindup=getattr(self,'finger_target_antiwindup',False),
             retention_preload=self.retention_preload,symmetric_finger_closure=self.symmetric_finger_closure,
             live_grasp_placement=getattr(self,'live_grasp_placement',None),
+            grasp_elbow_replan=getattr(self,'grasp_elbow_replan',None),
             cut_model=getattr(self,'cut_model',LEGACY_CUT_MODEL),
             cut_model_class='measured_contact_seam_failure_not_calibrated_tissue_cutting')
         if self.plan is not None:

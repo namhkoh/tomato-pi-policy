@@ -9023,3 +9023,28 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
 -25 public-launcher tests pass in Isaac0.41s. Full v41:4993 passed in256.59s.
   Grasp-plus-release is measured in418/419, but full greenhouse A and overall
   responsiveness C remain OPEN. No freeze, dataset collection or VLM training.
+
+### 2026-09-14 continued: settled left-wrist path, bounded elbow replanning
+
+- Native425 rejects the above-shaft160mm proposal after0.9s settling: nominal
+  left-arm1/torso5 clearance2.803051mm is below the unchanged3mm self margin.
+  No arm approach or cut was executed. A clear frozen initial configuration
+  does not certify the gravity-settled path.
+- Added bounded local redundant-IK replanning only for a valid self-screen
+  rejection after the initial knot. The measured starting joint vector and
+  desired wrist path are preserved. All proposed transitions include interior
+  samples, at most0.5-degree joint increments,0.5mm wrist-position error and
+ 0.005rad orientation error, with original self/inter-arm limits. No partial
+  path is published on failure; the complete current plant/native corridor
+  screen still follows before motion. Invalid starting poses and query errors
+  retain their original refusal; this does not authorize plant contact.
+- Native426 clears the torso conflict in3.284480s (97 path points,245 checks,
+ 102 alternative poses), then correctly stops at approach fraction0.35 for
+  the target branch's own Leaf_000 versus left finger2. No actual grasp/cut in
+  this run. Distal retention and full greenhouse A remain unverified.
+-155 focused tests passed in both interpreters before the final initial-knot
+  guard. Full v42 found one regression in an existing invalid-initial-pose
+  refusal test; implementation corrected without changing that test. Final
+  Isaac focused check:50 passed in9.59s. Full v43:5007 passed in227.12s.
+  Native426 preceded that initial-knot guard correction (its collision was at
+  knot37, not0). No native-FPS claim, milestone freeze or VLM work.
