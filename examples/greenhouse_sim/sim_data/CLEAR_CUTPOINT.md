@@ -5,6 +5,9 @@ This is a NEW experiment, not a replacement or relaxation of the old balanced
 or visible/occluded release. It trains **target-conditioned 2D perception**,
 not autonomous target selection, metric XYZ, occlusion reasoning or robot action.
 
+Higher-resolution native capture is a separate qualification path; this existing
+848x408 release contract has not changed. See [NATIVE_RESOLUTION.md](NATIVE_RESOLUTION.md).
+
 ## Fixed task and candidate rules
 
 - Source for the new dataset: independently audited fresh native captures,

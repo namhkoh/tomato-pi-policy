@@ -1510,3 +1510,73 @@ hold joins the six preserved earlier holds; it is not overridden by numeric
 visibility. Job018 is not yet in checkpoint_v7. Individual candidate-review
 totals are446 images:439 accepts/seven holds before combined view capping.
 The final training ZIP remains pending coverage, complete review and validation.
+
+### 2026-09-15 07:40 KST higher-resolution pilot prepared;419 reviewed images
+
+The user's latest authorization allows higher resolution. Added isolated
+`native_sensor_payload.py`, `native_resolution_smoke.py` and
+`native_greenhouse_pair.py`, with tests and
+`examples/greenhouse_sim/sim_data/NATIVE_RESOLUTION.md`.
+No existing production848x408 capture, source asset, split, review decision,
+quality threshold, Qwen adapter or training/export contract was changed.
+
+The new path explicitly supports native1696x816 RGB, optical-Z metres and
+renderer instance IDs, validates authored/native projection and dimensions,
+preserves raw invalid-depth values with a separate mask, and rejects changed
+static state. NumPy integer dimensions from native annotators are supported
+without accepting floating-point/configuration dimensions. Native startup
+retains the existing16GiB commit/4GiB physical reserve. Blocked or failed runs
+have failure receipts/nonzero exits, not fallback observations.
+
+The paired diagnostic first runs a known-surface/occluder smoke test, then
+reconstructs one completed TRAIN-family seed7/SubStem_42 snapshot and renders
+both848x408 and1696x816 at the same real robot-head pose, optics, original
+greenhouse population, daylight and RTPT renderer.877 real source bindings
+were verified before queueing. Physical target coordinates are recomputed from
+the loaded anatomy; calibration/pose/geometry/identity and2x pixel-projection
+checks are required. Both resolutions retain the reference56-subframe budget.
+This is static perception qualification, not hardware, contact, moving-scene
+synchronization, visual-clarity or VLM-performance evidence.
+
+Validation:84 targeted tests passed. Complete regression:
+**806 tests plus47 subtests passed in48.61s**, recorded in
+`data/sim_data/clear_regression_20260915_v16.log`.
+An earlier test iteration exposed create-only JSON fixture writes; those were
+corrected before the successful run. No native high-resolution rendering has
+yet completed; the production exporter remains848x408-only.
+
+A bounded paired pilot is WAITING, not running, behind the existing serial
+orbit campaign, two opposite-side pilots and four-job original-side followup.
+The queue leaves these jobs unchanged, waits at most6h, requires successful
+predecessor completion and no other Kit process, rechecks memory, and starts
+only one owned native child with a1800s limit. It does not retry, collect a
+campaign, approve images or train.168 implementation/launcher files are pinned;
+a code change before execution causes a refusal, not a mixed-version run.
+Operational files:
+`data/sim_data/diagnostics/native_hires_pair_queue_20260915_v1.ps1` and
+matchingPython, `native_hires_pair_code_binding_20260915_v1.json`.
+Queue log:`data/sim_data/native_hires_pair_queue_20260915_v1.log`.
+Planned native result:`data/sim_data/diagnostics/native_hires_greenhouse_pair_20260915_v1`.
+Qualification and a separately tested resolution-aware label/review/export/Qwen
+profile are still required before higher-resolution images become training data.
+
+Collection/review continued independently. Orbit job021(seed7) completed in
+582.67s with one strict view; its original and query crop were individually
+accepted. Job022(seed83) completed in711.13s with17 native frames/11 strict
+candidates. All11 originals were inspected; the leaf-adjacent attachment in
+candidate6 was also checked in its existing query crop. All11 received explicit
+assistant accepts, not human/horticultural or physical-cutting approval.
+Reviews:`dataset_reviews/clear_capture_20260915_orbit_v2/job_021_reviews.json`
+and`job_022_reviews.json`. Total individual candidate assessments:
+458 originals =451 accepts/seven holds before combined capping.
+
+Immutable checkpoint_v8 validated410 selected images; NEW checkpoint_v9
+validated**419** with ALL419 individually accepted and no missing reviews:
+train304 images/51 targets/14 families; validation42/8/3; test73/11/3.
+Seven prior uncertain images remain excluded before view capping. Two otherwise
+accepted new views were removed by combined capping. All nine coverage gates
+still fail; state remains`draft_clear_cutpoint_not_for_training`.
+Evidence:`data/sim_data/clear_combined_checkpoint_v9_20260915.log`;
+review:`data/sim_data/collection_intake/clear_combined_20260915_checkpoint_v9/review/index.html`.
+No final training ZIP, training run or model download is claimed. The prior
+369-image inspection-only ZIP remains separate from training readiness.
