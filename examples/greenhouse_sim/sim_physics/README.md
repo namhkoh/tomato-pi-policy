@@ -1360,3 +1360,17 @@ Do not sum overlapping worker elapsed time with main-thread elapsed time.
 
 Native354 fails approach IK;356's subsequent self-screened proposal intersects
 the gutter with torso1. Neither is a working greenhouse bimanual demonstration.
+
+Native367 repeats the complete right-only greenhouse sequence after lossless
+JSON validation optimization: all9 gates and40800 full-rate records. Tick wall
+504.274s versus349's547.978s (about8% less), RTF0.168559. All selected physical
+records including plant dynamics match; one final epoch metadata timestamp
+differs. This remains below real-time responsiveness: C is NOT finished.
+
+Zero-motion station search now covers different orbit sides earlier without
+removing candidates. A fresh negative native query can prune right-arm variants
+only if exact collider ownership/URDF ancestry proves the blocked body cannot
+move with any right joint. Final actor/epoch controls remain mandatory. Native
+373/374 explore61/86 candidates but find no clear station; neither proves global
+infeasibility. Native344/362's bilateral contact still does not pass post-cut
+retention. Full-greenhouse A remains OPEN; no milestone freeze or VLM restart.

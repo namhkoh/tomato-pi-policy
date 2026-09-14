@@ -39,6 +39,18 @@ def test_orbits_are_finite_bounded_rigid_face_target_and_do_not_mutate():
     np.testing.assert_array_equal(base,original)
 
 
+def test_bounded_orbit_prefix_covers_sides_without_removing_any_candidate():
+    from itertools import product
+    base=np.eye(4);base[:3,3]=[.62,0,.123]
+    values=list(stations(base,np.zeros(3)))
+    angles=(0.,15.,-15.,30.,-30.,60.,-60.,90.,-90.,120.,-120.,150.,-150.,180.)
+    assert [meta['orbit_degrees'] for _,meta in values[:14]]==list(angles)
+    assert all(meta['radius_m']==.65 and meta['yaw_bias_degrees']==0 for _,meta in values[:14])
+    observed={(meta['orbit_degrees'],meta['radius_m'],meta['yaw_bias_degrees']) for _,meta in values}
+    assert len(values)==len(observed)==294
+    assert observed==set(product(angles,(.35,.4,.3,.45,.55,.65,.75),(0.,-15.,15.)))
+
+
 def test_both_native_endpoints_required_and_original_spawn_untouched():
     r,poses=fixture();base=r.base.copy();calls=[]
     def native(world,shapes):
@@ -184,3 +196,67 @@ def test_query_budget_stop_does_not_consume_final_native_control_reserve():
     assert out['query_budget_reserved_for_final_controls']
     assert out['candidates'][0]['right_attempts'][0]['rejection']=='reserved_final_native_controls'
     assert not out['motion_authorized'] and not out['infeasibility_proof']
+
+
+@pytest.mark.parametrize('link,expected',[('base',True),('link_torso_5',True),
+    ('link_left_arm_4',True),('ee_left',True),('ee_finger_l1',True),
+    ('link_right_arm_0',False),('ee_right',False),('ee_finger_r1',False)])
+def test_negative_pruning_follows_exact_urdf_ownership(link,expected):
+    from greenhouse_sim.robot_kinematics import Rby1Kinematics
+    from .cut_station_orbit import right_independent_obstruction
+    body='/Robot/'+link;path=body+'/collider'
+    r=S(root='/Robot',kin=Rby1Kinematics(),self_screen=S(shapes=[(path,body,link,'box',None)]))
+    native=dict(passed=False,robot_collider=path,scene_colliders=['/Plant/leaf'])
+    assert right_independent_obstruction(r,native) is expected
+    assert not right_independent_obstruction(r,{**native,'passed':True})
+    assert not right_independent_obstruction(r,{**native,'scene_colliders':[]})
+    assert not right_independent_obstruction(r,{**native,'robot_collider':'/Unknown'})
+    assert not right_independent_obstruction(r,{**native,'scene_colliders':['/Robot/ee_right/collider']})
+    assert not right_independent_obstruction(r,{**native,'scene_colliders':[None]})
+
+
+def test_unknown_duplicate_and_cyclic_ownership_never_prune():
+    from greenhouse_sim.robot_kinematics import Rby1Kinematics
+    from .cut_station_orbit import right_independent_obstruction
+    import dataclasses
+    body='/Robot/ee_left';path=body+'/collider';shape=(path,body,'ee_left','box',None)
+    r=S(root='/Robot',kin=Rby1Kinematics(),self_screen=S(shapes=[shape]))
+    native=dict(passed=False,robot_collider=path,scene_colliders=['/Plant/leaf'])
+    r.self_screen.shapes=[shape,shape]
+    assert not right_independent_obstruction(r,native)
+    r.self_screen.shapes=[shape];joint=r.kin._by_child['ee_left']
+    changed=dataclasses.replace(joint,parent='ee_left')
+    r.kin._by_child['ee_left']=changed;r.kin._by_name[joint.name]=changed
+    assert not right_independent_obstruction(r,native)
+    del r.kin._by_child['ee_left']
+    assert not right_independent_obstruction(r,native)
+
+
+def test_left_obstruction_stops_only_redundant_right_attempts(monkeypatch):
+    from greenhouse_sim.robot_kinematics import Rby1Kinematics
+    from . import cut_station_orbit as module
+    r,_=fixture();r.station_waiting_search=True;r.root='/Robot'
+    exact=Rby1Kinematics();r.kin._by_child=exact._by_child;r.kin._by_name=exact._by_name
+    r.self_screen.shapes=[('/Robot/ee_left/collider','/Robot/ee_left','ee_left','box',None)]
+    monkeypatch.setattr(module,'stations',lambda *a:iter(()))
+    calls=[];guards=[]
+    def native(*args):
+        calls.append(1)
+        return dict(passed=False,robot_collider='/Robot/ee_left/collider',scene_colliders=['/Plant/leaf'])
+    out=search(r,S(check=native),lambda:guards.append(1))
+    assert len(calls)==1 and len(out['candidates'][0]['right_attempts'])==1
+    assert out['candidates'][0]['right_seed_search_pruned']
+    assert out['right_independent_obstruction_pruning'] and out['proposed_station'] is None
+    assert not out['motion_authorized'] and not out['infeasibility_proof']
+    assert len(guards)>=4
+
+
+def test_stale_epoch_during_negative_pruning_still_revokes(monkeypatch):
+    from . import cut_station_orbit as module
+    r,_=fixture();stale=[False]
+    def native(*args):stale[0]=True;return dict(passed=False)
+    def guard():
+        if stale[0]:raise RuntimeError('stale after blocked query')
+    monkeypatch.setattr(module,'right_independent_obstruction',lambda *a:True)
+    with pytest.raises(RuntimeError,match='stale after blocked'):
+        search(r,S(check=native),guard)

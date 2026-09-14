@@ -10,6 +10,46 @@ import time
 import numpy as np
 
 
+def right_independent_obstruction(robot,native):
+    """A negative frozen query on a body no right-arm seed can move.
+
+    This is only search pruning, never clearance or motion authority. The
+    caller keeps base, left joints, other joints and the guarded scene fixed
+    while varying the seven right joints. Missing/ambiguous shape or URDF
+    ownership declines the shortcut. No rejection survives this station.
+    """
+    if (native.get('passed') is not False or not native.get('scene_colliders')
+            or not isinstance(native.get('robot_collider'),str)):
+        return False
+    shapes=[s for s in robot.self_screen.shapes
+            if isinstance(s,(tuple,list)) and len(s)==5 and s[0]==native['robot_collider']]
+    if len(shapes)!=1:return False
+    path,body,link,_,_=shapes[0]
+    root=getattr(robot,'root',None)
+    if (not isinstance(root,str) or not isinstance(link,str)
+            or body!=root+'/'+link or not path.startswith(body+'/')):
+        return False
+    if any(not isinstance(p,str) or not p.startswith('/') or p==root or p.startswith(root+'/')
+           for p in native['scene_colliders']):
+        return False  # Another robot body might move with the varied right arm.
+    by_child=getattr(robot.kin,'_by_child',{})
+    by_name=getattr(robot.kin,'_by_name',{})
+    moving={f'right_arm_{i}' for i in range(7)}
+    if not moving.issubset(by_name):return False
+    visited=set()
+    while link!='base':
+        if link in visited:return False
+        visited.add(link)
+        joint=by_child.get(link)
+        if (joint is None or joint.child!=link
+                or by_name.get(joint.name) is not joint
+                or joint.kind not in ('fixed','revolute','continuous','prismatic')):
+            return False
+        if joint.name in moving:return False
+        link=joint.parent
+    return True
+
+
 def waiting_poses(entry,direction,normal,expanded=False):
     """Bounded INITIAL wrist proposals, not collision-free approach paths."""
     if type(expanded) is not bool:raise ValueError('Explicit waiting-pose search option required')
@@ -31,10 +71,13 @@ def stations(original, centre):
             or not np.isfinite(original).all() or not np.isfinite(centre).all()):
         raise ValueError('Finite station matrix and target centre required')
     angle=np.arctan2(*(original[:2,3]-centre[:2])[::-1])
-    # Alternate sides and radii early; do not spend the budget only at one side.
-    for delta in (0.,15.,-15.,30.,-30.,60.,-60.,90.,-90.,120.,-120.,150.,-150.,180.):
-        for radius in (.35,.4,.3,.45,.55,.65,.75):
-            for yaw_bias in (0.,-15.,15.):
+    # Cover all sides at a nearby radius before spending the bounded budget
+    # on yaw/radius variants of one side. The candidate set is unchanged.
+    radius0=float(np.linalg.norm(original[:2,3]-centre[:2]))
+    radii=sorted((.35,.4,.3,.45,.55,.65,.75),key=lambda r:abs(r-radius0))
+    for yaw_bias in (0.,-15.,15.):
+        for radius in radii:
+            for delta in (0.,15.,-15.,30.,-30.,60.,-60.,90.,-90.,120.,-120.,150.,-150.,180.):
                 theta=angle+np.radians(delta)
                 base=original.copy()
                 base[:2,3]=centre[:2]+radius*np.array([np.cos(theta),np.sin(theta)])
@@ -126,7 +169,13 @@ def search(robot,backend,guard):
             native=native_check(candidate,lq,rq)
             if native is None:attempt['rejection']='reserved_final_native_controls';break
             attempt['native_waiting']=native
-            if native['passed'] is not True:continue
+            if native['passed'] is not True:
+                if right_independent_obstruction(candidate,native):
+                    guard()
+                    attempt['rejection']='right_independent_startup_obstruction'
+                    row['right_seed_search_pruned']=True
+                    break
+                continue
             row['native_startup_clear']=True
             endpoint=robot.kin.solve_pose('right',entry,rq,base,
                 maximum_evaluations=200,joint_limit_margin_degrees=3.)
@@ -180,4 +229,5 @@ def search(robot,backend,guard):
         cut_entry_checked_with_left='SDK_ready_park' if getattr(robot,'park_left_ready',False) else 'unloaded_pregrasp_not_held_branch',
         proposed_floor_height_requires_fresh_launch=True,budget_exhausted=expired,
         query_budget_reserved_for_final_controls=query_limited,
+        right_independent_obstruction_pruning=True,
         wall_seconds=time.monotonic()-began,infeasibility_proof=False)

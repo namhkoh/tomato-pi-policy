@@ -8523,3 +8523,31 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   tests one with original row0 geometry,80mm grasp,20mm cut and fresh guards.
   Neither offline feasibility nor launching it establishes bimanual success.
 - A/C remain open. VLM/data/training/hardware remain untouched and paused.
+
+### 2026-09-14 continuation: bounded search coverage, not a grasp certificate
+
+- Native369/370 reject forward/upright source71/SubStem42 poses before motion:
+  torso5 versus the original opposite-side backdrop plant. Despite the path's
+  Gutter1_Side0 prefix, backdrop_007 is a PLANT triangle mesh, not infrastructure.
+  Native371's other-side pose instead intersects a source SubStem40 leaf with
+  left arm4. These remain genuine authored-contact obstructions; no shapes or
+  source geometry were removed.
+- The zero-motion station search now stops varying the right arm when a fresh
+  native rejection names a uniquely bound collider whose complete URDF ancestry
+  contains no right-arm joint. Base/left/other joints stay fixed for that station;
+  ambiguous ownership, robot-vs-robot hits, missing native hits and stale epochs
+  cannot use this negative-only shortcut. It never certifies a clear pose/path.
+- Native372:23 base candidates,14 pruned redundant right-search groups,3384
+  actual queries, all1077 scene and71 robot final controls,45.172s, no proposal.
+  Also corrected candidate ordering: all sides near the original radius are
+  considered before spending the budget on yaw/radius variants of one side.
+  The same294 orbit candidates plus original station remain available.
+- Native373:61 candidates/10 pruned groups in45.062s,3271 queries. Native374's
+  horizontal-jaw alternative:86 candidates/17 pruned in45.016s,3232 queries.
+  Neither finds native waiting clearance. All final actor controls complete;
+  zero physics steps, no A success or global infeasibility claim.
+- Full v26 regression (before the ordering test):4854 passed in237.48s,
+  including robot_kinematics tests. Latest27 focused search tests pass under
+  Conda and Isaac. Evidence: native369..374 report.json and
+  regression_20260914_invariant_obstruction_v26.log under data/sim_physics.
+- A/C remain open; B's latest full physical pass is367. VLM remains paused.
