@@ -239,6 +239,27 @@ before ONE final test evaluation, which requires explicit `--split test --allow-
 Compare crop versus full frame on identical cases; report extra image tokens/
 compute so a crop improvement is not portrayed as a free accuracy gain.
 
+## Alternate static viewpoints (native qualification pending)
+
+The close original-side campaign can reject an entire family when the head is
+too far away for legibility or the torso envelope intersects foliage. An empty
+family is not a reason to disable the geometry or visibility checks.
+
+Two opt-in proposal modes are prepared for small native pilots before scaling:
+`--opposite-aisle` mirrors the root to the other side and faces it toward the row;
+`--oblique-clear` samples root positions on a .30-.55 m horizontal-distance ring
+with bearings within +/-70 degrees of the selected side. Both require the clear
+preset, preserve the actual camera mount/optics, joint ranges, full source scene,
+floor and geometry admission screens, and retain native depth/instance checks.
+The oblique mode changes proposed XY offsets only, not the original postures,
+head solver or label geometry. It can combine with the opposite-side flag.
+
+These are individually checked STATIC snapshots, not collision-free base paths,
+hardware poses or a way to move the robot through the gutter. Unqualified modes
+must not be described as proven to improve yield. Original-side proposal hashes
+remain regression-checked; the first oblique data-code regression passed672 tests
+and47 subtests (`data/sim_data/clear_regression_20260915_v6.log`).
+
 Defer partial/hidden classes, RGB-D training, action guidance and larger collection
 until this visible task is demonstrably learnable. Keep native depth available
 for subsequent geometry and visibility checks; never reconstruct it from RGB.

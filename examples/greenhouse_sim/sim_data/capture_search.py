@@ -46,7 +46,7 @@ def run_refined_capture(stage, rep, args, manifest, robot, records, reports, var
                 bound=plan['requested_views_per_target']
                 allowed={s['candidate_id']:s for s in view_specs(original_x, plan['target_world_m'][target_id][0], target_id, bound,
                                                                 vary_torso=plan.get('vary_torso',False),view_offset=plan.get('view_offset',0),clear_capture=plan.get('clear_capture',False),
-                                                                opposite_aisle=plan.get('opposite_aisle',False))}
+                                                                opposite_aisle=plan.get('opposite_aisle',False),oblique_clear=plan.get('oblique_clear',False))}
             else:
                 bound=3
                 allowed = {s["candidate_id"]:s for s in focus_specs(original_x, plan["target_world_m"][target_id][0])}
@@ -86,6 +86,13 @@ def run_refined_capture(stage, rep, args, manifest, robot, records, reports, var
         if plan.get('opposite_aisle'):
             manifest['viewpoint_selection'].update(aisle_side='negative_x',base_yaw_range_degrees=[-30,30],
                 base_target_x_separation_range_m=[-.55,-.30],motion_between_aisles_validated=False)
+        if plan.get('oblique_clear'):
+            minimum=.30*float(np.cos(np.deg2rad(70)))
+            manifest['viewpoint_selection'].update(oblique_proposal='bounded_lateral_ring_v1',
+                base_target_xy_distance_range_m=[.30,.55],bearing_about_selected_side_degrees=[-70,70],
+                base_target_x_separation_range_m=[-.55,-minimum] if plan.get('opposite_aisle') else [minimum,.55],
+                y_offset_absolute_max_m=.55*float(np.sin(np.deg2rad(70))),
+                admission_screens_unchanged=True,motion_between_snapshots_validated=False)
     product = rep.create.render_product(HEAD_CAMERA, RESOLUTION)
     writer = make_writer(rep, include_instances=True, instance_backend=getattr(args,'instance_backend','legacy'))
     writer.attach([product])
@@ -140,6 +147,7 @@ def run_refined_capture(stage, rep, args, manifest, robot, records, reports, var
                     spec["root_yaw_degrees"] = planned["root_yaw_degrees"]
                 if 'torso_bend_degrees' in planned: spec['torso_bend_degrees']=planned['torso_bend_degrees']
                 if planned.get('opposite_aisle'): spec['opposite_aisle']=True
+                if planned.get('oblique_clear'): spec['oblique_clear']=True
                 decision = {"target_review_id": row["draft_id"], **spec, "state": "screening"}
                 manifest["viewpoint_selection"]["all_candidate_decisions"].append(decision)
                 try:

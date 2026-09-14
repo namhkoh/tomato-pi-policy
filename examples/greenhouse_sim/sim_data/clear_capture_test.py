@@ -59,3 +59,28 @@ def test_opposite_aisle_is_explicit_and_preserves_original_view_sequence():
         assert -30<=new['root_yaw_degrees']<=30 and new['opposite_aisle'] is True
         assert new['torso_bend_degrees']==old['torso_bend_degrees']
         assert new['desired_pixel_xy']==old['desired_pixel_xy']
+
+
+def test_oblique_views_are_opt_in_bounded_and_preserve_posture_and_optics():
+    import numpy as np
+    with pytest.raises(ValueError):configuration(oblique_clear=True)
+    with pytest.raises(ValueError):view_specs(.8,0,'a',3,oblique_clear=True)
+    assert 'oblique_clear' not in configuration(views=3,vary_torso=True,clear_capture=True)
+    assert configuration(views=3,vary_torso=True,clear_capture=True,oblique_clear=True)['oblique_clear']
+    for opposite in (False,True):
+        old=view_specs(.9,.1,'a',12,vary_torso=True,clear_capture=True,opposite_aisle=opposite)
+        new=view_specs(.9,.1,'a',12,vary_torso=True,clear_capture=True,opposite_aisle=opposite,oblique_clear=True)
+        assert len(old)==len(new)==288
+        for a,b in zip(old,new):
+            dx=(b['root_x_m']-.1)*(-1 if opposite else 1);dy=b['y_offset_m']
+            assert .3-1e-9<=np.hypot(dx,dy)<=.55+1e-9
+            assert abs(np.degrees(np.arctan2(dy,dx)))<=70+1e-9
+            assert dx>=.3*np.cos(np.deg2rad(70))-1e-9
+            assert b['root_yaw_degrees']==a['root_yaw_degrees']
+            assert b['torso_bend_degrees']==a['torso_bend_degrees']
+            assert b['desired_pixel_xy']==a['desired_pixel_xy']
+            assert b['candidate_id']=='oblique_'+a['candidate_id']
+            assert b['oblique_clear'] is True
+    first=view_specs(.9,.1,'a',3,vary_torso=True,clear_capture=True,oblique_clear=True)
+    second=view_specs(.9,.1,'a',3,vary_torso=True,clear_capture=True,oblique_clear=True,view_offset=3)
+    assert not {s['candidate_id'] for s in first}&{s['candidate_id'] for s in second}
