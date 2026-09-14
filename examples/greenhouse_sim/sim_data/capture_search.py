@@ -96,6 +96,10 @@ def run_refined_capture(stage, rep, args, manifest, robot, records, reports, var
                 base_target_x_separation_range_m=[-.55,-minimum] if plan.get('opposite_aisle') else [minimum,.55],
                 y_offset_absolute_max_m=.55*float(np.sin(np.deg2rad(70))),
                 admission_screens_unchanged=True,motion_between_snapshots_validated=False)
+        if plan.get('orbit_clear'):
+            manifest['viewpoint_selection'].update(root_heading_tracks_target_bearing=True,
+                target_bearing_jitter_degrees=[-30,30],
+                base_yaw_range_degrees=[-100,100] if plan.get('opposite_aisle') else [80,280])
     product = rep.create.render_product(HEAD_CAMERA, RESOLUTION)
     writer = make_writer(rep, include_instances=True, instance_backend=getattr(args,'instance_backend','legacy'))
     writer.attach([product])
@@ -152,13 +156,15 @@ def run_refined_capture(stage, rep, args, manifest, robot, records, reports, var
                 if 'torso_lean_degrees' in planned: spec['torso_lean_degrees']=planned['torso_lean_degrees']
                 if planned.get('opposite_aisle'): spec['opposite_aisle']=True
                 if planned.get('oblique_clear'): spec['oblique_clear']=True
+                if planned.get('orbit_clear'): spec['orbit_clear']=True
                 decision = {"target_review_id": row["draft_id"], **spec, "state": "screening"}
                 manifest["viewpoint_selection"]["all_candidate_decisions"].append(decision)
                 try:
                     from .training_views import robot_for_spec
                     pose = set_snapshot_pose(stage, robot_for_spec(robot,spec), world["nominal_world_m"], spec["y_offset_m"],
                         spec["desired_pixel_xy"], root_x_m=spec["root_x_m"], root_yaw_degrees=spec.get("root_yaw_degrees"),
-                        **({'opposite_aisle':True} if spec.get('opposite_aisle') else {}))
+                        **({'opposite_aisle':True} if spec.get('opposite_aisle') else {}),
+                        **({'orbit_clear':True} if spec.get('orbit_clear') else {}))
                 except ValueError as exc:
                     decision.update(state="rejected_pose", reason=str(exc))
                     print("VIEWPOINT_REJECTED " + json.dumps(decision), flush=True)

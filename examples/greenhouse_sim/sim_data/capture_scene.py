@@ -94,14 +94,23 @@ def plan_head_pose(model, initial_pose, root_world_column, camera_to_head_column
     return pose, error
 
 
-def set_snapshot_pose(stage, robot, target_world, y_offset, desired_pixel, *, root_x_m=None, root_yaw_degrees=None, opposite_aisle=False):
+def set_snapshot_pose(stage, robot, target_world, y_offset, desired_pixel, *, root_x_m=None, root_yaw_degrees=None, opposite_aisle=False, orbit_clear=False):
     from .floor_alignment import align_robot_to_floor, PACKAGE_FLOOR
     if type(opposite_aisle) is not bool or opposite_aisle and (root_x_m is None or root_yaw_degrees is None):
         raise ValueError('Explicit opposite-aisle root position and yaw required')
+    if type(orbit_clear) is not bool or orbit_clear and (root_x_m is None or root_yaw_degrees is None):
+        raise ValueError('Explicit target-facing orbit root pose required')
     root = stage.GetPrimAtPath(robot["root"])
     matrix = np.asarray(UsdGeom.XformCache().GetLocalToWorldTransform(root)).T.copy()
     if root_yaw_degrees is not None:
         low,high=(-30,30) if opposite_aisle else (150,210)
+        if orbit_clear:
+            low,high=(-100,100) if opposite_aisle else (80,280)
+            radius=float(np.hypot(root_x_m-target_world[0],y_offset))
+            bearing=float(np.rad2deg(np.arctan2(-y_offset,target_world[0]-root_x_m)))
+            delta=(root_yaw_degrees-bearing+180)%360-180
+            if not np.isfinite([radius,delta]).all() or not .30-1e-9<=radius<=.55+1e-9 or abs(delta)>30+1e-9:
+                raise ValueError('Orbit pose outside radius or target-facing jitter bounds')
         if not np.isfinite(root_yaw_degrees) or not low <= root_yaw_degrees <= high:
             raise ValueError("Focused base yaw must remain within 30 degrees of the selected aisle facing")
         matrix[:3, :3] = robot_hardware.rotation_z(root_yaw_degrees)

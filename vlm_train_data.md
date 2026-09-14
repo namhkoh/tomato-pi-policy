@@ -1128,3 +1128,35 @@ Post-exclusion full data regression passed688 tests +47 subtests in48.21s
 lean+oblique geometry candidate, zero in lean-original or lean-opposite. One
 native seed47 lean+oblique pilot is queued after the existing serial pilots;
 it has not run or approved any image at this checkpoint.
+
+### 2026-09-15 03:21 KST review and scheduling update
+
+The first pass through all16 training families completed:355 native frames,
+227 strict images /43 targets /12 represented families. Every227 RGB was
+assistant-inspected:224 accepts and3 holds. The first validation family added
+6 raw/5 strict images across3 targets, visually4 accepts/1 hold. Holds concern
+immediate junction occlusion, not a reassignment of the nominal cut point.
+These totals still fail the release coverage gates; no final ZIP exists.
+The remaining held-out capture is running serially.
+
+Real-data exclusion validation produced a NEW22-image seed83 draft with
+22 hash-bound accepts and both earlier holds retained outside the selection:
+`collection_intake/clear_capture_20260915_overnight_v1/job_022/curation_v1`.
+No source or review decision was overwritten.
+
+Forward lean alone did not yield seed53 geometry candidates. The new explicit
+target-facing root-heading/orbit proposal found one candidate in the small
+seed53 CPU test; native visibility remains unknown. Original CPU decisions
+matched936 native reference decisions. All changes are opt-in; original plan
+behavior remains covered by hash and exact-kinematics regression tests.
+Full suite691 tests +47 subtests passed in50.95s
+(`clear_regression_20260915_v9.log`).
+
+Three assistant-owned waiting pilot queues were replaced before they launched:
+opposite-aisle, position-only oblique and the old chained lean queue. Their
+PowerShell PIDs128668/20312/80828 were verified to have no children and stopped;
+no active renderer, captures, source files or user application was stopped.
+Replacement queue `clear_replacement_pilots_queue_20260915_v1.log` waits for the
+original campaign's success and zero Kit processes, then tests seed53 orbit
+and seed47 lean-oblique sequentially, with the existing memory/exit/audit guards.
+Neither pilot nor any scaled alternate campaign is yet native-qualified.

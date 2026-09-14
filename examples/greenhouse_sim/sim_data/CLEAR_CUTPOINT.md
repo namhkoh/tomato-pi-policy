@@ -274,6 +274,14 @@ records are accepted. They and the source index are retained in the derivative;
 held images are excluded before the view cap. This does not overturn a decision,
 change an answer, or relax coverage. Existing drafts and sources are untouched.
 
+`--orbit-clear` additionally requires oblique capture and rotates the actual
+robot root toward the target bearing with +/-30 degree heading jitter. Unlike
+the position-only oblique proposals, root yaw can span80-280 degrees on the
+original side or -100 to100 degrees on the opposite side. The .30-.55m root
+radius, fixed camera mount, head joint limits and all floor/geometry/visibility
+screens remain checked. This is explicit static pose diversity, not a safe
+navigation route or physical balance claim. Native qualification is pending.
+
 Defer partial/hidden classes, RGB-D training, action guidance and larger collection
 until this visible task is demonstrably learnable. Keep native depth available
 for subsequent geometry and visibility checks; never reconstruct it from RGB.

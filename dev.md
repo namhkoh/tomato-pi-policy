@@ -9823,3 +9823,10 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   immutable negative-review exclusions. None bypasses native quality checks or
   claims robot dynamics/physical cutting validation. Full data regression before
   exclusion changes:682 tests +47 subtests; focused exclusion/release27 passed.
+
+- 03:21 KST VLM-data checkpoint:all227 first-pass training candidates reviewed
+  (224 accepts/3 holds), plus5 validation candidates (4 accepts/1 hold). Still
+  insufficient final coverage. Target-facing static root orientation is opt-in
+  and native qualification pending. Full data regression691 +47 subtests passed.
+  Replaced only3 still-waiting assistant pilot queues; active native collection
+  was untouched. See `vlm_train_data.md` for exact provenance and limitations.
