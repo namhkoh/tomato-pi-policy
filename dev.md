@@ -8962,3 +8962,35 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   materially advances beyond417's planning failure but is not a freeze point.
 - Full directory regression v39:4972 passed in261.13s. Native418 was concurrent
   with this regression, so wall-step timings are not an uncontended benchmark.
+
+### 2026-09-14 continued: load-aware measured-jaw backoff
+
+- Committed invariant corridor fix bee432e. Inspecting418's last valid native
+  records shows that release drives the jaws outward faster than the5mm/s
+  reference backoff. The old position/damping controller therefore increases
+  closing effort to0.294813N even as a high contact load requests backoff.
+  This is a controller limitation; the static-over-budget grasp may ALSO remain
+  physically unsuitable. No assumption that reducing effort proves retention.
+- In the explicit symmetric preload-force-servo profile, preceding guard-
+  accepted ALL-contact load above0.4N now constrains closing PD to half the
+  existing0.24N preload request. The target interval is derived from current
+  measured jaw q/v, including damping, while intersecting both original0.3N
+  PD intervals and aperture bounds. Only targets change. Invalid/no-overlap
+  intervals refuse; jaw positions/velocities, contact forces and friction are
+  never set. The0.5N native all-contact guard and3mm slip limit remain intact.
+  Lower-load recovery uses the existing slow closure. This engineering backoff
+  is uncalibrated and needs native holding evidence; legacy profiles unchanged.
+-88 focused tests pass: Conda0.86s, Isaac1.09s. Recorded418 q/v reproduction
+  verifies that the new reference reduces closing effort despite moving jaws;
+  stale observations still reject, and no physical-state setter is called.
+  Full v40 and matched native419 are pending. No milestone freeze or VLM work.
+
+- Native419 reproduces the same source-crossbar release at24.141667s. The
+  previous finger-overload stop is avoided, but the trial fails on3.035987mm
+  material slip (>3mm). Native retention, full traversal and withdrawal remain
+  unqualified. Backoff is not a substitute for a load-capable grasp; the earlier
+  static-over-budget warning remains relevant. Do not enlarge the slip limit.
+- Full v40:4989 tests pass in250.50s. The next physical experiment shifts only
+  the hold point farther along the same detachable petiole, retaining the
+  original cut location and surrounding geometry, and REQUIRES the default
+  static-retention prerequisite before cutter planning. No dynamic override.

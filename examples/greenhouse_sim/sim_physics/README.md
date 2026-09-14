@@ -1505,3 +1505,11 @@ source-crossbar release at24.141667s with left contact retained at that instant.
 It stops0.104s later on a0.567389N finger load (>0.5N), before completing traversal
 and withdrawal. This is a partial physical result, NOT reliable full greenhouse
 grasp-and-cut qualification. Full regression v39:4972 pass.
+
+The explicit symmetric preload-force servo now uses measured jaw position
+and velocity when backing off high (>0.4N) all-contact loads. Its temporary
+closing-effort reference ceiling is0.12N; original0.3N PD,0.5N native contact,
+aperture, bilateral and3mm slip guards remain. No physical state/contact is
+edited. Native419 avoids418's overload stop but exceeds3mm slip after release,
+so a load-capable grasp is still needed. Full regression v40:4989 pass. Neither
+the new controller nor these partial cuts qualify full bimanual completion.

@@ -408,10 +408,18 @@ class BimanualRobot(FullRobotGripper):
             self.robot.set_dof_max_forces(self.force_limits,self.index)
             if getattr(self,'finger_target_antiwindup',False):
                 from .finger_target_antiwindup import project
+                backoff={}
+                if (self.force_closer.preload_force_servo
+                        and np.max(self.force_closer.loads)>self.force_closer.backoff_contact_n):
+                    # Fresh, guard-accepted ALL-contact loads, not desired or
+                    # normal-only force. Reduce squeeze to half the existing
+                    # preload while the external load is high. The ordinary
+                    # slow closure recovers afterward; no contact is edited.
+                    backoff['closing_effort_cap_n']=.5*self.force_closer.desired_support_n
                 gaps,receipt=project(gaps,self.robot.get_dof_positions()[0,self.finger_indices],
                     self.robot.get_dof_velocities()[0,self.finger_indices],self.force_limits[0,self.finger_indices],
                     minimum=self.force_closer.minimum,retention_preload=self.force_closer.retention_preload,
-                    symmetric=self.force_closer.symmetric,maximum=self.force_closer.opening)
+                    symmetric=self.force_closer.symmetric,maximum=self.force_closer.opening,**backoff)
                 self.force_closer.gaps=gaps.copy()
                 self.force_closer.receipt.update(half_gaps_m=gaps.tolist(),antiwindup=receipt)
             self.targets[0,self.finger_indices]=np.array([-1.,1.])*gaps

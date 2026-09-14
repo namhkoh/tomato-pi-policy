@@ -7,7 +7,8 @@ read synchronously by the caller before the same control step.
 import numpy as np
 
 
-def project(half_gaps,positions,velocities,caps,*,minimum,retention_preload=False,symmetric=False,maximum=.025):
+def project(half_gaps,positions,velocities,caps,*,minimum,retention_preload=False,symmetric=False,maximum=.025,
+            closing_effort_cap_n=None):
     if type(symmetric) is not bool:raise ValueError('Explicit symmetric aperture mode required')
     if type(retention_preload) is not bool:raise ValueError('Explicit retention-preload profile required')
     maximum_pd_n=.30 if retention_preload else .15
@@ -25,6 +26,18 @@ def project(half_gaps,positions,velocities,caps,*,minimum,retention_preload=Fals
     signs=np.array([-1.,1.]);raw=signs*gaps
     # -cap <= 200*(target-q)-5*v <= cap, including damping.
     low=q+(5*v-cap)/200;high=q+(5*v+cap)/200
+    if closing_effort_cap_n is not None:
+        if (not (retention_preload and symmetric)
+                or isinstance(closing_effort_cap_n,(bool,np.bool_))
+                or not np.isscalar(closing_effort_cap_n) or not np.isfinite(closing_effort_cap_n)
+                or not 0<=closing_effort_cap_n<=maximum_pd_n):
+            raise ValueError('Bounded symmetric retention closing-effort backoff required')
+        # Closing has opposite signs at the two fingers. Restrict only that
+        # side of each ORIGINAL motor interval. Including measured q and v
+        # prevents an opening jaw from outrunning a slow reference backoff
+        # and paradoxically increasing the commanded squeeze.
+        high[0]=min(high[0],q[0]+(5*v[0]+closing_effort_cap_n)/200)
+        low[1]=max(low[1],q[1]+(5*v[1]-closing_effort_cap_n)/200)
     geometry_low=np.array([-maximum,minimum]);geometry_high=np.array([-minimum,maximum])
     intersection_low=np.maximum(low,geometry_low);intersection_high=np.minimum(high,geometry_high)
     overlap=intersection_low<=intersection_high
@@ -49,6 +62,8 @@ def project(half_gaps,positions,velocities,caps,*,minimum,retention_preload=Fals
         resulting_unclipped_pd_n=(200*(projected-q)-5*v).tolist(),
         measured_effort=False,contact_used_as_applied_force=False,changes_physical_state=False,
         maximum_non_gravity_pd_n=maximum_pd_n,
+        closing_effort_backoff_cap_n=closing_effort_cap_n,
+        closing_effort_backoff_uses_measured_state=closing_effort_cap_n is not None,
         commanded_maximum_half_gap_m=maximum,changes_physical_joint_limits=False,
         symmetric_aperture_command=symmetric,common_gap_interval_m=common_interval,
         load_profile='retention_preload_v1' if retention_preload else 'legacy_preload_v1')
