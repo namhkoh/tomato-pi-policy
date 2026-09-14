@@ -49,6 +49,10 @@ for the revised no-teleoperated-demonstrations VLM + feedback-controller plan.
   not describe uninspected training views as manually reviewed.
 - Follow-up regression:669 tests plus47 subtests passed (44.67s), log
   `data/sim_data/clear_regression_20260915_v4.log`.
+- ZIP handoff now generates a root `DATASET_CARD.md` from the actual manifest:
+  counts, review attribution, target-conditioned2D task, native depth sidecars,
+  shared-background caveat and unsupported execution claims.21 focused tests
+  passed (5.34s). No final training ZIP has been generated yet.
 - Pending: complete collection, per-image QA, coverage/diversity assessment,
   review finalization, portable validation and verified ZIP. Do not claim the
   final dataset exists from this checkpoint. Physics implementation unchanged.

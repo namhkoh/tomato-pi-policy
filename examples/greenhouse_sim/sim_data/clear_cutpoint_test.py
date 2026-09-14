@@ -216,6 +216,9 @@ def test_transfer_preserves_draft_and_verifies_contents(source,tmp_path):
         receipt=json.loads(z.read('TRANSFER_STATUS.json'))
         assert not receipt['training_ready'] and receipt['inspection_only']
         assert 'README_TRAINING.md' in z.namelist()
+        card=z.read('DATASET_CARD.md').decode('utf-8')
+        assert '| train | 1 | 1 | 1 |' in card and 'draft_clear_cutpoint_not_for_training' in card
+        assert sha256(out/'depth/id0.npy')==receipt['files_sha256']['grounding_release/depth/id0.npy']
         assert z.read('grounding_release/depth/id0.npy')==(source/'depth/id0.npy').read_bytes()
     with pytest.raises(ValueError):package(out,destination,inspection_only=True)
 

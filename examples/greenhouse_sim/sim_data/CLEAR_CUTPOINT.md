@@ -7,7 +7,9 @@ not autonomous target selection, metric XYZ, occlusion reasoning or robot action
 
 ## Fixed task and candidate rules
 
-- Source: an already normally validated task-v3 release. Original family splits,
+- Source for the new dataset: independently audited fresh native captures,
+  materialized as a validated engineering pool with `--audited-source`. The
+  older approved-release input remains supported only for reproduction. Family splits,
   RGB, native Isaac optical-Z depth, masks and anatomical labels remain unchanged.
 - Only easy/clear localizations; at least 95% proximal visibility, an unbroken
   visible query-to-cut association, every sampled interval point on the native
@@ -66,8 +68,10 @@ python -m sim_data.clear_cutpoint_review --dataset ../../data/sim_data/training_
 Choose NEW output paths on repeat. Open review `index.html` locally. Inspect RGB
 without marks first; toggle query/cut/interval marks for annotation checking.
 Review two training views per target and ALL selected validation/test images.
-Training review may be attributed to an assistant; held-out acceptance requires
-human review. No default accept. Enter reviewer/reason and download decisions JSON.
+By default, training review may be attributed to an assistant and held-out
+acceptance requires human review. The explicitly declared overnight assistant
+experiment mode is described below. No default accept. Enter reviewer/reason
+and download decisions JSON.
 Held-out QA is label/legibility review, not evaluation of model predictions.
 
 Finalization writes a new copy and refuses incomplete coverage/reviews:
@@ -134,6 +138,8 @@ native data and hashes in one ZIP. A diagnostic transfer requires explicit
 `--inspection-only` and a `.inspection.zip` filename; its `TRANSFER_STATUS.json`
 says training_ready=false and the trainer still refuses it. The final requested
 training ZIP must use the completed fresh-capture release without that flag.
+Its root `DATASET_CARD.md` is generated from the actual release counts and review
+status, so it cannot silently describe the older mixed-task dataset.
 
 After verifying/transferring the final ZIP + SHA256 and extracting `grounding_release`:
 
