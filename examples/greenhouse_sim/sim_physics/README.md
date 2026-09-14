@@ -1447,3 +1447,28 @@ All proposed fields are revoked on failed final controls. The margin is not
 a deformation prediction: native402 records approximately40mm distal plant
 movement during its initial0.9s. Moving-scene reobservation remains essential.
 Native407 finds4 zero-motion alternatives; none is a physical grasp/cut pass.
+
+`--screen-settled-waiting` runs the original guarded initialization to0.9s,
+then stops before grasp/cut. It proposes at most8 new INITIAL right waiting
+poses from the actual post-fetch plant geometry and bounded static scene.
+Every guarded initialization sample is retained (432 at480Hz); conservative
+leaf hulls and shaft boxes enclose their sampled settling motion, as well as
+the original rest shape. No native shape is edited. Missing/skipped/stale
+samples reject the search. The30s search makes no physics step or robot command.
+These are geometric proposals, NOT native startup, continuous-time clearance,
+equilibrium, left scene-path or cut certificates. Relaunch and revalidate all
+native checks. Native412 finds7 proposals;413 physically verifies a left grasp
+after selecting a lower waiting pose, but fails static retention before cutting.
+
+`--native-retention-trial` is a separate opt-in, noninteractive bimanual
+through-stroke experiment. Default static-retention refusal is unchanged.
+The experiment can proceed to independent cut planning after a VALID native
+patch's solved over-budget static balance; that failure remains in the report.
+It tests whether a flexible branch can remain held while changing shape,
+instead of assuming the entire original static orientation must be sustained.
+Missing, stale, unbalanced or malformed evidence still rejects. All original
+bilateral/dwell,3mm slip,0.5N per-finger all-contact, blade force/direction,
+scene, full stroke and measured withdrawal guards remain. Native retention
+qualification still requires actual retained bilateral contact and bounded
+slip after cutting. Neither this option nor a static solver result proves a
+successful cut or retention. NOT a production-qualified faster demo default.

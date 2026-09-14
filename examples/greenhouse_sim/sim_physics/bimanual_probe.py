@@ -118,6 +118,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     render_options={'wall_render_hz':15} if getattr(args,'watch_cut_trial',False) else {}
     clock=PhysicsClock(step_context,physics_hz=args.physics_hz,render_hz=args.render_hz,**render_options)
     records=[];events=[];captures={};capture_receipts={};fault=None;stable=0;lost=0
+    waiting_history=[]  # Only populated by the explicit pre-grasp diagnostic.
     if getattr(args,'stream_trajectory',False):
         from .probe_records import ProbeRecords
         records=ProbeRecords(output/'bimanual_trajectory.jsonl.gz',
@@ -241,6 +242,12 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         if getattr(args,'watch_cut_trial',False) and not sim.is_playing():
             raise RuntimeError('Timeline changed during watched trial; close and relaunch, no stale-step continuation')
         t=stamp.simulation_time_s
+        if getattr(args,'screen_settled_waiting',False) and stamp.step:
+            if (not records or records[-1].get('native_guards_passed') is not True
+                    or records[-1].get('t')!=t or len(waiting_history)!=int(stamp.step)-1
+                    or stamp.step>1024):
+                raise RuntimeError('Incomplete native settling history; no proposals')
+            waiting_history.append((int(stamp.step),runtime.frames.copy()))
         if seam_yield is not None:seam_yield.apply(step=int(stamp.step))
         if (rig.cut and getattr(args,'native_drives_after_cut',False)
                 and not hasattr(springs,'handoff_receipt')):
@@ -255,6 +262,19 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             fixture.plan_approach()
             grasp_screen=fixture.screen_grasp_scene(runtime.frames) if not cut_only else None
             events.append(dict(t=t,event='left_park_maintained_no_grasp_approach' if cut_only else 'left_grasp_corridor_screened',result=grasp_screen))
+            if getattr(args,'screen_settled_waiting',False):
+                from .settled_waiting_search import search as waiting_search
+                if not records:raise RuntimeError('Missing settled native observation')
+                frozen=runtime.frames.copy();native_time=sim.current_time;step=int(stamp.step)
+                def frozen_guard():
+                    fresh=pose_matrices(runtime.bodies.get_transforms()[runtime.order])
+                    if (sim.current_time!=native_time or clock.stamp.step!=step
+                            or not np.array_equal(fresh,frozen)):
+                        raise RuntimeError('Settled waiting sample changed; no restart proposals')
+                proposals=waiting_search(fixture,frozen,records[-1],step=step,time_s=t,
+                    physics_hz=args.physics_hz,guard=frozen_guard,history=waiting_history)
+                events.append(dict(t=t,event='settled_waiting_restart_proposals',result=proposals))
+                raise RuntimeError('Settled waiting diagnostic completed; relaunch and revalidate, no grasp/cut executed')
             if grasp_screen is not None and not grasp_screen['passed']:
                 raise RuntimeError('Left grasp corridor intersects unintended plant geometry')
             goal_set=True
@@ -336,7 +356,10 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                     local_coms=np.asarray(runtime.bodies.get_coms())[runtime.order,:3],
                     current_frames=runtime.frames,friction=fixture.friction,physics_hz=args.physics_hz)
                 events.append(dict(t=t,event='precut_static_retention_screen',result=capacity))
-                if not capacity['prerequisite_passed']:
+                from .retention_policy import evaluate as retention_policy
+                decision=retention_policy(capacity,native_trial=getattr(args,'native_retention_trial',False))
+                events.append(dict(t=t,event='retention_assessment_policy',result=decision))
+                if not decision['continue_to_independent_cut_planning']:
                     raise RuntimeError('Static retention capacity not established; knife planning/execution refused')
             events.append(dict(t=t,event='unheld_target_reobserved_before_cut_plan' if cut_only else 'native_grasp_reobserved_before_cut_plan',
                 requested_reposition_m=reposition,grasp_body=fixture.grasp_path,
@@ -743,6 +766,9 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     passed_state='passed_cut_only_mechanism_not_robot_task' if cut_only else 'passed_bimanual_mechanism_not_robot_task'
     result=dict(state=passed_state if all(gates.values()) else 'failed_cut_only_qualification' if cut_only else 'failed_bimanual_qualification',
         cut_strategy='right_only' if cut_only else 'bimanual',left_grasp_verified=grasp_verified,
+        retention_assessment_mode=('native_outcome_experiment' if getattr(args,'native_retention_trial',False)
+            else 'not_required_right_only' if cut_only else 'static_prerequisite_and_native_outcome'),
+        native_retention_trial_requested=bool(getattr(args,'native_retention_trial',False)),
         retention_expected=not cut_only,dropped_material_expected=cut_only,drop_corridor_certified=False,
         gates=gates,error=fault,events=events,images=captures,image_evidence=capture_receipts,
         timing=clock.report(),robot=fixture.report(),

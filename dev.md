@@ -8819,3 +8819,57 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   native404 already has Fabric/USD transform updates disabled. Neither a
   presumed UI update nor enabling Fabric again is a demonstrated speed fix.
   Full-greenhouse A and responsiveness C remain open; VLM/data/training paused.
+
+### 2026-09-14 continued: measured settling proposals and explicit retention experiment
+
+- Committed waiting search e4b5f5e. Full directory regression v34:4917 passed
+  in227.93s. Native409's-20mm alternative still stops at0.9s on the current
+  target screen; no grasp or cut. No collision exclusion added.
+- Added --screen-settled-waiting, an explicit noninteractive initialization
+  diagnostic which stops before arm approach/grasp/cut. It binds the current
+  record/step/time/native frames, original target identity and static cache.
+  Up to35 wrist-translation candidates receive independent FK/source-limit,
+  all left self/inter-arm knots, original-rest and observed-target checks.
+  At most8 geometric restart proposals,30s limit; never motion authority.
+- Native410's endpoint-only first version finds7 proposals in7.438s. Its fresh
+  physical candidate411 passes startup but contacts Leaf006 at0.097917s:
+  knife ArcContacts08/10, total normal-plus-friction0.925449N; the guard stops.
+  This is a FAILED trial, not safe cutting. Native411 briefly included a
+  contact-buffer copy experiment, with unchanged accounting/forces; that
+  source change was subsequently reverted as described below.
+- Strengthened the diagnostic to retain EVERY guarded settling step, reject
+  missing/repeated/nonrigid/stale history and enclose the sampled motion in
+  conservative swept leaf hulls/shaft boxes. No source/native collider change.
+  Native412 includes432 samples,35 candidates,7 geometric proposals in7.5s.
+  This does not prove continuous-time clearance or that a new simulation
+  reproduces the identical settling path; fresh native guards are mandatory.
+- Native413 uses proposal3: right wrist world offset[0,-0.04,-0.04]m from401's
+  waiting pose. It passes original startup AND moving-scene left approach,
+  achieves bilateral grasp, max material slip18.651873 micrometres. It stops
+  at9.06875s before knife planning: static utilization3.217302, detached mass
+  12.385444g. Evidence: native413/report.json and grasp_close.png. Full original
+  surroundings, source assets, cameras, knife and native force limits remain.
+- Added explicit --native-retention-trial to TEST a different retention
+  assumption, not to hide this failure. The default still refuses over-budget
+  static balance. In this headless full bimanual through-stroke experiment,
+  only a valid, bound, solved over-budget patch may continue to independently
+  checked knife planning; the failed static result and changed assessment mode
+  stay recorded. Actual bilateral/dwell,3mm slip,0.5N per-finger all-contact,
+  blade alignment/force/travel, scene, through-stroke and withdrawal guards are
+  unchanged. Full native-retention gate still requires the physical outcome.
+  Missing/unbalanced/invalid data still refuses. A flexible branch may droop
+  rather than sustain the original six-axis static orientation; whether this
+  succeeds under our actual contact model is UNKNOWN. Native414 tests it; pending.
+-57 waiting/owner tests pass in both interpreters; full directory v35:4940
+  passed in242.77s before the retention-policy addition.63 focused retention/
+  preflight/settled-search tests pass in both interpreters after that addition.
+- A one-pass contact-buffer copy experiment preserved test accounting but a
+  6000-header Python-stub comparison showed no consistent speed benefit (16-row
+  case slightly slower). Reverted both implementation and its specific test;
+  original callback remains. Evidence: contact_copy_comparison_20260914_v2.log.
+  v1 failed due missing PYTHONPATH and measured nothing. No native speed claim.
+- Read-only host snapshot during412: Ryzen9950X,32 logical processors,23% load,
+  7587MiB available RAM,6077 pages-input/s,451 page reads/s,267089309696-byte
+  paged pool. Existing severe host memory pressure remains a timing confounder;
+  no reboot, unrelated app shutdown or launch-reserve bypass. A/C remain open,
+  milestone unfrozen; VLM/dataset/training/hardware untouched.

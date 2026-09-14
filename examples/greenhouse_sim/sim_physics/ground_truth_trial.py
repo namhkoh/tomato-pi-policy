@@ -111,6 +111,8 @@ def main(argv=None):
     p.add_argument('--screen-ready-pose',action='store_true',help='Zero-motion native elbow search only; saves proposals and stops before physics')
     p.add_argument('--screen-grasp-approach',action='store_true',help='Zero-motion left grasp orientation search; same material point, no grasp/cut authority')
     p.add_argument('--screen-approach-start',action='store_true',help='Zero-motion higher/lateral waiting-pose search only')
+    p.add_argument('--screen-settled-waiting',action='store_true',help='Diagnostic proposals after native gravity settling, then stop before grasp/cut')
+    p.add_argument('--native-retention-trial',action='store_true',help='Explicit native retention experiment; static failure remains reported, live guards unchanged')
     p.add_argument('--screen-tool-heading',action='store_true',help='Zero-motion arc-up complete-tool heading search only')
     p.add_argument('--screen-station',action='store_true',help='Zero-motion base/two-arm proposal search; no base-motion or path authority')
     p.add_argument('--cut-station-orbit',action='store_true',help='Screen raised waiting and cut-entry poses; requires --screen-station; prior frame is optional')
@@ -134,6 +136,16 @@ def main(argv=None):
     p.add_argument('--physics-dispatcher',choices=('carb','physx'),default=None,
         help='Explicit process-local CPU dispatcher comparison; unchanged physical profile')
     args=p.parse_args(argv)
+    if args.native_retention_trial and not (args.mode=='bimanual' and args.process_zone_trial
+            and args.milestone=='cut_action' and args.through_stroke_trial and not args.watch
+            and not args.screen_settled_waiting and not any((args.screen_ready_pose,args.screen_approach_start,
+                args.screen_tool_heading,args.screen_station,args.screen_grasp_approach))):
+        p.error('Native retention experiment requires non-watched bimanual through-stroke process-zone trial')
+    if args.screen_settled_waiting and not (args.mode=='bimanual' and args.process_zone_trial
+            and args.milestone=='cut_action' and not args.watch
+            and not any((args.screen_ready_pose,args.screen_approach_start,args.screen_tool_heading,
+                         args.screen_station,args.screen_grasp_approach))):
+        p.error('Settled waiting search requires non-watched bimanual process-zone cut_action without startup search')
     if args.station_left_seed_search and not (args.mode=='bimanual' and args.screen_station and args.cut_station_orbit):
         raise ValueError('Left elbow proposals require a zero-motion bimanual station search')
     if args.process_zone_trial and args.historical_mounting_plate:
@@ -205,6 +217,8 @@ def main(argv=None):
     if args.screen_ready_pose:options+=['--native-startup-pose-search']
     if args.screen_grasp_approach:options+=['--native-startup-grasp-search']
     if args.screen_approach_start:options+=['--native-startup-approach-search']
+    if args.screen_settled_waiting:options+=['--screen-settled-waiting']
+    if args.native_retention_trial:options+=['--native-retention-trial']
     if args.screen_tool_heading:options+=['--native-startup-heading-search']
     if args.screen_station:options+=['--native-startup-station-search']
     if args.cut_station_orbit:options+=['--cut-station-orbit']

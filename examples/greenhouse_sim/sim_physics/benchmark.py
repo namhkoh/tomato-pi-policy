@@ -173,6 +173,10 @@ def parser():
         help='Zero-motion higher/lateral waiting-pose proposals with unchanged blade orientation; no path approval')
     p.add_argument('--native-startup-pose-search',action='store_true',
         help='Read-only frozen-scene elbow proposals; always stops before any physics motion')
+    p.add_argument('--screen-settled-waiting',action='store_true',
+        help='Diagnostic initial waiting-pose proposals after 0.9s native settling; no grasp or cut execution')
+    p.add_argument('--native-retention-trial',action='store_true',
+        help='Explicit dynamic outcome experiment: static patch failure is diagnostic; all live guards remain')
     p.add_argument('--native-startup-heading-search',action='store_true',
         help='Zero-motion source knife heading proposals, preserving arc-up and the complete mounted tool')
     p.add_argument('--native-startup-clearance',action='store_true',
@@ -469,6 +473,17 @@ def main(argv=None):
             and args.native_startup_clearance and not args.watch_cut_trial and not args.robot_interactive):
         raise ValueError('Grasp proposals require a zero-motion unparked bimanual search')
     startup_search=any((args.native_startup_pose_search,args.native_startup_approach_search,args.native_startup_heading_search,args.native_startup_station_search,args.native_startup_grasp_search))
+    if args.native_retention_trial and not (args.cut_action_trial and args.bimanual_cut
+            and not cut_only and args.require_retention_screen and args.settle_retention_preload
+            and args.through_stroke_trial and args.native_startup_clearance and args.native_static_clearance
+            and not startup_search and not args.screen_settled_waiting and not args.watch_cut_trial
+            and not args.gui and not args.robot_interactive):
+        raise ValueError('Native retention experiment requires full noninteractive bimanual through-stroke trial')
+    if args.screen_settled_waiting and not (args.cut_action_trial and args.bimanual_cut
+            and not cut_only and args.native_startup_clearance and args.native_static_clearance
+            and args.diagnostic_grasp_dynamics and not startup_search
+            and not args.watch_cut_trial and not args.gui and not args.robot_interactive):
+        raise ValueError('Settled waiting search requires noninteractive full bimanual cut diagnostic without startup search')
     if sum((args.native_startup_pose_search,args.native_startup_approach_search,args.native_startup_heading_search,args.native_startup_station_search,args.native_startup_grasp_search))>1:
         raise ValueError('Select one zero-motion startup search mode')
     if startup_search and not (args.native_startup_clearance and
