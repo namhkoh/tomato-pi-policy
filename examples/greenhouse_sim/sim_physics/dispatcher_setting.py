@@ -8,6 +8,24 @@ https://docs.omniverse.nvidia.com/kit/docs/omni_physics/110.0/dev_guide/settings
 SETTING='/physics/physxDispatcher'
 
 
+def startup_configuration(configuration,mode):
+    """Configure a requested scheduler before Kit initializes its interfaces.
+
+    Post-start readback/restoration remains separate. Never mutate the caller's
+    launcher options or append contradictory native arguments.
+    """
+    if mode not in (None,'carb','physx'):
+        raise ValueError('Explicit carb/physx dispatcher comparison required')
+    result=dict(configuration)
+    if mode is not None:
+        extra=list(result.get('extra_args',[]))
+        if any(not isinstance(v,str) or v.startswith('--'+SETTING) for v in extra):
+            raise ValueError('Invalid or conflicting dispatcher startup argument')
+        extra.append('--'+SETTING+'='+('true' if mode=='physx' else 'false'))
+        result['extra_args']=extra
+    return result
+
+
 class DispatcherSetting:
     def __init__(self,settings,mode):
         if mode not in (None,'carb','physx'):

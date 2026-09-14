@@ -688,8 +688,9 @@ def main(argv=None):
             return 2
     from isaacsim import SimulationApp
     from .startup_report import start as start_application
-    app=start_application(SimulationApp,{'headless':not (args.gui or args.watch_cut_trial),'width':1280 if args.interactive or args.watch_cut_trial else 848,'height':900 if args.watch_cut_trial else 720 if args.interactive else 408,'multi_gpu':False,
-                       'sync_loads':False,'renderer':'RaytracedLighting'},output,report)
+    from .dispatcher_setting import startup_configuration
+    app=start_application(SimulationApp,startup_configuration({'headless':not (args.gui or args.watch_cut_trial),'width':1280 if args.interactive or args.watch_cut_trial else 848,'height':900 if args.watch_cut_trial else 720 if args.interactive else 408,'multi_gpu':False,
+                       'sync_loads':False,'renderer':'RaytracedLighting'},args.physics_dispatcher),output,report)
     import carb.settings
     process_settings=carb.settings.get_settings()
     thread_setting='/persistent/physics/numThreads'
@@ -903,6 +904,8 @@ def main(argv=None):
         report['contact_solver_order']=author_contact_order(physics.GetPrim(),
             enabled=getattr(args,'solve_articulation_contact_last',False))
         if args.native_startup_clearance:
+            from .startup_report import checkpoint
+            checkpoint(output,report,'before_native_parse')
             from .native_startup_screen import screen as native_startup_screen
             if startup_search:fixture.startup_right_pose_search=True
             if args.native_startup_approach_search:fixture.startup_approach_search=True
@@ -926,8 +929,11 @@ def main(argv=None):
         if (report['effective_scene']['solver']!=args.solver
                 or not np.isclose(report['effective_scene']['gravity_m_s2'],args.gravity,rtol=1e-6,atol=1e-8)):
             raise RuntimeError('Simulation initialization changed explicit scene configuration')
+        from .startup_report import checkpoint
+        checkpoint(output,report,'before_reset')
         sim.reset()
         report['cpu_dispatcher_after_reset']=dispatcher.verify()
+        checkpoint(output,report,'after_reset')
         if 'uniform_solver_iterations' in report:
             from .solver_configuration import verify_iterations
             verify_iterations(stage,report['uniform_solver_iterations'])

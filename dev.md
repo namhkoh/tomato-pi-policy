@@ -8565,3 +8565,35 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
 -86 focused dispatcher/CLI/search/exit tests pass. Covers default no-write,
   true/false/missing prior settings, lost readback and failed setter restoration.
   This experimental switch is not a new qualified default or A/C completion.
+
+### 2026-09-14 continuation: scheduler stall evidence and startup checkpoints
+
+- Native375's explicit physx dispatcher/one-thread trial STALLS in the SDK's
+  initial simulate inside SimulationManager.initialize_physics (line704),
+  called by SimulationContext.reset. Repeated external Python/native stack
+  samples agree; there is no control-loop trajectory or completed cut result.
+  Stopped only owned Kit94928 after revalidating its command line. This is NOT
+  a performance result; default dispatcher stays unchanged. See native375's
+  termination_receipt.json and native375_*stack*_20260914.log files.
+- Installed py-spy0.4.1 into ignored data/sim_physics/debug_tools_pyspy solely
+  for that owned-process stack inspection (no model download/system install,
+  no local-variable dump). Other apps and hardware remain untouched.
+- Explicit dispatcher selection is now also passed through the installed
+  SimulationApp extra_args BEFORE Kit initializes its native interfaces.
+  Post-start/readback/restoration checks remain. Whether earlier configuration
+  or more workers resolves the native stall is an UNTESTED hypothesis, not a fix
+  claim. Fifty-five focused startup/dispatcher/exit tests pass.
+- New exclusive startup_before_native_parse.json, startup_before_reset.json,
+  startup_after_reset.json snapshots expose blocking phases. They retain the
+  current report as diagnostic data, explicitly with no task/motion/training
+  authority, never overwrite report.json or an existing checkpoint, and reject
+  nonfinite serialization before file creation. No per-tick I/O is added.
+- Full v27 regression before those final bootstrap/checkpoint changes passes
+  4871 tests in234.39s. Latest focused tests cover the added changes.
+- Native376 moves the source71 horizontal-grasp trial to existing end-row23
+  while preserving all plants. Native startup rejects left arm4 versus the
+  opposite-side backdrop006 leaf mesh. Native377's bounded search checks76
+  candidates in45s with3549 queries, all1053 scene/71 robot final controls,
+  and no clear waiting pose. No bimanual success or geometry removal.
+- A/C remain OPEN; isolated A passes use the explicit main-stem/selected-branch
+  contact fixture, not full intact-plant access. B's latest physical pass is367.

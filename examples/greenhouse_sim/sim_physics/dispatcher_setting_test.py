@@ -68,3 +68,23 @@ def test_cli_keeps_default_and_physics_contract(monkeypatch,tmp_path):
     class Validated(Exception):pass
     monkeypatch.setattr(Path,'mkdir',lambda *a,**k:(_ for _ in ()).throw(Validated()))
     with pytest.raises(Validated):benchmark.main(captured)
+
+
+@pytest.mark.parametrize('mode',[None,'carb','physx'])
+def test_bootstrap_option_precedes_kit_and_preserves_other_options(mode):
+    from .dispatcher_setting import startup_configuration
+    source={'headless':True,'renderer':'RaytracedLighting','extra_args':['--/unrelated=true']}
+    result=startup_configuration(source,mode)
+    assert source['extra_args']==['--/unrelated=true']
+    assert result['headless'] is True and result['renderer']=='RaytracedLighting'
+    expected=['--/unrelated=true']
+    if mode is not None:expected.append('--/physics/physxDispatcher='+str(mode=='physx').lower())
+    assert result['extra_args']==expected
+    assert startup_configuration({'headless':True},None)=={'headless':True}
+
+
+def test_conflicting_bootstrap_arguments_fail_before_application_creation():
+    from .dispatcher_setting import startup_configuration
+    for extra in (['--/physics/physxDispatcher=false'],[None]):
+        with pytest.raises(ValueError):startup_configuration({'extra_args':extra},'physx')
+    with pytest.raises(ValueError):startup_configuration({},'gpu')

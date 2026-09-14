@@ -26,3 +26,25 @@ def test_failure_never_overwrites_an_existing_report(tmp_path):
     def fail(config):raise RuntimeError('failed')
     with pytest.raises(FileExistsError):start(fail,{},tmp_path,{})
     assert p.read_text()=='preserved'
+
+
+@pytest.mark.parametrize('phase',['before_native_parse','before_reset','after_reset'])
+def test_checkpoint_is_diagnostic_exclusive_and_does_not_mutate_report(tmp_path,phase):
+    from .startup_report import checkpoint
+    report={'state':'initializing','configuration':{'solver':'PGS'}}
+    before=json.dumps(report)
+    checkpoint(tmp_path,report,phase)
+    path=tmp_path/('startup_'+phase+'.json');saved=json.loads(path.read_text())
+    assert saved['state']=='startup_checkpoint_not_qualification'
+    assert not saved['motion_authorized'] and not saved['training_eligible']
+    assert saved['phase']==phase and saved['report_snapshot']==report
+    assert json.dumps(report)==before and not (tmp_path/'report.json').exists()
+    with pytest.raises(FileExistsError):checkpoint(tmp_path,report,phase)
+    assert json.loads(path.read_text())==saved
+
+
+def test_unknown_phase_and_nonfinite_snapshot_do_not_create_checkpoint(tmp_path):
+    from .startup_report import checkpoint
+    with pytest.raises(ValueError):checkpoint(tmp_path,{},'../report')
+    with pytest.raises(ValueError):checkpoint(tmp_path,{'bad':float('nan')},'before_reset')
+    assert not list(tmp_path.iterdir())
