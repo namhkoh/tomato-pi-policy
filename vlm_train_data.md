@@ -1470,3 +1470,43 @@ this diagnostic. It does not waive draft validation or measure model performance
 Evidence:`diagnostics/clear_checkpoint_393_train_input_contract_20260915_v1.json`
 and matching log. Bound dataset manifest SHA256:
 `5bc2e57f66f00bdcfc358dd81a249d300a513917f3f9d63d65c4af2ce07c9b04`.
+
+### 2026-09-15 07:00 KST native-resolution decision and review checkpoint
+
+The user's latest decision explicitly allows a separate higher-resolution
+capture set, superseding their preceding848x408-only answer. Planned native
+pilot:1696x816 (same aspect ratio, fixed mounted head camera, focal length,
+apertures and full greenhouse). This is new native rendering, not enlargement
+of existing848x408 files, and not a claim that the physical D405 supports this
+mode. Existing captures, plans and queued848x408 jobs remain unchanged.
+
+Added the isolated`capture_sensor.py` contract and28 passing unit tests.
+It validates supported dimensions, recomputes pixel intrinsics from unchanged
+authored optics, preserves the rigid camera transform/metric optical-Z geometry,
+and converts coordinates against explicitly declared dimensions. It does not
+render, resample RGB/depth or grant training readiness. No high-resolution
+capture has yet run. The existing collector, reviewers, export validators and
+Qwen adapters still contain848x408 assumptions; they must be handled together
+before a high-resolution training release, with separate native RGB/depth/
+instance and calibration smoke tests. The running legacy collector has not
+been changed to use this new helper.
+
+`collection_intake/clear_combined_20260915_checkpoint_v6` validated397 images;
+the NEW checkpoint_v7 includes orbit job017(seed67) and validates401 selected
+images/all401 individual accepts, with zero missing reviews. Counts:
+train286/50/14, validation42/8/3, test73/11/3. All coverage categories still fail.
+Job017 provided10 native frames/seven strict candidates, all individually
+accepted; three otherwise accepted views were removed by combined view capping.
+Evidence:`clear_combined_checkpoint_v7_20260915.log`. The latest curation
+workflow additionally refuses promotion if ANY selected image lacks its own
+review, even if the general release minimum would otherwise pass.
+
+Orbit job018(seed71) exited0 in689.42s with14 native frames/nine strict
+candidates. All originals were inspected; eight accepts and one hold are saved
+in`dataset_reviews/clear_capture_20260915_orbit_v2/job_018_reviews.json`.
+Held`seed71_full_d0563270fb33b532fe82`: a folded foreground leaf makes the
+immediate attachment uncertain despite a visible nominal segment. This new
+hold joins the six preserved earlier holds; it is not overridden by numeric
+visibility. Job018 is not yet in checkpoint_v7. Individual candidate-review
+totals are446 images:439 accepts/seven holds before combined view capping.
+The final training ZIP remains pending coverage, complete review and validation.
