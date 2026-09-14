@@ -26,6 +26,14 @@ from .dataset_package import active_reviews
 from .query_visibility import QueryVisibility
 
 SCHEMA_RELEASE='greenhouse.grounding_training_release.v1'
+
+
+class NoEligibleLabelsError(ValueError):
+    """Sources passed validation, but no observation supports an eligible label."""
+    def __init__(self,exclusions):
+        super().__init__('No eligible synthetic labels; no release written')
+        self.exclusions=exclusions
+
 # A complete first substantive release, not a ten-image plumbing demonstration.
 RELEASE_GATES={'minimum_rows':{'train':10000,'validation':500,'test':500},
                'minimum_families':{'train':16,'validation':4,'test':4},
@@ -255,8 +263,8 @@ def gather(audit_paths, *, output=None,progress=None):
                 difficulty=label['difficulty'],answer=label['answer'],query_pixel_uv=label['query_pixel_uv'],rgb_sha256=key,
                 directory=directory,metadata=meta,label=label,source_audit_sha256=audit_hash,task_contract_sha256=contract_hash(),
                 source_sample_sha256=sha256(directory/'sample.json'),capture_profile=profile,view_signature=signature))
-    require(bool(candidates),'No eligible synthetic labels; no release written')
     verify_review_directories(review_directories)
+    if not candidates:raise NoEligibleLabelsError(exclusions)
     return dict(candidates=candidates,exclusions=exclusions,bindings=bindings,source_plans=source_plans,
         review_directories=review_directories)
 

@@ -1174,3 +1174,26 @@ collected. This avoids recapturing an already-qualified pilot when scaling an
 alternate viewpoint campaign; no alternate scale-up has been launched yet.
 Full data regression696 tests +47 subtests passed in47.13s
 (`data/sim_data/clear_regression_20260915_v10.log`).
+
+### 2026-09-15 04:00 KST capture-boundary and intake fixes
+
+All31 seed31 test RGBs were individually inspected with GT-coordinate guidance
+for label QA:30 accepts and1 hold (foreground leaf hides the immediate junction).
+Total reviewed so far300, with295 accepts/5 holds; source labels unchanged.
+Held-out QA is not model evaluation or independent human validation.
+
+Code inspection found the native prepared-view recheck omitted lean/orbit flags.
+`prepared_view_specs` now reconstructs all opt-in proposal flags exactly; existing
+tamper and geometry checks remain enabled. These flags were absent in the
+original running campaign, so that campaign's captures are not affected. Native
+alternate-pilot qualification is still pending. Regression713 +47 subtests passed
+before the separate intake fix below (`clear_regression_20260915_v11.log`).
+
+The first intake watcher stopped on a valid seed37 batch with two native images
+but no eligible query-conditioned labels. This is not a native capture failure.
+The export now raises a dedicated validated-empty exception after its source and
+review checks. Intake records that case without approval and continues; all other
+exceptions remain fatal. The failed intake directory/receipt is preserved. A new
+intake run will revalidate completed batches rather than overwrite old outputs.
+Full data regression714 +47 subtests passed in46.19s
+(`clear_regression_20260915_v12.log`). No coverage gate was relaxed; no final ZIP.

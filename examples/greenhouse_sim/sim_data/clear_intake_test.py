@@ -44,3 +44,18 @@ def test_stopped_campaign_cannot_materialize_final_release(tmp_path,monkeypatch)
     monkeypatch.setattr(intake,'materialize',forbidden)
     with pytest.raises(ValueError,match='Collection stopped'):watch(campaign,tmp_path/'out',timeout=60)
     assert (tmp_path/'out/failure.json').exists() and not (tmp_path/'out/aggregate').exists()
+
+
+def test_only_validated_empty_batch_is_a_nonapproving_intake_result(tmp_path,monkeypatch):
+    import sim_data.training_export as exporter
+    from sim_data.clear_collection_intake import materialize
+    audit=tmp_path/'audit.json';write_json(audit,{'test_only':True})
+    def empty(*a,**k):raise exporter.NoEligibleLabelsError([dict(reason='query_not_visible')])
+    monkeypatch.setattr(exporter,'build',empty)
+    r=materialize([audit],tmp_path/'empty')
+    assert r['state']=='no_eligible_synthetic_labels' and r['excluded']==1
+    assert not r['training_approved'] and not (tmp_path/'empty/source').exists()
+    def invalid(*a,**k):raise ValueError('Changed source audit')
+    monkeypatch.setattr(exporter,'build',invalid)
+    with pytest.raises(ValueError,match='Changed source audit'):materialize([audit],tmp_path/'invalid')
+    assert not (tmp_path/'invalid/result.json').exists()

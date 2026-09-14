@@ -37,12 +37,19 @@ def checked_audit(record):
 
 
 def materialize(audits, output):
-    from .training_export import build as pool
+    from .training_export import build as pool,NoEligibleLabelsError
     from .clear_cutpoint_release import build as clear, scan
     from .clear_cutpoint_review import build as review
     output=Path(output).resolve();require(not output.exists(),'New intake output required')
     output.mkdir(parents=True)
-    pool(audits,output/'source',allow_incomplete=True)
+    try:pool(audits,output/'source',allow_incomplete=True)
+    except NoEligibleLabelsError as exc:
+        result=dict(created_utc=datetime.now(timezone.utc).isoformat(),
+            source_audits={str(p):sha256(p) for p in audits},
+            state='no_eligible_synthetic_labels',clear_candidates=0,excluded=len(exc.exclusions),
+            exclusions=exc.exclusions,training_approved=False,visual_review_performed=False)
+        write_json(output/'result.json',result)
+        return result
     rows,exclusions=scan(output/'source')
     result=dict(created_utc=datetime.now(timezone.utc).isoformat(),
                 source_audits={str(p):sha256(p) for p in audits},

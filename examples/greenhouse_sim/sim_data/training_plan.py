@@ -150,6 +150,15 @@ def build_plan(package, output, config):
     return result
 
 
+def prepared_view_specs(plan,target_id,original_x):
+    """Reconstruct every authorized proposal flag at the native capture boundary."""
+    return {s['candidate_id']:s for s in view_specs(original_x,plan['target_world_m'][target_id][0],
+        target_id,plan['requested_views_per_target'],
+        **{k:plan.get(k,False) for k in ('vary_torso','clear_capture','opposite_aisle',
+                                       'oblique_clear','lean_clear','orbit_clear')},
+        view_offset=plan.get('view_offset',0))}
+
+
 def load_plan(path):
     plan=read_json(path)
     require(plan.get('schema_version')==SCHEMA and plan.get('state')=='ready_for_synthetic_grounding_capture', 'Invalid grounding plan')

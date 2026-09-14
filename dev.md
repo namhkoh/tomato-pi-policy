@@ -9836,3 +9836,10 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   test-family review ongoing. No final coverage/ZIP claim. Added explicit
   campaign job subsets to avoid duplicate pilot capture without changing
   source plans/splits. Full data tests696 +47 subtests passed in47.13s.
+
+- 04:00 KST data checkpoint:300 originals individually reviewed,295 accepts and
+ 5 holds. Fixed missing lean/orbit flags in native prepared-view reconstruction;
+ original campaign unaffected, alternate pilots still pending. Intake now records
+ explicitly validated zero-eligible-label batches without approving them; other
+ failures remain fatal. Old stopped intake receipt preserved. Full data tests714
+ +47 subtests passed in46.19s. See `vlm_train_data.md`; no final training ZIP yet.

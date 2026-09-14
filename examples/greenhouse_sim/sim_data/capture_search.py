@@ -42,11 +42,9 @@ def run_refined_capture(stage, rep, args, manifest, robot, records, reports, var
             raise ValueError("Prepared view plan original base mismatch")
         for target_id, planned in plan["selected"].items():
             if grounding:
-                from .training_plan import view_specs
+                from .training_plan import prepared_view_specs
                 bound=plan['requested_views_per_target']
-                allowed={s['candidate_id']:s for s in view_specs(original_x, plan['target_world_m'][target_id][0], target_id, bound,
-                                                                vary_torso=plan.get('vary_torso',False),view_offset=plan.get('view_offset',0),clear_capture=plan.get('clear_capture',False),
-                                                                opposite_aisle=plan.get('opposite_aisle',False),oblique_clear=plan.get('oblique_clear',False))}
+                allowed=prepared_view_specs(plan,target_id,original_x)
             else:
                 bound=3
                 allowed = {s["candidate_id"]:s for s in focus_specs(original_x, plan["target_world_m"][target_id][0])}
