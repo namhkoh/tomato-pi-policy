@@ -748,6 +748,17 @@ class BimanualRobot(FullRobotGripper):
                     detail={};solution=None;full_modes=[]
                     attempt['rigid_tool_transits']=detail
                     attempt['full_path_modes_attempted']=full_modes
+                    if getattr(self,'joint_transit_fallback',False):
+                        # This mode already requires this identical endpoint
+                        # solve even if every Cartesian template is blocked.
+                        # Do it once before those expensive previews. A failed
+                        # seed cannot enter either the Cartesian or joint path
+                        # branch; no accepted path or collision test is removed.
+                        solution=self.solve_right_pose(desired,self.right)
+                        attempt.update(ik_attempted=True,ik_succeeded=solution.succeeded,
+                            evaluations=solution.evaluations,endpoint_seed_precedes_transit=True)
+                        if not solution.succeeded:
+                            attempt['rejection']='endpoint_IK';continue
                     def accept_mode(mode):
                         nonlocal solution
                         if solution is None:

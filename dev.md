@@ -8897,3 +8897,28 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   4957 passed in234.97s. Full v37 and physical native415 are pending.
   Native415 repeats414 to assess actual search coverage/outcome, not to claim
   native physics FPS improvement. A/C remain open; no full milestone freeze.
+
+### 2026-09-14 continued: endpoint-first joint-fallback search, measured result
+
+- Native415 confirms the first pruning change alone is insufficient:68.127904s,
+  18 endpoint candidates,8 attempted IK,0 converged, native query wall timeout.
+  Many nominal sweeps were all rejected before the shared endpoint was tried.
+- For explicit joint-transit fallback only, moved that already-required IK
+  solve ahead of nominal approach previews, still AFTER full rigid cut-stroke
+  screening. Both the old Cartesian and joint branches required the same solve;
+  a failed result could reach neither. Non-fallback mode retains lazy IK and
+  the stop-after-known-failure behavior. No templates, physical checks, source
+  geometry, contact limits, candidate order or IK seeds were removed/changed.
+- Native416 repeats the same physical grasp (max slip18.651873um) and checks
+  ALL50 candidates in14.852184s instead of timing out after18 in68.127904s.
+  25 rigid-tool conflicts,25 attempted IK and0 converged, no path/cut. This is
+  about78% less planning wall time with greater search coverage; it is not an
+  FPS gain, safe motion certificate or global infeasibility proof. Left/right
+  camera interference blocks one heading; tested opposite-heading IK fails.
+-87 focused planner/transit/fallback tests pass in Isaac12.15s and Conda11.35s.
+  Full directory v37 (before endpoint-first addition):4960 passed in245.53s.
+  Full v38 is pending. Native417 tests the previously physically verified
+  source19/100mm/rolled20-degree side grasp with the explicit native-retention
+  experiment and all original cut/force/scene guards; pending, not a pass.
+  A/C remain open; B's prior direct-cut evidence remains separate. VLM work
+  remains paused and the simulator is not frozen as a finished milestone.

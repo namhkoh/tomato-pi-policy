@@ -58,9 +58,10 @@ def test_native_query_exception_restores_dispatch_and_propagates(monkeypatch):
     assert len(calls)==1 and not r._joint_transit_proposal and r.plan is None
 
 
-def test_known_endpoint_ik_failure_does_not_repeat_useless_rigid_transits(monkeypatch):
+@pytest.mark.parametrize('fallback',[False,True])
+def test_known_endpoint_ik_failure_does_not_repeat_useless_rigid_transits(monkeypatch,fallback):
     import sim_physics.rigid_tool_screen as rigid
-    r,calls=setup(monkeypatch);solves=[];transits=[]
+    r,calls=setup(monkeypatch);r.joint_transit_fallback=fallback;solves=[];transits=[]
     def solve(*a):
         solves.append(1)
         return S(succeeded=False,joint_degrees=np.zeros(7),evaluations=1,
@@ -74,6 +75,7 @@ def test_known_endpoint_ik_failure_does_not_repeat_useless_rigid_transits(monkey
     monkeypatch.setattr(rigid,'RigidToolScreen',Rigid)
     with pytest.raises(RuntimeError,match='No bimanual'):r._plan_cut([],np.zeros(7))
     attempts=r.plan_diagnostics['endpoint_attempts']
-    assert len(solves)==len(transits)==len(attempts)==50
+    assert len(solves)==len(attempts)==50
+    assert len(transits)==(0 if fallback else 50)
     assert all(a['rejection']=='endpoint_IK' for a in attempts)
     assert not calls and r.plan is None

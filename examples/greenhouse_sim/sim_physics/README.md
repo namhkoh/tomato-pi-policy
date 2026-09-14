@@ -1480,3 +1480,11 @@ arm/path/stroke failures still try every fallback, and blocked rigid strokes
 still reject before IK. No native query/force/scene check is waived for a
 candidate that can proceed. Unit checks prove reduced redundant calls, not
 faster physical stepping; native planning latency remains to be measured.
+
+With explicit `--joint-transit-fallback`, the already-required shared endpoint
+solve now precedes all nominal approach previews (but follows the rigid cut
+stroke screen). Native415's first pruning version still timed out after18
+candidates in68.128s. Native416 completes all50 candidates in14.852s:25 rigid
+tool conflicts and25 failed endpoint IK solves, no accepted path or cut.
+This removes redundant planning work without changing physical stepping or
+claiming that the current bimanual pose is feasible.
