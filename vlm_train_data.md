@@ -1439,3 +1439,34 @@ optics, source-geometry, pre-screen or final-quality change was made. Native
 collection, conservative launch reserves and the two bounded opposite-side
 pilots remain in place. No model download, training or model-based held-out
 selection has occurred.
+
+### 2026-09-15 06:35 KST bounded followup and real-input integrity
+
+Queued a distinct original-side proposal window (`view_offset=12`) for the four
+lowest-coverage training families:jobs007/013/014/019(seed23/47/53/73). This uses
+the existing `collection_plans/clear_capture_20260915_original_shard2_v1` plan,
+not duplicate images or an altered split. It can start only after the current
+orbit campaign completes, both opposite-side pilots finish with audited or
+verified-empty outcomes, and every Kit process has exited. The queue expires
+after6h; workers are serial and bounded at1800s, with no automatic retries.
+All camera, native depth, geometry, quality and memory requirements remain.
+No full opposite-side campaign is automatically authorized by those pilots.
+
+Saved launcher/evidence:`diagnostics/clear_original_shard2_queue_20260915_v1.py`,
+the matching`.ps1`, and`clear_original_shard2_train_queue_20260915_v1.log`.
+Planned output:`collection_campaigns/clear_capture_20260915_original_shard2_train_v1`.
+A separate non-approving intake waits at most7h for its request, then watches
+for at most3h; output:`collection_intake/clear_capture_20260915_original_shard2_train_v1`,
+log:`clear_original_shard2_train_intake_20260915_v1.log`. These are queued jobs,
+not completed data or additional approved images. Orbit job013 independently
+returned a verified zero-screened-viewpoint result (478.47s); the two previously
+qualified lean-pilot images remain its only reviewed contribution so far.
+
+On all278 actual training rows of the393-image checkpoint, the adapter constructed
+the full848x408 RGB plus768x768 query-crop inputs. Perturbing the answer in memory
+left both input images and the prompt identical; no assistant answer turn was
+present. No held-out rows, Torch/Transformers, Isaac/USD or model were loaded by
+this diagnostic. It does not waive draft validation or measure model performance.
+Evidence:`diagnostics/clear_checkpoint_393_train_input_contract_20260915_v1.json`
+and matching log. Bound dataset manifest SHA256:
+`5bc2e57f66f00bdcfc358dd81a249d300a513917f3f9d63d65c4af2ce07c9b04`.
