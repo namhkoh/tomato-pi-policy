@@ -1393,3 +1393,15 @@ including the borderline fruit-adjacent example; it neither changed decisions
 nor increased unique review counts. This is the same assistant, not independent
 validation. Hash-bound notes:
 `diagnostics/clear_holds_secondary_20260915_v1.json`.
+
+Saved an additional INSPECTION checkpoint, not a final training release:
+`data/sim_data/transfers/clear_checkpoint_369_reviewed_20260915.inspection.zip`
+(844377452 bytes, bundled code`cdcb5a3`). SHA256:
+`0c23ebc95eab80eb7f36f3938a098003130b4a6ef1967507a63066527605c644`.
+All archive members were hash-verified. A new extraction then validated all369
+real rows using only bundled code in an isolated Python interpreter, constructed
+two-image inference input without an answer turn, imported no Isaac/USD, and
+correctly refused normal training validation for the draft. No weights or training
+were loaded. Evidence:`clear_checkpoint_369_transfer_20260915_v1.log` and
+`clear_checkpoint_369_portability_20260915_v1.log`. The prior339-image ZIP is
+preserved. Native collection and the queued opposite-side qualification continue.
