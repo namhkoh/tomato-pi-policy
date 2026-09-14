@@ -9611,3 +9611,47 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   interval and requires fresh path/force/full-section checks; it is not a
   certificate for the new neutral station. Next comparison follows467.
 - 22:30KST deadline was NOT met. A/B/C are not declared frozen; VLM stays paused.
+- Native467 floor-only comparison: no explosion across31526 recorded steps;
+  force-qualified release30.679167s unchanged from465, but the unchanged35s
+  traversal deadline stopped the knife at0.399677N side-face load and
+  -2.297468mm edge clearance. Recorded maximum plant speed6.070852m/s,
+  minimum floor separation-6.097855mm, maximum floor-row impulse0.0197736Ns.
+  These passive trace summaries are not native contact-completeness or tissue
+  certificates. This eliminates the observed explosion in this run, not all
+  numerical instability or floor penetration.
+- **Native468 PASS: all10 neutral-start greenhouse direct-cut gates.** Same
+  end-row seed19/SubStem_41, fixed station[0.3,-6.2,135deg], unchanged128/0
+  solver, exact local floor partition; use the PRE-EXISTING2.3mm distal aim
+  and its source-blade/stump half-space check, rather than1.5mm from the other
+  isolated target. Release30.664583s; full-section stroke37.372917s;
+  unloaded reverse43.041667s; final native withdrawal96.9s. Sharp-edge margin
+  0.524664mm; full ellipse axial extent2.897626mm stays inside3mm.3462 native
+  edge contacts, no released-debris robot contact, source assets unchanged.
+  Evidence: `data/sim_physics/bimanual_downward_20260914_native468/report.json`
+  and event-bound original PNGs. This is ONE case/run, not general reliability,
+  deposition, reset/replay, calibrated tissue fracture or synchronized data.
+- Native468 timing:96.9 simulated seconds /629.806 tick-wall seconds,
+  RTF0.153857. It overlapped regression work. Responsiveness C remains OPEN;
+  no real-time or speedup claim. Current greenhouse scope retains419 original
+  target components and original infrastructure; nearby surrounding plants
+  are static contacts, selected petiole dynamic; existing three-gutter context.
+- Final regression v56: **5222 passed in254.15s**,
+  `data/sim_physics/physics_regression_20260914_v56.log`.
+- Native469:13 source19 bimanual station proposals, no clear result; final
+  native controls passed, zero physics steps and no budget exhaustion. Nine
+  neutral-scene rejections, one pregrasp-self, two grasp/entry IK and one
+  interarm/extension rejection. This does not prove global infeasibility.
+- Native470 was CLI-only rejection (missing explicit source for end-row swap).
+  Native471 corrected this and passed initial native startup/neutral-path
+  screening for seed101 at original positive end-row slot23, preserving the
+  isolated relative robot/plant transform (base[0.52,6.25,-147.104778deg]).
+  It was deliberately stopped, not qualified, when the user narrowed the task
+  to showing ONE working example before VLM. No completed bimanual greenhouse
+  result is claimed. Only its owned headless Kit process was stopped.
+- User's revised immediate handoff: show the qualified greenhouse direct cut;
+  broader A/B/C freeze is deferred, not declared achieved. Native472 repeats
+  native468 with `--watch --watch-auto-run`; visible Isaac6.0.1 window verified
+  responding and `CUT_WATCH_READY` logged. Live repeat outcome pending.
+  Isolated neutral bimanual454/455/456/460 are four repeats of one case.
+  VLM work may resume after the requested demonstration; no collection,
+  dataset mutation or training was started during this continuation.

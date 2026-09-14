@@ -6,8 +6,23 @@ environment. Do not collect training demonstrations from this harness.
 
 ## September 14 current status - A/B/C NOT frozen
 
+Latest update: native468 passes all10 neutral-start greenhouse **direct-cut**
+gates on seed19/SubStem_41 at original end-row slot0. It uses the opt-in
+rate-limited approach, exact local floor partition, and existing2.3mm distal
+blade aim with full source-blade/stump clearance checks. Release30.665s,
+full downward section traversal37.373s, unloaded reverse43.042s, final native
+withdrawal96.9s. This is one case, not general reliability. RTF0.154 is still
+slow; responsiveness is NOT solved. See root `dev.md` and native468/report.json.
+The original floor/infrastructure and plant geometry remain; neighboring
+plants use static contacts, with the selected petiole dynamic. Native469's
+bimanual station search found no clear proposal. Native471's end-row bimanual
+trial was stopped at the user's request to show one working example, not
+qualified. Native472 is the visible direct-cut repetition. The user elected
+to defer broader A/B/C completion and move toward VLM after this demonstration;
+no training/data collection is authorized by a passing mechanism trial alone.
+
 Latest neutral-start checkpoint: native450 passes isolated direct cutting;
-native454/455/456 pass isolated grasp/retained-separation/downward-cut/full-traversal/
+native454/455/456/460 pass isolated grasp/retained-separation/downward-cut/full-traversal/
 unloaded-withdrawal. The latter uses the default-OFF `--retained-separation-trial`:
 after native force-qualified release, the left hand moves its drive target 2 mm
 along the blade normal toward the detached side, retaining real finger contact.
@@ -24,7 +39,7 @@ target2.531mm); full sharp-edge traversal40.356s; unloaded reverse74.008s;
 fresh final withdrawal check85s. Maximum grasp slip1.752mm, below3mm. All11
 existing gates pass, with separation separately verified.455/456 also include
 an explicit reobserved-separation gate (all12 pass). These are three repeats of
-one isolated case, not general reliability. The final full suite has5160 passes.
+one isolated case, not general reliability. The latest full suite has5222 passes.
 This does not establish
 general reliability, greenhouse access, calibrated tissue fracture or deposit.
 Native452/453 still reject greenhouse placement/access. Native454 RTF0.1753
