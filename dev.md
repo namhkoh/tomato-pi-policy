@@ -8483,7 +8483,7 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   61.274ms, inline-leaf28.087ms (2.182x). Every representative encoded packet
   matches byte-for-byte. This is encoding-helper timing, NOT a whole-sim speed
   result. Evidence: native365_inline_finite_timing.log under data/sim_physics.
- 43 focused tests pass under both Conda and Isaac; full v25 regression passes
+  Forty-three focused tests pass under both Conda and Isaac; full v25 regression passes
   4803 tests in197.27s. No record sampling/dropping or physical changes.
 - Further offline source19/SubStem41 steep-pad search with right SDK park can
   fit the left approach, but68 tested solutions cannot also clear cut entry;
@@ -8496,3 +8496,30 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   y-5.159018m/yaw180deg. It retains80mm grasp/20mm cut and all force/retention
   guards. Offline feasibility and a launch are NOT native success evidence.
 - A/C remain open. VLM tasks remain paused; no milestone freeze is claimed.
+
+### 2026-09-14 continuation: measured runtime gain and additional access checks
+
+- Native367 repeats the intact-greenhouse right-only recipe without profiling:
+  all nine gates pass,85 simulated seconds/40800 steps, cut18.71875s,3439 native
+  edge contacts, reverse45.177083s and screened egress. Maximum passive-debris
+  load remains2.973177N. Original assets/physics/guards and full-rate records
+  are retained. Tick wall504.274s versus native349's547.978s: about8% less wall
+  time, RTF0.168559 versus0.155116. This is still far below real time; C is OPEN.
+- Serialization time falls from59.821s to36.462s. All40800 selected physical
+  and guard records, including complete plant_dynamics, compare exactly;
+  robot joint maximum difference is zero. Whole records match40799/40800.
+  The sole difference is final withdrawal/native_static/epoch/simulation_time_s
+  (28.533333333333 to28.55). Do not claim byte-identical whole-run metadata.
+  Evidence: native367/report.json, inline_finite_native367_comparison.log and
+  inline_finite_native367_metadata_difference.log under data/sim_physics.
+- Native366 and368 both reject the source19/SubStem47 initial bimanual pose
+  before physics: left arm4 versus original Truss02/Fruit03, then alternate
+  left arm0 versus an original SubStem41 leaf. No contact filters, fruit,
+  foliage, force limits or retention checks were removed to admit these poses.
+- A read-only metadata survey of24 original plants ranks possible lower-lever
+  leaf-only branches. Its leaf-lever score is NOT a measured mass/COM or native
+  grasp certificate. See metadata_candidate_inventory_20260914.log. An offline
+  seed71/SubStem42 search finds12 IK/self/interarm/entry proposals; native369
+  tests one with original row0 geometry,80mm grasp,20mm cut and fresh guards.
+  Neither offline feasibility nor launching it establishes bimanual success.
+- A/C remain open. VLM/data/training/hardware remain untouched and paused.
