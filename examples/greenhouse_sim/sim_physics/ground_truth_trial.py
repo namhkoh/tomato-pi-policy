@@ -100,6 +100,7 @@ def main(argv=None):
     p.add_argument('--neutral-ready-start',action='store_true',help='Checked SDK-arm-ready approach before grasp/cut; upright torso and fixed base')
     p.add_argument('--rate-limited-approach-trial',action='store_true',help='Retime the checked neutral-start right approach; preserve cut-feed and postrelease deadlines')
     p.add_argument('--support-aware-feed-trial',action='store_true',help='Explicit faster post-release comparison using both knife and left-hand loads')
+    p.add_argument('--faster-cut-trial',action='store_true',help='Explicit faster guarded downward feed; requires2mm/s support-aware postrelease and full neutral trial')
     p.add_argument('--proportional-face-backoff-trial',action='store_true',help='Explicit post-release reverse-magnitude comparison; unchanged load limits and clearance requirements')
     p.add_argument('--retained-separation-trial',action='store_true',help='Explicit guarded 2 mm post-release left-held target accommodation; no geometry or force-limit changes')
     p.add_argument('--historical-mounting-plate',action='store_true',
@@ -222,6 +223,7 @@ def main(argv=None):
     if args.neutral_ready_start:options+=['--neutral-ready-start']
     if args.rate_limited_approach_trial:options+=['--rate-limited-approach-trial']
     if args.support_aware_feed_trial:options+=['--support-aware-feed-trial']
+    if args.faster_cut_trial:options+=['--faster-cut-trial']
     if args.proportional_face_backoff_trial:options+=['--proportional-face-backoff-trial']
     if args.retained_separation_trial:options+=['--retained-separation-trial']
     if args.watch_exit_after_s is not None:options+=['--watch-exit-after-s',str(args.watch_exit_after_s)]

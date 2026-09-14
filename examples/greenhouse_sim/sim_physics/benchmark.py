@@ -138,6 +138,7 @@ def parser():
         help='Seed the coordinated left pregrasp IK; exact target and path guards still apply')
     p.add_argument('--blade-force-feed',action='store_true',
         help='Isolated downward diagnostic: retime the screened stroke from fresh native cutting load')
+    p.add_argument('--faster-cut-trial',action='store_true',help='Explicit faster downward command feed; unchanged force, geometry, dwell and backoff checks')
     p.add_argument('--blade-dwell-feedback',action='store_true',
         help='Isolated compliant feed comparison: regulate the minimum of seven raw loads; release gates remain unsmoothed')
     p.add_argument('--compliant-blade-rate',action='store_true',
@@ -511,6 +512,11 @@ def main(argv=None):
     if args.support_aware_feed_trial and not (args.cut_action_trial and args.material_clearance_trial
             and args.physics_hz==480 and args.postrelease_feed_m_s>.0003):
         raise ValueError('Support-aware acceleration requires explicit faster 480 Hz material-clearance cut trial')
+    if args.faster_cut_trial and not (args.neutral_ready_start and args.seam_contact_yield
+            and args.blade_force_feed and args.support_aware_feed_trial and args.physics_hz==480
+            and args.postrelease_feed_m_s==.002 and args.postcut_egress_trial
+            and args.through_stroke_trial and args.native_startup_clearance and args.native_static_clearance):
+        raise ValueError('Faster cut requires full neutral480Hz seam/through/egress trial with2mm/s support-aware postrelease feed')
     if args.proportional_face_backoff_trial and not (args.support_aware_feed_trial and args.material_clearance_trial
             and args.through_stroke_trial and args.cut_action_trial and args.physics_hz==480):
         raise ValueError('Proportional face backoff requires complete explicit post-release support-aware480Hz section trial')

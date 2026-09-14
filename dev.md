@@ -9655,3 +9655,38 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   Isolated neutral bimanual454/455/456/460 are four repeats of one case.
   VLM work may resume after the requested demonstration; no collection,
   dataset mutation or training was started during this continuation.
+
+### 2026-09-14: faster-cut trial checkpoint and VLM branch handoff
+
+- Added default-OFF `--faster-cut-trial` through the ground-truth launcher,
+  benchmark and force-feedback blade controller. Commanded free-space feed
+  increases from2 to10mm/s, near-contact cap from0.3 to1mm/s, qualified loaded
+  advance from0.15 to0.75mm/s, and loading feedback gain from0.00125 to0.005.
+  Requires the complete480Hz neutral-start seam/through-stroke/egress recipe,
+  native startup/static clearance and existing support-aware2mm/s postrelease
+  feed. Original defaults, force/geometry limits, dwell, backoff, fresh-step
+  checks and deadlines are unchanged. Command-rate increases are NOT measured
+  motion speedups or native qualification.
+- Focused regression:84 passed in0.67s, rerun before this checkpoint; includes
+  `faster_cut_test.py`, `blade_feed_test.py`, `through_stroke_test.py` and
+  `support_aware_feed_test.py`. Earlier matching run is logged at
+  `data/sim_physics/faster_cut_20260914_v1.log`. The prior5222-test full-suite
+  result predates this faster-feed change; no new full-suite pass is claimed.
+- Native472 (regular-speed visible greenhouse repeat) stopped at53.964583s
+  with `Stopped; reset required`, after release, full traversal and unloaded
+  reverse, before the final withdrawal qualification. Native473 (faster-feed
+  visible comparison) stopped at16.860417s during approach, before blade
+  contact, with the same recorded error. These interrupted runs do not qualify
+  the faster profile; the cause of the stop is not established. Evidence:
+  `data/sim_physics/bimanual_downward_20260914_native472/report.json` and
+  `data/sim_physics/bimanual_downward_20260914_native473/report.json`.
+- Existing qualified evidence remains native468 for ONE neutral greenhouse
+  direct-cut case and native454/455/456/460 for four isolated bimanual repeats
+  of ONE case. Greenhouse bimanual, faster native cuts and real-time performance
+  remain unqualified. This is not an A/B/C freeze or a tissue-fracture claim.
+- User requested checkpointing `koh-dev/sim-vlm`, syncing its history into
+  `koh-dev/sim-data` and switching there for VLM work. At handoff inspection no
+  repository Isaac Kit process was running. No new simulation, collection or
+  training job is launched for this branch operation; datasets, splits and
+  review decisions are not changed. Simulator limitations remain open while
+  the user's requested VLM work resumes.

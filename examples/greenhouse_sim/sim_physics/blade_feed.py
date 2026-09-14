@@ -9,7 +9,7 @@ import numpy as np
 
 
 class BladeFeed:
-    def __init__(self, offsets, *, radius, dwell_feedback=False, compliant_rate=False, friction_budget=False, physics_hz=240, loaded_advance=False):
+    def __init__(self, offsets, *, radius, dwell_feedback=False, compliant_rate=False, friction_budget=False, physics_hz=240, loaded_advance=False, faster_cut=False):
         from .diagnostic_rate import frequency
         self.physics_hz=frequency(physics_hz)
         values=np.asarray(offsets,dtype=float)
@@ -46,6 +46,14 @@ class BladeFeed:
         # Commanded progress is not measured penetration or fracture work.
         # Half the existing near-contact speed; no load threshold/cap increase.
         self.loaded_speed=.00015 if loaded_advance else 0.
+        if type(faster_cut) is not bool or faster_cut and not loaded_advance:
+            raise ValueError('Faster cut requires complete480Hz geometry-qualified loaded advance')
+        self.faster_cut=faster_cut;self.free_speed=.002
+        if faster_cut:
+            # Explicit command-rate trial only. Keep the same slow-zone
+            # boundary, raw force/geometry gates, dwell, backoff and timeout.
+            self.free_speed=.010;self.near_speed=.001;self.loading_speed=.001
+            self.loaded_speed=.00075;self.load_gain=.005
         # A controller setpoint equal to the .22 N entry boundary approaches
         # that boundary asymptotically and can get stuck below it after native
         # float32 quantization (native287: .219945 N). Aim INSIDE the existing
@@ -112,7 +120,7 @@ class BladeFeed:
         elif self.near:
             speed=self.near_speed;mode='near_contact'
         else:
-            speed=.002;mode='free_space'
+            speed=self.free_speed;mode='free_space'
         previous=self.offset
         proposed=previous+speed*dt
         # Never jump over the transition into the slow near-contact zone.
@@ -127,6 +135,8 @@ class BladeFeed:
             near_contact_speed_m_s=self.near_speed,loading_speed_limit_m_s=self.loading_speed,
             backoff_speed_m_s=.0005,cut_authorized=False,force_limit_guaranteed=False)
         self.receipt.update(compliant_rate_comparison=self.compliant_rate,
+            faster_cut_trial=self.faster_cut,free_space_speed_limit_m_s=self.free_speed,
+            force_or_geometry_limits_changed=False,
             loaded_advance_comparison=self.loaded_advance,
             current_loading_geometry_verified=self.loading_geometry_verified,
             loaded_speed_limit_m_s=self.loaded_speed,

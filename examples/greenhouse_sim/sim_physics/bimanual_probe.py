@@ -162,6 +162,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         from .knife import DOWNWARD_CUT_MODEL
         feed_options=({'loaded_advance':True}
             if getattr(fixture,'cut_model',None)==DOWNWARD_CUT_MODEL else {})
+        if getattr(args,'faster_cut_trial',False):feed_options['faster_cut']=True
         # Radius follows the exact existing stroke endpoint construction.
         blade_feed=BladeFeed(fixture.stroke_offsets,
             radius=float(fixture.stroke_offsets[-1])-fixture.knife.size[0]/2-.001,
