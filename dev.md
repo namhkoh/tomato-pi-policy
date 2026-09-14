@@ -9549,3 +9549,65 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   proposal ONLY. Native463 rejected duplicate explicit-ready/proposal CLI
   arguments before starting Isaac. Native464 removes that redundant argument
   and performs fresh startup/path/execution validation from462; outcome pending.
+
+### 2026-09-14 evening: neutral approach retiming and detached-branch blocker
+
+- Native464 passed fresh full-greenhouse neutral startup and right-path screening,
+  but stopped at5.85625s: wrist tracking12.05mm exceeded the unchanged12mm
+  limit, without robot contact. The four-second index ramp did not account for
+  the long redundant-joint path. This is not a successful action.
+- Added opt-in `--rate-limited-approach-trial` and `approach_timing.py`:
+  preserves every original piecewise-linear joint-path edge; weights duration
+  by joint, sampled wrist-translation and orientation travel with a smooth
+  time ramp. Engineering caps:30deg/s joints/orientation,0.1m/s sampled wrist;
+  duration bounded4..45s. These are not acceleration or hardware certificates.
+  Only precontact time is extended; final-step withdrawal accounting follows
+  that extension. Cut feed, tracking/contact thresholds and both35s postrelease
+  deadlines are unchanged. Default remains off.
+- Focused retiming tests94 passed; complete regression5215 passed in231.82s,
+  `data/sim_physics/physics_regression_20260914_v55.log` (before velocity-test
+  CLI addition below).
+- Native465, same complete greenhouse seed19/SubStem_41 end-row case and
+  proposal462: retimed approach15.916227s; force-qualified cut30.679167s.
+  At33.73125s the detached chain became numerically unstable on the floor:
+  max body speed4696.704m/s, versus about0.01m/s immediately beforehand.
+  The dynamic-workspace guard stopped execution. Full through-stroke and
+  withdrawal did NOT pass. This is not merely allowable branch landing or
+  insufficient window size. No limits/window were widened. Evidence:
+  `data/sim_physics/bimanual_downward_20260914_native465/report.json` and its
+  full-rate `bimanual_trajectory.jsonl.gz`. Native floor contacts are recorded;
+  the precise numerical cause is still under investigation.
+- Added explicit guarded `--velocity-solver-trial` launcher option selecting
+  already-supported PGS128/8 instead of default128/0. Complete cut/clearance/
+  egress recipe required; incompatible with position-iteration comparison.
+  No mass, material stiffness, geometry, visuals or contact limits changed.
+  Native466 is the controlled comparison; outcome pending, not a qualified fix.
+- Acceptance remains INCOMPLETE: isolated neutral direct and retained bimanual
+  examples pass, but current greenhouse neutral end-to-end stability and
+  responsive performance do not. No VLM collection/training has resumed.
+- Native466 (128/8) cut at34.060417s and survived the earlier branch-floor
+  instability, but hit the original35s forward-stroke deadline: knife side-face
+  load approached0.40N with2.157mm of material-section clearance still missing.
+  It is NOT a successful cut sequence and is not promoted to the default.
+- Native465 raw floor contact: Segment_001 separation jumped from+0.868777mm
+  to-54.607864m in one step; reported witness moved to[21.346,-5.477,17.157]m
+  and normal impulse32.732825Ns. Source-floor box is140.200x63.140x0.100m.
+  This supports investigating narrow-phase scale conditioning, not hiding the
+  failure by expanding the dynamic window or deleting the fallen branch.
+- Added opt-in `--local-floor-tiles-trial`: one-metre cells within a six-metre
+  square around an explicit fixed station, retaining ALL exterior floor solid.
+  Actual package:80 boxes instead of3; source visual meshes/material/height,
+  holes, steps and union volume preserved. Positive axis-aligned metric
+  transforms only;512-cell cap; unchanged defaults and per-step guards.
+  Geometry equivalence is not proof of identical native contact behavior.
+  Native467 changes ONLY this floor representation relative to465; pending.
+- Focused retiming/solver-option/floor regression:30 passed in1.88s,
+  `data/sim_physics/floor_contacts_20260914_v1.log`. Includes original source
+  immutability, exact volume, nonoverlap, local cell dimensions, invalid input
+  rejection and pre-write CLI validation.
+- Further contact comparison: successful historical native378 used a2.3mm
+  distal blade aim, whereas the current neutral greenhouse comparisons used
+  1.5mm. That placement is already within the existing explicit admissible
+  interval and requires fresh path/force/full-section checks; it is not a
+  certificate for the new neutral station. Next comparison follows467.
+- 22:30KST deadline was NOT met. A/B/C are not declared frozen; VLM stays paused.

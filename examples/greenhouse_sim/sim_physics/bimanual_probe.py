@@ -223,6 +223,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     times=sequence_times(reposition);delay=times['delay']
     grasp_time=3.5;acquisition_wait_logged=False
     plan_time=times['plan'];approach_start=times['approach'];stroke_start=times['stroke'];stroke_end=times['end']
+    approach_timing=None;total_steps=int(args.seconds*args.physics_hz)
     viewport=None
     if args.render_hz:
         from pxr import UsdLux
@@ -268,6 +269,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
         nonlocal spring_control_record
         nonlocal contact_springs_started
         nonlocal times,grasp_time,delay,plan_time,approach_start,stroke_start,stroke_end,acquisition_wait_logged
+        nonlocal approach_timing,total_steps
         if getattr(args,'watch_cut_trial',False) and not sim.is_playing():
             raise RuntimeError('Timeline changed during watched trial; close and relaunch, no stale-step continuation')
         t=stamp.simulation_time_s
@@ -406,12 +408,25 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 simulation_time_s=t,target=rig.source_target,training_eligible=False)
             (output/'bimanual_planning_snapshot.json').write_text(json.dumps(snapshot,allow_nan=False),encoding='utf-8')
             fixture.plan_cut(runtime.frames,q);planned=True
+            if getattr(args,'rate_limited_approach_trial',False):
+                from .approach_timing import ApproachTiming
+                approach_timing=ApproachTiming(fixture)
+                extra=approach_timing.duration-(stroke_start-approach_start)
+                stroke_start+=extra;stroke_end+=extra
+                times.update(stroke=stroke_start,end=stroke_end)
+                # Account ONLY for additional precontact motion. The original
+                #35s forward/reverse deadlines and all native gates remain.
+                total_steps=int(np.ceil((args.seconds+extra)*args.physics_hz))
+                events.append(dict(t=t,event='right_approach_retimed',
+                    timing=approach_timing.report(),precontact_extension_s=extra,
+                    original_episode_seconds=args.seconds,episode_steps=total_steps))
             events.append(dict(t=t,event='parked_left_and_right_IK_planned' if cut_only else 'grasp_verified_and_right_IK_planned',plan=fixture.report()['cut_plan']))
         if grasp_verified and t>=grasp_time+.5 and lost>int(.05*args.physics_hz):
             raise RuntimeError('Left grasp lost during bimanual sequence')
         phase='park';fraction=0.
         if planned and t>=approach_start:
-            phase='approach';fraction=ramp(t,approach_start,stroke_start)
+            phase='approach';fraction=(approach_timing.fraction(t-approach_start)
+                if approach_timing is not None else ramp(t,approach_start,stroke_start))
             if t>=stroke_start:
                 phase='stroke';fraction=ramp(t,stroke_start,stroke_end)
                 # Planned centre must still match the native seam; no stale
@@ -749,7 +764,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                         retraction=retraction.receipt)
                     fixture.plan['egress']=path
                     events.append(dict(t=retraction_time,event='postcut_egress_planned',evidence=evidence))
-        if rig.cut and stamp.step==int(args.seconds*args.physics_hz):
+        if rig.cut and stamp.step==total_steps:
             from .withdrawal_native_check import check as check_withdrawal
             options={}
             if getattr(args,'native_station_park_reference',False):options['native_station_park']=True
@@ -776,7 +791,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
             previous=str(viewport.camera_path)
             fixture.select_view('Right knife mount');capture('knife_mount')
             viewport.set_active_camera(previous)
-        for _ in range(int(args.seconds*args.physics_hz)):
+        while clock.stamp.step<total_steps:
             tick=time.monotonic()
             if not app.is_running() or fixture.stop_requested: raise RuntimeError('Stopped; reset required')
             clock.tick(before=before,after=after,before_render=render_state)
@@ -798,7 +813,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
                 for name,t in milestones:
                     if clock.stamp.simulation_time_s>=t and name not in captures:
                         capture_milestone(name,capture,fixture,viewport)
-                if clock.stamp.step==int(args.seconds*args.physics_hz):
+                if clock.stamp.step==total_steps:
                     capture_milestone('final',capture,fixture,viewport)
             if args.gui: time.sleep(max(0,1/args.physics_hz-(time.monotonic()-tick)))
     except Exception as exc:
@@ -812,7 +827,7 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     from .withdrawal_controller import measured_completion
     helper_complete=bool(records and measured_completion(records[-1],
         (clock.stamp.episode,clock.stamp.step))) if measured_withdrawal else None
-    gates=dict(bounded=fault is None,completed=len(records)==int(args.seconds*args.physics_hz),
+    gates=dict(bounded=fault is None,completed=len(records)==total_steps,
         left_grasp_verified=grasp_verified,collision_clear_right_plan=planned,blade_contact_release=rig.cut,
         native_retention=bool(retained) and all(r['contact']['bilateral'] and r['slip_m']<.003 for r in retained),
         released_material_separates=bool(retained) and max(r['detached_seam_gap_m'] for r in retained)>.003,
@@ -865,6 +880,11 @@ def run(app,sim,rig,runtime,springs,fixture,args,output):
     if ready is not None:
         result['neutral_ready']=ready
         result['cut_protocol_native_time_origin_s']=ready['native_end_time_s']
+    if approach_timing is not None:
+        result['approach_timing']=approach_timing.report()
+        result['approach_episode_horizon']=dict(original_seconds=args.seconds,steps=total_steps,
+            physics_hz=args.physics_hz,extension_scope='precontact_approach_only',
+            postrelease_deadlines_changed=False)
     if getattr(args,'material_clearance_trial',False):
         result['right_withdrawal_schedule_elapsed']=bool(retraction_time is not None
             and records and records[-1]['t']>=retraction_time+4)

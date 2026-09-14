@@ -98,6 +98,7 @@ def main(argv=None):
     p.add_argument('--watch-auto-run',action='store_true',help='Explicit one-shot visible demo; requires --watch')
     p.add_argument('--watch-exit-after-s',type=float,help='Close this owned demo after a bounded final inspection pause; requires --watch-auto-run')
     p.add_argument('--neutral-ready-start',action='store_true',help='Checked SDK-arm-ready approach before grasp/cut; upright torso and fixed base')
+    p.add_argument('--rate-limited-approach-trial',action='store_true',help='Retime the checked neutral-start right approach; preserve cut-feed and postrelease deadlines')
     p.add_argument('--support-aware-feed-trial',action='store_true',help='Explicit faster post-release comparison using both knife and left-hand loads')
     p.add_argument('--proportional-face-backoff-trial',action='store_true',help='Explicit post-release reverse-magnitude comparison; unchanged load limits and clearance requirements')
     p.add_argument('--retained-separation-trial',action='store_true',help='Explicit guarded 2 mm post-release left-held target accommodation; no geometry or force-limit changes')
@@ -110,6 +111,8 @@ def main(argv=None):
     p.add_argument('--stream-trajectory',action='store_true',help='Lossless full-rate compressed diagnostic evidence')
     p.add_argument('--background-evidence-compression',action='store_true',help='Explicit bounded gzip worker comparison; all per-step guards and finite JSON checks remain')
     p.add_argument('--solver-convergence-trial',type=int,choices=(64,96),default=None,help='Numerical convergence comparison, not a qualified faster default')
+    p.add_argument('--velocity-solver-trial',action='store_true',help='Explicit existing 128/8 PGS profile comparison; unchanged geometry, material and contact limits')
+    p.add_argument('--local-floor-tiles-trial',action='store_true',help='Exact one-metre floor cells near fixed station, full exterior solid retained; experimental contact conditioning')
     p.add_argument('--joint-transit-fallback',action='store_true',help='Screened whole-arm joint search for approach only')
     p.add_argument('--postrelease-feed-m-s',type=float,default=.0003,help='Explicit post-release contact feed comparison')
     p.add_argument('--postcut-egress-trial',action='store_true',help='Fresh fully screened post-cut withdrawal goal')
@@ -205,6 +208,10 @@ def main(argv=None):
                 and -.0015<=args.blade_aim_offset_m<=.0025):
             p.error('Contact-placement comparison requires process-zone trial and finite -1.5..+2.5 mm offset')
     from .benchmark import main as run
+    if args.velocity_solver_trial and not (args.process_zone_trial and args.through_stroke_trial
+            and args.material_clearance_trial and args.postcut_egress_trial
+            and args.milestone=='cut_action' and args.solver_convergence_trial is None):
+        p.error('Velocity solver comparison requires complete material-clearance cut trial without another solver comparison')
     if args.grasp_arc_m is not None:
         import math
         if not (args.process_zone_trial and args.mode=='bimanual' and math.isfinite(args.grasp_arc_m)
@@ -213,6 +220,7 @@ def main(argv=None):
     options=arguments(args.output,args.mode,args.milestone,args.capture,args.watch)
     if args.watch_auto_run:options+=['--watch-auto-run']
     if args.neutral_ready_start:options+=['--neutral-ready-start']
+    if args.rate_limited_approach_trial:options+=['--rate-limited-approach-trial']
     if args.support_aware_feed_trial:options+=['--support-aware-feed-trial']
     if args.proportional_face_backoff_trial:options+=['--proportional-face-backoff-trial']
     if args.retained_separation_trial:options+=['--retained-separation-trial']
@@ -234,8 +242,11 @@ def main(argv=None):
     if args.solver_convergence_trial is not None:
         options+=['--solver-convergence-trial',str(args.solver_convergence_trial),
                   '--uniform-solver-iterations',str(args.solver_convergence_trial),'0']
+    if args.velocity_solver_trial:
+        options+=['--uniform-solver-iterations','128','8']
     if args.postrelease_feed_m_s!=.0003:options+=['--postrelease-feed-m-s',str(args.postrelease_feed_m_s)]
     if args.rectilinear_floor_contacts:options+=['--rectilinear-floor-contacts']
+    if args.local_floor_tiles_trial:options+=['--local-floor-tiles-trial']
     if args.stream_trajectory or args.through_stroke_trial:options+=['--stream-trajectory']
     if args.background_evidence_compression:options+=['--background-evidence-compression']
     if args.greenhouse_trial:

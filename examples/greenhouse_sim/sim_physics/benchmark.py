@@ -164,6 +164,7 @@ def parser():
         help='Isolated explicit-finger trial: bound target windup using fresh native position/velocity and existing PD caps')
     p.add_argument('--watch-exit-after-s',type=float,help='Bounded inspection pause before closing an explicitly automatic watched demonstration')
     p.add_argument('--neutral-ready-start',action='store_true',help='Explicit checked SDK-arm-ready transit before the existing grasp/cut protocol; fixed upright torso')
+    p.add_argument('--rate-limited-approach-trial',action='store_true',help='Explicit same-path approach retiming; unchanged force/tracking/cut gates')
     p.add_argument('--support-aware-feed-trial',action='store_true',help='Experimental faster post-release feed with fresh grasp/load feedback and bounded acceleration')
     p.add_argument('--measured-jaw-backoff-trial',action='store_true',
         help='Unqualified half-preload response; explicit native-retention experiment only, not the stable default')
@@ -248,6 +249,7 @@ def parser():
         help='Isolated retention trial: wait bounded 0.2 s measured original-preload dwell before static capacity audit; no force-limit increase')
     p.add_argument('--solver-convergence-trial',type=int,choices=(64,96),default=None,
         help='Explicit numerical comparison only:64/0 or96/0 vs baseline128/0, no fidelity equivalence assumed')
+    p.add_argument('--local-floor-tiles-trial',action='store_true',help='Exact floor solid partition near explicit fixed station; native requalification required')
     p.add_argument('--joint-transit-fallback',action='store_true',
         help='Bounded whole-arm joint search after Cartesian approach failure; cut stroke remains downward')
     p.add_argument('--staged-downward-transit',action='store_true',
@@ -349,6 +351,11 @@ def main(argv=None):
             cut_priority=proposal_receipt.get('cut_frame_priority')
     fixed_hold=validate_fixed_root_hold(args)
     fixed_cut=args.fixed_root_cut_trial
+    if args.rate_limited_approach_trial and not (args.neutral_ready_start and args.bimanual_cut
+            and args.cut_action_trial and args.through_stroke_trial and args.material_clearance_trial
+            and args.postcut_egress_trial and args.physics_hz==480 and args.native_static_clearance
+            and args.native_startup_clearance):
+        raise ValueError('Rate-limited approach requires complete guarded480Hz neutral cut action')
     if args.coupled_fingers_trial and not (fixed_cut and args.bimanual_cut and args.symmetric_finger_closure
             and args.explicit_finger_effort and args.force_closure and args.diagnostic_grasp_dynamics
             and args.physics_hz==480 and not args.right_only_cut_trial):
@@ -384,6 +391,8 @@ def main(argv=None):
         raise ValueError('Post-cut egress requires the guarded material-clearance and native station profile')
     if args.rectilinear_floor_contacts and not (args.scene=='package' and args.full_robot_probe and args.bimanual_cut):
         raise ValueError('Exact floor contacts require the package full-robot cut diagnostic')
+    if args.local_floor_tiles_trial and not (args.rectilinear_floor_contacts and args.station_pose is not None):
+        raise ValueError('Local floor partition requires exact floor contacts and an explicit fixed station')
     if args.background_evidence_compression and not args.stream_trajectory:
         raise ValueError('Background evidence compression requires full-rate trajectory streaming')
     if args.stream_trajectory and not args.bimanual_cut:
@@ -825,7 +834,8 @@ def main(argv=None):
             report['greenhouse']=scene_report
             if args.rectilinear_floor_contacts:
                 from .floor_contacts import apply as apply_floor_contacts
-                report['floor_contact_geometry']=apply_floor_contacts(stage,PACKAGE_FLOOR)
+                report['floor_contact_geometry']=apply_floor_contacts(stage,PACKAGE_FLOOR,
+                    tile_centre_xy=args.station_pose[:2] if args.local_floor_tiles_trial else None)
             if args.isolate_station:
                 from .isolated_station import isolate
                 report['isolated_station']=isolate(stage,floor_root=PACKAGE_FLOOR)

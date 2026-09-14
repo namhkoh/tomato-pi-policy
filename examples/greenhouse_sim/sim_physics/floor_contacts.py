@@ -73,7 +73,36 @@ def boxes(points,counts,indices):
         geometry_equivalent=True,holes_or_steps_filled=False)
 
 
-def apply(stage,floor_root):
+def tile_near(parts,scale,translation,centre_xy):
+    """Split the SAME solid near a fixed station; retain all exterior volumes.
+
+    One-metre cells within a six-metre square improve shape scale conditioning.
+    They are not a validated native-contact fix until a fresh run passes.
+    """
+    scale=np.asarray(scale,float);translation=np.asarray(translation,float)
+    centre=np.asarray(centre_xy,float)
+    if (scale.shape!=(3,) or translation.shape!=(3,) or centre.shape!=(2,)
+            or not np.isfinite(np.r_[scale,translation,centre]).all() or np.any(scale<=0)):
+        raise ValueError('Finite positive axis-aligned floor transform and station required')
+    result=[];volume=0.
+    for lo,hi in parts:
+        lo=np.asarray(lo,float);hi=np.asarray(hi,float)
+        if lo.shape!=(3,) or hi.shape!=(3,) or not np.isfinite(np.r_[lo,hi]).all() or np.any(hi<=lo):
+            raise ValueError('Finite nonempty source floor cells required')
+        axes=[];volume+=float(np.prod(hi-lo))
+        for axis in range(3):
+            cuts=(centre[axis]+np.arange(-3.,4.)-translation[axis])/scale[axis] if axis<2 else np.array([])
+            axes.append(np.unique(np.r_[lo[axis],cuts[(cuts>lo[axis])&(cuts<hi[axis])],hi[axis]]))
+        for cell in np.ndindex(*(len(a)-1 for a in axes)):
+            result.append((np.array([a[i] for a,i in zip(axes,cell)]),
+                           np.array([a[i+1] for a,i in zip(axes,cell)])))
+        if len(result)>512:raise ValueError('Local floor partition exceeds bounded512 cells')
+    if not result or not np.isclose(sum(float(np.prod(b-a)) for a,b in result),volume,rtol=1e-12,atol=0):
+        raise ValueError('Floor partition volume mismatch')
+    return result
+
+
+def apply(stage,floor_root,*,tile_centre_xy=None):
     from pxr import Gf,Sdf,Usd,UsdGeom,UsdPhysics,UsdShade
     root=stage.GetPrimAtPath(floor_root)
     if not root or not root.IsActive():raise ValueError('Existing original floor required')
@@ -92,6 +121,14 @@ def apply(stage,floor_root):
             path=str(prim.GetPath())+'/ExactBoxContacts'
             if stage.GetPrimAtPath(path):raise ValueError('Do not overwrite floor contacts')
             parts,receipt=boxes(mesh.GetPointsAttr().Get(),mesh.GetFaceVertexCountsAttr().Get(),mesh.GetFaceVertexIndicesAttr().Get())
+            if tile_centre_xy is not None:
+                matrix=np.asarray(UsdGeom.XformCache().GetLocalToWorldTransform(prim),float).T
+                if not np.allclose(matrix[:3,:3],np.diag(np.diag(matrix[:3,:3])),rtol=0,atol=1e-12):
+                    raise ValueError('Local floor partition requires axis-aligned source transform')
+                parts=tile_near(parts,np.diag(matrix[:3,:3]),matrix[:3,3],tile_centre_xy)
+                receipt.update(box_count=len(parts),local_partition=dict(centre_world_xy=list(tile_centre_xy),
+                    half_width_m=3.,cell_width_m=1.,exterior_solid_retained=True,
+                    numerical_stability_verified=False))
             source.append((prim,path,parts,receipt))
     if not source:raise ValueError('Original active floor triangle collision required')
     paths=[];receipts=[]

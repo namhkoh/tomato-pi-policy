@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from .floor_contacts import boxes,apply
+from .floor_contacts import boxes,apply,tile_near
 
 
 def mesh(cells):
@@ -101,6 +101,44 @@ def test_actual_package_floor_three_exact_boxes_preserves_every_source_surface()
     assert len(r['collider_paths'])==3
     assert r['sources'][0]['source_triangle_count']==44
     assert s.GetRootLayer().ExportToString()==before
+
+
+def test_local_tiles_retain_complete_exterior_union_and_small_station_cells():
+    original=[(np.array([-70100.,-31570.,0.]),np.array([70100.,31570.,100.]))]
+    scale=np.full(3,.001);translation=np.array([0.,0.,.001]);centre=[.3,-6.2]
+    tiles=tile_near(original,scale,translation,centre)
+    assert len(tiles)==64
+    assert sum(np.prod(b-a) for a,b in tiles)==pytest.approx(np.prod(original[0][1]-original[0][0]))
+    for i,(a,b) in enumerate(tiles):
+        assert np.all(a>=original[0][0]) and np.all(b<=original[0][1])
+        for c,d in tiles[i+1:]:assert not np.all(np.minimum(b,d)>np.maximum(a,c))
+        mid=(a+b)/2*scale+translation
+        if np.all(np.abs(mid[:2]-centre)<3):assert np.all((b-a)[:2]*scale[:2]<=1.+1e-12)
+
+
+@pytest.mark.parametrize('centre',[[float('nan'),0],[0],[0,0,0]])
+def test_local_tiles_invalid_centre_refused(centre):
+    with pytest.raises(ValueError):tile_near([(np.zeros(3),np.ones(3))],np.ones(3),np.zeros(3),centre)
+
+
+def test_actual_package_local_floor_partition_retains_source_visuals_and_volume():
+    from pxr import Usd,UsdGeom
+    from sim_data.audit import DEFAULT_PACK
+    from sim_data.floor_alignment import PACKAGE_FLOOR
+    s=Usd.Stage.Open(str(DEFAULT_PACK/'house/green_house_base.usd'),Usd.Stage.LoadNone);s.Load(PACKAGE_FLOOR)
+    before=s.GetRootLayer().ExportToString()
+    r=apply(s,PACKAGE_FLOOR,tile_centre_xy=[.3,-6.2])
+    assert len(r['collider_paths'])==80
+    assert s.GetRootLayer().ExportToString()==before
+    assert r['sources'][0]['local_partition']['exterior_solid_retained']
+    assert not r['sources'][0]['local_partition']['numerical_stability_verified']
+
+
+def test_local_partition_requires_explicit_fixed_station_before_write(tmp_path):
+    from .benchmark import main
+    with pytest.raises(ValueError,match='Local floor partition'):
+        main(['--output',str(tmp_path/'new'),'--local-floor-tiles-trial'])
+    assert not (tmp_path/'new').exists()
 
 
 def test_cli_requires_full_package_robot_before_creation(tmp_path):
