@@ -94,18 +94,22 @@ def plan_head_pose(model, initial_pose, root_world_column, camera_to_head_column
     return pose, error
 
 
-def set_snapshot_pose(stage, robot, target_world, y_offset, desired_pixel, *, root_x_m=None, root_yaw_degrees=None):
+def set_snapshot_pose(stage, robot, target_world, y_offset, desired_pixel, *, root_x_m=None, root_yaw_degrees=None, opposite_aisle=False):
     from .floor_alignment import align_robot_to_floor, PACKAGE_FLOOR
+    if type(opposite_aisle) is not bool or opposite_aisle and (root_x_m is None or root_yaw_degrees is None):
+        raise ValueError('Explicit opposite-aisle root position and yaw required')
     root = stage.GetPrimAtPath(robot["root"])
     matrix = np.asarray(UsdGeom.XformCache().GetLocalToWorldTransform(root)).T.copy()
     if root_yaw_degrees is not None:
-        if not np.isfinite(root_yaw_degrees) or not 150 <= root_yaw_degrees <= 210:
-            raise ValueError("Focused base yaw must remain within 30 degrees of the original aisle facing")
+        low,high=(-30,30) if opposite_aisle else (150,210)
+        if not np.isfinite(root_yaw_degrees) or not low <= root_yaw_degrees <= high:
+            raise ValueError("Focused base yaw must remain within 30 degrees of the selected aisle facing")
         matrix[:3, :3] = robot_hardware.rotation_z(root_yaw_degrees)
     matrix[1, 3] = float(target_world[1] + y_offset)
     if root_x_m is not None:
-        if not np.isfinite(root_x_m) or root_x_m <= target_world[0]:
-            raise ValueError("Viewpoint must remain on the original +X robot aisle side")
+        correct_side=root_x_m < target_world[0] if opposite_aisle else root_x_m > target_world[0]
+        if not np.isfinite(root_x_m) or not correct_side:
+            raise ValueError("Viewpoint must remain on the explicitly selected robot aisle side")
         matrix[0, 3] = float(root_x_m)
     # Default pilot keeps its distance; bounded search may request a nearer snapshot.
     with Usd.EditContext(stage, stage.GetSessionLayer()):

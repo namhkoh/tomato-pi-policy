@@ -45,7 +45,8 @@ def run_refined_capture(stage, rep, args, manifest, robot, records, reports, var
                 from .training_plan import view_specs
                 bound=plan['requested_views_per_target']
                 allowed={s['candidate_id']:s for s in view_specs(original_x, plan['target_world_m'][target_id][0], target_id, bound,
-                                                                vary_torso=plan.get('vary_torso',False),view_offset=plan.get('view_offset',0),clear_capture=plan.get('clear_capture',False))}
+                                                                vary_torso=plan.get('vary_torso',False),view_offset=plan.get('view_offset',0),clear_capture=plan.get('clear_capture',False),
+                                                                opposite_aisle=plan.get('opposite_aisle',False))}
             else:
                 bound=3
                 allowed = {s["candidate_id"]:s for s in focus_specs(original_x, plan["target_world_m"][target_id][0])}
@@ -82,6 +83,9 @@ def run_refined_capture(stage, rep, args, manifest, robot, records, reports, var
                 maximum_approach_m=None,base_target_x_separation_range_m=[.30,.55],
                 minimum_predicted_diameter_px=8,minimum_predicted_interval_px=12,
                 lighting_unchanged_across_candidates=True)
+        if plan.get('opposite_aisle'):
+            manifest['viewpoint_selection'].update(aisle_side='negative_x',base_yaw_range_degrees=[-30,30],
+                base_target_x_separation_range_m=[-.55,-.30],motion_between_aisles_validated=False)
     product = rep.create.render_product(HEAD_CAMERA, RESOLUTION)
     writer = make_writer(rep, include_instances=True, instance_backend=getattr(args,'instance_backend','legacy'))
     writer.attach([product])
@@ -135,12 +139,14 @@ def run_refined_capture(stage, rep, args, manifest, robot, records, reports, var
                 if "root_yaw_degrees" in planned:
                     spec["root_yaw_degrees"] = planned["root_yaw_degrees"]
                 if 'torso_bend_degrees' in planned: spec['torso_bend_degrees']=planned['torso_bend_degrees']
+                if planned.get('opposite_aisle'): spec['opposite_aisle']=True
                 decision = {"target_review_id": row["draft_id"], **spec, "state": "screening"}
                 manifest["viewpoint_selection"]["all_candidate_decisions"].append(decision)
                 try:
                     from .training_views import robot_for_spec
                     pose = set_snapshot_pose(stage, robot_for_spec(robot,spec), world["nominal_world_m"], spec["y_offset_m"],
-                        spec["desired_pixel_xy"], root_x_m=spec["root_x_m"], root_yaw_degrees=spec.get("root_yaw_degrees"))
+                        spec["desired_pixel_xy"], root_x_m=spec["root_x_m"], root_yaw_degrees=spec.get("root_yaw_degrees"),
+                        **({'opposite_aisle':True} if spec.get('opposite_aisle') else {}))
                 except ValueError as exc:
                     decision.update(state="rejected_pose", reason=str(exc))
                     print("VIEWPOINT_REJECTED " + json.dumps(decision), flush=True)

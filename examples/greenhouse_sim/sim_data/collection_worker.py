@@ -11,7 +11,7 @@ from .dataset_review import require, verify_bindings, write_json
 from .depth_preview import sha256
 
 
-def prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary_torso=False, view_offset=0, clear_capture=False):
+def prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary_torso=False, view_offset=0, clear_capture=False, opposite_aisle=False):
     """Search disposable poses, then restore the full root/link snapshot even on failure."""
     import numpy as np
     from pxr import Usd, UsdGeom
@@ -23,7 +23,7 @@ def prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary_
                  for prim in [root, *root.GetChildren()] if prim.IsA(UsdGeom.Xformable)]
     try:
         if grounding:
-            return _prepare_views(stage, robot, variants, rows, count, grounding=True, vary_torso=vary_torso, view_offset=view_offset,clear_capture=clear_capture)
+            return _prepare_views(stage, robot, variants, rows, count, grounding=True, vary_torso=vary_torso, view_offset=view_offset,clear_capture=clear_capture,opposite_aisle=opposite_aisle)
         return _prepare_views(stage, robot, variants, rows, count)
     finally:
         with Usd.EditContext(stage, stage.GetSessionLayer()):
@@ -31,7 +31,7 @@ def prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary_
                 _set_transform(prim, matrix[:3,:3], matrix[:3,3])
 
 
-def _prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary_torso=False, view_offset=0, clear_capture=False):
+def _prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary_torso=False, view_offset=0, clear_capture=False, opposite_aisle=False):
     # All USD imports stay AFTER SimulationApp startup in this module.
     import numpy as np
     from pxr import UsdGeom
@@ -53,6 +53,7 @@ def _prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary
         if vary_torso: result['vary_torso']=True
         if view_offset: result['view_offset']=view_offset
         if clear_capture:result['clear_capture']=True
+        if opposite_aisle:result['opposite_aisle']=True
     for row in rows:
         world = target_world_geometry(stage, by_variant[row['variant_id']], row)
         result['target_world_m'][row['draft_id']] = world['nominal_world_m']
@@ -60,7 +61,7 @@ def _prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary
         if grounding:
             from .training_plan import view_specs
             specs = view_specs(original, world['nominal_world_m'][0], row['draft_id'], count,
-                               vary_torso=vary_torso, view_offset=view_offset,clear_capture=clear_capture)
+                               vary_torso=vary_torso, view_offset=view_offset,clear_capture=clear_capture,opposite_aisle=opposite_aisle)
         else:
             specs = focus_specs(original, world['nominal_world_m'][0])
         for spec in specs:
@@ -69,7 +70,8 @@ def _prepare_views(stage, robot, variants, rows, count, *, grounding=False, vary
             try:
                 from .training_views import robot_for_spec
                 pose = set_snapshot_pose(stage, robot_for_spec(robot,spec), world['nominal_world_m'], spec['y_offset_m'],
-                    spec['desired_pixel_xy'], root_x_m=spec['root_x_m'], root_yaw_degrees=spec['root_yaw_degrees'])
+                    spec['desired_pixel_xy'], root_x_m=spec['root_x_m'], root_yaw_degrees=spec['root_yaw_degrees'],
+                    **({'opposite_aisle':True} if spec.get('opposite_aisle') else {}))
                 cal = calibration(stage)
                 nominal, interval = project([world['nominal_world_m']], cal)[0], project(world['interval_world_m'], cal)
                 diameter = 2*row['cut_region_proposal']['nominal']['petiole_radius_m']*cal['intrinsics'][0][0]/nominal['camera_optical_xyz_m'][2]
@@ -172,7 +174,8 @@ def capture_job(app, args, plan, reports, job, manifest):
         target_family_split=job['split'], split_scope=plan['split_scope'], source_geometry_modified=False)
     prepared = prepare_views(stage, robot, variants, job['targets'], job['max_rendered_views_per_target'],
         grounding=plan['schema_version']=='greenhouse.grounding_collection_plan.v1',
-        vary_torso=plan['configuration'].get('vary_torso',False),view_offset=plan['configuration'].get('view_offset',0),clear_capture=clear_capture)
+        vary_torso=plan['configuration'].get('vary_torso',False),view_offset=plan['configuration'].get('view_offset',0),clear_capture=clear_capture,
+        opposite_aisle=plan['configuration'].get('opposite_aisle',False))
     write_json(args.output/'planned_views.json', prepared)
     # Keep the existing validated native writer, masks, freshness gates and output format.
     args.package, args.view_plan = package, None

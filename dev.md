@@ -53,6 +53,22 @@ for the revised no-teleoperated-demonstrations VLM + feedback-controller plan.
   counts, review attribution, target-conditioned2D task, native depth sidecars,
   shared-background caveat and unsupported execution claims.21 focused tests
   passed (5.34s). No final training ZIP has been generated yet.
+- Collection diagnostic: first6 completed train families yielded78 strict clear
+  candidates from5 families; seed23 yielded0. All78 received explicit per-image
+  assistant visual assessment. Source seed23 rejected3048 proposals for image
+  scale,374 for possible robot/scene overlap and33 for framing; only1 pose passed
+  geometry and its rendered frame was not clear. No threshold was weakened.
+- Added separately selected `training_plan --opposite-aisle` static snapshots:
+  negative-X root and yaw within30 degrees of0, with identical camera optics,
+  torso range, floor, joint-limit and scene-overlap checks. This is NOT a validated
+  base trajectory across the gutter. Original positive-side proposal digest is
+  unchanged; native negative-side rendering still awaits a pilot. Plan:
+  `data/sim_data/collection_plans/clear_capture_20260915_opposite_pilot_v1`.
+- A CPU-only deep-crouch probe was NOT accepted as certification: raw-asset
+  capsule self-screen flags overlaps even at its baseline. No deeper torso
+  range or self-collision-filter changes were made.
+- Regression after the opt-in aisle extension:671 tests plus47 subtests passed
+  (43.79s), `data/sim_data/clear_regression_20260915_v5.log`.
 - Pending: complete collection, per-image QA, coverage/diversity assessment,
   review finalization, portable validation and verified ZIP. Do not claim the
   final dataset exists from this checkpoint. Physics implementation unchanged.

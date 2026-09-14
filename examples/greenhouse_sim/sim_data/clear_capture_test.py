@@ -43,3 +43,19 @@ def test_serial_campaign_skips_only_verified_empty_viewpoint_search(tmp_path):
     job['returncode']=1;assert outcome(result,tmp_path)=='failure'
     job['returncode']=3;job['timed_out']=True;assert outcome(result,tmp_path)=='failure'
     assert outcome(dict(state='complete_bounded_batch_pending_visual_review'),tmp_path)=='audited'
+
+
+def test_opposite_aisle_is_explicit_and_preserves_original_view_sequence():
+    import hashlib,json
+    with pytest.raises(ValueError):configuration(opposite_aisle=True)
+    c=configuration(views=12,vary_torso=True,clear_capture=True,opposite_aisle=True)
+    assert c['opposite_aisle'] is True
+    legacy=[view_specs(.8,0,t,12,vary_torso=True,clear_capture=True,view_offset=o)
+            for t in ('a','b','N_seed23_full_SubStem_41') for o in (0,12)]
+    assert hashlib.sha256(json.dumps(legacy,sort_keys=True).encode()).hexdigest()=='a2203baa63a78da923a690b660cd4a174d1591c07f05a21a2f08a1b85d2f4060'
+    opposite=view_specs(.8,0,'a',12,vary_torso=True,clear_capture=True,opposite_aisle=True)
+    for old,new in zip(legacy[0],opposite):
+        assert new['root_x_m']==-old['root_x_m'] and -.55<=new['root_x_m']<=-.30
+        assert -30<=new['root_yaw_degrees']<=30 and new['opposite_aisle'] is True
+        assert new['torso_bend_degrees']==old['torso_bend_degrees']
+        assert new['desired_pixel_xy']==old['desired_pixel_xy']

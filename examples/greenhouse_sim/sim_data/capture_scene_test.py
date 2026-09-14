@@ -98,3 +98,23 @@ def test_capture_wrapper_preserves_source_and_relative_asset_resolution(tmp_path
     assert root.anonymous and root.dirty
     assert not source.GetRootLayer().dirty
     assert source.GetRootLayer().ExportToString()==original
+
+
+@pytest.mark.skipif(not DEFAULT_ASSET.is_file(),reason='Built v1.2 robot required')
+def test_opposite_snapshot_uses_real_floor_mount_and_joint_fk():
+    from sim_data.capture_scene import set_snapshot_pose
+    from sim_data.floor_alignment import PACKAGE_FLOOR
+    stage=Usd.Stage.CreateInMemory();UsdGeom.SetStageMetersPerUnit(stage,1);UsdGeom.SetStageUpAxis(stage,'Z')
+    floor=UsdGeom.Mesh.Define(stage,PACKAGE_FLOOR)
+    floor.CreatePointsAttr([Gf.Vec3f(-10,-10,.1),Gf.Vec3f(10,-10,.1),Gf.Vec3f(10,10,.1),Gf.Vec3f(-10,10,.1)])
+    floor.CreateFaceVertexCountsAttr([3,3]);floor.CreateFaceVertexIndicesAttr([0,1,2,0,2,3])
+    robot=add_robot_preview(stage,gutter_x=-.2,right_tool='gripper')
+    mount=mounted_camera_to_head(stage).copy();target=[0,0,1.3]
+    with pytest.raises(ValueError):set_snapshot_pose(stage,robot,target,0,[424,204],root_x_m=-.4,root_yaw_degrees=0)
+    with pytest.raises(ValueError):set_snapshot_pose(stage,robot,target,0,[424,204],root_x_m=.4,root_yaw_degrees=0,opposite_aisle=True)
+    pose=set_snapshot_pose(stage,robot,target,0,[424,204],root_x_m=-.4,root_yaw_degrees=0,opposite_aisle=True)
+    assert np.allclose(mounted_camera_to_head(stage),mount,atol=1e-9)
+    model=Rby1Kinematics();model.all_link_transforms(pose['joint_degrees'])
+    assert pose['joint_limits_checked'] and not pose['motion_between_snapshots_validated']
+    assert max(abs(w['clearance_m']) for w in pose['floor_alignment']['wheel_supports'])<1e-6
+    assert np.allclose(project([target],calibration(stage))[0]['pixel_xy'],[424,204],atol=.02)

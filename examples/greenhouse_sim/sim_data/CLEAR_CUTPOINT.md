@@ -95,6 +95,13 @@ The24-family serial campaign is
 `data/sim_data/collection_campaigns/clear_capture_20260915_overnight_v1`.
 It preserves failed searches, stops on native errors, and never auto-approves.
 
+`training_plan --opposite-aisle` is a separately selected static capture option
+for a later pilot, not part of the running original-side plan. It mirrors the
+base to the negative-X aisle, facing within30 degrees of0, with the same
+0.30-0.55m lateral separation, camera, torso range and geometry checks. It does
+not validate a trajectory across the gutter or bypass overlap checks. Native
+pilot evidence and image review are required before scaling this option.
+
 `clear_collection_intake --campaign <campaign> --output <new-directory>` may run
 alongside that one native worker. It reads only completed bound audit receipts,
 then builds per-job `source/`, `draft/` and `review/index.html`. After successful
