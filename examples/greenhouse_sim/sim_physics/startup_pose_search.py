@@ -9,6 +9,9 @@ import numpy as np
 
 
 def search(robot,backend,guard):
+    if getattr(robot,'startup_grasp_search',False):
+        from .grasp_orientation_search import search as grasp_search
+        return grasp_search(robot,backend,guard)
     if getattr(robot,'startup_station_search',False):
         from .startup_station_search import search as station_search
         return station_search(robot,backend,guard)

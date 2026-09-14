@@ -109,6 +109,7 @@ def main(argv=None):
     p.add_argument('--rectilinear-floor-contacts',action='store_true',help='Exact source-floor collision solid as native boxes; no visual changes')
     p.add_argument('--greenhouse-trial',action='store_true',help='Restore intact original scene and three-gutter preview planting; fresh native qualification required')
     p.add_argument('--screen-ready-pose',action='store_true',help='Zero-motion native elbow search only; saves proposals and stops before physics')
+    p.add_argument('--screen-grasp-approach',action='store_true',help='Zero-motion left grasp orientation search; same material point, no grasp/cut authority')
     p.add_argument('--screen-approach-start',action='store_true',help='Zero-motion higher/lateral waiting-pose search only')
     p.add_argument('--screen-tool-heading',action='store_true',help='Zero-motion arc-up complete-tool heading search only')
     p.add_argument('--screen-station',action='store_true',help='Zero-motion base/two-arm proposal search; no base-motion or path authority')
@@ -158,9 +159,11 @@ def main(argv=None):
         p.error('Material-clearance trial requires --through-stroke-trial')
     if args.greenhouse_trial and not (args.process_zone_trial and args.milestone=='cut_action'):
         p.error('Greenhouse trial requires explicit process-zone cut_action trial')
-    if (args.screen_ready_pose or args.screen_approach_start or args.screen_tool_heading or args.screen_station) and not (args.process_zone_trial and not args.watch):
+    if args.screen_grasp_approach and not (args.mode=='bimanual' and args.process_zone_trial and not args.watch):
+        raise ValueError('Grasp proposals require a zero-motion bimanual process-zone search')
+    if (args.screen_ready_pose or args.screen_approach_start or args.screen_tool_heading or args.screen_station or args.screen_grasp_approach) and not (args.process_zone_trial and not args.watch):
         p.error('Startup screening requires process-zone trial without watched execution')
-    if sum((args.screen_ready_pose,args.screen_approach_start,args.screen_tool_heading,args.screen_station))>1:p.error('Select one startup search')
+    if sum((args.screen_ready_pose,args.screen_approach_start,args.screen_tool_heading,args.screen_station,args.screen_grasp_approach))>1:p.error('Select one startup search')
     if args.blade_aim_offset_m is not None:
         import math
         if not (args.process_zone_trial and math.isfinite(args.blade_aim_offset_m)
@@ -200,6 +203,7 @@ def main(argv=None):
         options+=['--greenhouse-cut-trial','--local-wire-physics','--context-gutters','3',
                   '--batch-gutter-visuals','--stream-trajectory']
     if args.screen_ready_pose:options+=['--native-startup-pose-search']
+    if args.screen_grasp_approach:options+=['--native-startup-grasp-search']
     if args.screen_approach_start:options+=['--native-startup-approach-search']
     if args.screen_tool_heading:options+=['--native-startup-heading-search']
     if args.screen_station:options+=['--native-startup-station-search']

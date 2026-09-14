@@ -1411,3 +1411,16 @@ No density, source geometry, spacing or gutter-height reduction. The detailed
 neighbor stays in its original slot. Native385 verifies all144 positions and
 asset counts match the original-side trial; its proposed grasp still collides
 with a target leaf. Side selection is not proof of robot access or safe cutting.
+
+`--screen-grasp-approach` is an explicit zero-motion bimanual alternative to
+the other startup searches. It keeps the current anatomical grasp material
+point, base and right arm fixed while proposing bounded left approach/pad
+orientations. It checks full finger-to-cut-plane clearance, native startup,
+and47 dense self/inter-arm path knots, within45s and the final actor-control
+reserve. At most8 `proposed_grasps` are saved; they are NOT scene-path, contact,
+retention or cut certificates. Final-control failure revokes all proposals.
+Reconstruct an explicit fresh launch with a chosen proposal's approach vector,
+pitch/roll, station and joint seeds; all actual moving-scene checks still run.
+Do not replay `left_path_degrees` as a certified trajectory. Native394 found
+only an already-tested finger-swapped source19 grasp, and395 found no source71
+proposal. Full-greenhouse grasp-and-cut remains unqualified.

@@ -269,6 +269,7 @@ def parser():
     p.add_argument('--cut-station-orbit',action='store_true',help='Zero-motion station search checking raised waiting and cut-entry poses')
     p.add_argument('--station-waiting-search',action='store_true',help='Bounded alternate waiting poses during zero-motion station search only')
     p.add_argument('--station-left-seed-search',action='store_true',help='Alternate left elbow IK guesses during zero-motion bimanual station search only')
+    p.add_argument('--native-startup-grasp-search',action='store_true',help='Zero-motion grasp orientation proposals at the same material point; fresh execution required')
     p.add_argument('--station-reference-report',type=Path,help='Same-anatomy prior initial pose as zero-motion search seed; no replay authority')
     p.add_argument('--watch-auto-run',action='store_true',help='Explicitly start one watched demonstration after native startup; no reset/replay')
     p.add_argument('--station-yaw',type=float,default=0.,
@@ -463,8 +464,12 @@ def main(argv=None):
         raise ValueError('Left elbow proposals require a zero-motion bimanual station search')
     if args.cut_station_orbit and not args.native_startup_station_search:
         raise ValueError('Cut station orbit requires explicit zero-motion station search')
-    startup_search=any((args.native_startup_pose_search,args.native_startup_approach_search,args.native_startup_heading_search,args.native_startup_station_search))
-    if sum((args.native_startup_pose_search,args.native_startup_approach_search,args.native_startup_heading_search,args.native_startup_station_search))>1:
+    if args.native_startup_grasp_search and not (args.bimanual_cut and not args.right_only_cut_trial
+            and not args.park_left_ready and args.grasp_skew==0 and args.approach_tilt==0
+            and args.native_startup_clearance and not args.watch_cut_trial and not args.robot_interactive):
+        raise ValueError('Grasp proposals require a zero-motion unparked bimanual search')
+    startup_search=any((args.native_startup_pose_search,args.native_startup_approach_search,args.native_startup_heading_search,args.native_startup_station_search,args.native_startup_grasp_search))
+    if sum((args.native_startup_pose_search,args.native_startup_approach_search,args.native_startup_heading_search,args.native_startup_station_search,args.native_startup_grasp_search))>1:
         raise ValueError('Select one zero-motion startup search mode')
     if startup_search and not (args.native_startup_clearance and
             contact_trial and args.knife_edge_mode=='source_crossbar_edge_v1'):
@@ -919,6 +924,7 @@ def main(argv=None):
             if args.native_startup_approach_search:fixture.startup_approach_search=True
             if args.native_startup_heading_search:fixture.startup_heading_search=True
             if args.native_startup_station_search:fixture.startup_station_search=True
+            if args.native_startup_grasp_search:fixture.startup_grasp_search=True
             if args.cut_station_orbit:fixture.cut_station_orbit=True
             if args.station_waiting_search:fixture.station_waiting_search=True
             if args.station_left_seed_search:fixture.station_left_seed_search=True

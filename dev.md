@@ -8706,3 +8706,42 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   pending. Full-greenhouse A and responsiveness C remain OPEN. No full milestone
   freeze or reliable-tissue-fracture claim; current cuts remain force-qualified
   authored-joint release, not calibrated biological fracture.
+
+### 2026-09-14 before-noon continuation: bounded grasp-orientation screening
+
+- Native387/388/389/390 all stop before motion: original SubStem45 leaves,
+  SubStem40/Leaf013, target Leaf031 at the palm, and target Leaf033 at the wrist
+  camera respectively. No geometry/contact exclusions were introduced.
+- Native391 checks alternate right elbows for the prior source101 grasp:
+  12 local and16 global IK attempts, no complete native startup proposal.
+  Native392's cut-frame/waiting/station search examines92 candidates with no
+  complete proposal. Neither is an executed grasp/cut episode.
+- Added explicit --screen-grasp-approach, restricted to a stopped native
+  bimanual process-zone search. It keeps the anatomical material point, base,
+  right arm, original camera/knife mounts, foliage and all source geometry.
+  At most112 bounded wrist orientations with at most6 IK seeds each receive
+  full finger/cut-plane clearance, native startup and47-knot self/inter-arm
+  approach checks. At most8 proposals are returned in the same45s search
+  budget, with reserved final native actor controls. No proposal grants scene
+  path/contact/retention/cut authority; fresh launch and physical tests remain
+  mandatory. Any final-control failure revokes EVERY proposed_* field.
+- Native393's initial single-result search finds the finger-swapped variant of
+  the known source19 grasp. Native394 collects alternatives over107 orientations
+  in45.266s but finds only that same variant. Its similar physical grasp already
+  failed retention in362, so it is NOT a solution to A. Native395 examines78
+  orientations on source71/opposite planting side in45.172s with no proposal.
+  Final native controls pass in all these searches; zero physical steps.
+-49 focused search/owner tests pass in both Python interpreters before the
+  multi-proposal addition.50 updated focused tests pass in Isaac, including
+  revocation of all grasp proposals. The entire sim_physics test directory
+  passes4909 tests in246.92s (v32); this invocation does not include extra
+  tests outside that directory and is not a like-for-like count against v31.
+- Native396's100mm source19 search checks75 orientations in45s and finds a
+  rolled20-degree proposal with all final controls. Native397 is the fresh
+  physical trial: native startup and the reobserved approach pass, and it has
+  reached finger closure. Grasp/retention/cut outcome is still pending; no pass
+  inferred from the search or from the first few moving steps.
+- A read-only1200-record JSON encoder comparison takes0.584s current versus
+  0.595s stdlib; all parsed records match. No encoder change is justified by
+  this measurement. It is not a physical-simulator performance test. A/C remain
+  OPEN; no freeze, dataset, training, hardware or source-asset changes.

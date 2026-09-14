@@ -110,3 +110,15 @@ def test_native_startup_remains_explicit_and_diagnostic_only(tmp_path):
     with pytest.raises(ValueError,match='isolated cut contact'):
         main(['--output',str(tmp_path/'unused'),'--native-startup-clearance'])
     assert not (tmp_path/'unused').exists()
+
+
+def test_failed_final_controls_revoke_every_grasp_proposal(monkeypatch):
+    from . import startup_pose_search
+    args,state=fixture();args[1].startup_right_pose_search=True
+    def search(*unused):
+        state.missing='/World/Plant/collider'
+        return dict(proposed_grasp={'left':[1]*7},proposed_grasps=[{'left':[1]*7}])
+    monkeypatch.setattr(startup_pose_search,'search',search)
+    result=_screen(*args);out=result['right_pose_search']
+    assert out['proposed_grasp'] is None and out['proposed_grasps'] is None
+    assert not out['final_native_controls_passed'] and not result['passed']
