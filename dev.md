@@ -8745,3 +8745,28 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   0.595s stdlib; all parsed records match. No encoder change is justified by
   this measurement. It is not a physical-simulator performance test. A/C remain
   OPEN; no freeze, dataset, training, hardware or source-asset changes.
+
+### 2026-09-14 continuation: physical100mm grasp and numerical comparison option
+
+- Native397 physically verifies the source19/100mm/rolled20deg bilateral grasp
+  after fresh startup and moving-scene approach checks. Max material slip is
+  16.998 micrometres. It stops at8.975s, before knife motion: static retention
+  utilization2.143519 exceeds the unchanged contact budget. Detached mass
+  12.385444g,13 compressive patch rows. Moving the grasp farther did not solve
+  capacity; no cut/retention credit. Native398's flat-pad alternative hits the
+  main stem/truss/fruit with left arm5. Native399's orientation search returns
+  no proposal. Native400's above-branch alternative hits target Leaf006 with
+  right arm5; zero motion. Native401 screens withdrawn right waiting poses.
+- Read-only flat-pad IK proposals with the right arm parked can satisfy
+  kinematic/self/inter-arm approach checks, but these do not prove native
+  scene access or contact capacity. Evidence: kin19_flat_park_20260914_v2.log.
+- Added96/0 as an EXPLICIT numerical-convergence comparison between the
+  existing64/0 failed comparison and128/0 baseline. Default remains128/0;
+  480Hz, original collision/visual assets, contact accounting, force/slip,
+  retention and full-through-stroke gates are unchanged. Both plant and robot
+  must receive the matching explicit count before parsing, with USD readback.
+  No native96/0 result or fidelity equivalence yet; not a faster demo default.
+  Fifteen focused profile/solver tests pass in both Python interpreters.
+  Initial added negative test changed an overridden earlier argv occurrence;
+  corrected test changes the effective last value and confirms pre-launch
+  rejection. No application was started by that failing Conda test.

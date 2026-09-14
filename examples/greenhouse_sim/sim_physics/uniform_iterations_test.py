@@ -12,9 +12,10 @@ def stage():
     return s
 
 
-def test_all_bodies_and_articulations_receive_exact_pair_session_only():
+@pytest.mark.parametrize('count',[96,128])
+def test_all_bodies_and_articulations_receive_exact_pair_session_only(count):
     s=stage();before=s.GetRootLayer().ExportToString()
-    r=uniform_iterations(s,('/World/Plant','/World/Robot'),(128,0))
+    r=uniform_iterations(s,('/World/Plant','/World/Robot'),(count,0))
     assert len(r['bindings'])==8 and not r['native_effective_iterations_verified']
     assert s.GetRootLayer().ExportToString()==before
     verify_iterations(s,r)

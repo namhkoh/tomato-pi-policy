@@ -1424,3 +1424,10 @@ pitch/roll, station and joint seeds; all actual moving-scene checks still run.
 Do not replay `left_path_degrees` as a certified trajectory. Native394 found
 only an already-tested finger-swapped source19 grasp, and395 found no source71
 proposal. Full-greenhouse grasp-and-cut remains unqualified.
+
+`--solver-convergence-trial 96` is a diagnostic-only intermediate numerical
+comparison, alongside64. It is NOT a qualified faster default. Both robot and
+plant receive96/0 instead of128/0, while480Hz, all original contact/visual
+geometry and every force/slip/retention/cut gate stay unchanged. A full native
+matched outcome and accuracy/performance comparison is required before any
+adoption. Merely passing CLI/readback tests establishes no fidelity equivalence.

@@ -237,8 +237,8 @@ def parser():
         help='Isolated retention trial: derive connected shaft identity from measured full pad footprint; original contact geometry/force verification remains mandatory')
     p.add_argument('--settle-retention-preload',action='store_true',
         help='Isolated retention trial: wait bounded 0.2 s measured original-preload dwell before static capacity audit; no force-limit increase')
-    p.add_argument('--solver-convergence-trial',type=int,choices=(64,),default=None,
-        help='Explicit numerical comparison only:64/0 vs baseline128/0, no fidelity equivalence assumed')
+    p.add_argument('--solver-convergence-trial',type=int,choices=(64,96),default=None,
+        help='Explicit numerical comparison only:64/0 or96/0 vs baseline128/0, no fidelity equivalence assumed')
     p.add_argument('--joint-transit-fallback',action='store_true',
         help='Bounded whole-arm joint search after Cartesian approach failure; cut stroke remains downward')
     p.add_argument('--staged-downward-transit',action='store_true',
@@ -493,10 +493,10 @@ def main(argv=None):
     if args.branch_contact_fixture and not contact_trial:
         raise ValueError('Branch-only selection requires the isolated cut contact diagnostic')
     solver_comparison=args.solver_convergence_trial is not None
-    if solver_comparison and not (args.uniform_solver_iterations==[64,0]
+    if solver_comparison and not (args.uniform_solver_iterations==[args.solver_convergence_trial,0]
             and args.physics_hz==480 and args.material_clearance_trial and args.through_stroke_trial
             and fixed_cut and args.native_drives_after_cut and not args.watch_cut_trial):
-        raise ValueError('Solver convergence comparison requires explicit64/0 and complete480Hz material-clearance trial')
+        raise ValueError('Solver convergence comparison requires a matching explicit count and complete480Hz material-clearance trial')
     if contact_trial and not (args.scene=='package' and contact_scope and args.full_robot_probe
             and args.bimanual_cut and (not args.bimanual_hold_control or fixed_hold) and not args.robot_interactive
             and args.explicit_finger_effort and args.force_closure and robot_rate_allowed
@@ -512,7 +512,7 @@ def main(argv=None):
         raise ValueError('Explicit finger effort requires isolated 240 Hz feedback HOLD ONLY')
     if args.uniform_solver_iterations is not None and not (contact_scope and not args.robot_interactive
             and (args.bimanual_hold_control or contact_trial) and args.bimanual_cut
-            and tuple(args.uniform_solver_iterations) in ((32,8),(64,0),(128,0),(128,8))):
+            and tuple(args.uniform_solver_iterations) in ((32,8),(64,0),(96,0),(128,0),(128,8))):
         raise ValueError('Uniform iterations require isolated HOLD and a bounded diagnostic pair')
     native_hold=(args.spring_mode=='native' and args.isolate_station and args.bimanual_cut
         and args.bimanual_hold_control and args.force_newton==0

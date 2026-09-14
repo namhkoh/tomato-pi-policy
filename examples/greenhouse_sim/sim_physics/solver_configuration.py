@@ -14,7 +14,7 @@ def uniform_iterations(stage,roots,pair):
             or not p.startswith('/World/') or not stage.GetPrimAtPath(p) for p in roots)
             or any(a.startswith(b+'/') for a in roots for b in roots if a!=b)
             or len(pair)!=2 or any(type(x) is not int for x in pair)
-            or pair not in ((32,8),(64,0),(128,0),(128,8))):
+            or pair not in ((32,8),(64,0),(96,0),(128,0),(128,8))):
         raise ValueError('Two distinct plant/robot roots and bounded diagnostic iteration pair required')
     records=[]
     for root in roots:

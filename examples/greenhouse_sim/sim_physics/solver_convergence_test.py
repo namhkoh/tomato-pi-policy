@@ -34,3 +34,29 @@ def test_no_silent_reduction_or_partial_fixture(monkeypatch,tmp_path,bad):
     if bad=='missing_section':options.remove('--material-clearance-trial')
     with pytest.raises(ValueError):benchmark.main(options)
     assert not (tmp_path/'new').exists()
+
+
+@pytest.mark.parametrize('mode',['bimanual','right_only'])
+def test_96_is_explicit_and_preserves_physics_contacts_and_native_guards(monkeypatch,tmp_path,mode):
+    captured=[]
+    with monkeypatch.context() as m:
+        m.setattr(benchmark,'main',lambda a:captured.extend(a))
+        ground_truth_trial.main(['--output',str(tmp_path/'new'),'--mode',mode,
+            '--milestone','cut_action','--process-zone-trial','--through-stroke-trial',
+            '--material-clearance-trial','--postcut-egress-trial','--solver-convergence-trial','96'])
+    a=benchmark.parser().parse_args(captured)
+    assert a.uniform_solver_iterations==[96,0] and a.physics_hz==480
+    assert a.native_static_clearance and a.native_startup_clearance
+    assert a.native_drives_after_cut and a.material_clearance_trial and a.solver=='PGS'
+    assert a.require_retention_screen==(mode=='bimanual')
+    class Validated(Exception):pass
+    monkeypatch.setattr(Path,'mkdir',lambda *a,**kw:(_ for _ in ()).throw(Validated()))
+    with pytest.raises(Validated):benchmark.main(captured)
+    assert not (tmp_path/'new').exists()
+
+
+def test_96_count_without_matching_explicit_trial_cannot_launch(monkeypatch,tmp_path):
+    options=argv(monkeypatch,tmp_path)
+    options+=['--uniform-solver-iterations','96','0']
+    with pytest.raises(ValueError,match='matching explicit count'):benchmark.main(options)
+    assert not (tmp_path/'new').exists()
