@@ -1030,3 +1030,64 @@ finite forward/backward, checkpoint reload, memory, speed and held-out generatio
 must still be verified. The user requested model setup only on H200; no Qwen
 model files were downloaded here and no training/server job was started.
 This is a perception-training handoff, not evidence of VLM-controlled cutting.
+
+## Fresh clear-cut-point recollection (2026-09-15, overnight in progress)
+
+The user rejected packaging the 47 older limited candidates and requested fresh,
+clearer simulator captures, review, annotation and a Qwen3-VL-8B training ZIP.
+The earlier 14,259-row visible/occluded release above is historical, not this new
+easy-task release. No new H200 training or local model download has been started.
+
+Task: given unmarked full-scene robot-head RGB and a visible target-petiole query
+pixel, predict the nominal cut point in the original 848x408 image. Nominal is
+10 mm along the petiole from its attachment; the 10-20 mm centreline interval is
+the evaluation tolerance region, not a circular neighbourhood or a cutter pose.
+The optional second RGB input is a query-centred crop, never an answer-centred
+crop. Native optical-axis Z, validity, calibration and target masks are copied
+as audit sidecars, not supplied to the RGB model. This is static perception data,
+not action-outcome experience, contact validation or safe-cut certification.
+
+New capture preset `robot_head_close_diffuse_v1` retains the supplied greenhouse,
+native plant geometry, mounted robot-head camera and 848x408 optics. It searches
+closer static robot/root/torso/head poses with diffuse scene lighting. Floor,
+joint-limit and visible-geometry overlap screens remain enabled. Pose snapshots
+do not establish navigation or dynamic collision-free transitions. Existing
+source assets, split reservations and historical review decisions are unchanged.
+
+At 01:52 KST, eight completed family jobs produced 208 native captures. The new
+strict screen retained 127 images from 27 targets in seven TRAIN families; all
+127 were inspected individually in original RGB and have hash-bound, named
+assistant decisions. Seed23 produced one native frame and zero strict candidates.
+These are measured intermediate counts, NOT a complete/approved training ZIP.
+Held-out jobs are scheduled after training-family jobs; no held-out results have
+been used to select model settings. The 24 source families remain frozen at
+16 train / 4 validation / 4 test; they share greenhouse scenery and do not imply
+real-world or fully scene-disjoint generalization.
+
+Release criteria stay at >=500/100/100 images, >=60/15/15 targets and 16/4/4
+families (train/validation/test), <=12 diverse views per target, plus strict
+native-mask/visibility, projected size, exposure and explicit visual review.
+These are minimum experiment gates, not evidence that such a small release will
+generalize. The explicit `assistant_reviewed_experiment_v1` policy does not claim
+independent human validation. Default human-heldout review policy is unchanged.
+
+Evidence and live outputs:
+
+- Plan: `data/sim_data/collection_plans/clear_capture_20260915_overnight_v1/plan.json`.
+- Serial native campaign: `data/sim_data/collection_campaigns/clear_capture_20260915_overnight_v1`.
+- Completed-batch source pools, strict drafts and review pages:
+  `data/sim_data/collection_intake/clear_capture_20260915_overnight_v1`.
+- Individual review JSON: `data/sim_data/dataset_reviews/clear_capture_20260915_overnight_v1`
+  and the first seven decisions in `dataset_reviews/clear_native_seed101_20260915_v1`.
+- A bounded seed23 opposite-aisle pilot is queued AFTER successful completion of
+  the original-side campaign. It is not yet native-qualified or scaled up. Same
+  geometry, optics, floor and clearance screens; no validated motion between aisles.
+- `examples/greenhouse_sim/sim_data/CLEAR_CUTPOINT.md` contains the H200 smoke,
+  train-only overfit, full-FT and sealed-test instructions. Final archive creation
+  must pass `clear_cutpoint_release.validate` and member-hash verification first.
+
+Implementation through `d291017`: serial native collection with bounded exits,
+non-approving completed-batch intake, review provenance, portable RGB/crop adapter,
+release validator and manifest-generated ZIP dataset card. Latest CPU regression:
+671 tests plus 47 subtests passed (`data/sim_data/clear_regression_20260915_v5.log`).
+No new-model accuracy, throughput or successful final ZIP is claimed here.

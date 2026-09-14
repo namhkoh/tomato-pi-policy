@@ -9795,3 +9795,23 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   training job is launched for this branch operation; datasets, splits and
   review decisions are not changed. Simulator limitations remain open while
   the user's requested VLM work resumes.
+
+### 2026-09-15 overnight fresh VLM collection checkpoint
+
+- User requested new, clearer native RGB data instead of packaging 47 old
+  candidates. Active work is collection, source-derived annotation and visual
+  review, then a verified Qwen3-VL-8B transfer ZIP; no model weights or training
+  are running locally. See the new checkpoint in `vlm_train_data.md` and
+  `examples/greenhouse_sim/sim_data/CLEAR_CUTPOINT.md`.
+- 01:52 KST measured checkpoint: eight completed audited jobs, 208 native frames,
+  127 strict clear images / 27 targets / seven training families; all127 original
+  RGBs individually assistant-reviewed. Final coverage and held-out capture are
+  still incomplete. No archive or research-result claim is made at this point.
+- Native capture runs serially with the existing memory/floor/geometry checks;
+  native depth remains Isaac optical-axis Z. Source assets, reserved splits and
+  old decisions are unchanged. Opposite-aisle static capture is opt-in and has a
+  bounded pilot queued behind the current campaign, not yet native-qualified.
+- Source through `d291017` is committed. Latest data-code regression passed671
+  tests plus47 subtests. Generated captures/reviews remain under ignored `data/`.
+  Simulator contact/cutting limitations documented above remain open; this data
+  task is not a claim that greenhouse bimanual physics has been qualified.
