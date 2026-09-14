@@ -20,6 +20,7 @@ MODES={'original':{},'opposite':{'opposite_aisle':True},
        'lean':{'lean_clear':True},'lean_oblique':{'lean_clear':True,'oblique_clear':True},
        'lean_opposite':{'lean_clear':True,'opposite_aisle':True},
        'orbit':{'oblique_clear':True,'orbit_clear':True},
+       'orbit_opposite':{'oblique_clear':True,'orbit_clear':True,'opposite_aisle':True},
        'orbit_lean':{'oblique_clear':True,'orbit_clear':True,'lean_clear':True},
        'orbit_lean_opposite':{'oblique_clear':True,'orbit_clear':True,'lean_clear':True,'opposite_aisle':True}}
 

@@ -9837,7 +9837,7 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   campaign job subsets to avoid duplicate pilot capture without changing
   source plans/splits. Full data tests696 +47 subtests passed in47.13s.
 
-- 04:00 KST data checkpoint:300 originals individually reviewed,295 accepts and
+- 03:53 KST data checkpoint:300 originals individually reviewed,295 accepts and
  5 holds. Fixed missing lean/orbit flags in native prepared-view reconstruction;
  original campaign unaffected, alternate pilots still pending. Intake now records
  explicitly validated zero-eligible-label batches without approving them; other

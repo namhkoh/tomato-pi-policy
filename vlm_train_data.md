@@ -1175,7 +1175,7 @@ alternate viewpoint campaign; no alternate scale-up has been launched yet.
 Full data regression696 tests +47 subtests passed in47.13s
 (`data/sim_data/clear_regression_20260915_v10.log`).
 
-### 2026-09-15 04:00 KST capture-boundary and intake fixes
+### 2026-09-15 03:53 KST capture-boundary and intake fixes
 
 All31 seed31 test RGBs were individually inspected with GT-coordinate guidance
 for label QA:30 accepts and1 hold (foreground leaf hides the immediate junction).
@@ -1197,3 +1197,14 @@ exceptions remain fatal. The failed intake directory/receipt is preserved. A new
 intake run will revalidate completed batches rather than overwrite old outputs.
 Full data regression714 +47 subtests passed in46.19s
 (`clear_regression_20260915_v12.log`). No coverage gate was relaxed; no final ZIP.
+
+The new `clear_capture_20260915_overnight_v2` intake successfully recorded seed37
+as zero eligible labels without failing; original native collection continued.
+Seed59 added one strict image, individually accepted (301 reviewed,296 accepts,
+5 holds). A bounded seed47 CPU comparison of original/orbit/opposite-orbit is
+running; opposite-orbit is only a composition of already-supported flags, not a
+new geometry allowance. Focused reconstruction/probe tests19 passed in0.50s.
+Two additional immutable plans are prepared but NOT launched:
+`clear_capture_20260915_original_shard2_v1` (new offset12 proposal windows) and
+`clear_capture_20260915_orbit_opposite_v1`. Their24 family assignments exactly
+match the frozen first plan. The prior alternate native pilots remain queued.
