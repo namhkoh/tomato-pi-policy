@@ -2479,3 +2479,12 @@ fail anchored photometry. Hypothetical28vs27 before caps/dedup shows only a
 small net gain, not a collection-yield breakthrough. Mean selector2.54s,
 p956.19s; no labels/reviews were overwritten. Independent originalpilot audit
 rechecks13,188source bindings and records1strict OBSERVED row, not TRAIN approval.
+
+Original serial inventoryv2 now has110independent V1/V2passing tests(297.37s).
+It reads the exact new serial39producer receipts and independently replays
+prerequisite and native audits. Replayed prerequisites are not implicitly
+training observations; actual scheduled39frames remain uncollected at this
+checkpoint. CurrentV4wave7jobs:125raw/38strict, not yet globally selected.
+Main's3new seed41image inspections support their visible petiole cut/query
+association; separately recorded under dataset_reviews/native_wave4_seed41_main_20260916_v1.
+They confer no extra diversity credit, cut safety or final TRAIN approval.

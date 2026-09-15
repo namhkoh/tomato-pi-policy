@@ -10361,3 +10361,15 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   diagnostics/query_selection_v2_wave4_20260916_v1. One original native pilot
   independently verified as1OBSERVEDstrict row with13,188source bindings; not
   added to216provisional before global duplicate/cap checks.
+
+- Original serial inventory adapterv2 reviewed and independently tested:
+  110V1/V2tests pass297.37s. It authenticates actual serial39batch receipts,
+  predecessor/pilot and per-batch native audit without pretending they are V5
+  events. Prerequisite replay does not silently add observations. Actual serial
+  batches are still unlaunched; the earlier pilot has1observedstrict row only.
+- Main inspected3fresh seed41current-wave RGBs/fullscene+native crops, with
+  explicit attachment/cut/query check: dataset_reviews/native_wave4_seed41_main_20260916_v1,
+  receipt SHA919678e064b5964288c6e58c7e20d183cd25379d3ee15b49c8a3e1bdefff1711.
+  All3support static petiole annotation; no biological/physical safety claim,
+  source-budget reset or training-count increment. Current7completedV4jobs:
+  125captures,38strict before independent cumulative cap/duplicate checks.
