@@ -9946,3 +9946,28 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   Queue log:data/sim_data/native_generated_seven_family_memory_queue_20260915_v2.log.
   No user apps closed, no source/split/review edits, no final training approval.
   See sim_data/NATIVE_GENERATED_CAMPAIGN.md under examples/greenhouse_sim.
+
+- 2026-09-15 autonomous native review: new append-only CPU review tool checks
+  provenance/raw Isaac fingerprints/exact organ masks, recomputed cut labels,
+  densely sampled query-to-cut visibility and clean model-input parity.
+  Numeric QA and actual assistant visual inspection are separately attributed.
+  Never overwrites review/split/source files or grants physical/training release
+  approval.30 new tests; full suite1018 tests +77 subtests passed (v29 log).
+- Seven-family native v2 completed, queue exit0:14 original/generated frames,
+ 13 clear candidates. Automatic gate4 accepts/9 visual holds/1 reject; all14
+  actually visually inspected,12 annotation-pilot accepts/2 easiest-task
+  exclusions. Hash-bound evidence under dataset_reviews/
+  native_generated_seven_family_20260915_v2 (under data/sim_data).
+- Legacy450 reviewed images unchanged (312/48/90). Native annotation pilot now20
+  accepted frames separately, NOT20k or a final training release. No model
+  training/download, hidden-cut execution, source family/cap changes or ZIP.
+- With explicit saved-review approval stopped only servers8877-8879,
+  PIDs13524/22728/11076 (~2.31GiB combined private allocation). Saved reviews
+  untouched, no other app/driver/service changes. Kernel pool issue unresolved.
+- Next bounded native plan:12 additional original target identities, at most24
+  annotation candidates. Memory/no-Kit readiness queue launched15:33:47KST,
+  automatically reviews completed cases after capture attempt, no auto-retry.
+  Root:data/sim_data/diagnostics/native_generated_remaining_targets_20260915_v1.
+  Remaining20k blockers include true target/morphology diversity and scalable
+  native export/processor/release validation. See sim_data/AUTOMATED_NATIVE_REVIEW.md
+  under examples/greenhouse_sim for scope, evidence and commands.

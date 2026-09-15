@@ -1908,3 +1908,60 @@ No user applications were closed or system settings changed. Check receipts;
 waiting/queued is not native completion. Data count stays450 legacy-reviewed
 plus8 separate annotation-pilot frames pending release integration.
 See examples/greenhouse_sim/sim_data/NATIVE_GENERATED_CAMPAIGN.md.
+
+### 2026-09-15 15:34 KST autonomous review and native capture checkpoint
+
+User authorized autonomous review, asking only for genuinely unresolved
+decisions. Added automated_native_review.py: frozen source/implementation
+bindings, actual native RGB/Z/camera fingerprints, exact target-mask checks,
+recomputed anatomical cut labels and continuous query-to-cut chain verification.
+Projected probes <=0.5 pixel /0.5mm, chain vertices preserved, no gap filling.
+Clean native crop/prompt/answer parity checked. No computed replacement depth,
+hidden-coordinate execution, source/review/split mutation or training approval.
+Automatic and actually performed assistant visual reviews remain separate.
+30 new adversarial tests; full suite1018 tests +77 subtests passed in65.91s:
+data/sim_data/clear_regression_20260915_v29.log.
+
+Seven-family v2 completed with queue exit0.14 native original/generated frames,
+13 clear candidates. Final automatic review:4 accepts,9 visual holds,1 reject;
+zero integrity holds. All14 actually visually inspected (full-scene overview
+and lossless native query/junction crops).12 annotation-pilot accepts,2 excluded
+from the easiest task. Seed71 generated cut was leaf-occluded; seed41 generated
+query had a distracting crossing despite a visible cut. No unresolved user
+decision and no prior review altered. Exact hashes/reasons/crop scopes:
+data/sim_data/dataset_reviews/native_generated_seven_family_20260915_v2/assistant_visual_reviews.json.
+Automatic receipts:automatic_first_six_v2.json and automatic_final_pair_v2.json.
+This selected small pilot does not measure population yield or VLM accuracy.
+
+Counts: legacy450 reviewed (312 train/48 validation/90 test), unchanged.
+Separately20 native annotation-pilot accepts including the earlier8; these are
+NOT20k training images or final release approvals. Original donor view caps
+still apply. Similarity variants do not create independent botanical families.
+Still needed: qualified larger target/morphology diversity, scalable native
+production collection, native-resolution export/H200 processor qualification,
+held-out release validation, and only then final20k+held-out ZIP.
+
+Memory assistance: after explicit approval and saved reviews, stopped ONLY
+legacy review server PIDs13524/22728/11076 on ports8877/8878/8879, after checking
+their module/port ownership. All exited, releasing their measured2,480,340,992
+private bytes (~2.31GiB); saved annotations untouched. This is process-private
+commit released, not a measured equal increase in concurrent whole-system
+headroom. The earlier22.741GiB queue admission occurred before these stops.
+No other apps/VMs, Parsec, drivers or services were stopped; no reboot/pagefile
+changes. Large kernel paged-pool allocation remains unresolved, not fixed by
+closing these servers. CBnb/cbfltfs4.sys remains an investigation lead, not a
+proven allocation owner. No driver-unload attempt was made.
+
+Next plan validated:12 additional original targets from the frozen inventory,
+one best existing reference per target; no previously qualified target repeated.
+Native1696x816 original/generated pairs; at most24 annotation candidates plus
+non-training camera/sensor controls. New root:
+data/sim_data/diagnostics/native_generated_remaining_targets_20260915_v1.
+Readiness queue launched15:33:47KST (PowerShell PID121832), waits at most2h for
+20GiB commit/no Kit, then one serial campaign with unchanged worker guards.
+Automatically reviews all completed cases after the attempt; no auto-retry or
+claimed visual inspection. Log:
+data/sim_data/native_generated_remaining_targets_memory_queue_20260915_v1.log.
+Native log:data/sim_data/native_generated_remaining_targets_20260915_v1.log.
+Check queue/result receipts; launch/queued is not completed or accepted data.
+See examples/greenhouse_sim/sim_data/AUTOMATED_NATIVE_REVIEW.md.
