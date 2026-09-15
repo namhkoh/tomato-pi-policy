@@ -10084,3 +10084,23 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   validation is queued separately; no motion/path/physics/training approval.
 - See native_capture_v2/README.md and NATIVE_CAPTURE_SCALING.md. Serial retries
   and an isolated1-subframe performance probe continue; neither bypasses gates.
+
+- 2026-09-15 late evening: native retry38frames/14strict; wider seed19 recovery
+  7frames/2strict, actual visual2accepts/2holds. Three additional wider-seed103
+  actual spotchecks bring the separate native visual pilot to61 pending admission.
+  Broader wider campaign first six completed plants209frames/37strict; ongoing.
+  No diagnostic copies/rerenders or overlapping reviews inflate20k counts.
+- One- AND two-subframe render trials failed native camera-pose freshness;
+  preserved and not adopted. Original56 default and explicit8 trial unchanged.
+- Added separate native_dataset modules: request/source-bound annotation replay,
+  exact native compact sample reader/copy/direct writer, and augmentation-aware
+  candidate accounting with global duplicate clusters, original donor splits,
+  balanced context caps and separate20k TRAIN/heldout minimums. Calibration is
+  still external/pending; no final training release approval is granted.
+- Independent review findings fixed;1346tests+181subtests pass(v46,99.15s).
+  Direct storage proof7real samples,21NPYs/28PNGs exact,126source files unchanged,
+  162.8MB->38.9MB. Native integration probe queued; isolated0.23.0Zstandard wheel
+  in ignored repository data, no Isaac/system install changes or model downloads.
+- Useful-image yield remains the bottleneck: broaden proven reference poses,
+  rank/screen before rendering, then reuse stages.20k ZIP/heldouts/export not ready.
+  Evidence/limits: examples/greenhouse_sim/sim_data/native_dataset/README.md.

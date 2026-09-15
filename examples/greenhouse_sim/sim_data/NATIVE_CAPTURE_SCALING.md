@@ -193,3 +193,48 @@ This adapter is not yet a compact capture-writer/export migration.
 Full pytest:1201 tests +128 subtests passed in64.70s, clear_regression_20260915_v44.log.
 The v43 unittest invocation found only16 unittest-style cases; it was not the
 full suite. No final20k release/ZIP or local model training exists.
+
+## Late-evening broader native, storage and admission checkpoint
+
+Retry campaign:38captures/14strict,12clarity holds/12exclusions. Combined with
+the99-frame campaign:137captures/34strict. Wider seed19 recovers7from a zero-yield
+baseline;2strict/2holds/3excluded, confirmed by actual full/native-crop inspection.
+Wider multi-donor campaign first six completed plants:209captures/37strict.
+Three actual wider seed103 spotchecks accepted; native visual-pilot61 pending
+global admission. These counters overlap: never sum visual and automatic pools.
+
+Both1- and2-subframe probes fail native camera-pose synchronization after camera
+movement. Preserve failures; do not adopt these budgets or weaken freshness.
+Eight-frame trial remains explicitly labeled;56default and scene fidelity unchanged.
+
+Native_dataset support (separate from frozen active top-level capture code):
+- strict request/plan/source/sample/lineage/callback/trace replay, raw and compact;
+- exact compact copy/reader and direct native buffer writer, no depth inference;
+- transitive global duplicate-context candidate accounting, frozen donor splits,
+  deterministic balancing and separate20k TRAIN/additional heldout requirements.
+Calibration/evidence validation and actual release approval remain external.
+
+Full1346tests+181subtests pass(v46,99.15s). Independent review found and closed
+provenance/duplicate/trace/missing-observation/bounded-read gaps. Direct writer
+on7real stored callbacks preserves21NPYs/28PNGs byte-exact,126source files untouched:
+162,793,157->38,901,025bytes. No new image diversity from this storage test.
+Proof: diagnostics/native_direct_writer_qualification_20260915_v1/qualification.json.
+Final bound copy replay: diagnostics/native_compact_sample_qualification_20260915_v2/
+final_bound_audit.json. Native compact worker test queued after wider campaign;
+require actual result and independent replay before promotion. Isolated workspace
+Zstandard0.23.0 cp312 dependency; no Isaac/system package or model changes.
+
+Throughput caution: original broader+retry collectors needed1550.08s for34strict
+candidates.253.3hours for20k is a linear projection, NOT a reliable completion ETA;
+it excludes startup/preparation and admission losses. Removing recorded setup
+alone would still imply209.5hours. Better pose/reference selection is essential.
+The controller uses one source capture/donor and nearest-depth non-anchor poses,
+not all reviewed poses or clarity-ranked references. Expand to a compatible
+reference bank, rank generated geometry before rendering, then reuse stage epochs.
+GT geometric screening may select views; native depth/identity/clarity still decide
+labels. Do not alter lighting/materials or remove neighbouring foliage for yield.
+
+Seed101 andseed7 have unused completed native prerequisites. Four more TRAIN
+families have screened legacy references needing native qualification;seed73 has
+none in the inspected campaigns. Existing20k cap/export/heldout blockers remain.
+See native_dataset/README.md for exact evidence paths and next release gates.

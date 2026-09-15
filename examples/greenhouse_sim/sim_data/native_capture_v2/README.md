@@ -48,3 +48,11 @@ Eight focused tests cover explicit bounds, opposite-side outward motion, rigid
 frame/heading invariants, source-gate propagation, immutable plans and forged
 approval rejection. Full suite before the worker promotion:1209 tests and136
 subtests pass(v45,62.94s). Native validation is still pending at this checkpoint.
+
+Later native result (2026-09-15): seed19 recovered7 captures from the zero-frame
+reference-neighbour baseline.4 pass cut-point visibility;2 pass strict query-trace
+review. Actual full/native-pixel visual review keeps2 accepts and2 clarity holds;
+3 other captures are excluded. This is annotation-pilot evidence, not release
+approval or motion/path validation. Wider multi-donor trials continue under
+collection_batches/native_wider_campaign_20260915_v1. See ../native_dataset/README.md
+for subsequent storage, strict audit and augmentation-accounting support.

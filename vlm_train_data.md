@@ -2138,3 +2138,48 @@ It does not change the old sampler or move a physical robot. Native validation i
 queued. See examples/greenhouse_sim/sim_data/native_capture_v2/README.md.
 Full1209tests+136subtests pass. Native1-subframe probe is also isolated; no default
 renderer/budget change, final20k release, held-out recapture or training claim.
+
+### 2026-09-15 late-evening native data scaling checkpoint
+
+The retry campaign completed38 additional native frames:14 strict automatic
+candidates,12 clarity holds,12 exclusions. The broader99+retry38 totals137
+frames/34 strict candidates before global admission, not approved20k data.
+The wider seed19 camera search recovered7frames from a zero-yield baseline:
+2strict/2holds/3excluded. Four actual full-view/native-crop visual reviews keep
+the same2 accepts/2 holds. Three later wider-seed103 spotchecks also accepted;
+the separate native visual-pilot count is61 pending global caps. Visual counts
+overlap automatic counts and must not be added to them.
+
+Wider campaign: collection_batches/native_wider_campaign_20260915_v1 under
+data/sim_data. Its first six completed plants produced209frames/37strict
+candidates; the batch continues. One old seed17 frozen-plan replay refused,
+preserved without capture. An18-new-plant campaign is queued after a native
+compact-storage qualification, serially with20GiB launch reserve. Completion
+requires result.json and no failure.json; process exit0 alone is insufficient.
+
+One- and two-subframe trials both failed the authored/native camera-pose
+synchronization check. Neither is adopted. Eight-subframe trial remains
+explicit; full56 reference default, greenhouse contents and materials unchanged.
+
+Implemented native_dataset audit, exact compact storage/direct writer and
+augmentation-aware candidate accounting in examples/greenhouse_sim/sim_data.
+Independent review found/fixed request binding, duplicate accounting, source
+lineage, raw/compact trace parity, missing observations and bounded-read gaps.
+All1346 tests+181subtests pass(v46,99.15s). Direct writer preserves21 actual
+native NPYs and28 PNGs across7 existing frames byte-for-byte;126 source files
+unchanged;162.8MB->38.9MB. No diagnostic copies count as new data. Native compact
+renderer integration is queued separately and must pass before promotion.
+
+Current useful yield implies multi-day brute-force collection, not an honest
+overnight20k promise. Prior137frames/34strict required1550.08 collector seconds;
+linear extrapolation is253.3hours before preparation, review and duplicate losses.
+Prioritize a broader screened reference bank and pre-render geometry/legibility
+ranking, then stage reuse. Keep native depth/identity checks authoritative.
+Seven additional TRAIN families exist outside the current nine-donor references;
+seed101 andseed7 already have native sensor prerequisites, four need qualification,
+andseed73 lacks screened viewpoints. Do not relabel source plans to add them.
+
+Still outstanding: calibrated global augmentation/image admission, native
+held-out capture, portable high-resolution Qwen export/processor validation,
+20,000 accepted TRAIN+additional held-outs and final ZIP. No local training or
+model download. See sim_data/native_dataset/README.md and NATIVE_CAPTURE_SCALING.md.
