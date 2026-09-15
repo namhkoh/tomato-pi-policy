@@ -10399,3 +10399,10 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   diagnostics/original_pilot_compact_20260916_v1/qualification.json,
   SHA2f434ea7d4ac6cb6011de533d1c4a38baf26bf6e9e224628d7df5cbb32cb8513.
   Originals retained;0newobservations/approvals; no small-release bypass.
+
+- Added isolated boundary_bindings helper: same-boundary layer/path-set and
+  source checks merge duplicate hashes without caching across views. Main69
+  synthetic tests pass0.47s. Source-original layer inventory proxy benchmark
+  median0.739s repeated vs0.449s merged; this is NOT measured generated-stage
+  or native frame speedup. No active collector integration or guard change.
+  Actual stage membership, static/freshness/dirty-layer guards remain required.

@@ -2514,3 +2514,10 @@ export sample contract:11retained logical files exactly match raw captures,
 including3fullNPYfiles.13,188source bindings checked before/after. Raw25.91MiB,
 compact9.38MiB;packing0.86s. This is a copy of1existing observation, not newdata
 or a release. Raw images/native depth/review evidence remain untouched.
+
+Same-boundary source-verification helper has69independent passing tests(0.47s).
+It hashes duplicate stage/plan paths once per boundary, never caches across
+frames and preserves explicit current layer-set checks. Source-original-layer
+proxy timing0.739s->0.449s is promising but not actual generated/native speedup.
+Collector integration and native qualification remain pending; fidelity/sensing
+and active frozen worker code are unchanged.
