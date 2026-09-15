@@ -19,6 +19,9 @@ def load_for_inspection(directory, source_plan_path):
     require(not (directory/"FAILED.json").exists(), "Failed generator output cannot be loaded")
     receipt_path = directory/"qualification.json"
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    if receipt.get("version") == "curved_relocated_rigid_leaf_static.v2":
+        from .procedural_petiole_catalogue_v2 import load_for_inspection as load_rigid_leaf
+        return load_rigid_leaf(directory, source_plan_path)
     if receipt.get("version") == "curved_relocated_petiole_static.v1":
         from .procedural_petiole_catalogue import load_for_inspection as load_curved
         return load_curved(directory, source_plan_path)

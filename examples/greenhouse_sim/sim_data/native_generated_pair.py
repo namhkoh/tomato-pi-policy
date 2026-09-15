@@ -47,7 +47,7 @@ def windows_worker_admission(controller_pid):
     return check_process_admission(json.loads(raw), os.getpid(), controller_pid)
 
 
-def capture(app, output, plan):
+def capture(app, output, plan, *, profile_geometry_cache=False):
     import carb
     import omni.usd
     import omni.timeline
@@ -137,6 +137,11 @@ def capture(app, output, plan):
     samples = []
     phase_timings = []
     substitution = None
+    geometry_profiles = []
+    geometry_cache = None
+    if profile_geometry_cache:
+        from .static_geometry_cache import StaticGeometryScreenCache, profile_against_reference
+        geometry_cache = StaticGeometryScreenCache(stage, robot['root'], include_generated_plants=True)
     try:
         for mode, row in zip(plan["modes"], (plan["source_row"], plan["generated_row"]), strict=True):
             if mode == "generated_variant":
@@ -156,6 +161,8 @@ def capture(app, output, plan):
                 scope="plant_surfaces_vs_robot_bounds_not_collision_free_certification"))
             require(screen["passed"], "Current snapshot intersects robot/environment geometry")
             timing["calibration_and_geometry_screen_s"] = time.perf_counter()-frame_started
+            if geometry_cache is not None:
+                geometry_profiles.append(dict(mode=mode,**profile_against_reference(geometry_cache,screen)))
             phase_started = time.perf_counter()
             catalogue = component_catalogue(stage, records, reports, variants)
             require(len(catalogue) == counts["components"], "Active organ catalogue population changed")
@@ -228,6 +235,8 @@ def capture(app, output, plan):
             finally:
                 monitor.close()
     finally:
+        if geometry_cache is not None:
+            geometry_cache.close()
         writer.detach()
         product.destroy()
     checks = assert_pair_fresh(*samples)
@@ -239,6 +248,7 @@ def capture(app, output, plan):
             k: substitution[k] for k in ("old_root", "new_root", "plant_to_world", "component_count_preserved")},
         setup_seconds=setup_seconds, elapsed_seconds=time.perf_counter()-started,
         phase_timings=phase_timings,profiling_did_not_change_capture_budget_or_gates=True,
+        geometry_cache_profiles=geometry_profiles,geometry_cache_profile_enabled=profile_geometry_cache,
         source_assets_unchanged=True, scene_counts=counts, training_approved=False,
         local_plant_collision_qualified=False, low_level_policy_or_physics_action_tested=False,
         export_schema_qualified=False, original_controls_are_new_target_diversity=False)
@@ -249,6 +259,8 @@ def main(argv=None):
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--controller-pid", type=int, help="Exact parent PID for the owned serial controller")
+    parser.add_argument("--profile-geometry-cache", action="store_true",
+                        help="Compare cold/warm obstacle caches against each full reference screen; diagnostic only")
     args = parser.parse_args(argv)
     plan = read_json(args.plan)
     check_plan(plan)
@@ -262,7 +274,8 @@ def main(argv=None):
     reserve = preflight()
     write_json(output/"request.json", dict(created_utc=datetime.now(timezone.utc).isoformat(),
         plan_path=str(args.plan.resolve()), plan_sha256=sha256(args.plan), prerequisite=qualification,
-        host_memory_preflight=reserve, training_started=False, automatic_retries=False))
+        host_memory_preflight=reserve, training_started=False, automatic_retries=False,
+        geometry_cache_profile_enabled=args.profile_geometry_cache))
     app, succeeded = None, False
     try:
         require(reserve["allowed"], "Native memory reserve unavailable; no override")
@@ -272,7 +285,7 @@ def main(argv=None):
         app = SimulationApp(dict(headless=True, width=1696, height=816, multi_gpu=False,
             renderer="RaytracedLighting", sync_loads=False, disable_viewport_updates=True,
             extra_args=["--/app/settings/persistent=false"]))
-        result = capture(app, output, plan)
+        result = capture(app, output, plan, profile_geometry_cache=args.profile_geometry_cache)
         verify_bindings(qualification["bindings"])
         result["prerequisite"] = qualification
         write_json(output/"result.json", result)

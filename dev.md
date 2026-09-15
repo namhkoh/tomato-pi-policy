@@ -10007,3 +10007,20 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
 - See CURVED_PLANT_GENERATOR.md / AUTOMATED_NATIVE_REVIEW.md under
   examples/greenhouse_sim/sim_data. Next geometry repair preserves rigid leaf
   blades; production geometry admission/collector/storage/export still pending.
+
+- 2026-09-15 V2 rigid-leaf checkpoint: preserves original blade distances/UVs/
+  textures and checked attachment transport; original curved V1 helpers untouched.
+  Three real recipes now CPU-qualified, including2 formerly folded examples.
+  Native2pairs/4frames completed,3clear candidates; third failed visible target
+  identity, not robot clearance. Failed/unreviewed images are not admitted.
+- Eight older frames actually visually reviewed:7pilot accepts/1exclusion.
+  V1 curved seed19:1generated accept/1repeated control reference. Native pilot32
+  accepted separately, legacy450 draft unchanged. No20k release or ZIP.
+- Exact obstacle caching implemented/tested, opt-in native reference comparison:
+  ~13.6s cold vs0.86s warm, exactly equal screen outputs, invalidation on plant
+  change. No rendering/physics/clearance relaxation. Not yet total-pipeline speedup.
+  See sim_data/STATIC_GEOMETRY_CACHE.md and CURVED_PLANT_GENERATOR.md under examples/
+  greenhouse_sim. Full1107 tests +87 subtests passed in57.81s (v36 log).
+- Next: generated-geometry-dependent robot view search, persistent multi-view
+  capture with qualified cache/render budget, global shape admission and native
+  storage/export. Frozen caps/splits unchanged; no old reviews or source assets edited.

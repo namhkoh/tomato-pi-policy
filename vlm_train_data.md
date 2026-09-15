@@ -2026,3 +2026,30 @@ each frame; pair137.90 s plus annotation. Production amortization and global
 geometry novelty admission still required; original source-target12-view caps
 remain. Next: rigid leaf transport, broader qualified shape diversity and a
 measured fidelity-preserving persistent native collector.
+
+### 2026-09-15 rigid-leaf and native performance checkpoint
+
+Explicit V2 generator rigidly transports detailed leaf blades at their curved
+attachments. All3 former donor recipes CPU-qualified, including the2 previously
+folded examples. V1 receipt implementation left unchanged. Native2 pairs completed,
+4frames/3clear candidates; third rejected zero visible target pixels (robot
+clearance passed). Rigid-leaf pilot images still require actual visual review.
+Root: data/sim_data/diagnostics/curved_rigid_leaf_native_20260915_v1.
+
+Actually completed remaining8 previous frame reviews:7accepts/1exclusion. Second
+V1 curved pair:1generated accept/1repeated control. Native pilot accepted32;
+legacy450 draft unchanged, no20k final release or ZIP. Hash-bound visual receipts
+listed in examples/greenhouse_sim/sim_data/AUTOMATED_NATIVE_REVIEW.md.
+
+Exact static-obstacle cache: native cold13.55-13.66s to warm0.861-0.864s, all
+screen fields exactly equal reference, invalidation verified after substitution.
+~16x for repeated geometry screening only, NOT total capture. Full native scene,
+1696x816 mounted-head camera, native optical-Z and56 requested subframes retained.
+Opt-in profiling implemented; persistent production integration/moving-robot
+native view qualification/render convergence still pending. Details:
+examples/greenhouse_sim/sim_data/STATIC_GEOMETRY_CACHE.md. Full1107 tests +87
+subtests passed (v36,57.81s). No source/split/review mutation or model download.
+
+Next collection must recompute admissible actual robot viewpoints for changed
+geometry, not assume an old camera pose still sees the target. Global shape
+admission remains required before resetting any original source-target cap.

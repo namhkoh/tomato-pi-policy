@@ -157,3 +157,18 @@ Existing20 visual accepts and legacy450 reviewed records remain unchanged.
 
 Full regression after label/requalification fixes and observational capture timing:
 1075 tests +87 subtests passed in58.49 s (`data/sim_data/clear_regression_20260915_v34.log`).
+
+### Subsequent completed visual review
+
+All eight remaining extra-target frames actually inspected (848px display-only
+overview and lossless native-pixel crops). New append-only receipt in the same
+requalification folder: `assistant_visual_remaining_eight.json`,7 pilot accepts
+and1 easiest exclusion. Large-leaf occlusion removed the generated seed41/SubStem41
+query; visible junction alone was not accepted for the query-associated task.
+
+Second V1 curved pair actually inspected:
+`data/sim_data/dataset_reviews/curved_diversity_native_20260915_v1/assistant_visual_case002.json`.
+One generated pilot accept, original repeated reference only. Native accepted
+pilot count32; no final training approval. The newer V2 rigid-leaf captures are
+separate pending reviews. Interrupted/truncated image tool outputs were NOT
+counted as inspections; smaller lossless crops were successfully displayed later.

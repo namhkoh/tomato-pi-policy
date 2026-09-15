@@ -106,6 +106,38 @@ callback3.90-4.39 s, artifact writing0.50 s. Observational instrumentation only:
 56 requested render subframes and all gates unchanged. This is not a measured
 speedup or a production-throughput result. Amortization/convergence work remains.
 
+## V2 rigid leaf transport
+
+`procedural_petiole_v2.py` / `procedural_petiole_catalogue_v2.py` use an explicit
+`curved_relocated_rigid_leaf_static.v2` receipt. V1 writer/warp/catalogue helpers
+remain unchanged so old generator qualifications are not silently reinterpreted.
+The versioned driver reuses those helpers and `procedural_leaf_transport.py`.
+Petioles still deform through the checked curve field. Each direct child leaf
+instead receives a proper rigid rotation at its mapped attachment, preserving
+all blade distances, UVs, topology and textures. Its local anchor Jacobian must
+still pass the original bounds. Nested branches are explicitly unsupported inV2.
+Rigid-map injectivity applies to each leaf, NOT whole-plant self-intersection.
+
+Same three recipes now all pass CPU generation/replayed serialized geometry,
+including the two that previously folded leaf meshes. Native root:
+`data/sim_data/diagnostics/curved_rigid_leaf_native_20260915_v1`.
+17:46:48-17:54:38 KST, two completed pairs (4 frames,3 clear candidates).
+Third pair failed visible-target identity (zero target pixels), despite passing
+the robot surface-clearance screen. Failure evidence is retained. No automatic
+retry or visibility bypass. New rigid-leaf frames still need individual review.
+The native limitation is now view-dependent occlusion, not the old leaf folding.
+
+Additional actual review: eight previous extra-target frames yielded7 accepts/
+1 exclusion; seed19 V1 curved pair yielded1 generated accept/1 repeated control.
+Receipts under `data/sim_data/dataset_reviews/`:
+`native_curve_requalification_20260915_v1/assistant_visual_remaining_eight.json`
+and `curved_diversity_native_20260915_v1/assistant_visual_case002.json`.
+Native annotation-pilot accepted count32 separately; not a final release.
+
+Exact obstacle-cache native timing/parity is documented in STATIC_GEOMETRY_CACHE.md.
+Full regression1107 tests +87 subtests passed (v36,57.81 s). No renderer quality,
+depth provenance, source/split/review decisions, family identity or caps changed.
+
 ## Admission and scaling still required
 
 The new shape descriptor excludes seed/name changes, rigid placement and uniform

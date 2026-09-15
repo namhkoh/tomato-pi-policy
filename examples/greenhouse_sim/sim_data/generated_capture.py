@@ -15,6 +15,10 @@ from .depth_preview import sha256
 from .native_greenhouse_pair import load_source, assert_same_camera, assert_pair
 
 SCHEMA = "greenhouse.generated_native_pair_plan.v1"
+CURVED_CATALOGUES = {
+    "curved_relocated_petiole_static.v1": "procedural_petiole_catalogue.py",
+    "curved_relocated_rigid_leaf_static.v2": "procedural_petiole_catalogue_v2.py",
+}
 
 
 def check_smoke_metadata(smoke):
@@ -67,7 +71,7 @@ def prepare_plan(source_capture, sample_id, variant_directory, qualification_dir
         path = safe_file(variant_directory, relative)
         require(sha256(path) == expected, "Generated asset changed")
         bindings[str(path)] = expected
-    curved = receipt.get("version") == "curved_relocated_petiole_static.v1"
+    curved = receipt.get("version") in CURVED_CATALOGUES
     qualification_paths = [variant_directory/"qualification.json"]
     if not curved:
         qualification_paths.extend([variant_directory.parent/"frozen_lineage.json",
@@ -93,7 +97,7 @@ def prepare_plan(source_capture, sample_id, variant_directory, qualification_dir
         visual_review="pending", higher_resolution_execution_verified=False)
     if curved:
         code = [Path(__file__), Path(__file__).with_name("plant_variant_catalogue.py"),
-                Path(__file__).with_name("procedural_petiole_catalogue.py")]
+                Path(__file__).with_name(CURVED_CATALOGUES[receipt["version"]])]
         code.extend(Path(__file__).with_name(name) for name in receipt["code_sha256"])
         result.update(generator_version=receipt["version"],
             generator_code_bindings={str(p.resolve()): sha256(p) for p in code},
@@ -128,13 +132,13 @@ def check_plan(plan):
     verify_bindings(plan["source_bindings"])
     if plan.get("variant_directory"):
         receipt = read_json(Path(plan["variant_directory"])/"qualification.json")
-        if receipt.get("version") == "curved_relocated_petiole_static.v1":
+        if receipt.get("version") in CURVED_CATALOGUES:
             require(plan.get("generator_version") == receipt["version"]
                     and plan.get("independent_target_novelty_approved") is False,
                     "Curved inspection cannot bypass generator identity or novelty admission")
             code = plan.get("generator_code_bindings", {})
             required = [Path(__file__), Path(__file__).with_name("plant_variant_catalogue.py"),
-                        Path(__file__).with_name("procedural_petiole_catalogue.py")]
+                        Path(__file__).with_name(CURVED_CATALOGUES[receipt["version"]])]
             required.extend(Path(__file__).with_name(name) for name in receipt["code_sha256"])
             require(set(code) == {str(p.resolve()) for p in required}, "Missing curved implementation binding")
             verify_bindings(code)
