@@ -10071,3 +10071,16 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
 - Full sim-data pytest1201tests +128subtests passes(v44,64.70s).
   Details/evidence: examples/greenhouse_sim/sim_data/NATIVE_CAPTURE_SCALING.md.
  20k final release/ZIP not complete; no split changes or local VLM training.
+
+- 2026-09-15 broader native campaign completed99frames:20 strict automatic
+  annotation candidates,22 clarity holds,57 exclusions. Every completed label
+  replayed from saved native RGB/Z/component IDs; no false visual-review claims.
+  Four actual additional spotchecks bring the separate visual-pilot count to56,
+  overlapping automatic candidates: do not add those counts together.
+- Added opt-in sim_data/native_capture_v2 wider actual-head-camera planning and
+  worker. Old4cm policy unchanged; new8/16/24cm outward, +/-8cm lateral candidates
+  retain heading/arms/torso/mount and all floor/head/native-overlap/visibility gates.
+  Eight focused tests pass; full1209+136subtests pass(v45,62.94s). Native wider
+  validation is queued separately; no motion/path/physics/training approval.
+- See native_capture_v2/README.md and NATIVE_CAPTURE_SCALING.md. Serial retries
+  and an isolated1-subframe performance probe continue; neither bypasses gates.

@@ -2121,3 +2121,20 @@ and new release novelty policy are still pending.
 Full1201tests +128subtests passed(v44,64.70s).
 See sim_data/NATIVE_CAPTURE_SCALING.md under examples/greenhouse_sim for reports,
 failures, limits and remaining20,000 TRAIN +held-out release requirements.
+
+### 2026-09-15 broader yield and next sampling experiment
+
+Nine-donor campaign finished99 native captures:20 strict automatic candidates,
+22 clarity holds and57 excluded. Labels and query traces were recomputed from
+actual saved native depth/identity buffers and matched exactly. Review receipts:
+data/sim_data/dataset_reviews/native_diverse_automatic_20260915_v1.
+Four new actual full-view/native-crop spotchecks accepted; native visual-pilot56
+pending caps. Those four overlap the automatic pool and must not be double-counted.
+
+The4cm-only camera-neighbour sampler has poor yield, including a generated plant
+with zero collision-screened poses. Added a separate bounded24cm-outward/8cm-lateral
+actual-robot camera policy, keeping original heading, limbs, mount and all gates.
+It does not change the old sampler or move a physical robot. Native validation is
+queued. See examples/greenhouse_sim/sim_data/native_capture_v2/README.md.
+Full1209tests+136subtests pass. Native1-subframe probe is also isolated; no default
+renderer/budget change, final20k release, held-out recapture or training claim.
