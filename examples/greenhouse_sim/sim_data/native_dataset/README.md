@@ -64,6 +64,37 @@ The CPU host's Python3.13 environment must NOT import the cp312 wheel.
 
 ## Remaining release gates
 
+### 2026-09-15 native similarity measurement checkpoint
+
+`near_image.py` compares unchanged native RGB using full-frame MAE and a complete
+129x129 patch centred on each image's nominal cut location. Patches use integer
+indexing only; no resizing, interpolation, padding or brightness correction.
+Hidden coordinates are offline deduplication supervision, never model inputs.
+The combined score is the maximum of full-frame and local MAE, normalized to
+0..1. Both measurements and percentiles remain available. This metric is not
+an automatic novelty gate. Its 42 focused tests pass.
+
+Read-only actual-image diagnostic:
+`diagnostics/native_rgb_controls_20260915_v1.json`.
+21 matched-render duplicate pairs have maximum score0.039133; one visually
+adjudicated curved-geometry pair scores0.347364. All22 pairs were measured at
+1696x816 with bound source evidence. Only two donors are represented, and only
+one positive control exists: no threshold is selected or globally calibrated.
+No source image, depth, review or split was changed; controls add zero diversity.
+
+The 18-plant native campaign completed212 frames/65 strict automatic candidates
+(15 native jobs,3 invalid geometry attempts). Four further actual full-view and
+unscaled crop inspections were recorded, bringing the overlapping visual pilot
+to69 pending global admission. Receipt:
+`dataset_reviews/native_diverse_generated_visual_20260915_v2/assistant_visual.json`.
+
+The reviewed-reference continuation is now natively exercised, not merely queued:
+first fresh seed101 sensor pair passed; first two generated jobs captured19
+frames/8 strict candidates with independent annotation replay. First job timing:
+29.66s scene setup,132.44s total,40.66s first render,3.92-4.27s later render calls.
+These are collection measurements, not simulator interaction or training speed.
+Existing full environment, native sensing and quality gates are unchanged.
+
 1. Calibrated global morphology/image novelty admission; provenance-backed
    view inventories and donor-balanced sampling. No per-name source-cap reset.
 2. Better reference-bank/pose selection and bounded generation qualification;

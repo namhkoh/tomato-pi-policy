@@ -2223,3 +2223,19 @@ continue raw collection. Receipt: diagnostics/native_identity_raw_compact_seed19
 duplicate/augmentation admission, held-out native capture and validated portable
 high-resolution Qwen export remain required. No model download/training or final
 ZIP was started. See native_capture_v3/README.md for entry points and scope.
+
+Continuation checkpoint:18-plant campaign completed212 native frames/65 strict
+automatic candidates;15 native jobs and3 rejected CPU geometry attempts. Four
+additional full-scene/native-crop reviews accepted annotation-pilot associations
+(overlapping visual total69, not69 independent new captures). Reviewed-reference
+campaign first fresh seed101 camera pair and two generated jobs passed native
+capture+audit:19 frames/8 strict. All remain subject to global admission.
+
+Added native_dataset/near_image.py (42 focused tests): native full-frame plus
+129x129 nominal-cut-context measurements, no resizing or depth calculation.
+Actual controls21 duplicate rerenders versus1 visually changed petiole separate
+in this small measurement set (max duplicate0.039133, changed0.347364 normalized
+MAE); this is NOT threshold calibration across donors. No threshold is selected,
+no approval assigned. Artifact:diagnostics/native_rgb_controls_20260915_v1.json.
+Next:actual saved-mesh descriptors, full observed inventory, calibrated global
+admission, continued native collection, held-out capture and portable export.

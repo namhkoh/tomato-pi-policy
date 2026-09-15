@@ -10124,3 +10124,12 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   Same-callback independent proof remains missing, so compact is NOT promoted.
 - New20k TRAIN/heldouts/release export/ZIP still pending. Details and artifacts:
   examples/greenhouse_sim/sim_data/native_capture_v3/README.md; vlm_train_data.md.
+
+- 2026-09-15 follow-up:18plant campaign completed212native/65strict candidates,
+  3invalid geometry attempts excluded;4more actual native visual reviews (69
+  overlapping pilot reviews, not a release count). Next reference-bank campaign
+  has first fresh sensor proof and2 generated jobs complete:19frames/8strict.
+- Added tested native full/local RGB duplicate-control measurements (42tests).
+  21matched duplicate pairs and1visually changed example measured; separation
+  observed in this small control set only. No calibrated threshold, changed
+  approval, split, image or depth. Actual geometry/inventory adapters in progress.
