@@ -2071,3 +2071,27 @@ qualification and larger genuinely diverse multi-target collection remain next.
 Lossless storage prototypes preserve exact original native optical-Z bytes;
 three-frame22k size projection83-112GiB excludes final ZIP/assets, not measured
 release size. No depth reconstruction, source edits or training performed.
+
+### 2026-09-15 multi-target and throughput qualification
+
+Implemented shared-scene multi-target plans/capture, keeping native56-subframe
+quality and all per-pose checks. First launch exposed early USD import/ABI
+conflict; fixed hash-only preflight followed by mandatory geometry replay after
+SimulationApp. Failed run preserved. Two new plants each have4 CPU-qualified
+targets; corrected12-view/donor native batches are pending completion/review.
+Fast native instance adapter now passes exact same-callback1696x816 ID/prim
+equivalence. Fast-only later view32.88s vs legacy32.91s: no useful steady-state
+speedup demonstrated. Consolidated56 also failed to provide a useful gain.
+See examples/greenhouse_sim/sim_data/NATIVE_CAPTURE_SCALING.md for all evidence,
+negative results, native short-budget qualification still required, context-aware
+geometry-diversity sensitivity and lossless storage measurements.
+1176tests +87subtests passed (v41,70.33s).41 accepted native annotation-pilot
+candidates and legacy450 draft remain separate; diagnostic rerenders do not
+increase diversity. No20k final release/ZIP, split edits or training.
+
+Corrected multi-target native runs completed: seed17 7captured/7eligible;
+seed19 7/4. Both~284s inside collector, all full56-subframe quality retained.
+All7 seed17 images actually visually reviewed (including5 contrast holds);
+native annotation-pilot total48, not final release approvals. Seed19 pending
+visual review. Added explicitly unqualified warm56_then8_trial for native
+matched-budget testing; reference56 stays default. Trial is not accepted20k data.

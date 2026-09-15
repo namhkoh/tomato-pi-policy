@@ -10035,3 +10035,22 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   qualification and diverse multi-target scaling still required for20k.
   Full1132+87subtests passed (v39,57.93s). See sim_data/NATIVE_MULTIVIEW.md
   under examples/greenhouse_sim for logs, decisions, limits and next work.
+
+- 2026-09-15: multi-target native collector now reuses one full scene/writer/cache.
+  Fixed early-USD-import startup ABI failure with hash-only preflight and required
+  geometry replay after SimulationApp. Original failure remains intact.
+- Two4-target generated plants CPU-qualified; corrected12-view/donor batches
+  pending native completion and annotation review. Full1176+87subtests passed.
+- High-res fast native IDs/observed prim paths match legacy in same callbacks.
+  Fast-only later view32.88s; no useful throughput gain proven. Consolidated56
+  render likewise not adopted as a speedup. All native depth/render fidelity kept.
+- See sim_data/NATIVE_CAPTURE_SCALING.md under examples/greenhouse_sim for
+  exact results, context-diversity/storage experiments and outstanding20k work.
+  Native visual-pilot41, legacy450 draft unchanged; no final20k training ZIP.
+
+- Corrected native multi-target batches complete:14 captures/11 label-eligible.
+  Seed17 all7 actually visually accepted as annotation-pilot candidates (total48
+  separately); seed19 visual review pending. No global release/cap approval.
+- Explicit native warm56_then8_trial option added for matched-budget experiments;
+  full56 default unchanged. Per-sample budget/timing/freshness and no-approval
+  scope recorded.78 targeted tests pass; trial native qualification outstanding.
