@@ -2583,3 +2583,20 @@ Unchangedgeometry shadow validation on disjointTRAINjobs7-17:135frames,
 0/50strict falseblocks,28/29knowninterval exclusions predicted,107unknowns.
 The missed leaf staysunknown underthe fixed five-ray rule. No label/skip/ranking
 changes; these TRAINretrospective results do not establish general qualification.
+
+2026-09-16 continuation: the actual seed73 generated-original CPU plan replays
+successfully against the original-native bank, maintaining separate historical
+pose and current clear-scene evidence. Its two planned native control images are
+not collected or approved data. Full-scene mounted-camera1696x816/reference56
+remains fixed; native producer qualification is the next integration step.
+
+Independent tests passed for the bounded selective-persistence qualification
+helper (66tests/114.85s) and optional write-only observer/post-exit processor
+(67tests/15.85s). Neither changes active collection or grants native qualification.
+The observer is diagnostics only; native optical-Z remains the depth authority.
+
+At06:37KST the current wave has344captures/118strict candidates over23jobs.
+The cumulative selected checkpoint remains254provisional TRAINrecords; a separate
+150-row audit of jobs11-20 has47strict/30holds/73exclusions, not yet globally
+selected. The target remains20,000accepted TRAINimages plus separate held-outs;
+no final archive or training execution exists.

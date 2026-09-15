@@ -10491,3 +10491,24 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
  12,791bindingsreverified. This is not heldout-family or prospective native
   qualification. Optionalwrite-only observation integration is being prepared;
   activecaptures, depth, labels, candidateordering and gates are unchanged.
+
+- 2026-09-16 generated-original CPU preparation/scene seam verified: the saved
+  seed73/SubStem_41 plan independently replays successfully with the actual
+  original native reference and generator. Fifteen focused tests previously
+  passed. Plan SHA077bcd88bc6e5231c1d212c753184159bd4a1101f837143a2444e6f5a19a953f.
+  It fixes two future original/generated control frames at1696x816/reference56,
+  authentic mounted-camera pose and full greenhouse. CPU projection is not
+  visibility qualification; native producer/post-exit audit remain in progress.
+- New selective-persistence qualification helper independently passes66tests
+  in114.85s. The exact bounded seed101 plan must demonstrate both saved strict
+  and skipped callbacks, with same-callback witnesses and complete logical-byte
+  parity. CPU copies are not another native execution. Actual Isaac qualification,
+  rejected-control/hold cases and short-budget qualification remain outstanding.
+- Optional write-only observer and post-owned-exit CPU processor independently
+  pass67tests in15.85s. No native hook is wired by these modules; no render skip,
+  ranking, depth replacement or label changes. Native integration is optional
+  and must not delay the first bounded generated-original capture proof.
+- Collection checkpoint06:37KST:23completed jobs,344captures/118strict candidates
+  in the current wave. Separately audited jobs11-20 contain150observations:
+  47strict/30holds/73exclusions. Those47are NOT added to254provisional TRAIN
+  records before a new global cap/duplicate selection. No20k release/ZIP yet.
