@@ -10299,3 +10299,18 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   pre-render holds and shared target budgets. Fresh pilot not captured yet.
   Optional real compact export check also passes (1test,1.36s), unchanged source
   bytes. No20krelease, heldoutcompletion, modeldownload or training claim.
+
+- 2026-09-16 native training data adapter added: native_training_data binds the
+  frozen release/preflight, checks exact native full-frame plus query-crop RGB,
+  explicit token limits without truncation, and assistant-only labels. Its
+  mandatory NumPy/Torch parity controls arm the collator; per-worker JSONL reads
+  and full boundary rechecks preserve provenance. Independent90tests pass115.52s.
+  This is CPU integration, not actual H200 processor/model/training validation.
+- Matched-control v2 failed before sample writing: the frozen pair worker used
+  an undefined lighting variable. Separate native_pair_v2 copies lighting only
+  after the shared scene applies it and checks equality against its manifest.
+  Independent capture-AST parity/free-name review and19pytest tests pass0.41s;
+  camera/full greenhouse/native sensing/56subframes are unchanged. Three fresh
+  bounded controls now run serially under native_v2_visual_controls_20260916_v3;
+  failures are preserved, and this queue stops at the first failed native case.
+  No control images count as new TRAIN diversity. Previous sources stay frozen.

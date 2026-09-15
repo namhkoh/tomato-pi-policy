@@ -2419,3 +2419,17 @@ inventory after owned exit0/native audit verification. It never fabricates
 generated ancestry or imports historical labels; the one-case original pilot
 still awaits native execution. Actual compact exporter sample compatibility
 also passed1test/1.36s without modifying source pixels. Final20k approval remains open.
+
+2026-09-16 native training adapter checkpoint: native_training_data now consumes
+the frozen native release and same-runtime processor preflight. Explicit token
+budget/no truncation, exact native full RGB/query crop, assistant-only labels,
+NumPy/Torch parity, lazy per-worker JSONL and repeated source verification have
+90independent passing CPU tests (115.52s). This does not certify real H200
+throughput, memory or learning; server training launcher integration is next.
+
+Matched-control v2 encountered a genuine undefined-lighting metadata error.
+A separate native_pair_v2 preserves the full capture AST except nested imports
+and an explicit copy from the already-applied/equality-verified scene lighting.
+19independentpytest tests and independent review pass; new serial v3controls
+are running. Native qualification remains pending. Frozen old captures/worker
+sources remain unchanged. These controls cannot increase the TRAIN count.
