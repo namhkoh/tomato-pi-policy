@@ -12,10 +12,11 @@ All paths are absolute. Capture the predecessor identity WHILE IT IS ALIVE
 (capture_supervisor); never reconstruct an exited process from a guessed PID.
 An absent predecessor without its exact completed terminal is an error.
 
-Only original_batch.v1 (1..64 frozen TRAIN cases) and matched_pair.v2 (2
-frames) are registered. Future compact_query_v2 requires a reviewed code
-registration with its qualification validator, fixed builder and exit audit;
-there is no JSON/plugin/argv escape hatch. Frames exclude sensor-smoke/warmup.
+Registered: original_batch.v1 (1..64 frozen TRAIN cases), matched_pair.v2
+(2 frames), and query_v2_qualification.v1 (at most two exact prior plans,
+fast/reference56, <=4 targets/24 proposals each). Query jobs add the fields
+documented by serial_query_qualification.JOB_FIELDS; no general query worker,
+JSON/plugin/argv escape hatch. Frames exclude sensor-smoke/warmup.
 
 Each job uses submitted/plan.json and capture as SIBLINGS. Outputs, receipts
 and checkpoints are create-only. No resume or retry of partial jobs/phases.
@@ -55,6 +56,7 @@ from ..native_original_capture import contracts as oc, prepare as original_plan
 from ..native_original_capture import serial_queue as legacy
 from . import original_inventory_v2 as predecessor_adapter
 from . import native_pair_v2
+from . import serial_query_qualification as query_kind
 
 SCHEMA = 'greenhouse.native_serial_phases.request.v1'
 RECEIPT_SCHEMA = 'greenhouse.native_serial_phases.job.v1'
@@ -62,7 +64,7 @@ CHECKPOINT_SCHEMA = 'greenhouse.native_serial_phases.checkpoint.v1'
 RESULT_SCHEMA = 'greenhouse.native_serial_phases.result.v1'
 STOP_SCHEMA = 'greenhouse.native_serial_phases.stop.v1'
 PRODUCER_MODULE = 'sim_data.native_dataset.serial_phases'
-WORKERS = ('original_batch.v1', 'matched_pair.v2')
+WORKERS = ('original_batch.v1', 'matched_pair.v2', query_kind.KIND)
 PAIR_SHA256 = 'c863ff0f34dd8bab1117ff7b523a38290b0fc30e816bb51ca8d3ddd21d502667'
 LOCK_NAME = r'Global\greenhouse.native_serial_phases.owner.v1'
 FLAGS = dict(training_approved=False, source_cap_reset=False, visual_approval=False,
@@ -97,12 +99,14 @@ def _code_closure():
     return found
 
 
-_LOADED = oc.merge_bindings(predecessor_adapter.implementation_bindings(), _code_closure())
+_LOADED = oc.merge_bindings(predecessor_adapter.implementation_bindings(),
+                            query_kind.implementation_bindings(), _code_closure())
 _PAIR_CODE = native_pair_v2.implementation_bindings()
 
 
 def implementation_bindings():
     oc.bind_all(_LOADED)
+    query_kind.implementation_bindings()
     oc.require(_PAIR_CODE[str(Path(native_pair_v2.__file__).resolve())] == PAIR_SHA256,
                'Unregistered matched-pair executor')
     return dict(_LOADED)
@@ -163,8 +167,10 @@ def capture_supervisor(pid, request_path, request_sha256):
     return value
 
 
-def validate_plan(kind, path, pin):
+def validate_plan(kind, path, pin, *, query=None):
     oc.require(kind in WORKERS, 'Unregistered worker kind')
+    if kind == query_kind.KIND:
+        return query_kind.validate_plan(path, pin, query)
     path = oc.pin(legacy._path(str(path)), pin)
     plan = oc.read_json(path)
     oc.require(plan['split'] == 'train' and oc.FROZEN_SPLITS.get(plan['source_family']) == 'train',
@@ -219,19 +225,26 @@ def validate_request(request):
     roots += [Path(p).parent for p in implementation_bindings()]
     phases = request['phases']
     oc.require(isinstance(phases, list) and 1 <= len(phases) <= 64, 'Bounded nonempty phases required')
-    jobs, phase_ids, job_ids, paths = [], set(), set(), set()
+    jobs, phase_ids, job_ids, paths, query_pins = [], set(), set(), set(), set()
     for phase in phases:
         legacy._keys(phase, ('id', 'jobs'), 'phase')
         _unique_id(phase['id'], phase_ids)
         oc.require(isinstance(phase['jobs'], list) and phase['jobs'], 'Nonempty phase jobs required')
         for job in phase['jobs']:
             oc.require(len(jobs) < 64, 'At most 64 manifest jobs')
-            legacy._keys(job, ('id', 'worker_kind', 'plan_path', 'plan_sha256'), 'job')
+            is_query = job['worker_kind'] == query_kind.KIND
+            extra = query_kind.JOB_FIELDS if is_query else ()
+            legacy._keys(job, ('id', 'worker_kind', 'plan_path', 'plan_sha256', *extra), 'job')
+            if is_query:
+                oc.require(len(query_pins) < 2 and job['plan_sha256'] not in query_pins,
+                           'At most two distinct fixed query qualification jobs')
+                query_pins.add(job['plan_sha256'])
             _unique_id(job['id'], job_ids)
             path = legacy._path(job['plan_path'])
             oc.require(path not in paths, 'Duplicate submitted source plan')
             paths.add(path)
-            checked = validate_plan(job['worker_kind'], path, job['plan_sha256'])
+            checked = validate_plan(job['worker_kind'], path, job['plan_sha256'],
+                                    query={k: deepcopy(job[k]) for k in extra} if is_query else None)
             roots.extend(checked['roots'])
             jobs.append(dict(phase_id=phase['id'], **deepcopy(job), checked=checked))
     total = sum(j['checked']['count'] for j in jobs)
@@ -311,8 +324,10 @@ def _predecessor_absent(pred, config):
                'Predecessor supervisor active or reused')
 
 
-def worker_command(isaac, kind, submitted, pin, capture):
+def worker_command(isaac, kind, submitted, pin, capture, *, checked=None):
     oc.require(kind in WORKERS, 'Unregistered worker kind')
+    if kind == query_kind.KIND:
+        return query_kind.command(isaac, submitted, pin, capture, checked)
     if kind == WORKERS[0]:
         return legacy.batch_command(isaac, dict(plan_path=str(submitted), plan_sha256=pin), capture)
     return [str(legacy._path(isaac)), '-m', native_pair_v2.WORKER_MODULE,
@@ -345,11 +360,18 @@ def _tree_pins(root):
     return {str(p.resolve()): oc.sha256(p) for p in paths}
 
 
-def postexit_audit(kind, submitted, pin, capture, folder):
+def postexit_audit(kind, submitted, pin, capture, folder, *, checked=None):
     """Called only after actual owned exit zero; never promote visual decisions."""
     _no_failure(capture)
     raw = _tree_pins(capture)
     oc.bind_all(raw)
+    if kind == query_kind.KIND:
+        result = query_kind.postexit_audit(submitted, pin, capture, folder, checked)
+        oc.require(_tree_pins(capture) == raw, 'Query capture files changed during postexit audit')
+        oc.bind_all(raw)
+        _no_failure(capture)
+        result['bindings'] = oc.merge_bindings(raw, result['bindings'])
+        return result
     if kind == WORKERS[0]:
         completion, review = legacy.complete_batch(capture, dict(plan_path=str(submitted), plan_sha256=pin))
         audit_path = folder / 'original_postexit_audit.json'
@@ -466,7 +488,8 @@ def _run(request_path, request_sha256):
             oc.pin(submitted, job['plan_sha256'])
             oc.new_destination(capture, [submitted.parent, *job['checked']['roots']])
             bindings[str(submitted)] = job['plan_sha256']
-            command = worker_command(request['isaac_python'], job['worker_kind'], submitted, job['plan_sha256'], capture)
+            command = worker_command(request['isaac_python'], job['worker_kind'], submitted, job['plan_sha256'], capture,
+                                     checked=job['checked'])
             launched = {}
 
             def reserve():
@@ -479,7 +502,8 @@ def _run(request_path, request_sha256):
 
             def launch_check():
                 stable()
-                checked = validate_plan(job['worker_kind'], job['plan_path'], job['plan_sha256'])
+                checked = validate_plan(job['worker_kind'], job['plan_path'], job['plan_sha256'],
+                    query={k: deepcopy(job[k]) for k in query_kind.JOB_FIELDS} if job['worker_kind'] == query_kind.KIND else None)
                 oc.require(checked == job['checked'], 'Plan/prerequisite changed before launch')
                 oc.pin(submitted, job['plan_sha256'])
                 oc.new_destination(capture, [submitted.parent, *checked['roots']])
@@ -504,7 +528,8 @@ def _run(request_path, request_sha256):
             oc.require(type(code) is int and code == 0, 'Owned native worker failed; stop first')
             oc.pin(launched['event_path'], launched['event_sha256'])
             stable()
-            audited = postexit_audit(job['worker_kind'], submitted, job['plan_sha256'], capture, folder)
+            audited = postexit_audit(job['worker_kind'], submitted, job['plan_sha256'], capture, folder,
+                                     checked=job['checked'])
             stable()
             oc.pin(launched['event_path'], launched['event_sha256'])
             receipt_path = folder / 'receipt.json'
@@ -515,6 +540,9 @@ def _run(request_path, request_sha256):
                 source_plan_path=job['plan_path'], plan_sha256=job['plan_sha256'], submitted_plan_path=str(submitted),
                 capture=str(capture), planned_source_frames=job['checked']['count'], exit_code=code,
                 owned_worker=launched, source_bindings=deepcopy(bindings), audit=audited, **FLAGS)
+            if job['worker_kind'] == query_kind.KIND:
+                receipt.update(**query_kind.ANNOTATION, training_diversity_increment=0,
+                    observation_role='matched_reference_qualification_control_not_new_diversity')
             oc.write_new(receipt_path, receipt)
             records.append(dict(phase_id=job['phase_id'], job_id=job['id'], worker_kind=job['worker_kind'],
                 receipt_path=str(receipt_path), receipt_sha256=oc.sha256(receipt_path)))

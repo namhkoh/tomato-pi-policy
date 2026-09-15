@@ -10439,3 +10439,10 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   native_wave4_four_donors_main_20260916_v1 (4images) underdataset_reviews.
   They support visible cut/query association only, not final admission. Broader
   inventory/unchanged-provisional regressions independently pass238tests25.40s.
+
+- Fixed serial query-V2 qualification registration reviewed and independently
+  tested:134runner/helper tests pass336.52s. Exactly two prior TRAINplans,
+  fast/reference56, at most4targets/24proposals each, actual owned exit0 and
+  V2post-exit replay. Saved old8-subframe data is only a matched comparison;
+  no relabeling, short-budget qualification or new diversity credit. No new
+  runner/native test has been launched alongside the active60-job wave.

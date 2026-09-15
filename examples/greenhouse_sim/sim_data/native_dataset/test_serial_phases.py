@@ -490,6 +490,12 @@ def test_implementation_pins_and_compact_unregistered():
     assert pins[str(Path(q.__file__).resolve())] == q.oc.sha256(q.__file__)
     assert pins[str(Path(q.native_pair_v2.__file__).resolve())] == q.PAIR_SHA256
     assert set(q.oc.LOADED_IMPLEMENTATION) <= pins.keys()
+    for name, pin in q.query_kind.FROZEN_CODE.items():
+        assert pins[str(Path(q.__file__).parent/name)] == pin
+    helper = str(Path(q.query_kind.__file__).resolve())
+    assert pins[helper] == q.oc.sha256(helper)
+    assert q.query_kind.implementation_bindings().items() <= pins.items()
+    assert q.query_kind.KIND in q.WORKERS
     with pytest.raises(ValueError, match='Unregistered'):
         q.worker_command('anything', 'compact_query_v2', Path('p'), 'f'*64, Path('c'))
 

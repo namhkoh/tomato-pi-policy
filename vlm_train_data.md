@@ -2546,3 +2546,9 @@ These retrospective numbers are not prospective qualification. Disjoint TRAIN
 validation is next, with fixed rules; noheldout sampling or label changes.
 Main's7additional RGB/crop inspections across5donors support their annotated
 petiole continuity; receipts are separate from final global release decisions.
+
+Fixed two-plan native query-V2/reference56 qualification registration passes
+134independent runner/helper tests(336.52s). It binds25old captured counterparts
+across36proposals, distinguishing initial56-subframe warmups from23short frames.
+These tests are CPU-only; native replay, paired visual comparison and any8-step
+profile qualification remain pending. Rerender controls add zero TRAINdiversity.
