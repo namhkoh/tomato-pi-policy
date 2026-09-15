@@ -10186,3 +10186,13 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   Independent combined297tests pass in52.99s. Actual seed101 CPU pilot generated
   two changed petioles/12planned native views; it has not rendered yet. Current
   collector/source bindings remain untouched. No whole-renderer speedup claimed.
+
+- 2026-09-16 provisional observed-TRAIN selection: added a separate adapter, no
+  changes to final admission policy. Uses the complete explicit image graph,
+  preserves exact-alias visual/control holds, and shares the12-view budget across
+  each original target's unqualified variants.83tests+45subtests pass. Actual
+  686-frame snapshot selects172 provisional candidates from31source groups;
+  six strict rows hit the source cap and508non-strict rows remain excluded.
+  The named visual hold remains. This is NOT172approved release images; no
+  augmented geometry budget, global coverage, held-out quota or release approval.
+  Receipt:diagnostics/native_provisional_selection_20260916_v1/receipt.json.

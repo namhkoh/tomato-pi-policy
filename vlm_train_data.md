@@ -2299,3 +2299,13 @@ Independent297tests pass; real seed101 CPU preparation produced two changed
 petioles and12planned native views. This is not a native capture or20k count.
 Use native_capture_v4.prepare and its own verify_prepared handoff together;
 do not modify/relabel the frozen V3 campaign. See native_capture_v4/README.md.
+
+Provisional selection now runs on the686-image observed snapshot.172candidates
+remain after shared original-target caps (six strict rows capped);508non-strict
+observations and the explicit visual hold remain excluded. New module
+native_dataset/provisional.py has61tests, with83tests+45subtests passing together
+with existing admission tests. It consumes the complete aggregate near-image
+graph, not a batch-local count or gigantic per-pair JSON list. Negative overlays
+propagate across exact aliases. No new geometric contexts are qualified yet.
+Artifact:diagnostics/native_provisional_selection_20260916_v1/selection.json.
+172is a provisional selection, NOT a final TRAIN approval or completed20k dataset.
