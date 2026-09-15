@@ -10141,3 +10141,13 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   independent-context approvals. Same-output replay exact.84nuisance comparisons
   reveal max1.0005e-8 residual (25aboveold1e-9); no tolerance silently changed.
   Geometry/image joint calibration remains pending; no release cap reset.
+
+- 2026-09-16 storage-scale preparation:added independently checked same-callback
+  RAW/compact serializer (11synthetic tests). Full native NPY/RGB/identity/mask/
+  label/trace equality; counterfeit raw-as-compact and stale metadata rejected.
+  Separate live diagnostic queued AFTERcurrent native campaign:36candidate/4
+  target bound (previous7captures not a bound),20GiBcommit/60GiBdisk reserves,
+  exit0+hash evidence+both post-exit audits. Compact production still unchanged.
+- Three original/V2 same-camera pairs queued after storage qualification for
+  joint morphology/visual controls. No controls count toward20k. No source files
+  deleted or imagery upscaled; native depth remains original Isaac optical-Z.

@@ -64,6 +64,31 @@ The CPU host's Python3.13 environment must NOT import the cp312 wheel.
 
 ## Remaining release gates
 
+### Same-callback storage qualification queued, not yet passed
+
+`dual_storage.py` independently writes RAW and compact observations from one
+caller snapshot, then checks full native NPY bytes, RGB PNG bytes, all prim
+identities, masks, labels, traces and metadata. It rejects a raw-only writer
+masquerading as compact storage and rereads externally pinned metadata after
+comparison. Eleven synthetic-buffer tests pass; these are not live sensor proof.
+
+The separate ignored worker
+`diagnostics/native_same_callback_worker_20260915_v1.py` applies this comparison
+to one live validated Isaac callback, then replays RAW and compact annotations.
+Queue: `diagnostics/queue_same_callback_native_20260916_v1.py`.
+It waits for the current reference-bank campaign, then requires20GiB Windows
+commit headroom, existing physical-memory preflight and60GiB disk reserve.
+It uses the existing seed19 wider plan:36 proposed frames across4 targets;
+seven was the previous observed capture count, NOT the prospective bound.
+Exit0, no failure artifact, bound evidence and post-exit audits are mandatory.
+No production-default change or source removal is authorized by this diagnostic.
+
+Three original/V2 matched plant pairs are queued AFTER storage qualification:
+`diagnostics/queue_v2_visual_controls_20260916_v1.py`. This closes the missing
+joint image/morphology positive-control domain; it does not assert positivity
+until the actual observations are reviewed. All controls add ZERO training
+diversity. Read their queue/results to distinguish scheduled from completed work.
+
 ### Actual saved-geometry adapter
 
 `morphology.py` adds `extract_output(OutputPin(...))` for hash-pinned rigid-leaf

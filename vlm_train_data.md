@@ -2247,3 +2247,11 @@ admitted contexts. Nuisance maximum1.0005e-8 exceeds the old1e-9 numeric test in
 25/84 comparisons; kept as an explicit calibration limitation. Existing V1
 seed19 visual positive is unsupported by this V2 domain, so no joint calibration
 claim. See native_dataset/README.md and morphology_actual_output_20260915_v1.
+
+Storage scale:driveD observed158GiB free, insufficient for20k plus all uncompressed
+native sidecars. Added dual_storage same-callback comparison with11tests; live
+native diagnostic queued after current collection. It will check full IDs and
+NPY/RGB bits from the SAMEcallback and independent raw/compact annotation replays.
+This separates renderer nondeterminism from storage integrity. No promotion yet.
+Also queued3matched original/V2 plant pairs for joint visual/morphology controls;
+these6maximum diagnostic frames add zero training diversity and need review.
