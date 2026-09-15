@@ -2521,3 +2521,20 @@ frames and preserves explicit current layer-set checks. Source-original-layer
 proxy timing0.739s->0.449s is promising but not actual generated/native speedup.
 Collector integration and native qualification remain pending; fidelity/sensing
 and active frozen worker code are unchanged.
+
+2026-09-16 preparation/accounting checkpoint:111main-run CPUtests passed14.02s
+for matched-parallax plans and externally attested immutable inventory union.
+The former is CPU-only, with no native control images yet. The latter preserves
+component rows/replay bases and requires a fresh complete graph plus an explicit
+joined-schema selection adapter; it does not inherit prior approval or counts.
+Independent first10wave audit:141observations,50strict/34holds/57exclusions.
+Earlier892+these141+one originalpilot=1034observations/279strict beforecaps.
+The separately recorded216provisional remain unchanged; no20krelease exists.
+
+Capacity constraint confirmed:162planned original TRAINtargets at12views each
+have an absolute1944-image ceiling before rejection/deduplication. Broader native
+original collection helps coverage, but20k requires genuinely new, qualified
+generated morphology contexts; camera variation alone must not reset budgets.
+The new native-reference bridge must keep historical848 pose priors separate
+from current1696clear-scene observations. Neither the proposed448originalviews
+nor uncaptured matched controls count as collected or trainable images.

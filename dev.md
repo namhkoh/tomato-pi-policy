@@ -10406,3 +10406,23 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   median0.739s repeated vs0.449s merged; this is NOT measured generated-stage
   or native frame speedup. No active collector integration or guard change.
   Actual stage membership, static/freshness/dirty-layer guards remain required.
+
+- 2026-09-16 matched-parallax preparation and immutable inventory union added:
+  main independently ran111focused tests, all pass14.02s. Parallax plans keep
+  the actual mounted camera/greenhouse/framing and compareY0 with +/-20mm;
+  CPU preparation does not launch native capture or qualify extra diversity.
+  The inventory join retains exact component rows, external replay provenance,
+  failures/zero-frame coverage and original cap identities; its separate schema
+  requires a new complete mixed-source near-image graph/selection adapter.
+- First10current-wave jobs independently replayed:141observations/50strict,
+  34holds/57exclusions. Joined with earlier892and1original pilot gives1034
+  observed rows/279strict BEFORE global caps, not a new approved TRAIN count.
+  Existing216provisional remain unchanged. Current live wave15jobs:204captures,
+  67strict candidates; these later rows are not all in the1034snapshot.
+- Capacity audit:162TRAINtargets have original native plans (448proposedviews),
+  not162qualified new targets. At12views/original target their ceiling is1944
+  before rejects, so bank expansion alone cannot reach20k. Meaningfully distinct
+  generated contexts still need morphology and image-control qualification.
+  Original1696 evidence cannot be mislabeled as old848/1696paired proof; new
+  bank/scene adapters must separate historical pose priors from clear-scene
+  native evidence. No final20krelease, ZIP or training execution yet.
