@@ -2538,3 +2538,11 @@ generated morphology contexts; camera variation alone must not reset budgets.
 The new native-reference bridge must keep historical848 pose priors separate
 from current1696clear-scene observations. Neither the proposed448originalviews
 nor uncaptured matched controls count as collected or trainable images.
+
+New geometry-only visibility shadow is CPU-tested (27main-run tests/0.75s),
+not a native depth replacement or active capture gate. Its motivating97-frame
+TRAINdiagnostic finds29/29occluded intervals,0/30strict falseblocks;68unknown.
+These retrospective numbers are not prospective qualification. Disjoint TRAIN
+validation is next, with fixed rules; noheldout sampling or label changes.
+Main's7additional RGB/crop inspections across5donors support their annotated
+petiole continuity; receipts are separate from final global release decisions.

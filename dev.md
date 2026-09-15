@@ -10426,3 +10426,16 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   Original1696 evidence cannot be mislabeled as old848/1696paired proof; new
   bank/scene adapters must separate historical pose priors from clear-scene
   native evidence. No final20krelease, ZIP or training execution yet.
+
+- Geometry-only visibility shadow prototype independently reviewed/tested:
+  27tests pass0.75s. On the97TRAINframes used to motivate the prototype, all29
+  interval-occlusion exclusions predict blocked,0/30strict predict blocked,
+  and68remain unknown. Generated-plant-only rays are NOT native depth, complete
+  scene visibility or permission to skip renders. Measured predictor median
+  0.164s/p950.378s; whole74.24s/peak281.5MB. Disjoint completed TRAIN validation
+  follows with unchanged rules. No collection, label or ranking integration.
+- Main additionally inspected7native RGBs/crops across5donors. Separate receipts:
+  native_wave4_seed89_main_20260916_v1 (3images) and
+  native_wave4_four_donors_main_20260916_v1 (4images) underdataset_reviews.
+  They support visible cut/query association only, not final admission. Broader
+  inventory/unchanged-provisional regressions independently pass238tests25.40s.
