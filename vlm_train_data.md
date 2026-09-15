@@ -2466,3 +2466,16 @@ sampling aliases. Both old trace and anchored-grid photometry are mandatory.
 Selected cut answers are unchanged; new label/trace are returned in memory with
 an explicit epoch, never written over old evidence. Actual selector costs
 0.80/3.34/1.84s on these controls. Native adoption and broader yield remain open.
+
+2026-09-16 transport checkpoint: native_transfer_kit has87independent passing
+tests(30.86s). It streams an externally admitted native20kTRAIN release and
+25-file pinned server-code closure into a portable verified ZIP64, without
+weights, installation or execution. No actual final release/archive exists;
+size/compression and real server processing remain unmeasured.
+
+Broader query-selector diagnostic (42strict/held frames in currentV4jobs1-4):
+25/27oldstrict retained and3/15held frames have valid alternatives;2oldstrict
+fail anchored photometry. Hypothetical28vs27 before caps/dedup shows only a
+small net gain, not a collection-yield breakthrough. Mean selector2.54s,
+p956.19s; no labels/reviews were overwritten. Independent originalpilot audit
+rechecks13,188source bindings and records1strict OBSERVED row, not TRAIN approval.

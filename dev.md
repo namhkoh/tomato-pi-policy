@@ -10348,3 +10348,16 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   unchanged. Main40focused tests pass42.66s; agent98combined tests pass41.89s.
   Annotate API returns a new-epoch label/composite trace/evidence in memory only.
   Native integration and population-yield measurement remain pending.
+
+- 2026-09-16 native transfer wrapper verified: native_transfer_kit packages only
+  an already admitted20kTRAIN release plus exact pinned server-code closure.
+  Streaming ZIP64/hash checks, portable path checks and exclusive publication;
+  no models, installs or automatic execution. Main87tests pass30.86s. No actual
+  final dataset/ZIP or measured release compression/size exists yet.
+- Broader fixed-prefix selector check (currentV4jobs1-4):42strict/held frames,
+  25/27old strict retained,3/15holds admit alternatives;2old strict fail newly
+  anchored weak-contrast samples. Hypothetical28vs27 is NOT a large yield gain,
+  and no old labels/admission changed. Mean selector2.54s, p956.19s. Evidence:
+  diagnostics/query_selection_v2_wave4_20260916_v1. One original native pilot
+  independently verified as1OBSERVEDstrict row with13,188source bindings; not
+  added to216provisional before global duplicate/cap checks.
