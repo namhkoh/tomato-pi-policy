@@ -2292,3 +2292,10 @@ The686-frame graph resolves234955pairs in35.79s, finding zero near edges at the
 previous observed duplicate maximum0.0391332848665376. This threshold is explicitly
 provisional, not a validated general novelty rule. Source caps/visual holds and
 geometric qualification remain mandatory and cannot be replaced by zero edges.
+
+V4 reference verification/preparation is now opt-in: unchanged312-reference bank
+verification73.80s->29.55s while retaining full17,089-file initial/finalSHAchecks.
+Independent297tests pass; real seed101 CPU preparation produced two changed
+petioles and12planned native views. This is not a native capture or20k count.
+Use native_capture_v4.prepare and its own verify_prepared handoff together;
+do not modify/relabel the frozen V3 campaign. See native_capture_v4/README.md.

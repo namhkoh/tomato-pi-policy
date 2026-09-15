@@ -10179,3 +10179,10 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   all above the provisional empirical duplicate maximum0.0391332848665376.
   It makes no general calibration or image-diversity claim. Geometry qualification,
   original-target view caps and visual holds remain separate. No depth/image edits.
+
+- 2026-09-16 V4 preparation: measured identical-bank verification73.80s->29.55s;
+  per-check path/metadata caching retains17,089 initial+final fullSHAchecks and
+  fresh path/link rechecks. Explicit new preparation/handoff rejects V3 receipts.
+  Independent combined297tests pass in52.99s. Actual seed101 CPU pilot generated
+  two changed petioles/12planned native views; it has not rendered yet. Current
+  collector/source bindings remain untouched. No whole-renderer speedup claimed.
