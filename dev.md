@@ -9935,3 +9935,14 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
 - With seed7:8 annotation-pilot frames/4 donors/4 generated layouts, not final
   training accepts.450 legacy reviewed images unchanged; frozen splits/caps,
   native sensing and full source greenhouse preserved. No20k ZIP or training.
+
+- 2026-09-15 native inspection campaign: reusable serial camera/generated/
+  annotation runner, immutable plans, exact exit evidence and pre-launch
+  resource-hold receipts.20 new tests; full suite988 tests +77 subtests passed.
+- Matched62 reviewed TRAIN references across23 targets/11 donors. Prepared
+  seven further donor cases. Initial attempt stopped before any renderer on
+  memory reserve; retained intact. New v2 readiness queue waits at most2h for
+ 20GiB commit/no other Kit, then launches once without weakening worker guards.
+  Queue log:data/sim_data/native_generated_seven_family_memory_queue_20260915_v2.log.
+  No user apps closed, no source/split/review edits, no final training approval.
+  See sim_data/NATIVE_GENERATED_CAMPAIGN.md under examples/greenhouse_sim.

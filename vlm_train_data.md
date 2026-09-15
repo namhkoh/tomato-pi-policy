@@ -1882,3 +1882,29 @@ layouts. Repeated controls are not new target diversity. Legacy450 reviewed
 images (312/48/90), frozen splits and donor view caps remain unchanged. Native
 depth is unreconstructed. No model/training or final20k ZIP. All workers exited.
 Broader bounded capture and native-resolution export/loader integration remain.
+
+### 2026-09-15 reusable native inspection campaign and seven-family expansion
+
+Added native_generated_campaign.py with20 CPU regression cases; full suite
+988 tests +77 subtests passed in63.28s (clear_regression_20260915_v27.log
+under data/sim_data). Serial original/native-camera/generated/annotation phases,
+exact exit/failure evidence, immutable plans/code and no automatic approvals.
+Admission logging records memory/disk even when no renderer starts.
+
+Inventory matched62 reviewed reference views/23 targets/11 TRAIN donors.
+Seven additional donors selected: seed19/41/43/67/71/83/89, one source view each.
+No held-out donor or existing review/split/view cap was changed. These are
+planned new captures, not62 new images or an unbiased sampling-yield estimate.
+
+The first seven-family attempt stopped before any renderer/image because commit
+headroom dropped below18GiB. Preserved:
+data/sim_data/diagnostics/native_generated_seven_family_20260915_v1.
+Fresh v2 holds the same source geometry/views, new local qualification outputs
+and explicit code bindings. A bounded2h readiness queue waits for20GiB commit
+and no other Kit process; it launches once and retains all worker guards.
+data/sim_data/diagnostics/native_generated_seven_family_20260915_v2.
+Queue: data/sim_data/native_generated_seven_family_memory_queue_20260915_v2.log.
+No user applications were closed or system settings changed. Check receipts;
+waiting/queued is not native completion. Data count stays450 legacy-reviewed
+plus8 separate annotation-pilot frames pending release integration.
+See examples/greenhouse_sim/sim_data/NATIVE_GENERATED_CAMPAIGN.md.
