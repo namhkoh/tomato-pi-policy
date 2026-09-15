@@ -9872,3 +9872,16 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   or20k release is claimed. Original assets/splits/reviews and active collection
   remain untouched. See `sim_data/PLANT_GENERATOR.md` under
   `examples/greenhouse_sim` and the detailed record in `vlm_train_data.md`.
+
+- 2026-09-15 generator integration: added a frozen original/generated native
+  comparison path preserving the full greenhouse and recorded RB-Y1 head
+  camera; execution waits for native sensor qualification and existing jobs.
+  Actual-asset CPU rehearsal preserves421 components and recomputes the cut
+  label (2.087mm change). Added an actual-mesh output preview for the user;
+  diagnostic colors/orthographic projection are not native training RGB/depth.
+  Source/split/review/physics implementation unchanged. New bounded queue
+  waits with independent code pins and memory/process admission checks.
+  Final data-code regression918 tests plus77 subtests in67.43s:
+  data/sim_data/clear_regression_20260915_v22.log.
+  Details:examples/greenhouse_sim/sim_data/GENERATED_NATIVE_CAPTURE.md.
+  No20k release, generated-image training approval or new physics claim.

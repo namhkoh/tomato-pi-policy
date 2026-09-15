@@ -1703,3 +1703,45 @@ No model weights were downloaded, training was not started, and no final
 training ZIP was produced. Existing native collection/jobs and168 pinned native
 code hashes were unchanged. Last reviewed image checkpoint remains419 total
 (304/42/73 train/validation/test), not20,000 training images.
+
+### 2026-09-15 generated-plant native adapter and output preview
+
+Added generated_capture.py / native_generated_pair.py and regression tests.
+The fixed two-frame diagnostic reconstructs the full existing greenhouse and
+recorded robot/head-camera pose, then substitutes one generated plant at the
+same world transform. It requires completed native high-resolution sensor
+qualification; no source plan, family split, review decision or production
+exporter is changed. Native optical-Z remains Isaac-derived. Scene/instance/
+buffer freshness, camera, geometry, provenance and memory checks are enforced;
+no training approval or physical qualification is granted.
+
+CPU rehearsal on seed7/SubStem_42 preserved421 components and measured a
+2.087127mm cut-label change /4.662410px at1696x816. Both are in frame; this is
+not rendered-visibility evidence. Artifact under data/sim_data/diagnostics:
+generated_native_pair_cpu_rehearsal_20260915_v1.json.
+
+The user requested to see generator output. Added plant_variant_preview.py:
+actual USD triangles with shared orthographic views and diagnostic colors,
+no textures or native sensor outputs. Original/generated each497,579 triangles
+and421 components, with8 selected transformed subtrees. Visually inspected
+the comparison and junction close-ups; this does NOT approve training labels,
+physical safety or greenhouse rendering. Preview under data/sim_data/diagnostics:
+generator_visual_preview_20260915_v1/plant_comparison.png.
+Orange attachment, white nominal10mm point, magenta10-20mm arc interval.
+
+Bounded generated pair queued behind existing collection and camera diagnostic.
+Independent186-file code/plan pin; all168 existing native code pins unchanged.
+Six-hour wait deadline,1800s owned-worker budget, no competing-renderer startup,
+automatic retry, model download or training. Queue log:
+data/sim_data/generated_native_pair_queue_20260915_v1.log.
+At checkpoint it is WAITING, not captured or approved.
+
+Details:examples/greenhouse_sim/sim_data/GENERATED_NATIVE_CAPTURE.md.
+Data regression before preview:913 tests plus77 subtests in65.94s
+(clear_regression_20260915_v21.log); preview geometry tests:5passed.
+Latest individually reviewed checkpoint remains419 total304/42/73.
+New generator assets/previews/queued frames are not20k training data. Existing
+native collection progressed, but its new frames were not individually reviewed
+during this integration step.
+Final full regression including the preview:918 tests plus77 subtests passed
+in67.43s (data/sim_data/clear_regression_20260915_v22.log).

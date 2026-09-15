@@ -156,3 +156,15 @@ silent reuse of an old receipt.
 The latest previously reviewed clear-image checkpoint remains 419 total
 (304 train, 42 validation, 73 test), still a draft. Generated geometry is not
 counted as captured or accepted training data.
+
+## Native capture adapter and output preview
+
+A separate two-frame native diagnostic implementation and read-only actual-mesh
+preview command now exist. See [GENERATED_NATIVE_CAPTURE.md](GENERATED_NATIVE_CAPTURE.md)
+for commands, evidence and the serial queue. Native execution/visual
+qualification is pending; production collection/acceptance gates are unchanged.
+
+Actual output comparison:
+data/sim_data/diagnostics/generator_visual_preview_20260915_v1/plant_comparison.png.
+This shows geometry with diagnostic colors, not native RGB/depth or training
+input. Donor main-stem and protected-organ geometry remain unchanged.
