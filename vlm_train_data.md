@@ -2550,5 +2550,14 @@ petiole continuity; receipts are separate from final global release decisions.
 Fixed two-plan native query-V2/reference56 qualification registration passes
 134independent runner/helper tests(336.52s). It binds25old captured counterparts
 across36proposals, distinguishing initial56-subframe warmups from23short frames.
-These tests are CPU-only; native replay, paired visual comparison and any8-step
+These tests are CPU-only; native replay, paired visual comparison and any8-subframe
 profile qualification remain pending. Rerender controls add zero TRAINdiversity.
+
+Selective-persistenceV3 has141independent focused passing tests(127.30s).
+It keeps allstrict candidates and deterministic1/64rejected controls only when
+explicitly opted in; defaultstill savesall. Actual callback count, not saved-file
+count, controls warmup/freshness. Discardedpixels cannot be independently replayed
+and are not invented training records. Qualificationwitness savesall same-callback
+buffers under a separate diagnosticroot, allowing exact logical-byte comparison.
+Currenttests use synthetic native-sized arrays, not a new Isaac run. Native
+qualification and queue/inventory integration remain pending; no oldfilesdeleted.

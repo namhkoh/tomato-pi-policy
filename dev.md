@@ -10446,3 +10446,14 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   V2post-exit replay. Saved old8-subframe data is only a matched comparison;
   no relabeling, short-budget qualification or new diversity credit. No new
   runner/native test has been launched alongside the active60-job wave.
+
+- Selective-persistenceV3 reviewed and independently tested:141focused tests
+  pass127.30s. Defaultall_frames; opt-in strict_candidates_only retains strict
+  candidates and fixed1/64hashed donor/hold-or-exclude controls. Every callback
+  still runs native/annotation/source checks; validatedcallbacks drive warmup
+  and freshness, not retainedimages. Skipped pixels have no independent replay
+  claim. A bounded same-callback save-all witness verifies retained/skipped
+  branches without extra renders. Synthetic native-sized callback tests are
+  NOT actual Isaac qualification. No active collector/queue/inventory adoption,
+  source-hash optimization, old data deletion, native profile approval or count
+  increments are claimed. Policyafc7075be2d56759a3892ff14966419008086b672d6d68bea58ab8d4a253feb2.
