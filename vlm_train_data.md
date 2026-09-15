@@ -2377,3 +2377,17 @@ selection is being updated separately. The pending-only old V4 coordinator was
 replaced safely with the committed serial storage/control/probe/original-pilot
 queue. Existing native captures and review files are intact. Pipeline progress
 must be reported as raw/strict/provisional/final separately, not a summed total.
+
+Native packaging/preprocessing modules now have143independent passing tests
+(one optional real-sample test skipped;81.57s). native_clear_export accepts only
+an externally admitted20kTRAIN selection with positive separateheldouts and the
+exact frozen donor map; it cannot promote provisional candidates. Compact source
+pixels/nativeZ remain unchanged, and the768x768query crop is not upscaled.
+Full-frame coordinates are normalized to1000 independently of the crop frame.
+
+native_clear_processor_preflight is an offline CPU-only H200-side check against
+an explicitly supplied existing Qwen3-VL-8B processor snapshot. It verifies real
+image grids, total prompt+answer token budget without truncation, assistant-only
+labels and RGB-only model input. No weights or training are loaded. Tests use
+controlled processors, not the actual H200 model; native-profile training-route
+integration and server measurements remain missing. No20k export/ZIP exists.

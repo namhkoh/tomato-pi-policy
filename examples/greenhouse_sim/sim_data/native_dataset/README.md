@@ -216,3 +216,25 @@ Actual nuisance replay756/756 passes, max5.1831e-13; this is numerical stability
 not a meaningful shape novelty threshold. Joint native controls/review remain
 required before any extra geometry budget. Main independent focused regression:
 190tests+45subtests passed2.62s (`geometry_context_regression_20260916_v2.log`).
+
+## Native-resolution export and server preprocessing
+
+`native_clear_export.py` builds a create-only portable directory from external
+final admission, not from raw counts or a provisional selection. It requires
+at least20kTRAIN, explicit positive heldout counts, the exact original donor
+reservations, native compact sources and bound review/calibration evidence.
+It copies original RGB/native optical-Z/IDs/calibration bytes and adds an exact
+unresized768x768query crop. Answers remain normalized1000 full-frame coordinates.
+No public small-release switch exists. This is not yet an archive or code kit.
+
+`native_clear_processor_preflight.py` validates a completed package and checks
+explicit TRAIN rows with an existing server-local Qwen3-VL-8B AutoProcessor.
+It forbids network/weights, requires an explicit total token budget, checks
+expanded image tokens/grids and exact assistant-only supervision, and never
+truncates an over-budget example. RGB/query are the model inputs; native depth
+and geometry remain sidecars. Run its documented CLI only after an admitted
+release and server processor snapshot exist. No model was downloaded locally.
+
+Main independent tests:143passed,1optionalactual-sample skipped,81.57s. The
+legacy H200 scripts still require a separately integrated native-profile route;
+these tests are not evidence of actual server preprocessing or training.

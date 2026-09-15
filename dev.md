@@ -10264,3 +10264,14 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   confirming no active capture child; saved supersession receipt. Replacement
   serial queue PID17876 waits storage proof/controls before probes and V4scale.
   No active Isaac worker, annotation file or existing capture was removed.
+
+- 2026-09-16 native-resolution packaging infrastructure verified: added
+  native_clear_export and native_clear_processor_preflight. The exporter
+  requires externally admitted20kTRAIN+positiveheldouts, exact frozen24donor
+  assignments and byte-bound compact sources; no public small-release bypass.
+  It preserves1696x816RGB/nativeZ and exact768x768query crops, with normalized
+  full-frame answers. The offline server preflight loads only an existing local
+  processor (no weights/download/training), checks actual grids/token budgets
+  and assistant-only supervision. Main143tests pass/1optionalreal-sample check
+  skipped in81.57s. No final release was built; actual H200 preprocessing and
+  integration into the training launcher remain unverified/outstanding.
