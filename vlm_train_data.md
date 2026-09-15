@@ -2433,3 +2433,28 @@ and an explicit copy from the already-applied/equality-verified scene lighting.
 19independentpytest tests and independent review pass; new serial v3controls
 are running. Native qualification remains pending. Frozen old captures/worker
 sources remain unchanged. These controls cannot increase the TRAIN count.
+
+2026-09-16 follow-up:all3matched pairs completed exit0. Full-frame and native-crop
+assistant inspection is bound under dataset_reviews/matched_v2_visual_20260916_v1.
+Automatic replay produced2annotation-only accepts,3holds,1query rejection; no
+geometry calibration or independent training budgets are granted from these.
+Bounded12probe produced4captures/3strict; original seed73pilot produced1strict
+native image with owned exit0/post-exit audit and supporting main visual review.
+Neither is added to216provisional until cumulative inventory/dedup is rebuilt.
+The60-job native_reference_scale_20260916_v4 continuation is running.
+
+The new original serial queue is CPU-tested57/57 and keeps two frozen original
+batches39cases/21targets, actual recorded robot poses and56subframes. It is NOT
+started alongside the current coordinator. Fresh original views retain donor
+ancestry/caps and will require the same native audit, clarity and duplicate checks.
+
+The native server full-FT launcher now has an independent192-test combined
+runner/adapter pass (142.96s). See native_dataset/README_native_h200_train.md.
+It is a separate native-profile route, not the old848x408 trainer. Real H200
+processor/parity, memory, throughput, checkpoint reload and grounding accuracy
+remain unmeasured. No weights/downloads/training or final transfer archive exists.
+
+Measured query issue:all3held controls admit alternate distal queries under the
+current full-trace policy. Endpoint-dependent sampling can skip weak-contrast
+locations, so the proposed future chooser must also pass a shared-prefix probe
+grid. This diagnosis does not relabel old images or establish population yield.

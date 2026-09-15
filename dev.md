@@ -10314,3 +10314,28 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   bounded controls now run serially under native_v2_visual_controls_20260916_v3;
   failures are preserved, and this queue stops at the first failed native case.
   No control images count as new TRAIN diversity. Previous sources stay frozen.
+
+- Matched V3controls completed:3pairs/6native images, all exit0. Main inspected
+  full-scene previews and unscaled junction crops; byte-bound review:
+  dataset_reviews/matched_v2_visual_20260916_v1. Automatic replay:2annotation-only
+  accepts/3holds/1query rejection, zero integrity failures. Geometry differences
+  are visible, but no calibrated new-context budget or training approval follows.
+- Bounded12probe:24proposals,4captures,3strict candidates/1exclusion; extra6 adds
+  one strict candidate before global dedup. Fresh original seed73/SubStem41
+  pilot:exit0,1strict native candidate, independent post-exit replay. Main image
+  inspection supports its clear annotation; receipt under
+  dataset_reviews/original_seed73_native_20260916_v1. The60-job V4continuation is
+  active under native_reference_scale_20260916_v4; no active workers interrupted.
+- New original serial queue retains the frozen16+23case plans,56subframes and
+  exact robot poses. It waits for completed predecessor AND supervisor exit,
+  preserves native20GiB/60GiB resource guards, and stops on first failure.
+  Independent57tests pass11.97s. Prepared for later launch, not running now.
+- Native H200 entrypoint and standalone instructions added under native_dataset:
+  native_h200_train and README_native_h200_train.md. Explicit server execution,
+  pinned20k release/local weights, BF16 ZeRO2, full/crop RGB, no truncation and
+  assistant-only loss. Independent runner+adapter192tests pass142.96s. No real
+  model, distributed GPU qualification, training or final ZIP is claimed.
+- Query-yield diagnosis:all3control holds have alternative >=45mm queries that
+  pass the existing trace. The old endpoint-dependent photometric sample grid
+  can also miss failed locations; a future fixed-prefix plus legacy-pass chooser
+  is being developed separately. No old labels, holds or gates were changed.
