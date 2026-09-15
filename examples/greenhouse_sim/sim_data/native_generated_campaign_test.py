@@ -5,10 +5,16 @@ from . import native_generated_campaign as campaign
 from .dataset_review import write_json,read_json
 from .depth_preview import sha256
 from .generated_capture_test import simple_plan
+from .plant_variants import VERSION as GENERATOR_VERSION
 
 def prepared(tmp_path):
     source=tmp_path/"source";source.mkdir()
     item=simple_plan(source)
+    # Plan validation reads the generator discriminator. This is a deliberately
+    # non-renderable unit fixture, not a qualified plant or native-capture claim.
+    variant=source/"variant";variant.mkdir()
+    write_json(variant/"qualification.json",dict(version=GENERATOR_VERSION))
+    item["source_bindings"][str(variant/"qualification.json")]=sha256(variant/"qualification.json")
     root=tmp_path/"inspection";case=root/"case_001";case.mkdir(parents=True)
     item.update(prerequisite_directory=str(case/"camera"),source_capture=str(source/"capture"),
                 source_sample="sample_0001",variant_directory=str(source/"variant"))

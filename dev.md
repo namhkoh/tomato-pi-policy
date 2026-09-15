@@ -9971,3 +9971,21 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   Remaining20k blockers include true target/morphology diversity and scalable
   native export/processor/release validation. See sim_data/AUTOMATED_NATIVE_REVIEW.md
   under examples/greenhouse_sim for scope, evidence and commands.
+
+- 2026-09-15 16:43 KST: added bounded curved/relocated source-derived petioles,
+  preserving source leaf meshes/UV/materials and recomputing attachment/cut labels.
+  Read-only deterministic replay verifies saved USD geometry/normals and frozen
+  source/family/code bindings. One404-component seed101 variant passed CPU checks;
+  native visibility/clearance and independent geometry admission remain pending.
+  See sim_data/CURVED_PLANT_GENERATOR.md under examples/greenhouse_sim.
+- Full sim-data regression1057 tests +87 subtests passed (v31 log). Corrected two
+  missing-qualification unit fixtures, leaving production gates intact. Transient
+  approval-service/ACL failures prevented commands; no bypass or data loss.
+- Two further old-similarity batches completed6 pairs/12frames before separate
+  torso/head-clearance holds; failures retained. Automatic review2 accepts,
+  9 visual holds,1 clear-task reject, not additional final training approvals.
+  Legacy450 reviewed and20 separately accepted native-pilot frames unchanged.
+- First curved native capture queue launched16:42:29 KST, PID119832; waits for
+  20GiB/no competing Kit, max2h, one attempt with existing native guards. Logs:
+  data/sim_data/curved_native_queue_20260915_v1.log and curved_native_20260915_v1.log.
+  No20k ZIP, training, biological-family/cap reset, source/review/split edits.

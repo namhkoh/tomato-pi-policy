@@ -67,14 +67,17 @@ def prepare_plan(source_capture, sample_id, variant_directory, qualification_dir
         path = safe_file(variant_directory, relative)
         require(sha256(path) == expected, "Generated asset changed")
         bindings[str(path)] = expected
-    for path in (variant_directory/"qualification.json",
-                 variant_directory.parent/"frozen_lineage.json",
-                 variant_directory.parent/"training_envelope.json"):
+    curved = receipt.get("version") == "curved_relocated_petiole_static.v1"
+    qualification_paths = [variant_directory/"qualification.json"]
+    if not curved:
+        qualification_paths.extend([variant_directory.parent/"frozen_lineage.json",
+                                    variant_directory.parent/"training_envelope.json"])
+    for path in qualification_paths:
         bindings[str(path)] = sha256(path)
     bindings.update(c["texture_bindings"])
     # Snapshot all currently referenced file identities; no existing plan is changed.
     verify_bindings(bindings)
-    return dict(schema_version=SCHEMA, state="cpu_planned_pending_native_sensor_prerequisite",
+    result = dict(schema_version=SCHEMA, state="cpu_planned_pending_native_sensor_prerequisite",
         source_capture=str(source_capture), source_sample=sample_id,
         source_collection_plan=manifest["source_collection_plan_path"],
         source_row=source_row, generated_row=generated[0], variant_directory=str(variant_directory),
@@ -88,6 +91,14 @@ def prepare_plan(source_capture, sample_id, variant_directory, qualification_dir
         conservative_view_cap_group=target_id, training_eligible=False,
         collision_qualified=False, dynamics_supported=False,
         visual_review="pending", higher_resolution_execution_verified=False)
+    if curved:
+        code = [Path(__file__), Path(__file__).with_name("plant_variant_catalogue.py"),
+                Path(__file__).with_name("procedural_petiole_catalogue.py")]
+        code.extend(Path(__file__).with_name(name) for name in receipt["code_sha256"])
+        result.update(generator_version=receipt["version"],
+            generator_code_bindings={str(p.resolve()): sha256(p) for p in code},
+            independent_target_novelty_approved=False)
+    return result
 
 
 def check_plan(plan):
@@ -115,6 +126,20 @@ def check_plan(plan):
             and plan["expected_calibration"]["resolution"] == list(HIRES_RESOLUTION),
             "Camera calibration identity mismatch")
     verify_bindings(plan["source_bindings"])
+    if plan.get("variant_directory"):
+        receipt = read_json(Path(plan["variant_directory"])/"qualification.json")
+        if receipt.get("version") == "curved_relocated_petiole_static.v1":
+            require(plan.get("generator_version") == receipt["version"]
+                    and plan.get("independent_target_novelty_approved") is False,
+                    "Curved inspection cannot bypass generator identity or novelty admission")
+            code = plan.get("generator_code_bindings", {})
+            required = [Path(__file__), Path(__file__).with_name("plant_variant_catalogue.py"),
+                        Path(__file__).with_name("procedural_petiole_catalogue.py")]
+            required.extend(Path(__file__).with_name(name) for name in receipt["code_sha256"])
+            require(set(code) == {str(p.resolve()) for p in required}, "Missing curved implementation binding")
+            verify_bindings(code)
+        else:
+            require("generator_version" not in plan, "Unknown generator discriminator")
 
 
 def verify_sensor_prerequisite(plan):

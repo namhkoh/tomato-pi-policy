@@ -1965,3 +1965,39 @@ data/sim_data/native_generated_remaining_targets_memory_queue_20260915_v1.log.
 Native log:data/sim_data/native_generated_remaining_targets_20260915_v1.log.
 Check queue/result receipts; launch/queued is not completed or accepted data.
 See examples/greenhouse_sim/sim_data/AUTOMATED_NATIVE_REVIEW.md.
+
+### 2026-09-15 16:43 KST curved-plant generator checkpoint
+
+Implemented source-derived curved/relocated petioles with common-field leaf
+deformation, preserved detailed meshes/UV/materials, TRAIN-only envelope,
+actual parent-surface attachment and recomputed10 mm /10?20 mm cut geometry.
+Read-only catalogue replays recipes and verifies serialized points/normals,
+topology, textures, metadata, source/split/code hashes and attachment bounds.
+Real seed101/SubStem41 variant retains404 components and passes CPU catalogue
+checks with no selected-subtree attachment warnings. Native rendering is still
+pending; this is static geometry, not validated plant dynamics or botanical growth.
+Details: examples/greenhouse_sim/sim_data/CURVED_PLANT_GENERATOR.md.
+
+Full regression1057 tests +87 subtests passed in67.68s (v31 log). The previous
+v30 failures were two campaign unit fixtures missing qualification.json; corrected
+the fixtures, not the production validation. Command-approval service capacity
+and local ACL failures interrupted work; code/data were preserved, not bypassed.
+
+Additional old-similarity native batches: remaining_targets_v1 completed2 cases,
+then held seed103/SubStem47 for generated geometry within robot-torso clearance.
+unattempted_targets_v2 completed4 cases, then held seed41/SubStem44 because a
+generated leaf entered head/neck clearance. Failed attempts preserved.12 new
+frames from6 complete pairs have automatic reviews (2 automatic annotation
+accepts,9 visual holds,1 clear-task reject); individual visual adjudication still
+pending. They do not add to the previous20 reviewed native-pilot accepts.
+
+Legacy450 reviewed (312train/48validation/90test) unchanged. No20k release orZIP.
+New curvature is not a new donor family or automatic independent-target approval;
+original caps remain until explicit global geometry-novelty admission is qualified.
+
+First curved native plan ready under diagnostics/curved_native_20260915_v1.
+Hidden readiness queue PID119832 launched16:42:29 KST; at most2h waiting for20GiB
+commit/no other Kit, then one native original/generated pair followed by CPU
+annotation/review on success. Existing mounted camera/optics, full greenhouse,
+native1696x816 RGB and Isaac optical-Z preserved. Check result/exit receipts;
+queued is not executed or accepted data. No user apps or settings changed.

@@ -19,6 +19,9 @@ def load_for_inspection(directory, source_plan_path):
     require(not (directory/"FAILED.json").exists(), "Failed generator output cannot be loaded")
     receipt_path = directory/"qualification.json"
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    if receipt.get("version") == "curved_relocated_petiole_static.v1":
+        from .procedural_petiole_catalogue import load_for_inspection as load_curved
+        return load_curved(directory, source_plan_path)
     require(receipt.get("version") == VERSION
             and receipt.get("state") == "cpu_generated_pending_native_and_visual_review",
             "Unknown or incomplete generator qualification")
