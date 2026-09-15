@@ -10196,3 +10196,18 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   The named visual hold remains. This is NOT172approved release images; no
   augmented geometry budget, global coverage, held-out quota or release approval.
   Receipt:diagnostics/native_provisional_selection_20260916_v1/receipt.json.
+
+- 2026-09-16 scale continuation:full regression2081tests+181subtests pass436.84s,
+  excluding only optional staged readback. Follow-up99campaign/readback tests
+  pass2.56s. Added guarded serial V4 coordinator, opt-in compact collector with
+  frozen-collector AST parity, full same-callback proof validator and compact PNG
+  duplicate-index adapter. Live storage proof still queued; no default changed.
+  Controller waits all requested controls, retains20GiBcommit/60GiBdisk guards,
+  one Kit and fatal uncertain worker cleanup. No source-cap/approval reset.
+- Experimental staged CPU/GPU readback factory added separately; actual native
+  comparison and speedup unknown, not production-enabled. Native depth unchanged.
+- Actual morphology extraction finished222descriptor rows from30generated assets,
+  all available but NOT calibrated independent contexts. Current reference wave
+  has18complete generated jobs;686-frame/172provisional snapshot is unchanged.
+  Final20kTRAIN+held-outs/export/ZIP still not complete. Original-target expansion
+  is being implemented separately, with historical frames used as pose priors only.

@@ -150,3 +150,26 @@ Existing full environment, native sensing and quality gates are unchanged.
 There is **no final 20k TRAIN release or ZIP** at this checkpoint. Static
 cut-point localization examples are not action demonstrations, dynamic episodes,
 physical cut approvals or evidence of a trained policy.
+
+## 2026-09-16 opt-in scale components
+
+- `compact_qualification.py` checks the pinned same-callback proof, all original
+  payloads, complete prim tables, label/trace equality, native exit and both
+  post-exit audits. `compact_views.py` changes serialization only; AST parity
+  tests compare scene/pose/render/annotation logic with the frozen RAW collector.
+  Actual qualification is still queued, not yet passed. No default was changed.
+- `compact_image_index.py` authenticates compact identity-encoded PNG payloads
+  and delegates to the unchanged native RGB duplicate index. No extraction,
+  re-encoding or depth calculation. Its explicit v2 graph retains compact
+  source provenance; downstream v1-only selection must not silently relabel it.
+- `staged_readback.py` is an isolated experimental factory. CPU remains default.
+  Its comparison mode checks same-callback CPU/GPU RGB and optical-Z bits; the
+  staged timing mode requires at least three distinct-camera comparison captures.
+  Installed Isaac6.0.1 APIs are pinned. Native comparison/timing has NOT run;
+  speedup and qualification are unknown. Do not use this for production capture.
+
+The live reference wave reached18 completed generated jobs; later jobs continue.
+Separately, morphology_observed_contexts_20260916_v1/report.json now contains222
+available descriptors (111original/111generated) from30 actual generated assets.
+These are measured geometry, not222 approved independent contexts. Meaningful
+joint image/geometry qualification, held-outs and final20k release remain open.

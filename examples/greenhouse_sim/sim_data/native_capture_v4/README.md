@@ -35,3 +35,29 @@ pilot prepared two changed target petioles and a12-view native plan:
 `data/sim_data/diagnostics/reference_prepare_v4_pilot_20260916_v1`.
 That pilot has NOT yet rendered; preparation does not count as training images.
 Keep one Kit process,20GiB system commit headroom and60GiB disk launch reserves.
+
+## Serial continuation campaign
+
+`python -m sim_data.native_capture_v4.campaign` waits for the named previous
+campaign and all three matched V2 controls. It then requires the completed,
+hash-bound SAME-callback RAW/compact storage proof before using the opt-in
+compact collector. It cannot launch a second Kit process. Use an explicit new
+output directory; this bounded wave is create-only, not an in-place resume.
+
+Required arguments: `--schedule`, `--schedule-sha256`, `--prior-campaign`,
+`--after-controls`, `--storage-qualification`, `--output`, `--isaac-python`,
+`--native-deps`. Defaults: four rounds, seed base4000000, at most12 targets/job.
+Only previously natively qualified TRAIN anchors enter the wave. Native exit0,
+complete result, no failure marker and fresh annotation audit are mandatory.
+Three consecutive native failures halt continuation; failed evidence is retained.
+Worker-cleanup uncertainty is fatal. No other application's processes are stopped.
+
+All counts remain candidates pending global image/morphology deduplication,
+original-target budgets and review. Completed matched control captures alone do
+not certify meaningful geometry novelty or grant a new view budget.
+The original renderer, sensing, pose, geometry and annotation rules remain intact.
+
+2026-09-16 verification: full sim_data regression2081tests+181subtests passed
+(436.84s; optional staged-readback test file excluded). Follow-up99tests passed
+for all campaign guards/cleanup and staged-readback tests (2.56s).
+The compact production worker remains unqualified until actual live proof passes.

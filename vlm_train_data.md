@@ -2309,3 +2309,19 @@ graph, not a batch-local count or gigantic per-pair JSON list. Negative overlays
 propagate across exact aliases. No new geometric contexts are qualified yet.
 Artifact:diagnostics/native_provisional_selection_20260916_v1/selection.json.
 172is a provisional selection, NOT a final TRAIN approval or completed20k dataset.
+
+2026-09-16 continuation implementation: native_capture_v4.campaign is a bounded
+serial coordinator that waits the previous collection and all requested native
+controls, then admits compact storage only after the full same-callback proof.
+RAW/compact payload and annotation parity, post-exit audits, source hashes,
+20GiBcommit/60GiBdisk and one-Kit limits remain enforced. No split or review change.
+Full regression2081tests+181subtests passed;99follow-up campaign/readback tests
+passed. Optional staged-readback native speedup remains unmeasured/disabled.
+Compact PNG index supports explicit v2 provenance, without changing source pixels.
+
+Actual morphology expansion:222available descriptors (111original/111generated)
+from30generated assets in morphology_observed_contexts_20260916_v1/report.json.
+Numerical descriptor availability is not meaningful-context novelty approval.
+Current native reference wave has18complete jobs and continues; global admission
+still requires broader inventory, calibrated geometry/image controls, target caps,
+review and frozen held-outs. No final20kTRAIN release or transfer ZIP exists yet.
