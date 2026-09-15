@@ -145,8 +145,13 @@ def capture(app, output, plan):
             frame_started = time.perf_counter()
             cal = calibration_for_native_resolution(calibration(stage), HIRES_RESOLUTION)
             assert_same_camera(cal, plan["expected_calibration"])
-            screen = StaticBoundScreen(static_obstacles(stage, robot["root"]), scene_triangle_refiner(stage))(
+            screen = StaticBoundScreen(static_obstacles(stage, robot["root"]),
+                scene_triangle_refiner(stage, include_generated_plants=True))(
                 visible_bounds(stage, robot["root"]))
+            # Preserve the exact rejection evidence even if no frame is captured.
+            write_json(output/("geometry_screen_"+mode+".json"), dict(
+                mode=mode, generated_plant_triangle_refinement=True, screen=screen,
+                scope="plant_surfaces_vs_robot_bounds_not_collision_free_certification"))
             require(screen["passed"], "Current snapshot intersects robot/environment geometry")
             catalogue = component_catalogue(stage, records, reports, variants)
             require(len(catalogue) == counts["components"], "Active organ catalogue population changed")
@@ -180,6 +185,7 @@ def capture(app, output, plan):
                     sample_id=mode, training_sample_approved=False, sensor=sensor_profile(HIRES_RESOLUTION),
                     calibration=cal, robot_snapshot=pose, scene_counts=counts, lighting=lighting,
                     renderer=old_manifest["renderer"], geometry_screen=screen, quality=quality,
+                    generated_plant_triangle_refinement=True,
                     rendered_camera_params=jsonable(payload["camera_params"]),
                     input_policy=dict(clean_full_scene=True, isolation=False, diagnostic_overlays=False),
                     native_target_pixels=int(mask.sum()), old_plant_native_pixels=old_pixels,

@@ -145,21 +145,26 @@ def triangles_intersect_box(triangles, lower, upper):
     return bool(np.any(~np.any(separated, axis=1)))
 
 
-def scene_triangle_refiner(stage):
+def scene_triangle_refiner(stage, *, include_generated_plants=False):
     """Cache static scene triangles; keep conservative AABBs for unsupported shapes.
 
     Tests scene triangle surfaces against enclosing robot local boxes, NOT exact
     robot meshes. Structural volumes retain their AABB result. Plants use a
     surface screen; containment inside closed plant volumes is not certified.
+    Generated foliage is opt-in at its exact dedicated root. Legacy callers
+    retain their original scope; this does not waive real triangle intersections.
     """
     from .capture_contract import transform_points
+    if type(include_generated_plants) is not bool:
+        raise ValueError("Explicit boolean generated-plant refinement flag required")
+    roots = ("/World/PackPlants", "/World/GeneratedNativePilot") if include_generated_plants else ("/World/PackPlants",)
     cache = {}
 
     def refine(robot, obstacle, margin):
         path = obstacle["path"]
         # Merged plant/backdrop meshes are open foliage surfaces. Structural
         # closed volumes retain conservative box checks, including containment.
-        if not path.startswith("/World/PackPlants/"):
+        if not any(path.startswith(root + "/") for root in roots):
             return True
         if path not in cache:
             prim = stage.GetPrimAtPath(path)
