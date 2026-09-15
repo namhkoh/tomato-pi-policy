@@ -19,14 +19,19 @@ SCHEMA = 'greenhouse.compact_storage_qualification_binding.v1'
 ORIGINAL_COLLECTOR_SHA256 = '573054884fa48da986b2926815f6fd225b591500ac247dbd95d0a2fc974fc8b7'
 WORKER_SHA256 = 'aa0e434727a104511c0a931e8e4fda871acdbb08949be52c47f36fc3184827ee'
 QUEUE_SHA256 = '50b458e946c7f71c356f4dd9378ed6330845892dbc4fa656da90a11ca341fe91'
+# Preserve QUEUE_SHA256 for v1 callers/fixtures. Known producer pins are reviewed
+# constants, never inferred from a receipt or freshly hashed producer file.
+QUEUE_V2_SHA256 = 'bd4c42d2cc9ebebaa03ea00d264a3493985aef07b1e7aa8779c27f23c62a7115'
 DIAGNOSTIC_PLAN_SHA256 = '5c0063e4cb72a8730ad8949abbfbfac5f3ce90cfd964b994f236e5bb86413c23'
 _HERE = Path(__file__).resolve().parent
 _SIM = _HERE.parent
 _STORAGE_PATHS = (_HERE/'capture_storage.py', _HERE/'bundle.py', _SIM/'native_lossless_codec.py',
                   _HERE/'dual_storage.py', _SIM/'capture_contract.py', _SIM/'capture_visibility.py')
 _REVIEW_PATHS = (_HERE/'audit.py', _HERE/'bundle.py')
+_QUEUE_V2_CODE_PATHS = (_HERE/'native_process_guard.py',)
 _CODE_PATHS = (*_STORAGE_PATHS, *_REVIEW_PATHS, _HERE/'__init__.py', Path(__file__),
-               _SIM/'native_generated_views.py', _SIM/'dataset_review.py', _SIM/'depth_preview.py')
+               _SIM/'native_generated_views.py', _SIM/'dataset_review.py', _SIM/'depth_preview.py',
+               *_QUEUE_V2_CODE_PATHS)
 _LOADED = {str(p.resolve()): sha256(p) for p in _CODE_PATHS}
 
 
@@ -102,6 +107,28 @@ def _integer(value, expected=None):
     require(type(value) is int and value >= 0 and (expected is None or value == expected),
             'Invalid qualification count')
     return value
+
+
+def _queue_producer(bindings):
+    # Build from the named constants on each call: legacy QUEUE_SHA256 fixtures
+    # must not accidentally bypass a separately cached allowlist.
+    require(isinstance(bindings, dict) and bindings, 'Missing qualification source bindings')
+    producers = [p for p in bindings if Path(p).name.startswith('queue_same_callback_native_')
+                 and Path(p).suffix == '.py']
+    require(len(producers) == 1, 'Missing/ambiguous queue producer')
+    path = producers[0]
+    filename = Path(path).name
+    allowed = {'queue_same_callback_native_20260916_v1.py': QUEUE_SHA256,
+               'queue_same_callback_native_20260916_v2.py': QUEUE_V2_SHA256}
+    pin = allowed.get(filename)
+    require(isinstance(pin, str) and re.fullmatch('[0-9a-f]{64}', pin), 'Unqualified queue producer')
+    require(bindings[path] == pin, 'Wrong queue source binding')
+    if filename == 'queue_same_callback_native_20260916_v2.py':
+        for dependency in _QUEUE_V2_CODE_PATHS:
+            guard = str(dependency)
+            matches = [p for p in bindings if Path(p).name == dependency.name]
+            require(matches == [guard] and bindings[guard] == _LOADED[guard],
+                    'Missing/wrong v2 native process guard binding')
 
 
 def _sample(files, directory, row, *, compact):
@@ -205,9 +232,9 @@ def check_qualification(path, *, expected_sha256):
     require(queue['training_approved'] is False, 'Invalid queue approval')
     _integer(queue['training_diversity_increment'], 0)
     queue_bindings = queue['bindings']
+    _queue_producer(queue_bindings)
     files.mapping(queue_bindings)
-    for filename, pin in (('native_same_callback_worker_20260915_v1.py', WORKER_SHA256),
-                           ('queue_same_callback_native_20260916_v1.py', QUEUE_SHA256)):
+    for filename, pin in (('native_same_callback_worker_20260915_v1.py', WORKER_SHA256),):
         matches = [p for p in queue_bindings if Path(p).name == filename]
         require(len(matches) == 1 and queue_bindings[matches[0]] == pin, 'Wrong queue source binding')
     for p in (_HERE/'dual_storage.py', _HERE/'capture_storage.py', *_REVIEW_PATHS):

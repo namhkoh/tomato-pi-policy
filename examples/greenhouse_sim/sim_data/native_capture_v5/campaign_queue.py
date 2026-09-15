@@ -4,6 +4,7 @@ This coordinator owns only its children. It never interrupts another collector,
 changes sensor defaults, resets source budgets, or approves a dataset.
 """
 import argparse
+from contextlib import redirect_stdout, redirect_stderr
 from datetime import datetime, timezone
 import os
 from pathlib import Path
@@ -15,6 +16,7 @@ from ..dataset_review import read_json, write_json, require, verify_bindings
 from ..depth_preview import sha256
 from ..native_capture_v4 import campaign
 from ..native_dataset.compact_qualification import qualify_storage
+from ..native_dataset import native_process_guard
 from . import bounded_views as probe
 
 SCHEMA = 'greenhouse.serial_bounded12_then_scale_request.v1'
@@ -86,6 +88,25 @@ def worker_environments(native_deps, inherited=None):
     return cpu, native
 
 
+def run_scale_in_process(request, log_path, bindings, announce):
+    """Reuse this CPU supervisor; V4 still owns each native worker and guard.
+
+    No second waiting Python coordinator should be mistaken for a renderer.
+    The V4 arguments, output, native subprocess ownership and failures are kept.
+    """
+    verify_bindings(bindings)
+    announce(os.getpid())
+    with Path(log_path).open('x', encoding='utf-8') as log:
+        with redirect_stdout(log), redirect_stderr(log):
+            try:
+                campaign.main(scale_command(request, sys.executable)[3:])
+                code = 0
+            except SystemExit as exc:
+                code = 0 if exc.code is None else exc.code if type(exc.code) is int else 1
+    verify_bindings(bindings)
+    return code
+
+
 def original_completion(capture, plan_path, plan_pin):
     capture = Path(capture)
     request = read_json(capture/'request.json')
@@ -120,7 +141,7 @@ def main(argv=None):
         str(paths['view_plan']): request['view_plan_sha256'],
         str(Path(__file__).resolve()): sha256(__file__),
         str(Path(campaign.__file__).resolve()): sha256(campaign.__file__),
-        **probe.implementation_bindings()}
+        **probe.implementation_bindings(), **native_process_guard.implementation_bindings()}
     if 'original_plan' in paths:
         from ..native_original_capture import prepare as original_prepare
         from ..native_original_capture.contracts import new_destination
@@ -224,9 +245,8 @@ def main(argv=None):
         status('original_pilot_complete_pending_visual_review', result_sha256=original_result_pin)
     # The production continuation keeps its existing six-view profile regardless
     # of the diagnostic's result. Any promotion needs separate measured review.
-    code = campaign.run_checked(scale_command(request, sys.executable), output/'scale.log',
-        bindings=bindings, environment=environment, native=False, reserve=reserve, launch_check=None,
-        announce=lambda pid: status('scale_coordinator_running', worker_pid=pid))
+    code = run_scale_in_process(request, output/'scale.log', bindings,
+        announce=lambda pid: status('scale_coordinator_running_in_same_cpu_process', worker_pid=pid))
     require(code == 0 and (paths['scale_output']/'result.json').is_file(), 'Scale continuation did not complete')
     verify_bindings(bindings)
     write_json(output/'result.json', dict(state='serial_probe_and_scale_complete_pending_admission',

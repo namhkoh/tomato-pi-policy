@@ -2391,3 +2391,31 @@ image grids, total prompt+answer token budget without truncation, assistant-only
 labels and RGB-only model input. No weights or training are loaded. Tests use
 controlled processors, not the actual H200 model; native-profile training-route
 integration and server measurements remain missing. No20k export/ZIP exists.
+
+2026-09-16 native storage proof completed, not merely a software test:
+diagnostics/native_same_callback_20260916_v2 contains7same-callback raw/compact
+frames,21byte-exact native NPYpayloads, equal full identity tables and annotations,
+exit0 plus both independent post-exit audits. The consumer proof validator also
+passes. Directory sizes39556489compact/163242990raw bytes (24.23%); no measured
+capture-speed benefit is implied. These diagnostic frames contribute zero new
+TRAIN diversity. No native optical-Z calculation, image resizing or source removal.
+
+Capture had been falsely blocked by standalone MCP bridge processes. The explicit
+native_process_guard now separates verified bridge launch chains and the actual
+pre-startup CPU caller from native renderers. It is launch metadata, not an OS
+lock. Old idle queues were preserved and superseded; new queues run one at a time.
+Main143guard/integration tests and154proof/original-inventory tests pass. Matched
+V2controls are running before the extra-view/original-target probes and V4scale.
+
+Latest completed aggregate:892observations/61receipts;228strict,235holds,429exclusions.
+After397386pair comparisons and shared caps:216provisional TRAIN candidates.
+This replaces the197checkpoint, not an additive count. Existing holds/splits are
+unchanged. Evidence:diagnostics/native_cpu_evidence_20260916_v4_report.json,
+native_completed_campaign_inventory_20260916_v4.json and native_provisional_selection_20260916_v3.
+44,334bindings reverified; inventory1006.43s is a measured scaling bottleneck.
+
+original_inventory now admits fresh original captures only into an OBSERVED
+inventory after owned exit0/native audit verification. It never fabricates
+generated ancestry or imports historical labels; the one-case original pilot
+still awaits native execution. Actual compact exporter sample compatibility
+also passed1test/1.36s without modifying source pixels. Final20k approval remains open.

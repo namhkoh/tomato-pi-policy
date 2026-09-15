@@ -10275,3 +10275,27 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   and assistant-only supervision. Main143tests pass/1optionalreal-sample check
   skipped in81.57s. No final release was built; actual H200 preprocessing and
   integration into the training launcher remain unverified/outstanding.
+
+- 2026-09-16 capture restart: fixed a real coordinator false positive that
+  classified standalone isaac-sim-mcp bridges as renderers. New explicit guard
+  verifies bridge console/venv/base/UV launch chains; actual host check has zero
+  blockers. Unknown native launches still block. Metadata is not a process lock.
+  Only three verified idle owned coordinators were stopped; old scripts/outputs
+  and all bridges/apps/captures are preserved. New v2 queues run serially; V5
+  hands off to V4 in the same CPU process, retaining native worker ownership.
+  Main143guard/integration tests and154proof/original-inventory tests pass.
+- Native same-callback v2 proof is now genuinely complete:7frames,21exact native
+  NPYpayloads, equal full identity tables/RGB/labels/traces, native exit0 and both
+  post-exit audits. Independent proof recheck7.18s. Capture directories39556489
+  compact vs163242990raw bytes (24.23%); this is measured storage, not speedup.
+  Proof SHAe82fab0e5e569c399aefd29f380622e002058cc58499e3d1a1c316d471ed79da.
+  The7diagnostic frames add zero training diversity. Matched control v2 running.
+- Completed observed inventoryv4:892frames/61receipts;228strict/235held/429excluded.
+  All397386imagepairs resolved;216provisional candidates after unchanged caps/
+  holds, not final approval.44,334bindings independently reverified. Inventory
+  itself took1006.43s; repeated buffer reads are a remaining CPU scaling issue.
+- Added original_inventory: requires owned exit0 launcher/event/source pins and
+  independently replays native original annotations; preserves original ancestry,
+  pre-render holds and shared target budgets. Fresh pilot not captured yet.
+  Optional real compact export check also passes (1test,1.36s), unchanged source
+  bytes. No20krelease, heldoutcompletion, modeldownload or training claim.

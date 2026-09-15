@@ -238,3 +238,32 @@ release and server processor snapshot exist. No model was downloaded locally.
 Main independent tests:143passed,1optionalactual-sample skipped,81.57s. The
 legacy H200 scripts still require a separately integrated native-profile route;
 these tests are not evidence of actual server preprocessing or training.
+
+## Verified native storage and corrected serial launch guard
+
+The v2 same-callback diagnostic now completed in Isaac:7frames/21exact native
+NPYpayloads, equal RGB/fullprimtables/labels/traces, exit0 and both post-exit audits.
+The full consumer validator passed7.18s. Its capture directories total39,556,489
+compact vs163,242,990raw bytes, not a general throughput measurement. The proof
+is local at `diagnostics/native_same_callback_20260916_v2`; those7frames count
+as zero training diversity. Production compact capture still requires that
+pinned proof and unchanged source bindings. V1 producer support remains intact.
+
+`native_process_guard.py` fixes false renderer matches on this host's standalone
+MCP bridges using explicit, rechecked console/venv/base-interpreter/UV evidence.
+It preserves unknown-native blockers and the actual pre-startup CPU caller;
+it is not a global lock or loaded-code attestation. Bridge roots are explicit
+host-specific defaults. Queue resumers remain strictly serial; V5 calls V4 in
+the same CPU supervisor to avoid a second waiting coordinator. Main143guard/
+integration and154proof/original-inventory regression tests pass.
+
+`original_inventory.py` adds source-bound original-native observations with the
+known exit0 launcher, owned launch event and independent saved-buffer audit.
+Originals retain their source target identity; there is no generated ancestry,
+new geometry budget or inherited historical label. Mixed observed inventories
+require a fresh cumulative duplicate graph. Native original pilot validation
+is still pending; code tests do not count as images.
+
+Current observed snapshotv4:892frames,228strict,235holds,429excluded;216provisional
+TRAIN after unchanged caps/holds. It is not a final20krelease. Actual inventory
+build1006.43s and repeated native-buffer reads remain optimization work.

@@ -63,6 +63,39 @@ def test_scale_parameters_preserved(config):
     assert command[command.index('--max-targets')+1]=='12'
     assert '--view-plan' not in command
 
+
+def test_same_cpu_scale_handoff_preserves_arguments_and_log(config, tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(queue, 'verify_bindings', lambda b: seen.append(('bindings', b)))
+    def run(arguments):
+        seen.append(('argv', arguments))
+        print('synthetic V4 status')
+    monkeypatch.setattr(queue.campaign, 'main', run)
+    log = tmp_path/'scale.log'
+    assert queue.run_scale_in_process(config, log, {'test':'pin'}, lambda pid: seen.append(('pid', pid))) == 0
+    assert seen[0] == seen[-1] == ('bindings', {'test':'pin'})
+    assert ('argv', queue.scale_command(config, queue.sys.executable)[3:]) in seen
+    assert ('pid', queue.os.getpid()) in seen
+    assert log.read_text() == 'synthetic V4 status\n'
+
+
+@pytest.mark.parametrize('exit_code', [2, 'synthetic failure'])
+def test_same_cpu_scale_failure_preserved(config, tmp_path, monkeypatch, exit_code):
+    monkeypatch.setattr(queue, 'verify_bindings', lambda b: None)
+    def fail(arguments):
+        raise SystemExit(exit_code)
+    monkeypatch.setattr(queue.campaign, 'main', fail)
+    assert queue.run_scale_in_process(config, tmp_path/'scale.log', {}, lambda pid: None) != 0
+
+
+def test_same_cpu_scale_unexpected_error_propagates(config, tmp_path, monkeypatch):
+    monkeypatch.setattr(queue, 'verify_bindings', lambda b: None)
+    def fail(arguments):
+        raise RuntimeError('synthetic worker failure')
+    monkeypatch.setattr(queue.campaign, 'main', fail)
+    with pytest.raises(RuntimeError, match='synthetic worker failure'):
+        queue.run_scale_in_process(config, tmp_path/'scale.log', {}, lambda pid: None)
+
 def test_optional_original_plan(config,tmp_path):
     config.update(original_plan=str(tmp_path/'original/plan.json'),original_plan_sha256='c'*64)
     assert queue.validate_request(config)['original_plan']==tmp_path/'original/plan.json'

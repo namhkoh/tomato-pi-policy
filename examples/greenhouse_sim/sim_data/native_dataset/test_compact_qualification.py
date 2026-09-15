@@ -99,6 +99,122 @@ def check(path):
     return q.check_qualification(path, expected_sha256=sha256(path))
 
 
+@pytest.fixture
+def proof_v2(proof, monkeypatch):
+    # The v1 fixture/QUEUE_SHA256 substitution stays untouched. V2 has a separate
+    # explicitly substituted synthetic producer and an exact loaded guard path.
+    root = proof.parent.parent
+    producer = root/'queue_same_callback_native_20260916_v2.py'
+    guard = root/'native_process_guard.py'
+    for path in (producer, guard):
+        path.write_text('synthetic fixture only: '+path.name, encoding='utf-8')
+    monkeypatch.setattr(q, 'QUEUE_V2_SHA256', sha256(producer))
+    monkeypatch.setattr(q, '_QUEUE_V2_CODE_PATHS', (guard,))
+    monkeypatch.setitem(q._LOADED, str(guard), sha256(guard))
+    receipt = proof.parent/'queue_000002.json'
+    document = read(receipt)
+    document['bindings'].pop(str(root/'queue_same_callback_native_20260916_v1.py'))
+    document['bindings'].update({str(p): sha256(p) for p in (producer, guard)})
+    put(receipt, document)
+    return proof
+
+
+def test_reviewed_queue_producer_pins_are_explicit_constants():
+    assert q.QUEUE_SHA256 == '50b458e946c7f71c356f4dd9378ed6330845892dbc4fa656da90a11ca341fe91'
+    assert q.QUEUE_V2_SHA256 == 'bd4c42d2cc9ebebaa03ea00d264a3493985aef07b1e7aa8779c27f23c62a7115'
+    assert q._QUEUE_V2_CODE_PATHS == (q._HERE/'native_process_guard.py',)
+    assert str(q._QUEUE_V2_CODE_PATHS[0]) in q._LOADED
+
+
+def test_legacy_queue_sha_fixture_and_v1_without_guard_binding(proof):
+    bindings = read(proof.parent/'queue_000002.json')['bindings']
+    assert bindings[str(proof.parent.parent/'queue_same_callback_native_20260916_v1.py')] == q.QUEUE_SHA256
+    assert not any(Path(p).name == 'native_process_guard.py' for p in bindings)
+    assert q.verify_checked_qualification(check(proof))
+
+
+def test_v2_complete_receipt_includes_pinned_guard(proof_v2):
+    receipt = check(proof_v2)
+    for dependency in q._QUEUE_V2_CODE_PATHS:
+        assert receipt['bindings'][str(dependency)] == q._LOADED[str(dependency)]
+    assert q.verify_checked_qualification(receipt)
+    assert q.qualify_storage(proof_v2) == receipt['bindings']
+
+
+@pytest.mark.parametrize('change', ['missing', 'wrong_hash', 'wrong_path', 'duplicate_path'])
+def test_v2_exact_loaded_guard_binding_required(proof_v2, change):
+    path = proof_v2.parent/'queue_000002.json'
+    document = read(path)
+    bindings = document['bindings']
+    guard = q._QUEUE_V2_CODE_PATHS[0]
+    if change == 'missing':
+        bindings.pop(str(guard))
+    elif change == 'wrong_hash':
+        bindings[str(guard)] = 'a'*64
+    else:
+        copy = guard.parent/'other'/guard.name
+        copy.parent.mkdir()
+        copy.write_bytes(guard.read_bytes())
+        bindings[str(copy)] = sha256(copy)
+        if change == 'wrong_path':
+            bindings.pop(str(guard))
+    put(path, document)
+    with pytest.raises(ValueError, match='v2 native process guard binding'):
+        check(proof_v2)
+
+
+@pytest.mark.parametrize('rebind', [False, True])
+def test_v2_guard_changed_after_load_cannot_self_pin(proof_v2, rebind):
+    guard = q._QUEUE_V2_CODE_PATHS[0]
+    guard.write_bytes(b'changed guard after qualifier import')
+    if rebind:
+        path = proof_v2.parent/'queue_000002.json'
+        document = read(path)
+        document['bindings'][str(guard)] = sha256(guard)
+        put(path, document)
+    with pytest.raises(ValueError, match='Compact implementation changed'):
+        check(proof_v2)
+
+
+def test_v2_guard_rehashed_after_qualification(proof_v2):
+    receipt = check(proof_v2)
+    q._QUEUE_V2_CODE_PATHS[0].write_bytes(b'changed guard after qualification')
+    with pytest.raises(ValueError, match='Changed qualification binding'):
+        q.verify_checked_qualification(receipt)
+
+
+@pytest.mark.parametrize('version', ['v1', 'v2'])
+@pytest.mark.parametrize('change', ['unknown', 'renamed', 'wrong_hash', 'rebound_bytes', 'duplicate', 'both_versions'])
+def test_known_unambiguous_queue_producer_required(request, version, change):
+    proof = request.getfixturevalue('proof' if version == 'v1' else 'proof_v2')
+    path = proof.parent/'queue_000002.json'
+    document = read(path)
+    bindings = document['bindings']
+    producer = proof.parent.parent/('queue_same_callback_native_20260916_'+version+'.py')
+    if change == 'wrong_hash':
+        bindings[str(producer)] = 'a'*64
+    elif change == 'rebound_bytes':
+        producer.write_bytes(b'different producer even with matching receipt hash')
+        bindings[str(producer)] = sha256(producer)
+    else:
+        if change == 'unknown':
+            other = producer.with_name('queue_same_callback_native_20260916_v99.py')
+        elif change == 'renamed':
+            other = producer.with_name('unreviewed_queue.py')
+        elif change == 'duplicate':
+            other = producer.parent/'other'/producer.name
+        else:
+            other = producer.with_name('queue_same_callback_native_20260916_'+('v2' if version == 'v1' else 'v1')+'.py')
+        other.parent.mkdir(exist_ok=True)
+        other.write_bytes(producer.read_bytes())
+        bindings[str(other)] = sha256(other)
+        if change in ('unknown', 'renamed'):
+            bindings.pop(str(producer))
+    put(path, document)
+    with pytest.raises(ValueError, match='queue producer|queue source binding'):
+        check(proof)
+
+
 def test_complete_full_sha_receipt_and_controller_interface(proof):
     before = {p: sha256(p) for p in proof.parent.rglob('*') if p.is_file()}
     receipt = check(proof)

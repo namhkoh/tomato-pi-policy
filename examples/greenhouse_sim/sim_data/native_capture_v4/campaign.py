@@ -18,6 +18,7 @@ import traceback
 from ..dataset_review import read_json, write_json, require, verify_bindings
 from ..depth_preview import sha256
 from . import prepare
+from ..native_dataset import native_process_guard
 
 
 def planned_jobs(schedule, qualified, *, rounds, seed_base):
@@ -45,11 +46,7 @@ def planned_jobs(schedule, qualified, *, rounds, seed_base):
 
 
 def native_processes():
-    code='ConvertTo-Json -Compress -InputObject @(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq "kit.exe" -or ($_.Name -eq "python.exe" -and $_.CommandLine -match "isaac-sim") } | Select-Object ProcessId)'
-    raw=subprocess.check_output(['powershell.exe','-NoProfile','-Command',code],text=True,
-        timeout=20,creationflags=subprocess.CREATE_NO_WINDOW)
-    result=json.loads(raw);require(isinstance(result,list),'Cannot establish native process inventory')
-    return result
+    return native_process_guard.native_processes()
 
 
 def check_queue_destination(output, prior, controls, proof):
@@ -156,7 +153,8 @@ def main(argv=None):
     from sim_physics.host_memory import preflight
     worker_path=Path(compact_views.__file__).resolve()
     bindings={str(Path(__file__).resolve()):sha256(__file__),str(schedule_path):args.schedule_sha256,
-        **prepare.implementation_bindings(),**compact_views.implementation_bindings()}
+        **prepare.implementation_bindings(),**compact_views.implementation_bindings(),
+        **native_process_guard.implementation_bindings()}
     output.mkdir(parents=True)
     prior=args.prior_campaign.resolve();controls=args.after_controls.resolve()
     records=[];counter=0;failures=0
