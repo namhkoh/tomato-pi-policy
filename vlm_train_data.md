@@ -2255,3 +2255,16 @@ NPY/RGB bits from the SAMEcallback and independent raw/compact annotation replay
 This separates renderer nondeterminism from storage integrity. No promotion yet.
 Also queued3matched original/V2 plant pairs for joint visual/morphology controls;
 these6maximum diagnostic frames add zero training diversity and need review.
+
+2026-09-16 inventory continuation: native_dataset/inventory.py authenticates
+explicit completed audit receipts against original source plans, donor/target
+ancestry, saved variants, callback RGB/Z/calibration and internally consistent
+trace summaries. It preserves strict, held and excluded observations, reports
+exact decoded-RGB duplicate groups, and never grants approval or a view-cap reset.
+Independent audit execution and geometric/near-image admission remain outside
+this adapter. Follow-up review closed both lineage and trace-consistency issues.
+The first observed snapshot has459 rows/22 receipts:117strict,105held,237excluded;
+it covers wider+18plant campaigns only and explicitly disclaims global coverage.
+An expanded snapshot is being built after fresh broader/retry audit replays.
+V50 regression1687tests+181subtests passed (229.69s); only the two in-progress
+V4 verifier and morphology-frame V2 modules were excluded.

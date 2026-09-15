@@ -10151,3 +10151,14 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
 - Three original/V2 same-camera pairs queued after storage qualification for
   joint morphology/visual controls. No controls count toward20k. No source files
   deleted or imagery upscaled; native depth remains original Isaac optical-Z.
+
+- 2026-09-16 observed inventory checkpoint: added native_dataset/inventory.py.
+  Explicit pinned completed audit receipts retain every captured strict/held/
+  excluded row, original TRAIN ancestry, native RGB/calibration/depth bindings,
+  and exact decoded-image duplicate groups. Independent follow-up closed both
+  lineage and contradictory-trace findings. This is NOT global admission or
+  independent proof that an audit executed; those boundaries are explicit.
+  Full v50 regression:1687 tests+181subtests passed in229.69s; in-progress V4
+  verifier and morphology-frame V2 excluded. First inventory contains459 rows
+  from22 receipts (117strict/105held/237excluded), not459 approved images.
+  Broader/retry audit replays completed; expanded observed snapshot is building.
