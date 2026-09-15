@@ -2606,3 +2606,22 @@ V2/V3 control-plan reuse never adds training diversity. The staged467-frame
 follow-up remains unlaunched and follows the original39 prerequisite. Two further
 main-assistant seed47 image/crop reviews support their static cut/query labels;
 they do not reset source budgets or increase the selected TRAIN count.
+
+Further verified work: the pure representative-packing proposal passes92tests,
+but has no adopted cutoff, context budgets or release authority. Exact-byte
+JSON/storage V2 passes182tests+41subtests; an independent real15-sample reread
+confirms165logical files and45native array buffers unchanged. About13.56% smaller
+generated bundles is a working-storage result, not renderer throughput or final
+20k capacity. Native writer/export integration remains pending.
+
+Main and a vision-review agent found one further clear-subset ambiguity in
+job18seed11/SubStem46view006: the side shaft and cut are visible, but distal leaf
+association is unclear. The separate anatomy-hold receipt must accompany the
+next selection; no old label/review/selection was overwritten. Other images of
+that generated branch are being investigated before any broader conclusion.
+
+Measured current-wave throughput is45.7strict candidates/hour before caps over
+jobs1-23, not a viable near-term20k release rate. Preparation and setup batching
+are the next optimization focus; full native resolution, greenhouse fidelity,
+camera pose and native optical-Z remain unchanged. Extra release storage is
+still needed; no new C-drive data directory has been authorized or created.

@@ -10523,3 +10523,34 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   not main stem or fruit. Receipt native_wave4_seed47_main_20260916_v1 under
   dataset_reviews hasSHA0589f928d4b03c0db542d2a4d7af0e544fd656fa4bc27ef169d6dac26194857d.
   Both are views of one generated target, not two independent morphology contexts.
+
+- Proposed representative-packing kernel independently passes92tests/0.42s.
+  It checks complete geometry evidence and every actual contributing context,
+  including unqualified bridges in original pools. No cutoff was chosen and no
+  source cap, context entitlement, biological novelty or selection was changed.
+  Native matched controls and independent TRAIN validation remain prerequisites.
+- Exact-byte JSON codec/storage V2 independently passes182tests+41subtests in
+  102.49s. Main independently reread15real V1/V2 copies:165logical files,
+  105stored PNG/GHN files,45native array bit buffers and15original manifests
+  match exactly; complete source/copy inventories and code/input pins rechecked.
+  Recheck22.58s; diagnostics/json_bundle_v2_main_recheck_20260916_v1.json SHA
+  a0047b697c1bfa125ac4e099c1752f4f987c8097057c389f9687515cb9562f60.
+  These are existing observations, not native-writer qualification/new data.
+  Measured generated storage reduction13.56%; all old copies remain. Future
+  native writer/export integration is still required; compression alone does
+  not provide enough D-drive capacity for20kplusheldouts and package/ZIP copies.
+- Additional anatomy hold after actual main+agent RGB inspection: job18seed11
+  SubStem46view006 has a visible query-to-cut shaft but uncertain distal leaf
+  association. New receipt dataset_reviews/native_wave4_seed11_anatomy_hold_20260916_v1
+  SHAeb482db6c4d3539bcc947328f9de18eef9126af6ce2d15eae01977d94034fddd.
+  It must be added as negative evidence in the next selection alongside all
+  previous holds. Original labels/reviews and254snapshot are untouched; a
+  context-wide generator defect is not established. Related anatomy is under review.
+- Actual jobs1-23 throughput audit:344captures/118strict over2h35m05s, about
+  45.7strict candidates/hour before final caps. Preparation/handoff33.8%, render
+  blocks24.7%; disk/hash time is not independently isolated. Evidence:
+  diagnostics/native_v4_performance_20260916_v1/report.json SHA
+  049b8f1344fb6e13ac8a07a5fd71bf13ba0d9ccc5c67230c20a00dd17147ed99.
+  Bounded shared preparation is proposed; no speedup, native overlap or20k ETA
+  is claimed. Planned first new bridge slot: afterserial39 exits, beforestage22;
+  this preserves stage22's original39 prerequisite and one native owner.
