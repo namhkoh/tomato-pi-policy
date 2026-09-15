@@ -17,6 +17,9 @@ Registered: original_batch.v1 (1..64 frozen TRAIN cases), matched_pair.v2
 fast/reference56, <=4 targets/24 proposals each). Query jobs add the fields
 documented by serial_query_qualification.JOB_FIELDS; no general query worker,
 JSON/plugin/argv escape hatch. Frames exclude sensor-smoke/warmup.
+One query_v3_persistence_qualification.v1 job is also registered: exact seed101
+job1, fast/reference56, strict+witness, postexit CPU all_frames byte parity.
+Only that exact plan may be reused once, V2 then V3; neither adds diversity.
 
 Each job uses submitted/plan.json and capture as SIBLINGS. Outputs, receipts
 and checkpoints are create-only. No resume or retry of partial jobs/phases.
@@ -57,6 +60,7 @@ from ..native_original_capture import serial_queue as legacy
 from . import original_inventory_v2 as predecessor_adapter
 from . import native_pair_v2
 from . import serial_query_qualification as query_kind
+from . import serial_persistence_qualification as persistence_kind
 
 SCHEMA = 'greenhouse.native_serial_phases.request.v1'
 RECEIPT_SCHEMA = 'greenhouse.native_serial_phases.job.v1'
@@ -64,7 +68,9 @@ CHECKPOINT_SCHEMA = 'greenhouse.native_serial_phases.checkpoint.v1'
 RESULT_SCHEMA = 'greenhouse.native_serial_phases.result.v1'
 STOP_SCHEMA = 'greenhouse.native_serial_phases.stop.v1'
 PRODUCER_MODULE = 'sim_data.native_dataset.serial_phases'
-WORKERS = ('original_batch.v1', 'matched_pair.v2', query_kind.KIND)
+WORKERS = ('original_batch.v1', 'matched_pair.v2', query_kind.KIND, persistence_kind.KIND)
+QUALIFICATIONS = {query_kind.KIND: query_kind, persistence_kind.KIND: persistence_kind}
+QUALIFICATION_LIMITS = {query_kind.KIND: 2, persistence_kind.KIND: 1}
 PAIR_SHA256 = 'c863ff0f34dd8bab1117ff7b523a38290b0fc30e816bb51ca8d3ddd21d502667'
 LOCK_NAME = r'Global\greenhouse.native_serial_phases.owner.v1'
 FLAGS = dict(training_approved=False, source_cap_reset=False, visual_approval=False,
@@ -100,13 +106,14 @@ def _code_closure():
 
 
 _LOADED = oc.merge_bindings(predecessor_adapter.implementation_bindings(),
-                            query_kind.implementation_bindings(), _code_closure())
+    query_kind.implementation_bindings(), persistence_kind.implementation_bindings(), _code_closure())
 _PAIR_CODE = native_pair_v2.implementation_bindings()
 
 
 def implementation_bindings():
     oc.bind_all(_LOADED)
     query_kind.implementation_bindings()
+    persistence_kind.implementation_bindings()
     oc.require(_PAIR_CODE[str(Path(native_pair_v2.__file__).resolve())] == PAIR_SHA256,
                'Unregistered matched-pair executor')
     return dict(_LOADED)
@@ -169,8 +176,8 @@ def capture_supervisor(pid, request_path, request_sha256):
 
 def validate_plan(kind, path, pin, *, query=None):
     oc.require(kind in WORKERS, 'Unregistered worker kind')
-    if kind == query_kind.KIND:
-        return query_kind.validate_plan(path, pin, query)
+    if kind in QUALIFICATIONS:
+        return QUALIFICATIONS[kind].validate_plan(path, pin, query)
     path = oc.pin(legacy._path(str(path)), pin)
     plan = oc.read_json(path)
     oc.require(plan['split'] == 'train' and oc.FROZEN_SPLITS.get(plan['source_family']) == 'train',
@@ -225,26 +232,30 @@ def validate_request(request):
     roots += [Path(p).parent for p in implementation_bindings()]
     phases = request['phases']
     oc.require(isinstance(phases, list) and 1 <= len(phases) <= 64, 'Bounded nonempty phases required')
-    jobs, phase_ids, job_ids, paths, query_pins = [], set(), set(), set(), set()
+    jobs, phase_ids, job_ids = [], set(), set()
+    qualification_pins = {kind: set() for kind in QUALIFICATIONS}
     for phase in phases:
         legacy._keys(phase, ('id', 'jobs'), 'phase')
         _unique_id(phase['id'], phase_ids)
         oc.require(isinstance(phase['jobs'], list) and phase['jobs'], 'Nonempty phase jobs required')
         for job in phase['jobs']:
             oc.require(len(jobs) < 64, 'At most 64 manifest jobs')
-            is_query = job['worker_kind'] == query_kind.KIND
-            extra = query_kind.JOB_FIELDS if is_query else ()
+            kind = job['worker_kind']
+            helper = QUALIFICATIONS.get(kind)
+            extra = helper.JOB_FIELDS if helper is not None else ()
             legacy._keys(job, ('id', 'worker_kind', 'plan_path', 'plan_sha256', *extra), 'job')
-            if is_query:
-                oc.require(len(query_pins) < 2 and job['plan_sha256'] not in query_pins,
-                           'At most two distinct fixed query qualification jobs')
-                query_pins.add(job['plan_sha256'])
+            if helper is not None:
+                seen = qualification_pins[kind]
+                oc.require(len(seen) < QUALIFICATION_LIMITS[kind] and job['plan_sha256'] not in seen,
+                           'Bounded distinct qualification jobs required')
+                seen.add(job['plan_sha256'])
             _unique_id(job['id'], job_ids)
             path = legacy._path(job['plan_path'])
-            oc.require(path not in paths, 'Duplicate submitted source plan')
-            paths.add(path)
+            reused = [j for j in jobs if legacy._path(j['plan_path']) == path or j['plan_sha256'] == job['plan_sha256']]
+            oc.require(not reused or (len(reused) == 1 and _seed101_control_reuse(reused[0], job, persistence_kind.KIND)),
+                       'Duplicate/aliased source plan; only exact seed101 V2 then V3 control reuse allowed')
             checked = validate_plan(job['worker_kind'], path, job['plan_sha256'],
-                                    query={k: deepcopy(job[k]) for k in extra} if is_query else None)
+                                    query={k: deepcopy(job[k]) for k in extra} if helper is not None else None)
             roots.extend(checked['roots'])
             jobs.append(dict(phase_id=phase['id'], **deepcopy(job), checked=checked))
     total = sum(j['checked']['count'] for j in jobs)
@@ -252,6 +263,20 @@ def validate_request(request):
                'Exact bounded planned frame sum required')
     oc.new_destination(output, roots)
     return config, jobs
+
+
+def _seed101_control_reuse(previous, current, v3_kind):
+    '''Internal exception: one exact V2 seed101 control followed by its V3 control.
+
+    v3_kind comes from the fixed code registry, never from request configuration.
+    Call only for exactly one previous plan occurrence; a third use is forbidden.
+    Neither a copied plan path nor another same-family plan qualifies.
+    '''
+    case = query_kind.CASES[0]
+    path = (query_kind._PRIOR / case[0] / 'plan.json').resolve()
+    return (previous['worker_kind'] == query_kind.KIND and current['worker_kind'] == v3_kind
+        and all(legacy._path(j['plan_path']) == path and j['plan_sha256'] == case[5]
+                for j in (previous, current)))
 
 
 def _unique_id(value, seen):
@@ -326,8 +351,8 @@ def _predecessor_absent(pred, config):
 
 def worker_command(isaac, kind, submitted, pin, capture, *, checked=None):
     oc.require(kind in WORKERS, 'Unregistered worker kind')
-    if kind == query_kind.KIND:
-        return query_kind.command(isaac, submitted, pin, capture, checked)
+    if kind in QUALIFICATIONS:
+        return QUALIFICATIONS[kind].command(isaac, submitted, pin, capture, checked)
     if kind == WORKERS[0]:
         return legacy.batch_command(isaac, dict(plan_path=str(submitted), plan_sha256=pin), capture)
     return [str(legacy._path(isaac)), '-m', native_pair_v2.WORKER_MODULE,
@@ -365,8 +390,8 @@ def postexit_audit(kind, submitted, pin, capture, folder, *, checked=None):
     _no_failure(capture)
     raw = _tree_pins(capture)
     oc.bind_all(raw)
-    if kind == query_kind.KIND:
-        result = query_kind.postexit_audit(submitted, pin, capture, folder, checked)
+    if kind in QUALIFICATIONS:
+        result = QUALIFICATIONS[kind].postexit_audit(submitted, pin, capture, folder, checked)
         oc.require(_tree_pins(capture) == raw, 'Query capture files changed during postexit audit')
         oc.bind_all(raw)
         _no_failure(capture)
@@ -503,7 +528,8 @@ def _run(request_path, request_sha256):
             def launch_check():
                 stable()
                 checked = validate_plan(job['worker_kind'], job['plan_path'], job['plan_sha256'],
-                    query={k: deepcopy(job[k]) for k in query_kind.JOB_FIELDS} if job['worker_kind'] == query_kind.KIND else None)
+                    query={k: deepcopy(job[k]) for k in QUALIFICATIONS[job['worker_kind']].JOB_FIELDS}
+                        if job['worker_kind'] in QUALIFICATIONS else None)
                 oc.require(checked == job['checked'], 'Plan/prerequisite changed before launch')
                 oc.pin(submitted, job['plan_sha256'])
                 oc.new_destination(capture, [submitted.parent, *checked['roots']])
@@ -543,6 +569,12 @@ def _run(request_path, request_sha256):
             if job['worker_kind'] == query_kind.KIND:
                 receipt.update(**query_kind.ANNOTATION, training_diversity_increment=0,
                     observation_role='matched_reference_qualification_control_not_new_diversity')
+            elif job['worker_kind'] == persistence_kind.KIND:
+                receipt.update(**persistence_kind.ANNOTATION, training_diversity_increment=0,
+                    observation_role='persistence_qualification_control_not_new_diversity',
+                    persistence_policy_sha256=persistence_kind.PERSISTENCE_POLICY_SHA256,
+                    persistence_mode=persistence_kind.audit.STRICT_ONLY, qualification_witness_save_all=True,
+                    native_persistence_qualified=False)
             oc.write_new(receipt_path, receipt)
             records.append(dict(phase_id=job['phase_id'], job_id=job['id'], worker_kind=job['worker_kind'],
                 receipt_path=str(receipt_path), receipt_sha256=oc.sha256(receipt_path)))

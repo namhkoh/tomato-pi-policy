@@ -10512,3 +10512,14 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   in the current wave. Separately audited jobs11-20 contain150observations:
   47strict/30holds/73exclusions. Those47are NOT added to254provisional TRAIN
   records before a new global cap/duplicate selection. No20k release/ZIP yet.
+
+- Four-kind serial registry independently passes200tests in155.73s, including
+  exact V2-then-V3 seed101 plan reuse and unchanged process guards. Future order:
+  current wave -> serial39 -> five blind pairs -> two V2 controls -> one V3
+  persistence control ->409original proposals. The staged request is not live;
+  it still requires the actual live serial39 owner identity. No concurrent launch.
+- Main inspected both strict seed47/job24 images in full-scene previews and
+  native-resolution crops. Their cut/query points follow the thinner petiole,
+  not main stem or fruit. Receipt native_wave4_seed47_main_20260916_v1 under
+  dataset_reviews hasSHA0589f928d4b03c0db542d2a4d7af0e544fd656fa4bc27ef169d6dac26194857d.
+  Both are views of one generated target, not two independent morphology contexts.

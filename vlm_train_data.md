@@ -2600,3 +2600,9 @@ The cumulative selected checkpoint remains254provisional TRAINrecords; a separat
 150-row audit of jobs11-20 has47strict/30holds/73exclusions, not yet globally
 selected. The target remains20,000accepted TRAINimages plus separate held-outs;
 no final archive or training execution exists.
+
+The four-kind serial registry passes200independent tests/155.73s. Its exact
+V2/V3 control-plan reuse never adds training diversity. The staged467-frame
+follow-up remains unlaunched and follows the original39 prerequisite. Two further
+main-assistant seed47 image/crop reviews support their static cut/query labels;
+they do not reset source budgets or increase the selected TRAIN count.

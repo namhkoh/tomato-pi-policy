@@ -386,7 +386,8 @@ def test_full_validated_job_and_frame_bounds(fixture):
     jobs = []
     for i in range(65):
         path = f.tmp/f'bounded_{i}'/'plan.json'
-        jobs.append(dict(id=f'B{i}', worker_kind=q.WORKERS[0], plan_path=str(path), plan_sha256=put(path, plan)))
+        jobs.append(dict(id=f'B{i}', worker_kind=q.WORKERS[0], plan_path=str(path),
+                         plan_sha256=put(path, dict(plan, fixture_unique_plan=i))))
     r['phases'] = [dict(id='bounded', jobs=jobs[:64])]
     r['planned_frames'] = 4096
     _, checked = q.validate_request(r)
@@ -485,6 +486,27 @@ def test_incompatible_owner_never_reaches_popen(harness, monkeypatch):
     assert not harness.launches
 
 
+@pytest.mark.parametrize('fault', ['valid', 'same_kind', 'original', 'pair', 'reverse', 'other_donor',
+                                  'path_alias', 'different_hash', 'different_original'])
+def test_seed101_reuse_exception_is_exact_ordered_and_control_only(fault):
+    case = q.query_kind.CASES[0]
+    first = dict(worker_kind=q.query_kind.KIND, plan_path=str(q.query_kind._PRIOR/case[0]/'plan.json'), plan_sha256=case[5])
+    v3_kind = 'CPU_TEST_ONLY_FIXED_V3_KIND'
+    second = dict(first, worker_kind=v3_kind)
+    if fault == 'same_kind': second['worker_kind'] = first['worker_kind']
+    elif fault == 'original': first['worker_kind'] = q.WORKERS[0]
+    elif fault == 'pair': first['worker_kind'] = q.WORKERS[1]
+    elif fault == 'reverse': first, second = second, first
+    elif fault == 'other_donor':
+        other = q.query_kind.CASES[1]
+        for job in (first, second):
+            job.update(plan_path=str(q.query_kind._PRIOR/other[0]/'plan.json'), plan_sha256=other[5])
+    elif fault == 'path_alias': second['plan_path'] = str(Path(first['plan_path']).with_name('copy.json'))
+    elif fault == 'different_hash': second['plan_sha256'] = '0'*64
+    elif fault == 'different_original': second['worker_kind'] = q.WORKERS[0]
+    assert q._seed101_control_reuse(first, second, v3_kind) is (fault == 'valid')
+
+
 def test_implementation_pins_and_compact_unregistered():
     pins = q.implementation_bindings()
     assert pins[str(Path(q.__file__).resolve())] == q.oc.sha256(q.__file__)
@@ -495,6 +517,8 @@ def test_implementation_pins_and_compact_unregistered():
     helper = str(Path(q.query_kind.__file__).resolve())
     assert pins[helper] == q.oc.sha256(helper)
     assert q.query_kind.implementation_bindings().items() <= pins.items()
+    assert q.persistence_kind.implementation_bindings().items() <= pins.items()
+    assert pins[str(Path(q.persistence_kind.__file__).resolve())] == q.oc.sha256(q.persistence_kind.__file__)
     assert q.query_kind.KIND in q.WORKERS
     with pytest.raises(ValueError, match='Unregistered'):
         q.worker_command('anything', 'compact_query_v2', Path('p'), 'f'*64, Path('c'))
