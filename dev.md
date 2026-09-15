@@ -10473,3 +10473,21 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   was executed and no threshold/profile qualification is granted. Explicit
   native-coordinate visual review remains required; pre8mmjunction and continuous
   visibility are not certified. Raw labels/depth/captures remain untouched.
+
+- Original-native reference bank/proof bridge independently passes22tests101.50s,
+  including the actual seed73pilot. It preserves two authentic chains: old848
+  dome1200pose prior versus current1696dome6000native image/scene/audit. One
+  strict, visually supported original reference is usable; no legacy paired-
+  resolution proof, new image, new morphology budget or TRAINapproval is invented.
+  Existing bank_final.json matches current code and hasSHA
+  b65c57aa7f63bd3f9d9905a86e50c8d6fa22c102628773e772f2e6d5defb5428
+  underdiagnostics/original_reference_bank_seed73_20260916_v1. New generated
+  preparation/scene/collector integration remains in progress, not native-tested.
+- Frozen visibility shadow tested on disjoint completedTRAINjobs7-17:
+  135frames,0/50strict predicted blocked,28/29interval exclusions detected,
+  28/28blocker component sets matchnative evidence,107unknowns. One missed
+  foreground leaf had four-of-five ray agreement and correctly staysunknown.
+  No rule tuning. Wall81.59s,predictormedian0.147s/p950.362s,peak292.8MB;
+ 12,791bindingsreverified. This is not heldout-family or prospective native
+  qualification. Optionalwrite-only observation integration is being prepared;
+  activecaptures, depth, labels, candidateordering and gates are unchanged.

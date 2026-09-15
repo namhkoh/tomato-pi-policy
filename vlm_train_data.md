@@ -2573,3 +2573,13 @@ Short/reference evidence helper passes96independent tests119.85s, including an
 existing native warmupframe. It preserves original labels, records comparison-only
 V2replay and semantic-ID-aware RGB/Z/mask measurements, and grants no qualification.
 Actual matched reference captures and explicit visual assessment remain pending.
+
+Original-native bank/proof bridge now passes22independent tests101.50s, including
+actualseed73replay. One native original reference is ready under separate oldpose
+and currentclear-scene chains; no paired848/1696proof or newtrainingimage is implied.
+Generated consumption and additionalproducer adapters remain underdevelopment.
+
+Unchangedgeometry shadow validation on disjointTRAINjobs7-17:135frames,
+0/50strict falseblocks,28/29knowninterval exclusions predicted,107unknowns.
+The missed leaf staysunknown underthe fixed five-ray rule. No label/skip/ranking
+changes; these TRAINretrospective results do not establish general qualification.
