@@ -26,7 +26,7 @@ Figures: left = full 848x408 frame, right = zoom of the white box. White circle 
 
 **train visible 1** — id `seed71_full_5f84a906b9019192dc6d`, family `seed71_full`, difficulty easy, query pixel [221.8, 28.3], proximal visible fraction 1.0.
 
-![train_visible_1](assets/train_visible_1.jpg)
+![train_visible_1](figures/train_visible_1.jpg)
 
 User: `The target petiole passes through normalized coordinates (261.56, 69.36). Locate its nominal cut point if the junction and cut region are visually distinguishable; otherwise abstain. Use the original full image.`
 
@@ -34,7 +34,7 @@ Assistant (target): `{"status":"localized","cut_point_uv":[277.71,460.05],"visib
 
 **train visible 2** — id `seed47_full_4e395a3c012d162d460d`, family `seed47_full`, difficulty easy, query pixel [642.2, 317.1], proximal visible fraction 1.0.
 
-![train_visible_2](assets/train_visible_2.jpg)
+![train_visible_2](figures/train_visible_2.jpg)
 
 User: `The target petiole passes through normalized coordinates (757.31, 777.21). Locate its nominal cut point if the junction and cut region are visually distinguishable; otherwise abstain. Use the original full image.`
 
@@ -42,7 +42,7 @@ Assistant (target): `{"status":"localized","cut_point_uv":[782.19,846.32],"visib
 
 **train occluded 1** — id `seed89_full_479f23d1e840c24160b9`, family `seed89_full`, difficulty hard, query pixel [709.6, 192.9], proximal visible fraction 0.0.
 
-![train_occluded_1](assets/train_occluded_1.jpg)
+![train_occluded_1](figures/train_occluded_1.jpg)
 
 User: `The target petiole passes through normalized coordinates (836.79, 472.79). Locate its nominal cut point if the junction and cut region are visually distinguishable; otherwise abstain. Use the original full image.`
 
@@ -50,7 +50,7 @@ Assistant (target): `{"status":"abstain","cut_point_uv":null,"visibility":"occlu
 
 **train occluded 2** — id `seed101_full_79ac1e2a98ca713e5823`, family `seed101_full`, difficulty hard, query pixel [582.4, 285.7], proximal visible fraction 0.0.
 
-![train_occluded_2](assets/train_occluded_2.jpg)
+![train_occluded_2](figures/train_occluded_2.jpg)
 
 User: `The target petiole passes through normalized coordinates (686.79, 700.25). Locate its nominal cut point if the junction and cut region are visually distinguishable; otherwise abstain. Use the original full image.`
 
@@ -93,7 +93,7 @@ Example outputs of full-02 (cyan = model prediction):
 
 **Visible, correct** — id `seed29_full_7571bd5dfa27e36d0841`, family `seed29_full`; error 0.4 px.
 
-![eval_visible_good](assets/eval_visible_good.jpg)
+![eval_visible_good](figures/eval_visible_good.jpg)
 
 Label: `{"status":"localized","cut_point_uv":[377.6,306.4],"visibility":"clear","next_action":"inspect_cut_region"}`
 
@@ -101,7 +101,7 @@ Model output (full-02): `{"status":"localized","cut_point_uv":[445.5,750.25],"vi
 
 **Visible, missed** — id `seed97_full_f84d56f31548040c5d4f`, family `seed97_full`; error 46.7 px.
 
-![eval_visible_missed](assets/eval_visible_missed.jpg)
+![eval_visible_missed](figures/eval_visible_missed.jpg)
 
 Label: `{"status":"localized","cut_point_uv":[670.8,91.4],"visibility":"clear","next_action":"inspect_cut_region"}`
 
@@ -109,7 +109,7 @@ Model output (full-02): `{"status":"localized","cut_point_uv":[770.52,330.15],"v
 
 **Occluded, correct abstention** — id `seed97_full_e457cbe592bc6821f137`, family `seed97_full`.
 
-![eval_occluded_correct_abstain](assets/eval_occluded_correct_abstain.jpg)
+![eval_occluded_correct_abstain](figures/eval_occluded_correct_abstain.jpg)
 
 Label: `{"status":"abstain","cut_point_uv":null,"visibility":"occluded","next_action":"change_viewpoint"}`
 
@@ -117,7 +117,7 @@ Model output (full-02): `{"status":"abstain","cut_point_uv":null,"visibility":"o
 
 **Occluded, false localization** — id `seed97_full_d8cb1af6a81e1bc0f615`, family `seed97_full`.
 
-![eval_occluded_false_localization](assets/eval_occluded_false_localization.jpg)
+![eval_occluded_false_localization](figures/eval_occluded_false_localization.jpg)
 
 Label: `{"status":"abstain","cut_point_uv":null,"visibility":"occluded","next_action":"change_viewpoint"}`
 

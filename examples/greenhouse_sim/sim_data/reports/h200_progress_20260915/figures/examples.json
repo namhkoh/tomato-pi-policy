@@ -1,0 +1,172 @@
+{
+ "train_visible_1": {
+  "id": "seed71_full_5f84a906b9019192dc6d",
+  "family": "seed71_full",
+  "difficulty": "easy",
+  "query_pixel": [
+   221.8,
+   28.3
+  ],
+  "answer_pixels": {
+   "status": "localized",
+   "cut_point_uv": [
+    235.5,
+    187.7
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "user_prompt": "The target petiole passes through normalized coordinates (261.56, 69.36). Locate its nominal cut point if the junction and cut region are visually distinguishable; otherwise abstain. Use the original full image.",
+  "assistant_answer": "{\"status\":\"localized\",\"cut_point_uv\":[277.71,460.05],\"visibility\":\"clear\",\"next_action\":\"inspect_cut_region\"}",
+  "proximal_visible_fraction": 1.0
+ },
+ "train_visible_2": {
+  "id": "seed47_full_4e395a3c012d162d460d",
+  "family": "seed47_full",
+  "difficulty": "easy",
+  "query_pixel": [
+   642.2,
+   317.1
+  ],
+  "answer_pixels": {
+   "status": "localized",
+   "cut_point_uv": [
+    663.3,
+    345.3
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "user_prompt": "The target petiole passes through normalized coordinates (757.31, 777.21). Locate its nominal cut point if the junction and cut region are visually distinguishable; otherwise abstain. Use the original full image.",
+  "assistant_answer": "{\"status\":\"localized\",\"cut_point_uv\":[782.19,846.32],\"visibility\":\"clear\",\"next_action\":\"inspect_cut_region\"}",
+  "proximal_visible_fraction": 1.0
+ },
+ "train_occluded_1": {
+  "id": "seed89_full_479f23d1e840c24160b9",
+  "family": "seed89_full",
+  "difficulty": "hard",
+  "query_pixel": [
+   709.6,
+   192.9
+  ],
+  "answer_pixels": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  },
+  "user_prompt": "The target petiole passes through normalized coordinates (836.79, 472.79). Locate its nominal cut point if the junction and cut region are visually distinguishable; otherwise abstain. Use the original full image.",
+  "assistant_answer": "{\"status\":\"abstain\",\"cut_point_uv\":null,\"visibility\":\"occluded\",\"next_action\":\"change_viewpoint\"}",
+  "proximal_visible_fraction": 0.0
+ },
+ "train_occluded_2": {
+  "id": "seed101_full_79ac1e2a98ca713e5823",
+  "family": "seed101_full",
+  "difficulty": "hard",
+  "query_pixel": [
+   582.4,
+   285.7
+  ],
+  "answer_pixels": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  },
+  "user_prompt": "The target petiole passes through normalized coordinates (686.79, 700.25). Locate its nominal cut point if the junction and cut region are visually distinguishable; otherwise abstain. Use the original full image.",
+  "assistant_answer": "{\"status\":\"abstain\",\"cut_point_uv\":null,\"visibility\":\"occluded\",\"next_action\":\"change_viewpoint\"}",
+  "proximal_visible_fraction": 0.0
+ },
+ "system_prompt": "You localize a synthetic tomato petiole cut point in a robot-head RGB image. The user supplies a normalized query coordinate on the target petiole, NOT the cut point. Trace that petiole to its junction with the main stem. A localized target must be traceable through visible petiole pixels from the query to the cut region. The dataset convention places the nominal cut 10 mm along the petiole toward the leaves from its attachment; 10-20 mm is the evaluation interval, not a spherical tolerance. Use visual evidence. If the cut region is occluded or cannot be distinguished, abstain instead of inventing coordinates. Coordinates (query and cut_point_uv) are normalized continuous coordinates in [0,1000), top-left edge origin, x right and y down: x_norm=1000*x/848 and y_norm=1000*y/408 for the ORIGINAL 848x408 image, independent of processor resizing. Return ONLY JSON with exactly these keys: status (localized or abstain), cut_point_uv (a two-number normalized coordinate array or null), visibility (clear, partial, or occluded), next_action (inspect_cut_region or change_viewpoint). This is perception only; never claim that a blade motion is safe or executable.",
+ "eval_visible_good": {
+  "id": "seed29_full_7571bd5dfa27e36d0841",
+  "family": "seed29_full",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    377.6,
+    306.4
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "model_raw_output": "{\"status\":\"localized\",\"cut_point_uv\":[445.5,750.25],\"visibility\":\"clear\",\"next_action\":\"inspect_cut_region\"}",
+  "decoded_pixels": {
+   "status": "localized",
+   "cut_point_uv": [
+    377.784,
+    306.102
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "error_px": 0.35022849684169005,
+  "n_candidates": 33
+ },
+ "eval_visible_missed": {
+  "id": "seed97_full_f84d56f31548040c5d4f",
+  "family": "seed97_full",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    670.8,
+    91.4
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "model_raw_output": "{\"status\":\"localized\",\"cut_point_uv\":[770.52,330.15],\"visibility\":\"clear\",\"next_action\":\"inspect_cut_region\"}",
+  "decoded_pixels": {
+   "status": "localized",
+   "cut_point_uv": [
+    653.4009599999999,
+    134.70119999999997
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "error_px": 46.666053126031535,
+  "n_candidates": 115
+ },
+ "eval_occluded_correct_abstain": {
+  "id": "seed97_full_e457cbe592bc6821f137",
+  "family": "seed97_full",
+  "truth": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  },
+  "model_raw_output": "{\"status\":\"abstain\",\"cut_point_uv\":null,\"visibility\":\"occluded\",\"next_action\":\"change_viewpoint\"}",
+  "decoded_pixels": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  },
+  "error_px": null,
+  "n_candidates": 167
+ },
+ "eval_occluded_false_localization": {
+  "id": "seed97_full_d8cb1af6a81e1bc0f615",
+  "family": "seed97_full",
+  "truth": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  },
+  "model_raw_output": "{\"status\":\"localized\",\"cut_point_uv\":[140.68,330.15],\"visibility\":\"clear\",\"next_action\":\"inspect_cut_region\"}",
+  "decoded_pixels": {
+   "status": "localized",
+   "cut_point_uv": [
+    119.29664,
+    134.70119999999997
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "error_px": null,
+  "n_candidates": 179
+ }
+}
