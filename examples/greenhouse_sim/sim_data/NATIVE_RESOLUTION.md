@@ -80,6 +80,9 @@ readiness. A failure/nonzero exit must stop the pilot; no automatic retry.
 3. Update and test review, label validation, exporter, query-crop construction,
    Qwen prompts/coordinate conversion and packaging as one explicit new profile.
    Do not feed1696x816 images into hard-coded848x408 contracts.
+   A separate native annotation/query/crop contract is now tested on the actual
+   first pair; see NATIVE_CLEAR_ANNOTATION.md. Final exporter/training-loader,
+   evaluation and processor integration are still outstanding.
 4. Choose crop size and evaluation tolerances on a declared pixel/physical basis.
    A native768x768 crop can preserve the old384x384 crop's field of view without
    enlargement; this is a proposal, not the currently implemented export.

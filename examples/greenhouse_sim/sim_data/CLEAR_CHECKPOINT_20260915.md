@@ -1,5 +1,9 @@
 # Clear-image collection checkpoint: 2026-09-15
 
+Latest update: v11 has450 reviewed images (312 train /48 validation /90 test),
+73 targets and21 original donor families. The v10 history below is preserved.
+The v11 section at the end gives current paths and subsequent native work.
+
 Branch: koh-dev/sim-data. This is a reviewed engineering checkpoint, NOT the
 requested 20,000-training-image release or permission to launch training.
 
@@ -129,3 +133,38 @@ Before a final transfer ZIP: complete native resolution/export qualification,
 inspect the generated native pilot, establish genuine target diversity and
 near-duplicate grouping, then collect and review20,000 accepted training images
 plus held-outs. No model download or local training is needed for this work.
+
+## v11: reviewed seed23 data and native annotations
+
+Latest root: data/sim_data/collection_intake/clear_combined_20260915_checkpoint_v11.
+Its draft/images, draft/labels, draft/depth, review/index.html, accepts.json,
+holds.json and checkpoint.json have the same meanings as v10.
+
+Three completed native seed23/SubStem_40 frames were individually inspected,
+including lossless query/junction crops: one accept, two holds for query points
+at confusing neighboring-stem/fruit crossings. The held images were not relabeled
+as clear or moved to other splits. Review:
+data/sim_data/dataset_reviews/clear_seed23_20260915_v1/assistant_reviews.json.
+All450 selected images have matching assistant reviews;16 negatives remain
+excluded. Source review history has537 records. Current train coverage is
+312 images /52 targets /15 families; validation48/9/3; test90/12/3.
+Coverage remains incomplete. The extra family is seed23, not a new generator seed.
+
+Supplemental v2 completed seed23 (3 images,484.995s), seed47/53 (no screened
+views), then stopped before seed73 because memory fell below the reserve.
+After checking the recovered reserve, only seed73 was resumed in a new v3
+campaign. It finished with no screened viewpoints (601.863s). All failed/empty
+attempts remain intact; the stopped v2 is not called a completed aggregate.
+Only its independently completed/hash-bound seed23 job entered v11.
+
+Actual v11 model-input audit:
+data/sim_data/diagnostics/clear_checkpoint_v11_input_audit_20260915.json.
+Both original-RGB and RGB-plus-query-crop prompt/image contracts passed on450
+records; no HF processor or model ran. Native optical-Z remains unchanged.
+
+New high-resolution annotation implementation and two personally inspected
+pilot records: NATIVE_CLEAR_ANNOTATION.md. Full data regression954 tests plus
+77 subtests in73.10s (data/sim_data/clear_regression_20260915_v24.log).
+The native1696 pilot is separate from these450 legacy-resolution images.
+General sampling/export, native-aware H200 integration and20k coverage are
+not complete. No final training ZIP or trained-model result is claimed.

@@ -9904,3 +9904,21 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   all memory/geometry/visibility gates. New intake does not auto-approve images.
   Exact counts, paths, native timings and remaining20k/export work:
   examples/greenhouse_sim/sim_data/CLEAR_CHECKPOINT_20260915.md and vlm_train_data.md.
+
+- 2026-09-15 next VLM checkpoint:450 reviewed legacy-resolution images
+  (312 train/48 validation/90 test),16 excluded negatives. New seed23 review
+  accepted one of three images; confusing query crossings were held. Other
+  supplemental families produced no screened views, and stopped/empty runs
+  are not counted. Native depth and old assets/splits/reviews remain unchanged.
+- Implemented separate native1696 annotation/query/crop/coordinate contracts
+  on the actual original/generated camera pair. Two annotation-pilot records
+  were individually inspected; native768 query crops are not enlarged.
+  No depth reconstruction, hidden-coordinate execution, production-loader
+  bypass or training launch.954 tests +77 subtests passed; the450-record
+  legacy model-input audit also passed.
+- Broader native generation exposed a seed101 post-substitution robot/scene
+  clearance-screen failure. It is held with artifacts intact; only two
+  unstarted families were continued under the same202-file pins and memory/
+  scene checks. No generated record is automatically accepted or counted
+  toward20k. See sim_data/NATIVE_CLEAR_ANNOTATION.md under examples/greenhouse_sim
+  and vlm_train_data.md for exact paths, measured results and open release work.

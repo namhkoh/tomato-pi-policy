@@ -8,7 +8,7 @@ RGB images**, with validation and test sets additional. A working budget of
 Crops, RGB-D sidecars, overlays, repeated render noise and alternate prompts do
 not count as additional unique training images.
 
-The latest449-image checkpoint contains311 training,48 validation and90 test
+The latest450-image checkpoint contains312 training,48 validation and90 test
 images, all individually assistant-reviewed, and is still a draft. See
 [CLEAR_CHECKPOINT_20260915.md](CLEAR_CHECKPOINT_20260915.md) for review provenance.
 One native high-resolution/generated comparison now passed diagnostic checks
@@ -179,3 +179,17 @@ exporter or revised review policy. The completed native pair covers one donor,
 one generated layout and one target/pose only. See GENERATED_NATIVE_CAPTURE.md.
 The four-job original-family supplemental capture has resumed in a NEW v2
 directory after the user freed memory; no failed run or existing data changed.
+
+Follow-up: that supplemental shard added three seed23 captures; individual
+review retained one and held two ambiguous query crossings. Seed47/53 yielded
+no screened viewpoints. Seed73 was resumed separately after memory recovery and
+also yielded no screened views. Those outcomes are not training images.
+
+The new native1696 annotation pilot recomputes visible distal queries and cut
+labels, verifies native masks/depth and builds unresized query crops. Its first
+two records passed numerical and assistant visual annotation checks, separately
+from the legacy450-image checkpoint. See NATIVE_CLEAR_ANNOTATION.md.
+The broader generated pilot held seed101 after substitution failed robot/scene
+clearance; two unstarted families are being tested with the same checks. No
+failed view, repeated control or generated seed is counted as new approved
+target diversity. Native-resolution production sampling/export remains next.

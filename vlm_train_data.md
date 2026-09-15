@@ -1796,3 +1796,60 @@ assistant-owned dependency helper was stopped; no user apps or datasets removed.
 The non-approving intake prepares completed native captures for later review:
 data/sim_data/collection_intake/clear_original_shard2_recovery_20260915_v2.
 Details and evidence:examples/greenhouse_sim/sim_data/CLEAR_CHECKPOINT_20260915.md.
+
+### 2026-09-15 native high-resolution annotation path and checkpoint v11
+
+Current reviewed draft: data/sim_data/collection_intake/clear_combined_20260915_checkpoint_v11.
+450 selected native848 images:312 train/48 validation/90 test,73 original
+targets across21 donor families. All450 have explicit individual assistant
+reviews;16 negative decisions remain excluded. Small coverage and20k coverage
+are still incomplete; no final training archive or local training is claimed.
+
+The resumed shard produced3 seed23 images (newly represented training family);
+one was accepted and two held for confusing query crossings after full-RGB and
+lossless-crop review. Seed47/53 yielded no screened views. Memory then stopped
+seed73 before launch; it was resumed separately with recovered reserve and
+yielded no screened views. Failed/empty attempts remain unchanged, not counted.
+The v11 builder consumes only the completed, independently hash-bound seed23
+job and keeps the stopped campaign's overall status honest.
+
+Added separate native_query_visibility.py, native_clear_contract.py,
+native_clear_labels.py and native_clear_annotation.py with28 focused tests.
+They support native1696 RGB, a query-only native768 square crop with no resizing,
+recomputed visible distal query and anatomical10mm/10-20mm labels, exact native
+petiole/parent masks and optical-Z, and paired RGB/prompt/normalized-coordinate
+construction. Legacy848 task contracts, generator assets, frozen splits, prior
+reviews and production training loader are untouched.
+
+Actual pilot: data/sim_data/diagnostics/native_clear_annotation_20260915_v1.
+Both original/generated records passed numeric checks and individual assistant
+query/cut annotation inspection. The normalized generated example is query
+(975.47,255.51), answer cut_point_uv[824.42,288.54], localized/clear/inspect_cut_region.
+The model input contains clean RGB and query only, with optional native crop;
+depth/geometry/GT overlays remain sidecars, not model input. The native query
+and cut are recomputed from changed geometry, not copied source pixel labels.
+Review: data/sim_data/dataset_reviews/native_clear_annotation_20260915_v1.
+These are annotation-pilot approvals, NOT training-release accepts or new donor
+families. Native-aware H200 loading/evaluation/processor testing remains undone.
+
+Broader native pilot: diagnostics/native_generated_broader_pilot_20260915_v1
+under data/sim_data. Three additional TRAIN families, fixed reviewed source
+views, one renderer,1800s worker budgets, memory guards and202 bound files.
+Seed101 camera test passed; generated substitution failed robot/environment
+clearance and was held without weakening the check. Only unstarted seed103/17
+cases continued separately; their outcomes are pending at this checkpoint.
+No generated pilot frame joins the450-image dataset automatically.
+
+Full data regression954 tests plus77 subtests passed in73.10s:
+data/sim_data/clear_regression_20260915_v24.log.
+The actual450-record legacy input audit also passed in both image modes:
+data/sim_data/diagnostics/clear_checkpoint_v11_input_audit_20260915.json.
+Detailed contracts, commands and limits:
+examples/greenhouse_sim/sim_data/NATIVE_CLEAR_ANNOTATION.md.
+
+Follow-up before annotation-code commit: seed103 also failed at the generated
+clearance screen and seed17 remains unstarted. Inspection found the detailed
+triangle refiner is restricted to /World/PackPlants; generated plants under
+/World/GeneratedNativePilot get only conservative enclosing-box tests.
+This integration gap will be fixed and tested explicitly; failed cases remain
+held until fresh native evidence exists. No currently running renderer remains.
