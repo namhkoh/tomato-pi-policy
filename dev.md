@@ -10162,3 +10162,20 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   verifier and morphology-frame V2 excluded. First inventory contains459 rows
   from22 receipts (117strict/105held/237excluded), not459 approved images.
   Broader/retry audit replays completed; expanded observed snapshot is building.
+
+- 2026-09-16 expanded observed snapshot finished:686 frames/38 native audit
+  receipts,178strict/173held/335excluded,11original TRAIN donors/47targets.
+  This explicit checkpoint excludes later active jobs and some diagnostic/old
+  roots; no global-completeness or release claim. Four additional native visual
+  reviews accepted petiole identity/intervals (73overlapping visual accepts plus
+  one existing hold); receipts remain separate from original automated decisions.
+- Stable morphology-frame V2 retains1e-9 numerical tolerance:756/756 actual-
+  geometry nuisance comparisons pass, maximum5.1831e-13. Ambiguous/ill-conditioned
+  frames hold; no world-axis fallback or new biological-family/novelty approval.
+  Independent focused rerun85tests+45subtests passed across four modules.
+- Added conservative block-mean lower-bound near-image graph (22tests plus42
+  existing metric tests). All22 native controls reproduce exact prior scores;
+  all21 duplicate controls retained.686-image graph resolves234955pairs in35.79s,
+  all above the provisional empirical duplicate maximum0.0391332848665376.
+  It makes no general calibration or image-diversity claim. Geometry qualification,
+  original-target view caps and visual holds remain separate. No depth/image edits.

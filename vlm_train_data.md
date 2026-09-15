@@ -2268,3 +2268,27 @@ it covers wider+18plant campaigns only and explicitly disclaims global coverage.
 An expanded snapshot is being built after fresh broader/retry audit replays.
 V50 regression1687tests+181subtests passed (229.69s); only the two in-progress
 V4 verifier and morphology-frame V2 modules were excluded.
+
+The expanded observed checkpoint is now complete:
+diagnostics/native_completed_campaign_inventory_20260916_v2.json contains686
+frames/38receipts,178strict automatic candidates,173clarity holds and335exclusions
+across11TRAIN donors/47original targets. No final TRAIN release is approved.
+The checkpoint is explicit and excludes subsequent active captures; it does not
+claim exhaustive historical/global coverage. Four additional actually inspected
+full-scene/native-coordinate crops are recorded in
+dataset_reviews/native_reference_visual_20260916_v2/assistant_visual.json.
+Overlapping visual pilot:73accepts and1hold, not an independent image count.
+
+Added morphology_frame_v2: unchanged donor-frame normalization makes756/756
+rotation/scale/rename/order nuisance controls pass1e-9 (maximum5.1831e-13).
+These are numerical equivalence tests, not a meaningful-anatomy novelty cutoff.
+Ill-conditioned or ambiguous frames are held. Focused85tests+45subtests pass.
+
+Added near_image_index: all-pairs native RGB comparison using conservative
+weighted block-mean lower bounds; only potentially near pairs need full MAE.
+No resizing or depth calculation.22new+42existing metric tests pass; all22actual
+native controls match previous exact scores and21duplicates are retained.
+The686-frame graph resolves234955pairs in35.79s, finding zero near edges at the
+previous observed duplicate maximum0.0391332848665376. This threshold is explicitly
+provisional, not a validated general novelty rule. Source caps/visual holds and
+geometric qualification remain mandatory and cannot be replaced by zero edges.
