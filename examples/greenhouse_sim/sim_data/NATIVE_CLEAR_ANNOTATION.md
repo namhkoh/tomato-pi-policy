@@ -159,3 +159,40 @@ Still required before the 20,000-training-image release:
 
 No 20k ZIP, training authorization, policy actions or physical-cut qualification
 is produced by this annotation pilot.
+
+## Generated mesh screen: verified correction
+
+The generated root now opts into the same plant triangle-vs-robot-bound check
+as original plants. Default legacy behavior, the10mm margin, true-intersection
+rejection and conservative structural/unsupported-shape handling are unchanged.
+Code commit:992b99b. Fourteen new regression cases; full data suite **968 tests
+and77 subtests passed in83.92s** (data/sim_data/clear_regression_20260915_v25.log).
+
+Fresh206-file-bound qualification:
+data/sim_data/diagnostics/generated_refinement_native_20260915_v1.
+
+| Donor | Native original/generated worker | Coarse pairs cleared by mesh check | Annotation candidates |
+|---|---:|---:|---:|
+| seed101 | exit0,176.954s |261|2|
+| seed103 | exit0,140.047s |172|2|
+| seed17 | exit0,141.765s |285|2|
+
+All generated screens pass with zero remaining overlaps. These fresh results
+support the coarse-box explanation for the two earlier failures. Old failed
+runs and original plans/assets remain intact. This surface screen does not
+certify self-collision, containment inside closed plant volumes, paths or dynamics.
+
+All six frames were individually inspected as full-frame annotated overviews
+and clean lossless native query/junction crops. Native optical-Z and component
+identity agree at all11 interval points in every frame. Review/QA:
+data/sim_data/dataset_reviews/generated_refinement_native_20260915_v1.
+All six decisions are **accept_annotation_pilot_only**. The seed17 original
+has darker/cluttered distal query context, explicitly inspected in native
+detail. Review is GT-guided, not blind evaluation, independent human/botanical
+validation or physical cutting approval. No source image was altered.
+
+Including seed7:8 reviewed annotation-pilot frames/4 donors/4 generated layouts,
+NOT8 independent new targets or training-release accepts. The reviewed legacy
+draft remains450 images (312 train/48 validation/90 test). Native-resolution
+production capture/export, H200 loader qualification and20k coverage remain open.
+The renderer has exited; no model download/training or final ZIP was produced.

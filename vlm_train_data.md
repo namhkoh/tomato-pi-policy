@@ -1853,3 +1853,32 @@ triangle refiner is restricted to /World/PackPlants; generated plants under
 /World/GeneratedNativePilot get only conservative enclosing-box tests.
 This integration gap will be fixed and tested explicitly; failed cases remain
 held until fresh native evidence exists. No currently running renderer remains.
+
+### 2026-09-15 generated foliage capture fix verified
+
+Code992b99b fixes the generated plant root's accidental AABB-only fallback.
+It explicitly applies the existing mesh screen, preserving the10mm margin,
+true-intersection rejection, default legacy scope and conservative fallbacks.
+Full suite968 tests +77 subtests passed in83.92s:
+data/sim_data/clear_regression_20260915_v25.log.
+
+Fresh native output:
+data/sim_data/diagnostics/generated_refinement_native_20260915_v1.
+Seed101/103/17 all exit0 in176.954/140.047/141.765s for the original/generated
+pair workers. Generated mesh screening clears261/172/285 coarse pairs; no
+remaining overlaps. Both prior generated-stage failures are resolved in NEW
+attempts; failed historical runs, source assets, plans and reviews remain intact.
+
+Six new1696x816 annotation candidates passed numeric checks and individual
+assistant visual inspection. Exact native depth/identity agrees at all11 cut
+interval points per frame. Reviews and hashes:
+data/sim_data/dataset_reviews/generated_refinement_native_20260915_v1.
+Full-frame overviews and clean lossless native crops were inspected; seed17
+has more clutter/darker query context. All decisions are annotation-pilot-only,
+not training-release, blind evaluation, human/botanical or physical-cut approval.
+
+With the earlier seed7 pair:8 annotation-pilot frames from4 donors/4 generated
+layouts. Repeated controls are not new target diversity. Legacy450 reviewed
+images (312/48/90), frozen splits and donor view caps remain unchanged. Native
+depth is unreconstructed. No model/training or final20k ZIP. All workers exited.
+Broader bounded capture and native-resolution export/loader integration remain.

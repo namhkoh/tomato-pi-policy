@@ -9922,3 +9922,16 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   scene checks. No generated record is automatically accepted or counted
   toward20k. See sim_data/NATIVE_CLEAR_ANNOTATION.md under examples/greenhouse_sim
   and vlm_train_data.md for exact paths, measured results and open release work.
+
+- 2026-09-15 generated foliage screening fix committed992b99b: opt-in mesh
+  refinement corrects the generated root's coarse-box fallback. Legacy behavior,
+ 10mm margin and true-intersection rejection unchanged.14 regression cases;
+  full suite968 tests +77 subtests passed in83.92s.
+- Fresh native seed101/103/17 original/generated pairs all exit0. Six annotation
+  candidates passed automatic QA and individual assistant visual inspection.
+  Native interval identity/depth verified; old failures preserved, no gate bypass.
+  Evidence: data/sim_data/diagnostics/generated_refinement_native_20260915_v1.
+  Reviews: data/sim_data/dataset_reviews/generated_refinement_native_20260915_v1.
+- With seed7:8 annotation-pilot frames/4 donors/4 generated layouts, not final
+  training accepts.450 legacy reviewed images unchanged; frozen splits/caps,
+  native sensing and full source greenhouse preserved. No20k ZIP or training.
