@@ -9989,3 +9989,21 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   20GiB/no competing Kit, max2h, one attempt with existing native guards. Logs:
   data/sim_data/curved_native_queue_20260915_v1.log and curved_native_20260915_v1.log.
   No20k ZIP, training, biological-family/cap reset, source/review/split edits.
+
+- 2026-09-15 native curved checkpoint: seed101 and seed19 pairs completed with
+  full-scene mounted-head1696x816 RGB/native Isaac optical-Z. First visually
+  inspected, second automatic checks passed; two other recipes held for folded
+  leaf geometry. No weakened Jacobian/clearance or fidelity gates.
+- Fixed native curved interval knot sampling, preserving exact straight labels.
+  Added explicit append-only implementation requalification, exact saved-label
+  equality plus original provenance.18 pairs/36frames rechecked:11 automatic
+  accepts,23 visual holds,2 rejects,0 integrity holds. Old reviews untouched.
+- Partial actual visual receipt adds4 native pilot accepts (total24 separately),
+  excludes1 and treats1 original as repeated control. Eight old frames/newest
+  pair pending visual assessment. Legacy450 draft and final approval unchanged.
+- Capture timing only: ~14s geometry screen,30-34s six warmups per frame;
+  second pair137.90s, all56 requested render subframes retained. No speedup
+  claimed yet. Full regression1075 +87 subtests passed (v34,58.49s).
+- See CURVED_PLANT_GENERATOR.md / AUTOMATED_NATIVE_REVIEW.md under
+  examples/greenhouse_sim/sim_data. Next geometry repair preserves rigid leaf
+  blades; production geometry admission/collector/storage/export still pending.

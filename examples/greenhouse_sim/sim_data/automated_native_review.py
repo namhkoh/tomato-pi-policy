@@ -155,7 +155,31 @@ def check_model_input(folder, annotation, rgb):
         require(item["messages"] == expected, "Prompt or label differs from native task contract")
 
 
-def review_pair(annotation_directory):
+def annotation_code_proof(prior, requalify=False, code_root=None):
+    """Explicitly recheck old outputs with current code, never rewrite old pins.
+
+    Ordinary review remains strict. Requalification only permits an old code
+    fingerprint: every saved native buffer, label and model input is still
+    checked and independently recomputed by review_pair below.
+    """
+    root=Path(code_root or Path(__file__).parent).resolve()
+    require(isinstance(prior,dict) and prior,"Missing prior annotation code evidence")
+    for name,sha in prior.items():
+        p=Path(name).resolve()
+        require(p.parent==root and p.suffix=='.py'
+                and (p.name.startswith('native_clear_') or p.name=='native_query_visibility.py')
+                and isinstance(sha,str) and len(sha)==64,"Unexpected annotation code binding")
+    require(str(root/'native_clear_labels.py') in prior,"Missing prior label-deriver fingerprint")
+    if not requalify:verify_bindings(prior)
+    files={*root.glob('native_clear_*.py'),root/'native_query_visibility.py'}
+    current={str(p.resolve()):sha256(p) for p in files}
+    return dict(explicit_requalification=bool(requalify),prior_implementation_sha256=dict(prior),
+        current_implementation_sha256=current,
+        changed_prior_files=[p for p,h in prior.items() if current.get(p)!=h],
+        old_implementation_executed=False,old_bindings_or_decisions_rewritten=False)
+
+
+def review_pair(annotation_directory, *, requalify=False):
     """Return append-only automatic evidence; source artifacts remain immutable."""
     from .audit import audit_manifest
     from .generated_capture import check_plan, verify_sensor_prerequisite, assert_pair_fresh
@@ -166,7 +190,7 @@ def review_pair(annotation_directory):
     require(result["state"] == "native_clear_annotation_pilot_pending_visual_review"
             and result["training_approved"] is False, "Expected completed annotation pilot")
     verify_bindings(result["source_bindings"])
-    verify_bindings(result["implementation_sha256"])
+    code_proof=annotation_code_proof(result["implementation_sha256"],requalify)
     plan_path = Path(request["plan"]).resolve()
     require(result["source_bindings"].get(str(plan_path)) == sha256(plan_path), "Unbound source plan")
     plan = read_json(plan_path)
@@ -234,14 +258,16 @@ def review_pair(annotation_directory):
             visual_review_performed=False, training_approved=False, human_decision_requested=False))
     verify_bindings(bindings)
     verify_bindings(result["source_bindings"])
+    verify_bindings(code_proof["current_implementation_sha256"])
     return dict(policy=POLICY, annotation_directory=str(directory), records=records,
+        annotation_code_proof=code_proof,all_stored_labels_equal_current_derivation=True,
         bindings=bindings, basis="simulator_ground_truth_assisted_not_independent_botanical_validation",
         dynamic_or_physical_success_verified=False, training_approved=False,
         native_depth_reconstructed=False, hidden_cut_coordinates_executable=False,
         existing_reviews_or_splits_modified=False)
 
 
-def run(directories, output):
+def run(directories, output, *, requalify=False):
     output = Path(output).resolve()
     dirs = [Path(p).resolve() for p in directories]
     require(dirs and len(set(dirs)) == len(dirs), "Distinct explicit annotation directories required")
@@ -264,7 +290,7 @@ def run(directories, output):
     reviews = []
     for directory in dirs:
         try:
-            reviews.append(review_pair(directory))
+            reviews.append(review_pair(directory,requalify=requalify))
         except (ValueError, OSError, KeyError, TypeError, StopIteration, IndexError) as exc:
             reviews.append(dict(annotation_directory=str(directory), decision="hold_integrity_or_missing_evidence",
                 error=f"{type(exc).__name__}: {exc}", records=[], training_approved=False,
@@ -280,6 +306,7 @@ def run(directories, output):
         accepted_unique_rgb_count=len({r["rgb_sha256"] for v in reviews for r in v["records"]
                                       if r["decision"] == "accept_automatic_annotation_only"}),
         production_training_approved_count=0, native_depth_reconstructed=False,
+        explicit_annotation_requalification=bool(requalify),
         self_supervised_model_training_performed=False, requires_human_decision=False)
     output.parent.mkdir(parents=True, exist_ok=True)
     # Exclusive create: concurrent reviewers cannot overwrite an existing decision.
@@ -293,8 +320,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--annotations", type=Path, nargs="+", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--requalify-existing",action="store_true",
+        help="Append current-code evidence for unchanged old labels; never alter old pins or decisions")
     args = parser.parse_args()
-    result = run(args.annotations, args.output)
+    result = run(args.annotations, args.output,requalify=args.requalify_existing)
     print(json.dumps({k: result[k] for k in ("record_decisions", "integrity_held_pairs",
         "unique_rgb_count", "production_training_approved_count")}))
 

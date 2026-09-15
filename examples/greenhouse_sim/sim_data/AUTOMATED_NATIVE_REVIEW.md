@@ -132,3 +132,28 @@ cases before a later failure, into
 `data/sim_data/dataset_reviews/native_generated_remaining_targets_20260915_v1/automatic.json`.
 No retries or fabricated visual reviews. At most 24 new annotation candidates;
 this is not a queued 20k release. Check `queue_result.json` for actual completion.
+
+## Append-only implementation requalification (2026-09-15)
+
+Default review still rejects changed annotation implementation hashes. Explicit
+`--requalify-existing` records old/current known annotation-module hashes in a NEW
+receipt, verifies every prior native/source binding and requires recomputed labels
+to equal saved labels exactly. It does not rewrite old code proofs, annotations,
+images or decisions, and does not claim the old implementation was executed.
+Missing/mutated evidence stays held. Seven targeted tests cover this distinction.
+
+After fixing curve-knot sampling, 18 completed pairs were requalified into
+`data/sim_data/dataset_reviews/native_curve_requalification_20260915_v1/automatic.json`:
+36 raw frames,11 automatic annotation accepts,23 visual holds,2 clear rejects,
+0 integrity holds,0 final training approvals. Raw unique hashes do not establish
+independent targets (controls repeat and render noise changes hashes).
+
+Actual partial visual receipt in the same folder: `assistant_visual_partial.json`.
+Six frames inspected,4 additional pilot candidates,1 easiest-task exclusion,
+1 repeated control reference. This brings separately accepted native pilot
+candidates to24, NOT20k or a final release. Eight additional old-similarity frames
+remain unadjudicated here; the newer seed19 curved pair has automatic accepts only.
+Existing20 visual accepts and legacy450 reviewed records remain unchanged.
+
+Full regression after label/requalification fixes and observational capture timing:
+1075 tests +87 subtests passed in58.49 s (`data/sim_data/clear_regression_20260915_v34.log`).

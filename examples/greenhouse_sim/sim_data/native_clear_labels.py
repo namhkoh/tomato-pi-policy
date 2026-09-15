@@ -8,6 +8,30 @@ from .native_clear_contract import RESOLUTION,TASK,CONTRACT,contract_hash,clear_
 from .native_query_visibility import NativeQueryVisibility
 
 
+def interval_arc_samples(cumulative, low=.01, high=.02, maximum_step=.001):
+    """Retain anatomical bends and match native per-segment subdivision.
+
+    The straight legacy interval has11 probes; curved intervals can have more.
+    Saved world labels are never resampled to conceal an anatomical mismatch.
+    """
+    cumulative=np.asarray(cumulative,float)
+    require(cumulative.ndim==1 and len(cumulative)>=2 and np.isfinite(cumulative).all()
+            and cumulative[0]==0 and np.all(np.diff(cumulative)>0),"Invalid cumulative anatomy")
+    require(0<=low<high<=cumulative[-1] and 0<maximum_step<=.001,"Invalid cut sampling bounds")
+    knots=[low]+[float(s) for s in cumulative if low<s<high]+[high]
+    if len(knots)==2:
+        steps=max(1,int(np.ceil((high-low)/maximum_step)))
+        require(steps<4096,"Excessively dense cut interval")
+        # Preserve the exact legacy floating-point samples for straight intervals.
+        return [float(d) for d in np.linspace(low,high,steps+1)]
+    result=[]
+    for a,b in zip(knots,knots[1:]):
+        steps=max(1,int(np.ceil((b-a)/maximum_step)))
+        require(len(result)+steps<4096,"Excessively dense cut interval")
+        result.extend(float(a+(b-a)*t) for t in np.linspace(0,1,steps,endpoint=False))
+    return [*result,high]
+
+
 def derive(metadata, report, rgb, depth, valid, components, catalogue):
     sup,cal=metadata["supervision"],metadata["calibration"]
     require(cal["resolution"]==list(RESOLUTION) and cal["crop_resize"] is None
@@ -47,9 +71,12 @@ def derive(metadata, report, rgb, depth, valid, components, catalogue):
 
     require(lengths[-1]>=.030,"Petiole too short for proximal evidence")
     nominal=probe(.01,{target["component_index"]})
-    interval=[probe(d,{target["component_index"]}) for d in np.linspace(.01,.02,11)]
+    interval=[probe(d,{target["component_index"]}) for d in interval_arc_samples(lengths)]
+    expected_interval=np.asarray([p["world_m"] for p in interval],float)
+    captured_interval=np.asarray(sup["interval_world_m"],float)
     require(np.allclose(nominal["world_m"],sup["nominal_world_m"],atol=1e-8,rtol=0)
-            and np.allclose([p["world_m"] for p in interval],sup["interval_world_m"],atol=1e-8,rtol=0),
+            and captured_interval.shape==expected_interval.shape
+            and np.allclose(expected_interval,captured_interval,atol=1e-8,rtol=0),
             "Captured cut geometry differs from recomputed10-20mm anatomy")
     require(nominal["projected"]["projection_status"]==sup["nominal_projected"]["projection_status"],
             "Nominal projection status changed")

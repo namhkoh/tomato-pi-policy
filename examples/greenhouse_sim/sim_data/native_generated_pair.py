@@ -135,6 +135,7 @@ def capture(app, output, plan):
     writer = make_writer(rep, include_instances=True, instance_backend="legacy")
     writer.attach([product])
     samples = []
+    phase_timings = []
     substitution = None
     try:
         for mode, row in zip(plan["modes"], (plan["source_row"], plan["generated_row"]), strict=True):
@@ -143,6 +144,7 @@ def capture(app, output, plan):
                 records, variants = substitution["records"], substitution["variants"]
                 reports = [*reports, substitution["report"]]
             frame_started = time.perf_counter()
+            timing = {}
             cal = calibration_for_native_resolution(calibration(stage), HIRES_RESOLUTION)
             assert_same_camera(cal, plan["expected_calibration"])
             screen = StaticBoundScreen(static_obstacles(stage, robot["root"]),
@@ -153,6 +155,8 @@ def capture(app, output, plan):
                 mode=mode, generated_plant_triangle_refinement=True, screen=screen,
                 scope="plant_surfaces_vs_robot_bounds_not_collision_free_certification"))
             require(screen["passed"], "Current snapshot intersects robot/environment geometry")
+            timing["calibration_and_geometry_screen_s"] = time.perf_counter()-frame_started
+            phase_started = time.perf_counter()
             catalogue = component_catalogue(stage, records, reports, variants)
             require(len(catalogue) == counts["components"], "Active organ catalogue population changed")
             variant = next(v for v in variants if v["variant_id"] == row["variant_id"])
@@ -161,12 +165,20 @@ def capture(app, output, plan):
                           and c["component_id"] == row["component_id"])
             radius = row["cut_region_proposal"]["nominal"]["petiole_radius_m"]
             phase_hashes = source_hashes(stage)
+            timing["catalogue_world_geometry_source_hash_s"] = time.perf_counter()-phase_started
+            phase_started = time.perf_counter()
             for _ in range(6):
                 step_payload(rep, writer, subframes=8)
+            timing["six_native_warmup_payloads_s"] = time.perf_counter()-phase_started
+            phase_started = time.perf_counter()
             monitor = StaticSceneMonitor(stage, robot["root"])
+            timing["static_guard_initial_scan_s"] = time.perf_counter()-phase_started
             try:
                 before = monitor.begin()
+                phase_started = time.perf_counter()
                 payload = step_payload(rep, writer, subframes=8)
+                timing["final_native_payload_s"] = time.perf_counter()-phase_started
+                phase_started = time.perf_counter()
                 rgb, depth, valid, reference, freshness = validate_native_static(
                     payload, cal, before, monitor.token(), writer.sequence)
                 assert_same_camera(calibration_for_native_resolution(calibration(stage), HIRES_RESOLUTION), cal)
@@ -201,10 +213,17 @@ def capture(app, output, plan):
                         visibility_evidence=visibility, cut_safety_validated=False),
                     elapsed_scene_screen_and_capture_s=time.perf_counter()-frame_started)
                 folder = output/mode
+                timing["native_validation_masks_quality_metadata_s"] = time.perf_counter()-phase_started
+                phase_started = time.perf_counter()
                 write_sample(folder, rgb, depth, valid, metadata)
                 write_visibility(folder, instances, mapping, catalogue, components, organs, mask)
                 samples.append(read_json(folder/"sample.json"))
+                timing["artifact_write_s"] = time.perf_counter()-phase_started
+                phase_started = time.perf_counter()
                 require(source_hashes(stage) == phase_hashes, "Loaded source USD changed during capture")
+                timing["postcapture_source_hash_s"] = time.perf_counter()-phase_started
+                phase_timings.append(dict(mode=mode,seconds=timing,
+                    total_frame_s=time.perf_counter()-frame_started,render_subframes_unchanged=56))
                 print("GENERATED_NATIVE_FRAME", mode, quality, flush=True)
             finally:
                 monitor.close()
@@ -219,6 +238,7 @@ def capture(app, output, plan):
         samples=samples, checks=checks, substitution=substitution and {
             k: substitution[k] for k in ("old_root", "new_root", "plant_to_world", "component_count_preserved")},
         setup_seconds=setup_seconds, elapsed_seconds=time.perf_counter()-started,
+        phase_timings=phase_timings,profiling_did_not_change_capture_budget_or_gates=True,
         source_assets_unchanged=True, scene_counts=counts, training_approved=False,
         local_plant_collision_qualified=False, low_level_policy_or_physics_action_tested=False,
         export_schema_qualified=False, original_controls_are_new_target_diversity=False)

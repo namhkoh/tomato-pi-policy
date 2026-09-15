@@ -77,6 +77,35 @@ Queue launch16:42:29 KST, waits at most2h for20 GiB commit headroom/no other Kit
 then one capture attempt; the worker retains its own resource/geometry guards.
 Check actual result/exit/review receipts: a queued job is not a successful image.
 
+## Native validation checkpoint, 2026-09-15
+
+The seed101/SubStem41 pair completed native capture (16:47:37-16:50:10 KST).
+`diagnostics/curved_native_20260915_v1/annotations_v2` contains the successful
+annotations; the first failed annotation attempt is retained. Curved anatomical
+knots required matching the capture's piecewise <=1 mm interval sampling instead
+of assuming exactly eleven points. Missing knots, stale geometry and occlusion
+are rejected; straight-target labels remain exactly compatible.
+
+Both clean native frames were actually visually inspected (overview plus native
+pixel crop). Generated target accepted for annotation pilot; original control is
+a repeated reference, not new diversity. Receipt:
+`dataset_reviews/native_curve_requalification_20260915_v1/assistant_visual_partial.json`.
+Paths here are relative to `data/sim_data`. Camera1696x816, native Isaac optical-Z,
+75 gutters/3 populated gutters/142 backdrop instances and detailed assets retained.
+
+Second donor seed19/SubStem42 also captured successfully (17:22:58-17:25:57 KST):
+`diagnostics/curved_diversity_native_20260915_v1/case_002`. Both frames passed
+automatic annotation checks, still pending actual visual assessment at this
+checkpoint. Two other recipes (seed17/SubStem44 and seed103/SubStem43) were held
+because the continuous field folded leaf meshes. Their failure evidence remains;
+the Jacobian gate was not weakened. This motivates rigid leaf-blade transport.
+
+Measured second-pair timings: setup28.26 s, pair137.90 s; per frame geometry
+screen14.28-14.30 s, six native warm-up callbacks29.60-33.78 s, final native
+callback3.90-4.39 s, artifact writing0.50 s. Observational instrumentation only:
+56 requested render subframes and all gates unchanged. This is not a measured
+speedup or a production-throughput result. Amortization/convergence work remains.
+
 ## Admission and scaling still required
 
 The new shape descriptor excludes seed/name changes, rigid placement and uniform

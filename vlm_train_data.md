@@ -2001,3 +2001,28 @@ commit/no other Kit, then one native original/generated pair followed by CPU
 annotation/review on success. Existing mounted camera/optics, full greenhouse,
 native1696x816 RGB and Isaac optical-Z preserved. Check result/exit receipts;
 queued is not executed or accepted data. No user apps or settings changed.
+
+### 2026-09-15 native curved capture and review checkpoint
+
+Two source-derived curved donor pairs captured successfully with native1696x816
+robot-head RGB/Isaac optical-Z and full greenhouse retained. First seed101 pair
+visually checked; seed19 pair automatically checked, visual review pending.
+Two other generated recipes rejected for folded leaf geometry; no gate relaxed.
+See sim_data/CURVED_PLANT_GENERATOR.md under examples/greenhouse_sim for receipts.
+
+Fixed curve interval sampling to preserve capture's anatomical knots; new failure
+tests reject mismatched/stale/occluded intervals. Added explicit append-only code
+requalification requiring exact saved-label equality and all old source bindings.
+18 pairs/36 raw frames:11 automatic accepts,23 visual holds,2 rejects,0 integrity
+holds,0 final train approvals. Prior review decisions remain immutable.
+Actual partial visual review adds4 pilot candidates,1 excluded target and1
+repeated control (not diversity). Native pilot accepted count24; legacy450 draft
+(312train/48validation/90test) unchanged. Eight old frames and the newest pair
+still require actual visual review. No20k release, ZIP or local model download.
+
+Full regression1075 tests +87 subtests passed (v34,58.49 s). Added capture timing
+without quality/gate changes: ~14 s geometry screen and30-34 s warmups dominate
+each frame; pair137.90 s plus annotation. Production amortization and global
+geometry novelty admission still required; original source-target12-view caps
+remain. Next: rigid leaf transport, broader qualified shape diversity and a
+measured fidelity-preserving persistent native collector.
