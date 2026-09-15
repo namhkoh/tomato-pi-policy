@@ -8,6 +8,12 @@ not autonomous target selection, metric XYZ, occlusion reasoning or robot action
 Higher-resolution native capture is a separate qualification path; this existing
 848x408 release contract has not changed. See [NATIVE_RESOLUTION.md](NATIVE_RESOLUTION.md).
 
+Latest inspected checkpoint:449 images (311 train /48 validation /90 test),
+still an incomplete draft. See [CLEAR_CHECKPOINT_20260915.md](CLEAR_CHECKPOINT_20260915.md)
+for paths and the read-only clear_input_audit command. This audit may inspect a
+draft's actual RGB/prompt/coordinate contract; it does not approve training or
+replace a real Qwen processor/model test on the H200 server.
+
 The user now requires **20,000 training images plus held-out sets**. This file's
 small qualification gates are not that final milestone. See
 [CLEAR_SCALE_20K.md](CLEAR_SCALE_20K.md) for measured capacity and the proposed

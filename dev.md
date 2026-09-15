@@ -9885,3 +9885,22 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   data/sim_data/clear_regression_20260915_v22.log.
   Details:examples/greenhouse_sim/sim_data/GENERATED_NATIVE_CAPTURE.md.
   No20k release, generated-image training approval or new physics claim.
+
+- 2026-09-15 VLM data continuation: completed76 further individual visual
+  reviews (69 accepts/7 holds); immutable v10 checkpoint449 images, comprising
+ 311 train/48 validation/90 test. All449 assistant-reviewed,14 negatives
+  preserved, coverage incomplete. No20k training release or ZIP claimed.
+  New read-only clear_input_audit verifies actual RGB/prompt parity and
+  normalized coordinate conversion for both input modes without starting a
+  model or bypassing the training release gate.926 tests +77 subtests passed.
+- After user memory cleanup, the frozen native camera848/1696 test and actual
+  generated-plant greenhouse comparison completed with exit0. Four diagnostic
+  RGB/depth/label cases were individually inspected; nominal/interval marks
+  remain on visible petioles. New native1696 samples are NOT training-approved
+  or new independent donor families. Preserved camera/scene/source checks pass;
+  no physical-cut or dynamic-sensing qualification is claimed.
+- Resumed only the four previously unstarted original-family TRAIN jobs into
+  clear_capture_20260915_original_shard2_train_v2, preserving the failed v1 and
+  all memory/geometry/visibility gates. New intake does not auto-approve images.
+  Exact counts, paths, native timings and remaining20k/export work:
+  examples/greenhouse_sim/sim_data/CLEAR_CHECKPOINT_20260915.md and vlm_train_data.md.

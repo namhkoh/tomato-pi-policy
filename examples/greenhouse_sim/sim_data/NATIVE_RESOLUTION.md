@@ -11,7 +11,10 @@ that the physical D405 supports this resolution or has matching noise/optics.
 - Implemented and unit-tested: explicit resolution/intrinsics contract; native
   RGB, optical-Z and instance-ID checks; known-surface sensor diagnostic; paired
   full-greenhouse snapshot diagnostic.
-- Native high-resolution execution and visual qualification: **pending**.
+- Native execution passed on2026-09-15 for one training-family camera/target.
+  The original848x408 and native1696x816 frames, junction overlays, target masks
+  and native-depth heatmaps were individually assistant-reviewed. This is a
+  diagnostic qualification, not approval of general sampling/export or training.
 - The production848x408 collector, existing releases, frozen family splits,
   reviews and Qwen training/export contracts are unchanged.
 - New pilot samples have their own schema and are **not training-approved**.
@@ -103,3 +106,32 @@ Planned result directory:
 `data/sim_data/diagnostics/native_hires_greenhouse_pair_20260915_v1`.
 If pinned implementation code changes before execution, the controller refuses
 to launch; inspect/requalify the new code rather than bypassing this check.
+
+## Completed recovery test (2026-09-15)
+
+The historical queue above stopped when its prerequisite supplemental campaign
+failed the Windows memory gate before collecting images. After the user freed
+memory, the explicit bounded recovery controller ran the same frozen native test.
+Output: data/sim_data/diagnostics/native_hires_greenhouse_pair_20260915_v1.
+Worker exit0, no timeout,150.406s including startup/shutdown.
+
+Both views passed unchanged mounted-camera/optics/target pairing, native
+known-surface depth and exact instance checks. Native point projection doubles:
+(698.9953,120.0558) to(1397.9906,240.1116). The projected10-20mm interval grows
+from15.4697px to30.9394px; estimated diameter from8.0803px to16.1605px.
+All11 sampled interval points have matching petiole identity and native depth.
+Target mask pixels:1,275/5,109. This is one target, not a yield/accuracy claim.
+
+Read-only post-capture QA and explicit visual assessments:
+data/sim_data/diagnostics/native_camera_generated_review_20260915_v1.
+qa.json verifies original hashes, shapes, validity and interval-to-mask checks.
+visual_review.json records the assistant's diagnostic-only decisions. Heatmaps
+color saved native optical-Z on a common0.1-1m scale; no depth is reconstructed.
+High-resolution full frames were displayed at848x408 for overview, with lossless
+native-resolution junction crops for inspection. Original files are unchanged.
+
+The same scene retains75 gutter assets,3 populated gutters,142 backdrop
+instances and2 component-level plants/825 components, exactly matching the
+prior source capture. This is not a claim that all75 gutters contain plants.
+General high-resolution collection/export, query labels and model preprocessing
+still require the versioned work listed above. No training release was produced.

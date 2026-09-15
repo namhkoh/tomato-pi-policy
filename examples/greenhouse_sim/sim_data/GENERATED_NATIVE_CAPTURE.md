@@ -2,6 +2,10 @@
 
 ## Status
 
+Update2026-09-15: the frozen native comparison completed and its four paired
+camera/generated diagnostic images were individually assistant-reviewed.
+See the completed-recovery evidence below; historical queue notes are retained.
+
 Implemented: generated_capture.py / native_generated_pair.py, a frozen
 two-frame original/generated diagnostic. This is not a production collector,
 training release, new family-diversity approval or physical grasp/cut test.
@@ -92,3 +96,47 @@ counts toward the20,000 accepted TRAINING-image requirement.
 Final regression:918 tests plus77 subtests in67.43s, recorded in
 data/sim_data/clear_regression_20260915_v22.log. CPU tests and the preview
 do not substitute for the pending native generated-scene validation.
+
+## Completed native comparison and review (2026-09-15)
+
+The original waiting queue could not proceed after supplemental collection
+failed the Windows memory gate. Only that exact stranded helper was stopped.
+Its cancellation receipt is
+data/sim_data/diagnostics/generated_native_pair_queue_20260915_v1.cancelled.json.
+After the user freed memory, the new bounded recovery queue completed both
+native diagnostics; all191 source/code/plan pins were unchanged.
+
+Native output: data/sim_data/diagnostics/generated_native_pair_20260915_v1.
+Worker exit0/no timeout in145.235s including startup/shutdown. Capture function
+elapsed128.187s; setup22.800s; control/generated screen-and-capture51.409/48.896s.
+These two fixed diagnostic frames are not production throughput measurements.
+
+Same mounted camera, robot pose, lighting, original plant placement and scene
+population verified. Replaced exactly one plant in the anonymous stage. New
+native target identity and changed RGB/depth buffers were observed; no original
+foreground-plant pixels remain after substitution. The control's native depth
+hash matches the earlier high-resolution sensor pair.
+
+Original/generated nominal points: (1397.9906,240.1116) and(1398.2220,235.4550).
+Generated estimated petiole diameter14.5832px,10-20mm interval31.5432px, native
+target mask4,653px; all11 sampled interval points have matching target/depth.
+Sampled native optical-Z ranges0.34433-0.34990m on the generated interval.
+Pilot numerical visibility is NOT the stricter clear-training acceptance gate.
+
+The original and generated full RGBs, native-resolution junction crops,
+annotations, generated target mask and four depth heatmaps were inspected.
+The visible attachment is continuous and the recomputed nominal marker stays
+on the petiole. Foliage orientation changes visibly; protected parent geometry
+and surrounding plants remain. This single view cannot certify hidden
+self-intersections, botany, physical cutting or target-diversity novelty.
+
+Hash-bound QA, review decisions and depth heatmaps:
+data/sim_data/diagnostics/native_camera_generated_review_20260915_v1.
+The four decisions are pass_visual_diagnostic_only, not training accepts.
+Generated training images in the current checkpoint remainZERO; these diagnostic
+schemas are not fed into the hard-coded848x408 release. No query-conditioned
+higher-resolution training record or20k ZIP has been published.
+
+Next: broaden the native pilot and qualify resolution-aware query labels,
+strict clarity review and export. Retain the ORIGINAL donor target's view cap
+until morphology novelty and near-duplicate grouping are explicitly validated.

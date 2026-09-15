@@ -1745,3 +1745,54 @@ native collection progressed, but its new frames were not individually reviewed
 during this integration step.
 Final full regression including the preview:918 tests plus77 subtests passed
 in67.43s (data/sim_data/clear_regression_20260915_v22.log).
+
+### 2026-09-15 reviewed checkpoint v10 and resumed native generation
+
+Latest immutable reviewed draft:
+data/sim_data/collection_intake/clear_combined_20260915_checkpoint_v10.
+449 selected images:311 train /48 validation /90 test,72 original targets and
+20 donor families. All449 individually assistant-reviewed;14 negatives excluded.
+This is not independent human validation. All small coverage gates remain
+incomplete, and this is far below20,000 accepted TRAINING images plus held-outs.
+No training ZIP or local model/training launch is claimed.
+
+New wave3 reviewed76 original captures:69 accepts,7 holds for ambiguous branch
+crossings, hidden attachments or fruit/petiole blending. Decisions are hash-bound
+under data/sim_data/dataset_reviews/clear_orbit_wave3_20260915_v1.
+Net checkpoint increase30, not69, after preserved negatives and the original
+12-view cap. Old checkpoints/splits/decisions are untouched. Clean images remain
+native848x408; depth sidecars are byte-identical native Isaac optical-Z.
+
+Added clear_input_audit.py and8 regression cases. On all449 draft records,
+actual training/inference image+prompt construction matches in full-RGB and
+full-RGB-plus-query-crop modes. Normalized-coordinate roundtrip maximum error
+0.00416000000007px. The checker does not run a model/HF processor, approve data,
+change the training loader or feed depth/GT overlays to the RGB model.
+Data regression926 tests plus77 subtests in65.83s:
+data/sim_data/clear_regression_20260915_v23.log.
+
+Native supplemental v1 failed before images on the Windows commit-memory gate.
+After the user freed memory,22.38GiB headroom passed the recovery reserve and
+the two frozen native diagnostics completed. Camera848/1696 pair exit0 in
+150.406s; original/generated native1696 pair exit0 in145.235s. Same mounted
+camera/optics, robot pose, source greenhouse, lighting and source files verified.
+Native interval projection grows15.47 to30.94px. Generated interval31.54px,
+all11 sampled points match native target identity/depth. The recomputed marker
+remains on the visible petiole in visual review. No physical-cut/biology claim.
+
+Native outputs under data/sim_data/diagnostics:
+native_hires_greenhouse_pair_20260915_v1 and generated_native_pair_20260915_v1.
+Post-capture QA, four individually attributed diagnostic visual decisions and
+native-depth heatmaps: native_camera_generated_review_20260915_v1.
+These four diagnostics are not extra accepted training images or new families.
+Resolution-aware query labels, general sampling/export and novelty validation
+remain necessary before generated high-resolution images enter training.
+
+Resumed exactly the interrupted four TRAIN-family jobs in NEW
+collection_campaigns/clear_capture_20260915_original_shard2_train_v2 under
+data/sim_data; native job007/seed23 started10:23 KST. Same frozen plan,1800s
+worker limits and memory/geometry/visibility gates. Only the exact stranded
+assistant-owned dependency helper was stopped; no user apps or datasets removed.
+The non-approving intake prepares completed native captures for later review:
+data/sim_data/collection_intake/clear_original_shard2_recovery_20260915_v2.
+Details and evidence:examples/greenhouse_sim/sim_data/CLEAR_CHECKPOINT_20260915.md.

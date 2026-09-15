@@ -8,9 +8,12 @@ RGB images**, with validation and test sets additional. A working budget of
 Crops, RGB-D sidecars, overlays, repeated render noise and alternate prompts do
 not count as additional unique training images.
 
-The419-image checkpoint contains304 training,42 validation and73 test images,
-all individually assistant-reviewed, and is still a draft. No20k release or
-higher-resolution native qualification is claimed. Existing qualification
+The latest449-image checkpoint contains311 training,48 validation and90 test
+images, all individually assistant-reviewed, and is still a draft. See
+[CLEAR_CHECKPOINT_20260915.md](CLEAR_CHECKPOINT_20260915.md) for review provenance.
+One native high-resolution/generated comparison now passed diagnostic checks
+and assistant visual review; general sampling/export qualification remains open.
+No20k release is claimed. Existing qualification
 profiles, frozen splits, decisions and capture jobs are unchanged.
 `clear_cutpoint_v1` remains the small qualification experiment; passing its
 700-image minimum would NOT fulfill this new20k-training request.
@@ -170,7 +173,9 @@ not accepted images or approved independent target diversity. All160 passed
 sparse cut-surface checks; two inherited attachment warnings are held for review.
 No source family/split, existing image decision or12-view cap was changed.
 
-Still not implemented:a general growth/curvature/node generator, generated-plant
-native collection qualification,20k campaign, resolution-aware final20k exporter
-or revised review policy. Existing native collection and the queued
-higher-resolution pilot remain unchanged.
+Still not implemented:a general growth/curvature/node generator, broad
+generated-plant sampling qualification,20k campaign, resolution-aware final20k
+exporter or revised review policy. The completed native pair covers one donor,
+one generated layout and one target/pose only. See GENERATED_NATIVE_CAPTURE.md.
+The four-job original-family supplemental capture has resumed in a NEW v2
+directory after the user freed memory; no failed run or existing data changed.
