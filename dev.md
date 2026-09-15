@@ -10385,3 +10385,17 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   dominant exclusion. All29pre-render skips are conservative geometry overlaps.
   A bounded matched-parallax experiment is being prepared; full greenhouse,
   native mounted camera, current lighting and annotation thresholds stay fixed.
+
+- Serial phase runner added separately for future original/control batches:
+  fixed worker registry, exact predecessor completion plus supervisor absence,
+  cross-session OS owner mutex, and cooperative stop only at clean audited
+  boundaries. Frozen guard remains unchanged; owner command is checked without
+  its current-PID exception. Main170runner/guardtests pass108.75s, including
+  actual read-only original/control-plan checks. No new runner is launched yet.
+- Actual original-pilot offline compact check passes using existing pack_sample:
+  11logical files byte-identical, including3full nativeNPYs;13,188source bindings
+  rechecked before/after. Exporter's single-sample contract accepts original
+  schema/identity. Raw25.91MiB vscompact9.38MiB, packing0.86s. Evidence:
+  diagnostics/original_pilot_compact_20260916_v1/qualification.json,
+  SHA2f434ea7d4ac6cb6011de533d1c4a38baf26bf6e9e224628d7df5cbb32cb8513.
+  Originals retained;0newobservations/approvals; no small-release bypass.

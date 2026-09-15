@@ -2503,3 +2503,14 @@ TRAIN-qualified, frozen image-conditioned query/annotation algorithm may apply
 unchanged to heldouts; what is prohibited is retuning it from heldout yield or
 model accuracy. Separate fixed-query labeling would unnecessarily change the
 task distribution. Heldout execution waits TRAIN policy qualification/freeze.
+
+Future serial orchestration now passes170independent runner/guardtests(108.75s).
+It supports bounded original batches/matched controls, owned exit/audit receipts,
+a cross-session cooperating-owner mutex and clean-boundary stops; no new runner
+was launched alongside active collection. Other launchers do not share its lock.
+
+Actual original seed73pilot lossless conversion is compatible with the native
+export sample contract:11retained logical files exactly match raw captures,
+including3fullNPYfiles.13,188source bindings checked before/after. Raw25.91MiB,
+compact9.38MiB;packing0.86s. This is a copy of1existing observation, not newdata
+or a release. Raw images/native depth/review evidence remain untouched.

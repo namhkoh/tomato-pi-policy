@@ -1,0 +1,561 @@
+"""Bounded, opt-in Windows CPU owner; no import launch or automatic admission.
+
+CLI: python -B -m sim_data.native_dataset.serial_phases
+     --request ABS_JSON --request-sha256 SHA256
+
+Request: {schema: SCHEMA, output, isaac_python, native_deps,
+  max_jobs: 64, max_planned_frames: 4096, planned_frames: <exact sum>,
+  predecessor: {kind: 'original_serial39.v1', request_path, request_sha256,
+    supervisor: {pid, creation_date, executable, command_line}},
+  phases: [{id, jobs: [{id, worker_kind, plan_path, plan_sha256}]}]}.
+All paths are absolute. Capture the predecessor identity WHILE IT IS ALIVE
+(capture_supervisor); never reconstruct an exited process from a guessed PID.
+An absent predecessor without its exact completed terminal is an error.
+
+Only original_batch.v1 (1..64 frozen TRAIN cases) and matched_pair.v2 (2
+frames) are registered. Future compact_query_v2 requires a reviewed code
+registration with its qualification validator, fixed builder and exit audit;
+there is no JSON/plugin/argv escape hatch. Frames exclude sensor-smoke/warmup.
+
+Each job uses submitted/plan.json and capture as SIBLINGS. Outputs, receipts
+and checkpoints are create-only. No resume or retry of partial jobs/phases.
+Default: continue every explicit phase. To stop, create output/stop.json with
+{schema: STOP_SCHEMA, request_sha256: <input pin>, action: 'stop'}.
+Stop is acknowledged only before a launch or AFTER owned exit-0 + audit;
+it never interrupts a child. Ctrl-C is an error, not cooperative stop.
+
+One fixed cross-session Windows OS mutex is shared by all future manifests using
+this runner; legacy/external launchers do not acquire it. Resource/process
+observations are not a global concurrency guarantee or OS exit attestation.
+The frozen guard must also classify the actual owner command as nonblocking
+WITHOUT its current-PID exception. Native-marked request/executable paths may
+therefore fail closed; this module does not earn a pinned-supervisor exemption.
+Predecessor disappearance is not its OS exit code. Our own child exit code
+is observed. Holds/exclusions continue; integrity errors stop the first job.
+Receipts do not grant visual approval, geometry novelty, TRAIN admission,
+source-cap resets, or implicit control observations as new TRAIN diversity.
+"""
+from contextlib import contextmanager
+from copy import deepcopy
+from datetime import datetime, timezone
+from pathlib import Path
+import argparse
+import ast
+import ctypes
+import importlib.util
+import os
+import re
+import sys
+import time
+import traceback
+
+from .. import generated_capture as pair_plan
+from .. import native_clear_annotation, automated_native_review
+from ..native_original_capture import contracts as oc, prepare as original_plan
+from ..native_original_capture import serial_queue as legacy
+from . import original_inventory_v2 as predecessor_adapter
+from . import native_pair_v2
+
+SCHEMA = 'greenhouse.native_serial_phases.request.v1'
+RECEIPT_SCHEMA = 'greenhouse.native_serial_phases.job.v1'
+CHECKPOINT_SCHEMA = 'greenhouse.native_serial_phases.checkpoint.v1'
+RESULT_SCHEMA = 'greenhouse.native_serial_phases.result.v1'
+STOP_SCHEMA = 'greenhouse.native_serial_phases.stop.v1'
+PRODUCER_MODULE = 'sim_data.native_dataset.serial_phases'
+WORKERS = ('original_batch.v1', 'matched_pair.v2')
+PAIR_SHA256 = 'c863ff0f34dd8bab1117ff7b523a38290b0fc30e816bb51ca8d3ddd21d502667'
+LOCK_NAME = r'Global\greenhouse.native_serial_phases.owner.v1'
+FLAGS = dict(training_approved=False, source_cap_reset=False, visual_approval=False,
+             independent_execution_attested=False)
+
+
+def _code_closure():
+    # Literal repository imports, including function-local imports, without Kit.
+    root = Path(__file__).resolve().parents[1]
+    search = (root.parent, root.parents[1])
+    pending, found = [Path(__file__)], {}
+    while pending:
+        path = pending.pop().resolve()
+        if str(path) in found:
+            continue
+        raw = path.read_bytes()
+        found[str(path)] = oc.digest(raw)
+        base = next(p for p in search if path.is_relative_to(p))
+        package = '.'.join(path.relative_to(base).parts[:-1])
+        for node in ast.walk(ast.parse(raw)):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                name = '.' * node.level + (node.module or '')
+                module = importlib.util.resolve_name(name, package) if node.level else name
+                names = [module] + [module + '.' + a.name for a in node.names if a.name != '*']
+            for name in names:
+                for folder in search:
+                    candidate = folder.joinpath(*name.split('.'))
+                    pending.extend(p for p in (candidate.with_suffix('.py'), candidate / '__init__.py') if p.is_file())
+    return found
+
+
+_LOADED = oc.merge_bindings(predecessor_adapter.implementation_bindings(), _code_closure())
+_PAIR_CODE = native_pair_v2.implementation_bindings()
+
+
+def implementation_bindings():
+    oc.bind_all(_LOADED)
+    oc.require(_PAIR_CODE[str(Path(native_pair_v2.__file__).resolve())] == PAIR_SHA256,
+               'Unregistered matched-pair executor')
+    return dict(_LOADED)
+
+
+@contextmanager
+def owner_lock():
+    """OS-held, non-configurable lock; no stale file lock and no process killing."""
+    oc.require(os.name == 'nt', 'Windows owner lock required')
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.CreateMutexW.argtypes = (ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR)
+    kernel.CreateMutexW.restype = wintypes.HANDLE
+    kernel.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+    kernel.WaitForSingleObject.restype = wintypes.DWORD
+    kernel.ReleaseMutex.argtypes = kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+    handle = kernel.CreateMutexW(None, False, LOCK_NAME)
+    oc.require(bool(handle), 'Cannot open serial owner mutex')
+    acquired = False
+    try:
+        status = kernel.WaitForSingleObject(handle, 0)
+        acquired = status in (0, 0x80)
+        oc.require(status == 0, 'Serial owner busy, abandoned, or lock unavailable')
+        yield
+    finally:
+        if acquired:
+            kernel.ReleaseMutex(handle)
+        kernel.CloseHandle(handle)
+
+
+def _identity(supervisor, request_path, request_sha256):
+    legacy._keys(supervisor, ('pid', 'creation_date', 'executable', 'command_line'), 'supervisor')
+    oc.require(type(supervisor['pid']) is int and supervisor['pid'] > 0 and supervisor['pid'] != os.getpid(),
+               'Distinct predecessor PID required')
+    executable = legacy._path(supervisor['executable'])
+    oc.require(executable.is_file() and executable.name.lower() in ('python.exe', 'pythonw.exe')
+        and legacy.guard._born({'CreationDate': supervisor['creation_date']}) is not None,
+        'Exact CPU supervisor metadata required')
+    argv = legacy.guard._argv(supervisor['command_line'])
+    oc.require(argv and legacy._path(argv[0]) == executable, 'Invalid supervisor executable')
+    args = argv[1:]
+    while args and args[0] in ('-B', '-u'):
+        args = args[1:]
+    oc.require(args == ['-m', legacy.PRODUCER_MODULE, '--request', str(request_path),
+                        '--request-sha256', request_sha256], 'Supervisor does not own exact serial39 request')
+
+
+def capture_supervisor(pid, request_path, request_sha256):
+    """Read-only request-authoring helper; must be called before predecessor exit."""
+    path = oc.pin(legacy._path(str(request_path)), request_sha256)
+    rows = legacy.supervisor_rows(pid)
+    oc.require(len(rows) == 1, 'Capture predecessor identity before exit')
+    row = rows[0]
+    value = dict(pid=row['ProcessId'], creation_date=row['CreationDate'],
+                 executable=row['ExecutablePath'], command_line=row['CommandLine'])
+    _identity(value, path, request_sha256)
+    oc.require(value['pid'] == pid, 'Wrong queried supervisor')
+    return value
+
+
+def validate_plan(kind, path, pin):
+    oc.require(kind in WORKERS, 'Unregistered worker kind')
+    path = oc.pin(legacy._path(str(path)), pin)
+    plan = oc.read_json(path)
+    oc.require(plan['split'] == 'train' and oc.FROZEN_SPLITS.get(plan['source_family']) == 'train',
+               'Fixed original TRAIN donor required')
+    if kind == WORKERS[0]:
+        original_plan.check_plan(plan)
+        count = plan['sample_count_limit']
+        oc.require(type(count) is int and 1 <= count <= 64 and len(plan['cases']) == count,
+                   'Original batch requires 1..64 cases')
+        pins = oc.merge_bindings(plan['source_bindings'], plan['implementation_bindings'])
+        roots = original_plan.protected_roots(plan)
+    else:
+        pair_plan.check_plan(plan)
+        prerequisite = pair_plan.verify_sensor_prerequisite(plan)
+        count = plan['sample_count_limit']
+        oc.require(type(count) is int and count == 2 and plan['modes'] == ['original_control', 'generated_variant'],
+                   'Exactly two matched control frames required')
+        manifest = legacy._path(plan['source_capture']) / 'manifest.json'
+        pins = oc.merge_bindings(plan['source_bindings'], plan.get('generator_code_bindings', {}),
+            prerequisite['bindings'], oc.read_json(Path(plan['prerequisite_directory']) / 'request.json')['source_bindings'],
+            {str(manifest): oc.sha256(manifest)})
+        roots = [plan[k] for k in ('source_capture', 'variant_directory', 'prerequisite_directory')]
+        roots += [oc.read_json(manifest)['package'], str(Path(plan['source_collection_plan']).parent)]
+    pins = oc.merge_bindings(pins, {str(path): pin})
+    oc.bind_all(pins)
+    return dict(plan=plan, count=count, bindings=pins,
+                roots=[*roots, path.parent, *(Path(p).parent for p in pins)])
+
+
+def validate_request(request):
+    legacy._keys(request, ('schema', 'output', 'isaac_python', 'native_deps', 'max_jobs',
+        'max_planned_frames', 'planned_frames', 'predecessor', 'phases'), 'phase request')
+    oc.require(request['schema'] == SCHEMA and type(request['max_jobs']) is int and request['max_jobs'] == 64
+        and type(request['max_planned_frames']) is int and request['max_planned_frames'] == 4096,
+        'Explicit initial bounds 64 jobs / 4096 planned frames required')
+    output, isaac, deps = (legacy._path(request[k]) for k in ('output', 'isaac_python', 'native_deps'))
+    oc.require(isaac.is_file() and deps.is_dir(), 'Missing native runtime')
+    pred = request['predecessor']
+    legacy._keys(pred, ('kind', 'request_path', 'request_sha256', 'supervisor'), 'predecessor')
+    oc.require(pred['kind'] == 'original_serial39.v1', 'Unregistered predecessor')
+    pred_path = oc.pin(legacy._path(pred['request_path']), pred['request_sha256'])
+    config = oc.read_json(pred_path)
+    oc.require(config['schema'] == legacy.SCHEMA and config['max_planned_cases'] == 39
+        and len(config['batches']) == 2, 'Frozen serial39 predecessor required')
+    _identity(pred['supervisor'], pred_path, pred['request_sha256'])
+    roots = [legacy._path(config['output']), pred_path, isaac.parent, deps]
+    older = legacy._document(config['predecessor']['request_path'], config['predecessor']['request_sha256'])
+    roots += [legacy._path(older[k]) for k in ('output', 'scale_output')]
+    for entry in config['batches']:
+        prior_path = oc.pin(legacy._path(entry['plan_path']), entry['plan_sha256'])
+        roots.extend([prior_path.parent, *original_plan.protected_roots(oc.read_json(prior_path))])
+    roots += [Path(p).parent for p in implementation_bindings()]
+    phases = request['phases']
+    oc.require(isinstance(phases, list) and 1 <= len(phases) <= 64, 'Bounded nonempty phases required')
+    jobs, phase_ids, job_ids, paths = [], set(), set(), set()
+    for phase in phases:
+        legacy._keys(phase, ('id', 'jobs'), 'phase')
+        _unique_id(phase['id'], phase_ids)
+        oc.require(isinstance(phase['jobs'], list) and phase['jobs'], 'Nonempty phase jobs required')
+        for job in phase['jobs']:
+            oc.require(len(jobs) < 64, 'At most 64 manifest jobs')
+            legacy._keys(job, ('id', 'worker_kind', 'plan_path', 'plan_sha256'), 'job')
+            _unique_id(job['id'], job_ids)
+            path = legacy._path(job['plan_path'])
+            oc.require(path not in paths, 'Duplicate submitted source plan')
+            paths.add(path)
+            checked = validate_plan(job['worker_kind'], path, job['plan_sha256'])
+            roots.extend(checked['roots'])
+            jobs.append(dict(phase_id=phase['id'], **deepcopy(job), checked=checked))
+    total = sum(j['checked']['count'] for j in jobs)
+    oc.require(type(request['planned_frames']) is int and request['planned_frames'] == total <= 4096,
+               'Exact bounded planned frame sum required')
+    oc.new_destination(output, roots)
+    return config, jobs
+
+
+def _unique_id(value, seen):
+    oc.require(isinstance(value, str) and re.fullmatch('[A-Za-z0-9][A-Za-z0-9_-]{0,47}', value)
+        and value.lower() not in seen and value.upper() not in
+        {'CON', 'PRN', 'AUX', 'NUL', *(f'COM{i}' for i in range(10)), *(f'LPT{i}' for i in range(10))},
+        'Unique safe phase/job ID required')
+    seen.add(value.lower())
+
+
+def predecessor_completion(pred, config):
+    """Full saved-evidence replay once, after exact supervisor disappearance."""
+    oc.pin(pred['request_path'], pred['request_sha256'])
+    root = legacy._path(config['output'])
+    _no_failure(root)
+    live = legacy.supervisor_alive(pred['supervisor'], legacy.supervisor_rows(pred['supervisor']['pid']))
+    if not (root / 'result.json').exists():
+        oc.require(live, 'Predecessor exited without exact terminal result')
+        return None
+    pins = {str(root / name): oc.sha256(root / name) for name in ('request.json', 'result.json')}
+    published, terminal = (oc.read_json(root / name) for name in ('request.json', 'result.json'))
+    producer = legacy.implementation_bindings()
+    oc.require(published == dict(config, producer_module=legacy.PRODUCER_MODULE,
+        producer_implementation_bindings=producer, training_approved=False, source_cap_reset=False),
+        'Published predecessor request/producer differs')
+    legacy._flags(terminal)
+    oc.require(terminal['schema'] == legacy.SCHEMA and terminal['state'] == legacy.RESULT_STATE
+        and terminal['queue_request_path'] == str(root / 'request.json')
+        and terminal['queue_request_sha256'] == pins[str(root / 'request.json')]
+        and terminal['producer_module'] == legacy.PRODUCER_MODULE
+        and terminal['producer_implementation_bindings'] == producer and terminal['planned_cases'] == 39
+        and len(terminal['records']) == 2, 'Incomplete or foreign predecessor terminal')
+    oc.bind_all(pins)
+    if live:
+        return None
+    # Batch 2's public adapter also authenticates/replays batch 1 and the pilot.
+    last = root / 'batch_002' / 'original_launcher_receipt.json'
+    last_pin = oc.sha256(last)
+    receipt = oc.read_json(last)
+    _, _, replay_pins = predecessor_adapter.original_observed_rows(predecessor_adapter.SerialCapturePin(
+        str(root / 'batch_002' / 'capture'), receipt['result_sha256'], str(last), last_pin))
+    pins = oc.merge_bindings(pins, replay_pins)
+    for index, ((family, count), row) in enumerate(zip(legacy.BATCH_SHAPE, terminal['records'], strict=True), 1):
+        folder = root / f'batch_{index:03d}'
+        path = folder / 'original_launcher_receipt.json'
+        actual = legacy._document(path, pins[str(path)])
+        review = legacy._document(actual['audit_path'], actual['audit_sha256'])
+        oc.require(row == dict(batch_index=index, family=family, planned_cases=count,
+            capture=str(folder / 'capture'), result_sha256=actual['result_sha256'], audit_counts=review['counts'],
+            launcher_receipt_path=str(path), launcher_receipt_sha256=pins[str(path)]),
+            'Predecessor ordered terminal records differ from audited batches')
+    oc.bind_all(pins)
+    _predecessor_absent(pred, config)
+    return dict(state='serial39_completed_and_exact_supervisor_absent', supervisor=deepcopy(pred['supervisor']),
+        process_exit_evidence='exact_PID_absent_from_successful_CIM_query_not_OS_exit_code', bindings=pins, **FLAGS)
+
+
+def _no_failure(root):
+    oc.require(not any((Path(root) / n).exists() for n in ('failure.json', 'superseded_idle_queue.json')),
+               'Failed or superseded capture/queue')
+
+
+def _predecessor_absent(pred, config):
+    root = Path(config['output'])
+    _no_failure(root)
+    oc.require((root / 'result.json').is_file(), 'Missing predecessor terminal')
+    for index in (1, 2):
+        _no_failure(root / f'batch_{index:03d}' / 'capture')
+    oc.require(not legacy.supervisor_alive(pred['supervisor'], legacy.supervisor_rows(pred['supervisor']['pid'])),
+               'Predecessor supervisor active or reused')
+
+
+def worker_command(isaac, kind, submitted, pin, capture):
+    oc.require(kind in WORKERS, 'Unregistered worker kind')
+    if kind == WORKERS[0]:
+        return legacy.batch_command(isaac, dict(plan_path=str(submitted), plan_sha256=pin), capture)
+    return [str(legacy._path(isaac)), '-m', native_pair_v2.WORKER_MODULE,
+            '--plan', str(submitted), '--output', str(capture)]
+
+
+def owner_visibility(process_inventory):
+    '''Reclassify actual self metadata as another observer would, no exemption.'''
+    pid = os.getpid()
+    selected = [r for r in process_inventory['classifications'] if r['ProcessId'] == pid]
+    rows = legacy.supervisor_rows(pid)
+    oc.require(len(selected) == len(rows) == 1, 'Exact owner metadata missing')
+    observed, row = selected[0], rows[0]
+    oc.require(row['ProcessId'] == pid and row['ExecutablePath'] == observed['ExecutablePath']
+        and legacy._path(row['ExecutablePath']) == Path(sys.executable).resolve()
+        and oc.digest(row['CommandLine'].encode('utf-8')) == observed['command_line_sha256'],
+        'Owner metadata changed between CIM snapshots')
+    decision = legacy.guard.classify_process(dict(row, Name=observed['Name']),
+        native_roots=legacy.guard.DEFAULT_NATIVE_ROOTS)
+    oc.require(decision['blocking'] is False and decision['classification'] == 'unrelated_python',
+        'Owner blocks frozen guard from child perspective; no supervisor exemption is available')
+    return dict(metadata=dict(row, Name=observed['Name']), classification=decision,
+        current_pid_exception_used=False, running_code_attested=False)
+
+
+def _tree_pins(root):
+    root = Path(root).resolve()
+    paths = [p for p in root.rglob('*') if p.is_file()]
+    oc.require(all(p.resolve().is_relative_to(root) for p in paths), 'Output file escapes owned tree')
+    return {str(p.resolve()): oc.sha256(p) for p in paths}
+
+
+def postexit_audit(kind, submitted, pin, capture, folder):
+    """Called only after actual owned exit zero; never promote visual decisions."""
+    _no_failure(capture)
+    raw = _tree_pins(capture)
+    oc.bind_all(raw)
+    if kind == WORKERS[0]:
+        completion, review = legacy.complete_batch(capture, dict(plan_path=str(submitted), plan_sha256=pin))
+        audit_path = folder / 'original_postexit_audit.json'
+        oc.write_new(audit_path, review)
+        counts = review['counts']
+    else:
+        oc.require(kind == WORKERS[1], 'Unregistered audit')
+        request, result = (oc.read_json(capture / name) for name in ('request.json', 'result.json'))
+        oc.require(request['plan_path'] == str(submitted) and request['plan_sha256'] == pin
+            and request['worker_module'] == result['worker_module'] == native_pair_v2.WORKER_MODULE
+            and request['worker_implementation_bindings'] == result['worker_implementation_bindings'] == _PAIR_CODE
+            and result['state'] == 'generated_native_pair_captured_pending_visual_review'
+            and [s['sample_id'] for s in result['samples']] == ['original_control', 'generated_variant'],
+            'Wrong submitted pair/worker/result membership')
+        annotation = folder / 'annotations'
+        audit_path = folder / 'pair_postexit_audit.json'
+        oc.new_destination(annotation, [capture, submitted.parent])
+        oc.new_destination(audit_path, [capture, submitted.parent])
+        native_clear_annotation.build(submitted, capture, annotation)
+        review = automated_native_review.run([annotation], audit_path, requalify=False)
+        oc.require(type(review['integrity_held_pairs']) is int and review['integrity_held_pairs'] == 0
+            and sum(review['record_decisions'].values()) == 2, 'Incomplete/integrity-held pair audit')
+        counts = review['record_decisions']
+        completion = dict(request_sha256=raw[str(capture / 'request.json')], result_sha256=raw[str(capture / 'result.json')])
+    oc.bind_all(raw)
+    _no_failure(capture)
+    pins = oc.merge_bindings(raw, {str(audit_path): oc.sha256(audit_path)})
+    if kind == WORKERS[1]:
+        pins = oc.merge_bindings(pins, _tree_pins(annotation))
+    return dict(**completion, audit_path=str(audit_path), audit_sha256=oc.sha256(audit_path),
+                counts=counts, bindings=pins)
+
+
+class _CleanStop(Exception):
+    """Raised only where no owned child or unfinished audit exists."""
+
+
+def _check_stop(output, request_sha256):
+    path = output / 'stop.json'
+    if path.exists():
+        pin = oc.sha256(path)
+        value = legacy._document(path, pin)
+        oc.require(value == dict(schema=STOP_SCHEMA, request_sha256=request_sha256, action='stop'),
+                   'Stop marker is not bound to this request')
+        oc.pin(path, pin)
+        raise _CleanStop({str(path): pin})
+
+
+def run(request_path, request_sha256):
+    oc.require(os.name == 'nt' and not any(n.split('.')[0] in ('isaacsim', 'omni', 'carb') for n in sys.modules),
+               'Windows CPU-only coordinator required')
+    with owner_lock():
+        return _run(oc.pin(legacy._path(str(request_path)), request_sha256), request_sha256)
+
+
+def _run(request_path, request_sha256):
+    request = oc.read_json(request_path)
+    config, jobs = validate_request(request)
+    output = oc.new_destination(request['output'], [request_path])
+    producer = implementation_bindings()
+    bindings = oc.merge_bindings(producer, {str(request_path): request_sha256,
+        request['predecessor']['request_path']: request['predecessor']['request_sha256']},
+        *(j['checked']['bindings'] for j in jobs))
+    output.mkdir(parents=True, exist_ok=False)
+    records, captures = [], []
+    counter = 0
+
+    def save(name, value):
+        path = output / name
+        oc.write_new(path, dict(value, **FLAGS))
+        return {str(path): oc.sha256(path)}
+
+    def checkpoint(state):
+        nonlocal counter
+        counter += 1
+        return save(f'checkpoint_{counter:06d}.json', dict(schema=CHECKPOINT_SCHEMA, state=state,
+            request_sha256=request_sha256, completed=deepcopy(records), next_job_index=len(records),
+            created_utc=datetime.now(timezone.utc).isoformat()))
+
+    def stable():
+        oc.bind_all(bindings)
+        _predecessor_absent(request['predecessor'], config)
+        for capture in captures:
+            _no_failure(capture)
+
+    def failure():
+        save('failure.json', dict(schema=RESULT_SCHEMA, state='failed_stop_first', request_sha256=request_sha256,
+            completed=records, traceback=traceback.format_exc(), cooperative_stop_acknowledged=False))
+
+    try:
+        bindings.update(save('request.json', dict(request, input_request_path=str(request_path),
+            input_request_sha256=request_sha256, producer_module=PRODUCER_MODULE,
+            producer_implementation_bindings=producer)))
+        bindings.update(checkpoint('clean_initial_boundary'))
+        while True:
+            oc.bind_all(bindings)
+            _check_stop(output, request_sha256)
+            prior = predecessor_completion(request['predecessor'], config)
+            if prior is not None:
+                break
+            time.sleep(30)
+        bindings = oc.merge_bindings(bindings, prior['bindings'], save('predecessor_completion.json', prior))
+        _, environment = legacy.v5.worker_environments(request['native_deps'])
+        for index, job in enumerate(jobs):
+            stable()
+            _check_stop(output, request_sha256)
+            folder = output / job['phase_id'] / job['id']
+            oc.require(folder.resolve() == folder and folder.is_relative_to(output), 'Job escaped owned output')
+            oc.new_destination(folder, job['checked']['roots'])
+            submitted, capture = folder / 'submitted' / 'plan.json', folder / 'capture'
+            submitted.parent.mkdir(parents=True, exist_ok=False)
+            with submitted.open('xb') as stream:
+                stream.write(oc.pin(job['plan_path'], job['plan_sha256']).read_bytes())
+            oc.pin(submitted, job['plan_sha256'])
+            oc.new_destination(capture, [submitted.parent, *job['checked']['roots']])
+            bindings[str(submitted)] = job['plan_sha256']
+            command = worker_command(request['isaac_python'], job['worker_kind'], submitted, job['plan_sha256'], capture)
+            launched = {}
+
+            def reserve():
+                while True:
+                    stable()
+                    _check_stop(output, request_sha256)
+                    if legacy.resource_evidence(output)['allowed']:
+                        return
+                    time.sleep(30)
+
+            def launch_check():
+                stable()
+                checked = validate_plan(job['worker_kind'], job['plan_path'], job['plan_sha256'])
+                oc.require(checked == job['checked'], 'Plan/prerequisite changed before launch')
+                oc.pin(submitted, job['plan_sha256'])
+                oc.new_destination(capture, [submitted.parent, *checked['roots']])
+                evidence = legacy.resource_evidence(output)
+                oc.require(evidence['allowed'], 'Native resources changed before launch')
+                launched['owner_visibility'] = owner_visibility(evidence['process_inventory'])
+                oc.bind_all(bindings)
+                _check_stop(output, request_sha256)
+                launched['resource_evidence'] = evidence
+
+            def announce(pid):
+                oc.require(type(pid) is int and pid > 0, 'Owned child PID required')
+                event = folder / 'launch.json'
+                oc.write_new(event, dict(schema=RECEIPT_SCHEMA, state='owned_child_running', worker_pid=pid,
+                    command=command, job_index=index, phase_id=job['phase_id'], job_id=job['id'],
+                    bindings=bindings, resource_evidence=launched['resource_evidence'],
+                    owner_visibility=launched['owner_visibility'], **FLAGS))
+                launched.update(worker_pid=pid, command=command, event_path=str(event), event_sha256=oc.sha256(event))
+
+            code = legacy.campaign.run_checked(command, folder / 'native.log', bindings=bindings,
+                environment=environment, native=True, reserve=reserve, launch_check=launch_check, announce=announce)
+            oc.require(type(code) is int and code == 0, 'Owned native worker failed; stop first')
+            oc.pin(launched['event_path'], launched['event_sha256'])
+            stable()
+            audited = postexit_audit(job['worker_kind'], submitted, job['plan_sha256'], capture, folder)
+            stable()
+            oc.pin(launched['event_path'], launched['event_sha256'])
+            receipt_path = folder / 'receipt.json'
+            receipt = dict(schema=RECEIPT_SCHEMA, state='owned_exit0_postexit_audited_pending_admission',
+                producer_module=PRODUCER_MODULE, producer_implementation_bindings=producer,
+                input_request_path=str(request_path), input_request_sha256=request_sha256,
+                job_index=index, phase_id=job['phase_id'], job_id=job['id'], worker_kind=job['worker_kind'],
+                source_plan_path=job['plan_path'], plan_sha256=job['plan_sha256'], submitted_plan_path=str(submitted),
+                capture=str(capture), planned_source_frames=job['checked']['count'], exit_code=code,
+                owned_worker=launched, source_bindings=deepcopy(bindings), audit=audited, **FLAGS)
+            oc.write_new(receipt_path, receipt)
+            records.append(dict(phase_id=job['phase_id'], job_id=job['id'], worker_kind=job['worker_kind'],
+                receipt_path=str(receipt_path), receipt_sha256=oc.sha256(receipt_path)))
+            captures.append(capture)
+            bindings = oc.merge_bindings(bindings, audited['bindings'], {str(receipt_path): oc.sha256(receipt_path),
+                launched['event_path']: launched['event_sha256']})
+            bindings.update(checkpoint('owned_exit0_audited_clean_boundary'))
+            stable()
+            _check_stop(output, request_sha256)
+        oc.bind_all(bindings)
+        return _terminal(save, 'complete', request_sha256, producer, records, bindings)
+    except _CleanStop as stop:
+        try:
+            bindings = oc.merge_bindings(bindings, stop.args[0])
+            oc.bind_all(bindings)
+            bindings.update(checkpoint('stopped_clean'))
+            return _terminal(save, 'stopped_clean', request_sha256, producer, records, bindings)
+        except BaseException:
+            failure()
+            raise
+    except BaseException:
+        failure()
+        raise
+
+
+def _terminal(save, state, request_sha256, producer, records, bindings):
+    result = dict(schema=RESULT_SCHEMA, state=state, input_request_sha256=request_sha256,
+        producer_module=PRODUCER_MODULE, producer_implementation_bindings=producer, records=records,
+        bindings=bindings, cooperative_stop_acknowledged=state == 'stopped_clean',
+        coordinator_exit_code_claimed=False, **FLAGS)
+    save('result.json', result)
+    return deepcopy(result)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--request', required=True)
+    parser.add_argument('--request-sha256', required=True)
+    args = parser.parse_args(argv)
+    run(args.request, args.request_sha256)
+
+
+if __name__ == '__main__':
+    main()
