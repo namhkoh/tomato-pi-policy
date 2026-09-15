@@ -10104,3 +10104,23 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
 - Useful-image yield remains the bottleneck: broaden proven reference poses,
   rank/screen before rendering, then reuse stages.20k ZIP/heldouts/export not ready.
   Evidence/limits: examples/greenhouse_sim/sim_data/native_dataset/README.md.
+
+- 2026-09-15 reviewed-reference continuation: wider247captures/52strict; current
+  18plant campaign first15jobs174captures/53strict/3geometry rejections. Four new
+  actual RGB/native-crop inspections accepted; separate overlapping visual65,
+  all pending global admission. No rejected attempt counts as an image.
+- Added native_capture_v3 bank/schedule/prepare/projected preselection.312 original
+  reviewed TRAIN references,15donors,52targets,26groups,4plans;17,089 bindings.
+  Fresh qualification queue15groups/51targets with bounded fallback pairs. New
+  preparation uses exact original plans, qualified anchor, <=3 reviewed targets,
+  immutable outputs and completed source-bound plan receipts. No donor cap reset.
+- Independent audits fixed source-directory containment, early proof checking,
+  actual schedule-to-plan identity and immediate pre-launch rechecks. v49suite
+  1536tests+181subtests pass (in-progress inventory tests excluded). Existing native
+  collectors/source assets/splits/reviews unchanged. New raw-writer campaign waits
+  serially for prior work and resource guards; read runtime receipts for execution.
+- Compact native comparison: exact Z/target masks/answers;16,964 hanger-ID swaps
+  across runs, no selected target/parent/trace changes;42codec roundtrips pass.
+  Same-callback independent proof remains missing, so compact is NOT promoted.
+- New20k TRAIN/heldouts/release export/ZIP still pending. Details and artifacts:
+  examples/greenhouse_sim/sim_data/native_capture_v3/README.md; vlm_train_data.md.

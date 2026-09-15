@@ -2183,3 +2183,43 @@ Still outstanding: calibrated global augmentation/image admission, native
 held-out capture, portable high-resolution Qwen export/processor validation,
 20,000 accepted TRAIN+additional held-outs and final ZIP. No local training or
 model download. See sim_data/native_dataset/README.md and NATIVE_CAPTURE_SCALING.md.
+
+### 2026-09-15 reviewed-reference collection continuation
+
+Wider campaign completed247 captures/52 strict automatic candidates. The current
+18-plant generated campaign's first15 jobs yielded174 captures/53 strict;
+three geometry-invalid generation attempts contributed zero images. Native
+annotation replay runs alongside collection. Four new actual full-view/native-
+crop visual inspections accepted their petiole associations and cut intervals,
+bringing the separate overlapping visual pilot to65 pending global admission.
+Receipt: dataset_reviews/native_diverse_generated_visual_20260915_v1/assistant_visual.json.
+
+Added native_capture_v3 reviewed-reference bank, fresh camera qualification
+schedule, same-group generated-job preparation and conservative projection
+preselection. Bank312 references/52 targets/15 TRAIN donors/4 original plans/
+26 groups, verified against17,089 bound files. These are historical848 pose
+priors, NOT new native training images; all strict-native-trace evidence is
+unknown. The chosen schedule has15 groups/51 targets and15 primary+25 conditional
+fallback fresh camera pairs; controls never count toward20k. Its bounded next
+campaign preserves source plan/group identity, defaults to <=3 changed targets
+and6 native views/target, and retains all independent native overlap/visibility/
+depth/trace checks. Legacy active jobs and implementation bindings are unchanged.
+
+Projection retrospective416 frames/99 strict:16 non-strict rejected, zero strict
+rejected;0.244s filter cost and91.38s historical rejected-frame cost. This is not
+an integrated speed result. Full v49 regression1536+181subtests passes in128.88s
+(separately in-progress inventory tests excluded). New launch gates check
+the exact reviewed anchor, target bases, native proof and hashes after resource
+waits. Generated outputs cannot be written inside original asset/plan directories.
+
+Native compact diagnostic7 frames preserves depth bits, target masks and all
+annotation decisions.16,964 identity differences are sibling gutter-hanger
+cylinder swaps; none on targets/parents/selected query trace. Six pixels affect
+unselected query contrast contexts. All42 codec roundtrips pass, but matched-run
+comparison is not independent same-callback proof. Do NOT promote compact yet;
+continue raw collection. Receipt: diagnostics/native_identity_raw_compact_seed19_20260915_v1.json.
+
+20,000 accepted TRAIN + held-out sets remains the completion criterion. Global
+duplicate/augmentation admission, held-out native capture and validated portable
+high-resolution Qwen export remain required. No model download/training or final
+ZIP was started. See native_capture_v3/README.md for entry points and scope.
