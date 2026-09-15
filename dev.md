@@ -10339,3 +10339,12 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   pass the existing trace. The old endpoint-dependent photometric sample grid
   can also miss failed locations; a future fixed-prefix plus legacy-pass chooser
   is being developed separately. No old labels, holds or gates were changed.
+
+- Fixed-prefix query selector implemented separately as query_selection_v2.
+  It enumerates the same41 distal candidates and requires BOTH unchanged legacy
+  full trace and anchored8mm+5mm photometry including anatomical knots/end.
+  All3control holds still have valid alternatives (3/5/8); three longer aliasing
+  candidates fail the added grid. Cut answers and old stored labels remain
+  unchanged. Main40focused tests pass42.66s; agent98combined tests pass41.89s.
+  Annotate API returns a new-epoch label/composite trace/evidence in memory only.
+  Native integration and population-yield measurement remain pending.

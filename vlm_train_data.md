@@ -2458,3 +2458,11 @@ Measured query issue:all3held controls admit alternate distal queries under the
 current full-trace policy. Endpoint-dependent sampling can skip weak-contrast
 locations, so the proposed future chooser must also pass a shared-prefix probe
 grid. This diagnosis does not relabel old images or establish population yield.
+
+The separate query_selection_v2 implementation now passes40independent focused
+tests (42.66s), plus98agent-run selector/legacy regressions. Its three-control
+diagnostic preserves3/5/8 valid alternatives while rejecting three long-query
+sampling aliases. Both old trace and anchored-grid photometry are mandatory.
+Selected cut answers are unchanged; new label/trace are returned in memory with
+an explicit epoch, never written over old evidence. Actual selector costs
+0.80/3.34/1.84s on these controls. Native adoption and broader yield remain open.
