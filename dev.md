@@ -10133,3 +10133,11 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   21matched duplicate pairs and1visually changed example measured; separation
   observed in this small control set only. No calibrated threshold, changed
   approval, split, image or depth. Actual geometry/inventory adapters in progress.
+
+- 2026-09-16 actual saved-mesh morphology adapter: V2 output catalogue replay,
+  authored mesh/chain descriptors, original parent/target ancestry,24 frozen
+  donor reservations and strict hash checks; unsupported domains held.28tests
+  pass;4 native plans yield28descriptor rows/11original targets/3donors, not
+  independent-context approvals. Same-output replay exact.84nuisance comparisons
+  reveal max1.0005e-8 residual (25aboveold1e-9); no tolerance silently changed.
+  Geometry/image joint calibration remains pending; no release cap reset.

@@ -64,6 +64,24 @@ The CPU host's Python3.13 environment must NOT import the cp312 wheel.
 
 ## Remaining release gates
 
+### Actual saved-geometry adapter
+
+`morphology.py` adds `extract_output(OutputPin(...))` for hash-pinned rigid-leaf
+V2 variants. It replays the existing catalogue, reads authored meshes and saved
+chains, includes original counterparts and nearest valid parent chains, and
+retains original family/target/split ancestry. Unsupported domains are held;
+tampered inputs fail. It does not derive novelty from recipe predictions or
+grant new view budgets. Twenty-eight new focused tests pass.
+
+Actual evidence: `diagnostics/morphology_actual_output_20260915_v1/report.json`.
+Four completed native plans yield28 descriptor rows for11 original targets and
+3 donors; repeated originals and same-output replay are exact. These are NOT
+28 independently qualified contexts.84 numerical nuisance comparisons have
+maximum residual1.0005e-8;25 exceed the previous1e-9 test tolerance. That mismatch
+is preserved, not silently relaxed. Generated/original distances0.2721-1.1443
+are measurements, not adjudicated novelty positives. The existing seed19 V1
+visual positive is outside this V2 adapter; joint calibration remains pending.
+
 ### 2026-09-15 native similarity measurement checkpoint
 
 `near_image.py` compares unchanged native RGB using full-frame MAE and a complete

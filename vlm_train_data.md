@@ -2239,3 +2239,11 @@ MAE); this is NOT threshold calibration across donors. No threshold is selected,
 no approval assigned. Artifact:diagnostics/native_rgb_controls_20260915_v1.json.
 Next:actual saved-mesh descriptors, full observed inventory, calibrated global
 admission, continued native collection, held-out capture and portable export.
+
+2026-09-16:implemented actual saved-mesh V2 morphology adapter with28tests.
+Four completed native plans produced28descriptor rows for11 original targets,
+3donors; repeated originals/replays exact. These are measurements, not28new
+admitted contexts. Nuisance maximum1.0005e-8 exceeds the old1e-9 numeric test in
+25/84 comparisons; kept as an explicit calibration limitation. Existing V1
+seed19 visual positive is unsupported by this V2 domain, so no joint calibration
+claim. See native_dataset/README.md and morphology_actual_output_20260915_v1.
