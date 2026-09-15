@@ -10024,3 +10024,14 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
 - Next: generated-geometry-dependent robot view search, persistent multi-view
   capture with qualified cache/render budget, global shape admission and native
   storage/export. Frozen caps/splits unchanged; no old reviews or source assets edited.
+
+- 2026-09-15 persistent native multiview: shared full-greenhouse setup, one writer,
+  render product and exact obstacle cache. Preserve qualified body heading and
+  solve real head joints; floor/limits/mount/geometry/native calibration checked.
+- Two donors:9captured/9eligible/7automatic. Actual full-view plus native-crop
+  inspection accepts all9 as annotation-pilot candidates (41 separately), not
+  final training approvals. Frozen source-target caps/global novelty still apply.
+- Additional views~32s with unchanged56 render subframes; consolidation/storage
+  qualification and diverse multi-target scaling still required for20k.
+  Full1132+87subtests passed (v39,57.93s). See sim_data/NATIVE_MULTIVIEW.md
+  under examples/greenhouse_sim for logs, decisions, limits and next work.

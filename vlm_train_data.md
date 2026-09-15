@@ -2053,3 +2053,21 @@ subtests passed (v36,57.81s). No source/split/review mutation or model download.
 Next collection must recompute admissible actual robot viewpoints for changed
 geometry, not assume an old camera pose still sees the target. Global shape
 admission remains required before resetting any original source-target cap.
+
+### 2026-09-15 native multiview checkpoint
+
+Full-greenhouse persistent capture now reuses the exact obstacle cache, native
+writer and render product across bounded actual robot-head snapshots. Source
+heading/arms/torso/mount preserved; floor, joint limits, camera calibration and
+geometry rechecked. Failed whole-body rotations retained, not bypassed.
+Seed17:5captured/5eligible/4automatic; seed19:4/4/3. All9 actually visually
+reviewed; two contrast holds resolved with visible continuous target shafts.
+Native annotation-pilot candidates41 separately; legacy450 draft unchanged.
+Global duplicate/cap/release admission still pending. No20k release or ZIP.
+See examples/greenhouse_sim/sim_data/NATIVE_MULTIVIEW.md for receipts and scope.
+Runs209.30/179.80s, additional views~32s, unchanged56 requested subframes.
+Full1132 tests +87 subtests passed (v39,57.93s). Consolidated native render
+qualification and larger genuinely diverse multi-target collection remain next.
+Lossless storage prototypes preserve exact original native optical-Z bytes;
+three-frame22k size projection83-112GiB excludes final ZIP/assets, not measured
+release size. No depth reconstruction, source edits or training performed.
