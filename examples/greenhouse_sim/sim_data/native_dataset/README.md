@@ -173,3 +173,29 @@ Separately, morphology_observed_contexts_20260916_v1/report.json now contains222
 available descriptors (111original/111generated) from30 actual generated assets.
 These are measured geometry, not222 approved independent contexts. Meaningful
 joint image/geometry qualification, held-outs and final20k release remain open.
+
+`provisional_compact.py` now accepts the compact index's v2 graph without losing
+its source/label/trace bindings or pretending it is a v1 receipt. It reconstructs
+and validates the internal base graph before delegating the unchanged12-view
+original-target policy. Raw-only v1 output is unchanged; compact inventories
+cannot use the raw-only shortcut.179 focused tests passed in65.69s. No actual
+compact production wave or final dataset is approved by these software tests.
+
+Expanded observed checkpoint (through reference job020):784frames/51receipts,
+206strict/213held/365excluded across14TRAIN donor families/51original targets.
+All306,936 image pairs resolved in43.15s with zero edges at the unchanged
+PROVISIONAL empirical cutoff.197provisional candidates remain after9source-cap
+exclusions;578nonstrict rows and the existing explicit visual hold stay excluded.
+Artifacts: `diagnostics/native_completed_campaign_inventory_20260916_v3.json`,
+`native_near_image_graph_20260916_v2/`, `native_provisional_selection_20260916_v2/`.
+Later active jobs are not included in that fixed snapshot. Three more direct
+visual reviews are in `dataset_reviews/native_reference_visual_20260916_v3/`.
+
+Measured first20reference jobs:264proposals,188captures,55strict candidates in
+122.62min from first preparation to twentieth audited completion:26.9strict/h,
+NOT final-approved images/h. Mean job window309.2s:preparation123.7,scene32.5,
+render/callback74.3,geometry22.5,other collector14.0,native boundaries/audit42.1.
+V4's measured verifier saving alone cannot make20k practical. The current51
+scheduled targets have at most612 images under the unchanged12/source cap.
+Broader original targets, substantive geometry qualification and bounded extra
+view yield tests are required; no cap relaxation or visual-fidelity reduction.

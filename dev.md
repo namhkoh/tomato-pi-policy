@@ -10211,3 +10211,17 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   has18complete generated jobs;686-frame/172provisional snapshot is unchanged.
   Final20kTRAIN+held-outs/export/ZIP still not complete. Original-target expansion
   is being implemented separately, with historical frames used as pose priors only.
+
+- 2026-09-16 observed checkpoint expanded through reference job020:784frames,
+  51receipts,206strict/213held/365excluded,14TRAIN donors/51original targets.
+  All306936RGBpairs resolved43.15s;197provisional candidates after9source-cap
+  exclusions.578nonstrict rows and the existing visual hold remain excluded.
+  No global-completeness, calibrated novelty, held-out or final-release claim.
+  Three additional actually inspected RGB/crop reviews recorded separately.
+- Added compact-aware provisional adapter, preserving v2 source provenance and
+  unchanged12-view policy; raw-v1 cannot bypass compact inventory checks.
+  Independent179tests pass65.69s. Commit scope excludes other agents' work.
+- Measured first20jobs throughput26.9strict candidates/hour (188captures/55strict,
+  122.62min); current51scheduled targets cap at612images. These are limitations,
+  not promised20k ETA. Original-target batch capture and a bounded12-view/stage
+  experiment are in development; current native collection continues unchanged.

@@ -2325,3 +2325,21 @@ Numerical descriptor availability is not meaningful-context novelty approval.
 Current native reference wave has18complete jobs and continues; global admission
 still requires broader inventory, calibrated geometry/image controls, target caps,
 review and frozen held-outs. No final20kTRAIN release or transfer ZIP exists yet.
+
+Next observed snapshot is complete:784frames/51audit receipts;206strict automatic
+candidates,213holds,365exclusions,14original TRAIN donors and51source targets.
+After the full306936-pair graph and original-target caps,197provisional candidates
+remain (9strict capped;578nonstrict excluded; existing visual hold retained).
+Graph runtime43.15s; no near edges at the unchanged empirical cutoff, which is
+still not globally calibrated. This checkpoint stops at reference job020; later
+active jobs are excluded explicitly. Use native_provisional_selection_20260916_v2.
+Three more actual native visual assessments are recorded separately, not TRAIN
+approvals. Compact-aware provisional selection now retains full v2 provenance;
+179focused tests passed. Neither code tests nor raw counts satisfy20k.
+
+Throughput baseline: first20reference jobs264proposals/188captures/55strict over
+122.62minutes,26.9strict candidates/hour before deduplication/caps. Current bank
+contains51scheduled compatible targets, at most612images under12/source. Thus
+waiting on this schedule alone cannot achieve20k. Work now expands fresh native
+original-target capture and tests more distinct views per loaded scene, while
+joint morphology/image control calibration remains required for extra contexts.
