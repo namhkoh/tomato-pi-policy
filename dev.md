@@ -10054,3 +10054,20 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
 - Explicit native warm56_then8_trial option added for matched-budget experiments;
   full56 default unchanged. Per-sample budget/timing/freshness and no-approval
   scope recorded.78 targeted tests pass; trial native qualification outstanding.
+- 2026-09-15 evening: matched native short-render trial preserves exact target
+  masks, native optical-Z within0.2mm and annotation outcomes on14frames/two donors.
+  Later-view median33.07->5.93s; RGB shading/query selection differs. Reference56
+  default unchanged; broad campaign remains explicit trial, not release approval.
+- Completed second donor actual visual review:4accepts,3automatic exclusions.
+  Native pilot52 pending global release checks, separate from legacy450.
+- Nine-donor new detailed-plant campaign active under collection_batches/
+  native_diverse_multitarget_20260915_v2. First job16captures/15eligible/7automatic.
+  Preserved progress-journal failure; append-only statuses fixed. Code change
+  during seed19 plan freeze correctly blocked that job; retry with frozen code.
+- Added tested name/rigid/scale-invariant morphology-context comparisons and
+  exact-lossless native NPY packer/reader. Real-array9/9 exact roundtrips,
+  49.8MB->7.8MB. No native depth recomputation or original file deletion.
+  Both are support components; release admission/compact writer integration pending.
+- Full sim-data pytest1201tests +128subtests passes(v44,64.70s).
+  Details/evidence: examples/greenhouse_sim/sim_data/NATIVE_CAPTURE_SCALING.md.
+ 20k final release/ZIP not complete; no split changes or local VLM training.

@@ -122,3 +122,74 @@ geometry, optics/depth and label guards unchanged. Each sample records actual
 budget and orchestrator request count. No high-resolution qualification or
 training approval is granted by this option. Combined render experiments are
 rejected. New targeted suite78 tests passed; broader trial qualification pending.
+## 2026-09-15 matched short-budget and broader-campaign checkpoint
+
+Measured matched high-resolution experiment:
+-14 actual1696x816 frames, two TRAIN donors, same exact robot/camera poses,
+ optics, scene geometry, lighting configuration and target labels.
+-12 frames used8 requested subframes after one56-subframe warmup per scene.
+ Median later-view time33.066s reference ->5.935s trial; complete collector
+ batches284.31->122.88s and284.27->119.12s, including setup and rejects.
+-All native optical-Z values agree within0.2mm, validity masks and exact target
+ masks agree, zero cut-ROI identity changes, eligibility and output answers match.
+-Three query pixels changed because RGB-dependent query selection changed.
+ RGB is NOT pixel/photometrically equivalent: later-frame global mean absolute
+ differences5.09-7.44/255; target-region differences are reported, not suppressed.
+-Five representative short-frame full views and native crops actually inspected
+ (three seed17 targets; two seed19 targets). Detail remained usable. This is
+ limited pilot evidence, not a universal profile qualification or20k approval.
+-Matched rerenders add ZERO training diversity. Reference56 remains default.
+ Report: data/sim_data/diagnostics/native_short_multitarget_comparison_20260915_v1/report.json.
+
+Second donor full-budget review completed:4 actual visual accepts,3 automatic
+ineligible exclusions. Total native visual-pilot52 pending global caps/releases,
+separate from legacy450 draft. Receipt:
+data/sim_data/dataset_reviews/native_multitarget_20260915_v1/seed19_assistant_visual.json.
+
+Broader native campaign (explicit short-profile trials, original full greenhouse):
+data/sim_data/collection_batches/native_diverse_multitarget_20260915_v2.
+Nine available qualified TRAIN donors; new curved/relocated, rigid-leaf variants,
+up to6 real mounted-head views/target. First new plant:16 captured,15 eligible,
+7 automatic-clear;182.32s collector. These are not individually reviewed yet.
+Read the highest-numbered progress_*.json; only result.json/campaign_result.json
+proves completion. Sensor annotations remain native optical-Z and visible IDs.
+
+Two failures are preserved, neither counted:
+-v1 controller tried updating the create-only JSON progress path; v2 writes
+ append-only numbered progress snapshots and replays the verified unused asset.
+-v2 seed19 preparation detected code changes during plan freezing and refused
+ to launch. Keep code frozen during campaign; retry later with fresh bindings.
+ No force-bypassing of code/source/memory checks; no other applications closed.
+
+## Tested context metrics and exact native sidecar codec
+
+morphology_context.py now measures curve/radius, parent segment and leaf
+attachment/centroid/orientation/covariance in a source-parent canonical frame.
+Tests cover renaming/reordering, proper rigid transforms, uniform scale,
+leaf-context changes, unordered bipartite matching and cross-batch neighbours.
+A signed-zero fingerprint issue was caught and fixed. Rounded fingerprints are
+only provenance aids; tolerance matching is authoritative. No training approval,
+source-cap reset or new biological family is granted by the module.
+
+784 TRAIN recipes were replayed against actual source mesh leaf summaries.
+Normalized tolerances.025/.05/.10/.15 yield784/784/781/768 context candidates.
+For multi-chain parents the audit uses the nearest nondegenerate chain, not an
+invented unified trunk. These are sensitivity results, not a selected release
+threshold. Native/image duplicates and donor-balanced admission remain needed.
+Report: data/sim_data/diagnostics/replayed_context_inventory_20260915_v2/report.json.
+The failed initial single-chain-assumption audit is retained separately.
+
+native_lossless_codec.py provides an explicit create-only packer/reader using
+Zstandard byte-plane storage of the COMPLETE original NPY file. No float math,
+depth inference, quantization, dtype conversion, deletion or legacy-reader change.
+Checks bound file/header/declared array size before allocation, prohibit pickle,
+and validate compressed/original hashes, shape and dtype. Signed zeros and NaN
+payload bits remain exact. Requires optional zstandard on the packing host.
+Nine actual native arrays:49,822,848bytes ->7,829,008bytes, every original file and
+array byte identical after decoding. RGB unchanged and raw sources preserved.
+Report: data/sim_data/diagnostics/native_codec_qualification_20260915_v1/report.json.
+This adapter is not yet a compact capture-writer/export migration.
+
+Full pytest:1201 tests +128 subtests passed in64.70s, clear_regression_20260915_v44.log.
+The v43 unittest invocation found only16 unittest-style cases; it was not the
+full suite. No final20k release/ZIP or local model training exists.

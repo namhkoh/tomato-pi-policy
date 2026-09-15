@@ -2095,3 +2095,29 @@ All7 seed17 images actually visually reviewed (including5 contrast holds);
 native annotation-pilot total48, not final release approvals. Seed19 pending
 visual review. Added explicitly unqualified warm56_then8_trial for native
 matched-budget testing; reference56 stays default. Trial is not accepted20k data.
+### 2026-09-15 evening native throughput and diversity checkpoint
+
+Matched1696x816 short-budget pilot:14 frames/two donors. Exact poses/optics,
+native depth (0.2mm), target masks, visibility eligibility and cut answers agree.
+Median subsequent capture33.07->5.93s; complete batches284s->119-123s.
+RGB shading and3 query pixels changed: not photometric equivalence. Five short
+overviews/native crops inspected. Reference56 remains default; wider trial QA
+continues, and diagnostic repeated frames do not count toward20k.
+
+Native full-budget visual-pilot52 accepted candidates pending global admission;
+legacy450 draft unchanged. New nine-donor detailed-plant campaign:
+data/sim_data/collection_batches/native_diverse_multitarget_20260915_v2.
+First new plant16captured/15eligible/7automatic, not yet individually reviewed.
+Only completed receipts count; numbered progress snapshots are append-only.
+One progress-journal failure and one code-binding-change refusal preserved.
+Keep implementation frozen while native jobs execute; retry rejected job later.
+
+Tested context-aware morphology metrics now prevent rename/rigid/uniform-scale
+variants from creating novelty and include leaf/parent context.784 replayed TRAIN
+recipes remain sensitivity evidence, not automatic new donor families/cap resets.
+Exact native NPY codec tested9real arrays:49.8MB->7.8MB with all file/NaN bits
+preserved; original native depth/RGB untouched. Capture/export storage migration
+and new release novelty policy are still pending.
+Full1201tests +128subtests passed(v44,64.70s).
+See sim_data/NATIVE_CAPTURE_SCALING.md under examples/greenhouse_sim for reports,
+failures, limits and remaining20,000 TRAIN +held-out release requirements.
