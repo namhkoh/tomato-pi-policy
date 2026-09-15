@@ -2561,3 +2561,15 @@ and are not invented training records. Qualificationwitness savesall same-callba
 buffers under a separate diagnosticroot, allowing exact logical-byte comparison.
 Currenttests use synthetic native-sized arrays, not a new Isaac run. Native
 qualification and queue/inventory integration remain pending; no oldfilesdeleted.
+
+2026-09-16 cumulative checkpoint:254provisional TRAINcandidates from1034observed
+rows, after unchanged sourcecaps/frozen24donor splits/priorvisualhold and complete
+534,061-pair near-image coverage. This replaces the216checkpoint, not an additive
+batch:208prior selections retained,46newlyselected,8replaced. Original216snapshot
+is unchanged. No finalnative20krelease/heldout completion or archive exists.
+Joined selection tests:194independent passes39.88s; actual selection80.33s.
+
+Short/reference evidence helper passes96independent tests119.85s, including an
+existing native warmupframe. It preserves original labels, records comparison-only
+V2replay and semantic-ID-aware RGB/Z/mask measurements, and grants no qualification.
+Actual matched reference captures and explicit visual assessment remain pending.

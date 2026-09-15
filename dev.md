@@ -10457,3 +10457,19 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   NOT actual Isaac qualification. No active collector/queue/inventory adoption,
   source-hash optimization, old data deletion, native profile approval or count
   increments are claimed. Policyafc7075be2d56759a3892ff14966419008086b672d6d68bea58ab8d4a253feb2.
+
+- Joined-schema provisional accounting reviewed/tested:194main-run new/frozen
+  tests pass39.88s. New immutable1034-row snapshot and complete534,061-pair
+  graph (all resolved by valid bound pruning;0near edges) yield254provisional
+  TRAINcandidates, NOT final approval. Delta+38vs216:208prior selections remain,
+  46new selections replace8old under unchanged deterministic caps. One prior
+  visual-hold overlay and all24frozen donor assignments remain exact; original
+  snapshot/reviews untouched. Actual selection80.33s; evidence under
+  diagnostics/native_inventory_join_1034_20260916_v1/{joined,graph,selection}.
+- Offline short/reference comparison helper independently passes96tests119.85s,
+  including one existing pinned native warmupframe. It replays original labels,
+  overlaysV2annotation only in RAM, resolves each renderer's semantic IDs, and
+  separates actual8-vs56 from56-vs56/retry cases. No new matched native pair
+  was executed and no threshold/profile qualification is granted. Explicit
+  native-coordinate visual review remains required; pre8mmjunction and continuous
+  visibility are not certified. Raw labels/depth/captures remain untouched.
