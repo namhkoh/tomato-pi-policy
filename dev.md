@@ -10249,3 +10249,18 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   Owned PID/command/event and request/result/audit pins recorded for the pilot.
   Current native run is not interrupted. Pending-only V4 continuation will be
   superseded with a create-only queue that places both probes before V4scale.
+
+- 2026-09-16 geometry budget adapter verified: native_dataset/geometry_admission_v2
+  accepts explicitly pinned observed geometry, native review and calibration
+  evidence; without qualified controls, variants retain their original12-view
+  pool. No actual new contexts have been approved. Added separately versioned
+  morphology_set_v1 for unequal leaf counts (conservative Hausdorff feature-set
+  pseudometric); prior numerical tolerances do not become novelty thresholds.
+  Fresh actual set-metric nuisance replay756/756 passes, max5.1831e-13. Main
+  independent regression190tests+45subtests passes2.62s. New metric calibration
+  and joint visual evidence remain outstanding; no review/split changes.
+- The30-job reviewed-reference wave completed; cumulative post-exit audit is
+  being expanded. Replaced only idle, owned V4 coordinator PID33956 after
+  confirming no active capture child; saved supersession receipt. Replacement
+  serial queue PID17876 waits storage proof/controls before probes and V4scale.
+  No active Isaac worker, annotation file or existing capture was removed.

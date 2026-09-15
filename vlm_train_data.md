@@ -2361,3 +2361,19 @@ Two closest actual geometry pairs were inspected: source anatomy plausible,
 but differing cameras confound shape/perspective attribution. Neither receives
 extra context credit or a changed cut-label decision. See the separate receipt
 dataset_reviews/geometry_neighbor_visual_20260916_v1/assistant_visual.json.
+
+2026-09-16 conservative geometry grouping implementation: geometry_admission_v2
+joins actual morphology and native provenance to explicitly supplied controls.
+Absent qualified controls, generated variants share their original12-view pool;
+numerically different meshes are not automatically new training diversity.
+The separate morphology_set_v1 pseudometric supports unequal leaf counts and
+conservatively ignores duplicate/coincident feature multiplicity. Its756 actual
+nuisance comparisons pass (maximum5.1831e-13), but no meaningful novelty cutoff
+is selected. Independent190tests+45subtests pass2.62s. No extra context credits,
+dataset approvals, source-cap resets or final20k release are claimed.
+
+The30-job native reviewed-reference wave has finished; cumulative audit/graph
+selection is being updated separately. The pending-only old V4 coordinator was
+replaced safely with the committed serial storage/control/probe/original-pilot
+queue. Existing native captures and review files are intact. Pipeline progress
+must be reported as raw/strict/provisional/final separately, not a summed total.

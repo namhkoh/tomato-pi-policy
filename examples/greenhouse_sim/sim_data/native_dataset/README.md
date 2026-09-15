@@ -199,3 +199,20 @@ V4's measured verifier saving alone cannot make20k practical. The current51
 scheduled targets have at most612 images under the unchanged12/source cap.
 Broader original targets, substantive geometry qualification and bounded extra
 view yield tests are required; no cap relaxation or visual-fidelity reduction.
+
+## Conservative observed geometry budgets
+
+`geometry_admission_v2.py` joins pinned observed inventory, actual extracted
+geometry, native image graph and reviews. It supplies budget inputs, not final
+admission or proof of native execution. Without external qualified controls,
+all variants retain their original12-view pool. Uncertain comparisons merge;
+an explicit novelty-withheld review does not invalidate an otherwise clear label.
+
+`morphology_set_v1.py` is a separately versioned pseudometric: fixed-feature
+L-infinity plus symmetric Hausdorff distance on leaf feature sets. It supports
+unequal nonempty cardinalities and ignores duplicate/coincident multiplicity,
+so distinct arrangements can merge conservatively. No prior cutoff transfers.
+Actual nuisance replay756/756 passes, max5.1831e-13; this is numerical stability,
+not a meaningful shape novelty threshold. Joint native controls/review remain
+required before any extra geometry budget. Main independent focused regression:
+190tests+45subtests passed2.62s (`geometry_context_regression_20260916_v2.log`).
