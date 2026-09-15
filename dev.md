@@ -10373,3 +10373,15 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   All3support static petiole annotation; no biological/physical safety claim,
   source-budget reset or training-count increment. Current7completedV4jobs:
   125captures,38strict before independent cumulative cap/duplicate checks.
+
+- New compact_query_v2/query_audit_v2 preserve native capture flow while adding
+  explicit annotation epoch/policy pins. Canonical annotation input strips only
+  storage-generated files after independent byte verification; complete query
+  selection evidence stays in the label. Main91focused tests pass78.22s; agent
+  223combined tests pass147.35s. No nativeV2qualification or old relabeling yet.
+- Six-job exclusion diagnosis:97captures/30strict/20holds/47exclusions. Of47,
+  29have foreground-occluded cut intervals,9lack projected parent clearance,
+  8fail proximal visibility and1lacks a usable query. Brightness is not the
+  dominant exclusion. All29pre-render skips are conservative geometry overlaps.
+  A bounded matched-parallax experiment is being prepared; full greenhouse,
+  native mounted camera, current lighting and annotation thresholds stay fixed.

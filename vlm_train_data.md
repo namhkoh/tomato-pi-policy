@@ -2488,3 +2488,18 @@ checkpoint. CurrentV4wave7jobs:125raw/38strict, not yet globally selected.
 Main's3new seed41image inspections support their visible petiole cut/query
 association; separately recorded under dataset_reviews/native_wave4_seed41_main_20260916_v1.
 They confer no extra diversity credit, cut safety or final TRAIN approval.
+
+New compact-queryV2capture/replay integration passes91independent focused CPU
+tests(78.22s), plus223agent-run tests. It binds a distinct annotation epoch and
+the exact full selection evidence; metadata files map is excluded consistently
+from the annotation fingerprint only after storage byte validation. Native
+qualification is still required. Old captures/labels are unchanged.
+
+Heldout readiness correction: native1696heldout capture/inventory are NOT
+implemented; existing native routes are TRAIN-only. Frozen validation donors
+13/29/37/97 have50planned targets; test31/59/61/79 have49. At12views/target the
+unmodified-original maxima are600/588 before rejection, not2000each. The same
+TRAIN-qualified, frozen image-conditioned query/annotation algorithm may apply
+unchanged to heldouts; what is prohibited is retuning it from heldout yield or
+model accuracy. Separate fixed-query labeling would unnecessarily change the
+task distribution. Heldout execution waits TRAIN policy qualification/freeze.
