@@ -10225,3 +10225,27 @@ grasp weld, hidden collision removal or relaxed slip limit was introduced.
   122.62min); current51scheduled targets cap at612images. These are limitations,
   not promised20k ETA. Original-target batch capture and a bounded12-view/stage
   experiment are in development; current native collection continues unchanged.
+
+- 2026-09-16 source expansion/probe ready for native qualification: added isolated
+  native_original_capture package (original anatomy, pinned historical pose ONLY,
+  fresh actual-head1696x816 RGB/nativeZ/IDs, independent automatic label audit).
+  Batches support1..64same-donor cases; initial native pilot is one seed73/SubStem41.
+  CPU plan SHA41e8e09182a9202230383d27f2cd460dae32c178e289a73391d75d739d442cba;
+  source and camera/frozen16/4/4 reservations remain unchanged. Not yet rendered.
+- Added native_capture_v5 bounded12 diagnostic: original6proposals unchanged plus
+  six distinct in-bounds offsets per target, exactly2targets/24maximum proposals.
+  Frozen collector reused; source caps/physics/scene preserved. Prepared plan
+  SHA2a0164adae0f488243003430e4ab6a40225672d12fb29320aeaf266163ef4139.
+  Serial queue waits existing collection/storageproof/threecontrols, runs probe
+  and optional originalpilot, then unchanged V4scale.109independent tests pass14.60s.
+  Native qualification and measured benefit remain pending; no profile promotion.
+- Closest actual geometry-neighbour pairs seed71/SubStem40 andseed67/SubStem42
+  inspected in fullscene+native513crops. Anatomy plausible, but different cameras
+  prevent confident new-context credit. Retain shared source budgets; no cut-label
+  decisions changed. Separate receipt:dataset_reviews/geometry_neighbor_visual_20260916_v1.
+
+- Final serial-queue review closed explicit native/CPU environment separation
+  and exact original-launch/capture-plan joins;115combined tests pass13.96s.
+  Owned PID/command/event and request/result/audit pins recorded for the pilot.
+  Current native run is not interrupted. Pending-only V4 continuation will be
+  superseded with a create-only queue that places both probes before V4scale.

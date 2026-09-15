@@ -2343,3 +2343,21 @@ contains51scheduled compatible targets, at most612images under12/source. Thus
 waiting on this schedule alone cannot achieve20k. Work now expands fresh native
 original-target capture and tests more distinct views per loaded scene, while
 joint morphology/image control calibration remains required for extra contexts.
+
+2026-09-16 original-only expansion and throughput probes implemented separately:
+native_original_capture has pinned original anatomy, complete robot pose/joint
+limits, immutable mountedcamera, native1696x816 optical-Z and fresh annotation
+replay. Historical RGB/labels are never TRAIN inputs.1..64same-donor cases share
+one stage/product; initial one-case seed73/SubStem41 CPU plan is ready, not yet
+native-qualified. Its explicit observed-inventory adapter is still being added.
+
+native_capture_v5 preserves six existing camera proposals and adds six distinct
+in-bounds physical base positions per target. Exactly two targets/24proposals
+share the original collector stage. It is an explicit RAW diagnostic profile,
+not a production change or new geometry budget. Both paths plus serial-queue
+guards pass109 independent tests (14.60s). Native qualification/yield still pending.
+
+Two closest actual geometry pairs were inspected: source anatomy plausible,
+but differing cameras confound shape/perspective attribution. Neither receives
+extra context credit or a changed cut-label decision. See the separate receipt
+dataset_reviews/geometry_neighbor_visual_20260916_v1/assistant_visual.json.
