@@ -1,0 +1,68 @@
+{
+ "h1_visible_good": {
+  "id": "seed97_full_1c3e8f290d3509c37128",
+  "family": "seed97_full",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    427.5,
+    133.2
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "raw": "```json\n[{\"point_3d\": [500.0, 323.0, 0.48], \"label\": \"cut point\"}]\n```",
+  "error_px": 3.775586841803535,
+  "pred_depth": 0.48,
+  "depth_error_m": 0.0230413866043091,
+  "n": 91
+ },
+ "h1_visible_missed": {
+  "id": "seed29_full_43c064254ce3bd712b45",
+  "family": "seed29_full",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    341.7,
+    269.4
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "raw": "```json\n[{\"point_3d\": [368.2, 750.7, 0.53], \"label\": \"cut point\"}]\n```",
+  "error_px": 47.21034014196473,
+  "pred_depth": 0.53,
+  "depth_error_m": 0.02091035366058347,
+  "n": 118
+ },
+ "h1_occluded_abstain": {
+  "id": "seed13_full_8965fa4bae3c52bb1584",
+  "family": "seed13_full",
+  "truth": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  },
+  "raw": "```json\n[{\"point_3d\": null, \"label\": \"occluded\"}]\n```",
+  "error_px": null,
+  "pred_depth": null,
+  "depth_error_m": null,
+  "n": 187
+ },
+ "h1_occluded_false": {
+  "id": "seed29_full_5440615c458036656aed",
+  "family": "seed29_full",
+  "truth": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  },
+  "raw": "```json\n[{\"point_3d\": [788.2, 350.7, 0.38], \"label\": \"cut point\"}]\n```",
+  "error_px": null,
+  "pred_depth": 0.38,
+  "depth_error_m": null,
+  "n": 159
+ }
+}
