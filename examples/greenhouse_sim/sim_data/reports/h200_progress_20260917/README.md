@@ -12,3 +12,7 @@ category (A correct, B near miss, C wrong structure, D wrongly abstained, E corr
 outcome frequencies for the RGB and depth-aware models, the issues in order of severity, and the same four frames
 predicted by the untrained model, the RGB fine-tune and the depth-aware fine-tune. Sheets in `figures/contact_*.jpg`,
 selections and frequencies in `figures/contact_*.json` and `figures/outcome_frequencies.json`.
+
+`labels.html`: how a label is built (petiole centreline, 10 mm cut point, 10-20 mm interval, query pixel, visible vs
+occluded decision), annotated training and validation frames with the target petiole mask, and what the model receives
+versus what it is scored against. Figures in `figures/label_anatomy_*.jpg` and `figures/model_input_vs_supervision.jpg`.
