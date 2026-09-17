@@ -1,0 +1,374 @@
+[
+ {
+  "id": "seed29_full_951a7ec07a2a87cd9c82",
+  "caption": "1  Background, 419.7 px off",
+  "detail": "seed29_full_951a7ec07a \u00b7 pred 2.20 m, petiole 0.30 m",
+  "err_px": 419.65469767493374,
+  "raw": "```json\n[{\"point_3d\": [642.1, 340.0, 0.41], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    130.2,
+    71.9
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed29_full_1a36b9314b6b6fcb3e9f",
+  "caption": "1  Background, 334.2 px off",
+  "detail": "seed29_full_1a36b9314b \u00b7 pred 3.04 m, petiole 0.45 m",
+  "err_px": 334.1628737707408,
+  "raw": "```json\n[{\"point_3d\": [546.2, 370.8, 0.55], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    131.6,
+    109.8
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed13_full_489751da7fb83a6c6864",
+  "caption": "1  Background, 303.0 px off",
+  "detail": "seed13_full_489751da7f \u00b7 pred 3.17 m, petiole 0.53 m",
+  "err_px": 303.0308720673853,
+  "raw": "```json\n[{\"point_3d\": [513.2, 529.2, 0.52], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    150.5,
+    112.1
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed29_full_a92e32000ebc68df4809",
+  "caption": "1  Background, 292.9 px off",
+  "detail": "seed29_full_a92e32000e \u00b7 pred 2.98 m, petiole 0.50 m",
+  "err_px": 292.8906998198475,
+  "raw": "```json\n[{\"point_3d\": [703.2, 450.5, 0.5], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    328.6,
+    65.0
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed29_full_7122c37255dbeb6a76d5",
+  "caption": "2  Other plant part, 246.9 px off",
+  "detail": "seed29_full_7122c37255 \u00b7 similar depth to the petiole",
+  "err_px": 246.89575816202282,
+  "raw": "```json\n[{\"point_3d\": [686.7, 643.4, 0.6], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    345.5,
+    192.7
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed29_full_046d21bb056cf96d9cc8",
+  "caption": "2  Other plant part, 215.4 px off",
+  "detail": "seed29_full_046d21bb05 \u00b7 similar depth to the petiole",
+  "err_px": 215.3686057017596,
+  "raw": "```json\n[{\"point_3d\": [587.2, 690.2, 0.48], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    636.0,
+    116.3
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed29_full_5b708be1e91f37b53b5f",
+  "caption": "2  Other plant part, 158.2 px off",
+  "detail": "seed29_full_5b708be1e9 \u00b7 similar depth to the petiole",
+  "err_px": 158.17574483896072,
+  "raw": "```json\n[{\"point_3d\": [272.2, 540.0, 0.43], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    347.3,
+    113.3
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed37_full_84f710400a25a39934e9",
+  "caption": "2  Other plant part, 155.7 px off",
+  "detail": "seed37_full_84f710400a \u00b7 similar depth to the petiole",
+  "err_px": 155.67636934101463,
+  "raw": "```json\n[{\"point_3d\": [392.9, 150.2, 0.52], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    485.4,
+    93.9
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed29_full_49737375520669cab533",
+  "caption": "3  Right stalk, near miss, 12.3 px off",
+  "detail": "seed29_full_4973737552 \u00b7 on the mask, outside the interval",
+  "err_px": 12.288844372031084,
+  "raw": "```json\n[{\"point_3d\": [218.0, 277.5, 0.36], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    196.9,
+    115.7
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed29_full_95f116e2dc518aa554ca",
+  "caption": "3  Right stalk, near miss, 13.1 px off",
+  "detail": "seed29_full_95f116e2dc \u00b7 on the mask, outside the interval",
+  "err_px": 13.062001169805473,
+  "raw": "```json\n[{\"point_3d\": [188.0, 612.3, 0.38], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    172.2,
+    247.1
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed13_full_0ab591fbd90c79128166",
+  "caption": "3  Right stalk, near miss, 11.1 px off",
+  "detail": "seed13_full_0ab591fbd9 \u00b7 on the mask, outside the interval",
+  "err_px": 11.05760972362472,
+  "raw": "```json\n[{\"point_3d\": [223.1, 450.7, 0.52], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    178.6,
+    180.7
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed29_full_8850d3e481245fa95989",
+  "caption": "3  Right stalk, near miss, 11.4 px off",
+  "detail": "seed29_full_8850d3e481 \u00b7 on the mask, outside the interval",
+  "err_px": 11.36517991762562,
+  "raw": "```json\n[{\"point_3d\": [479.2, 460.0, 0.47], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    417.2,
+    191.1
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed37_full_8f99902d0f6cfe112885",
+  "caption": "4  Visible cut, model abstained",
+  "detail": "seed37_full_8f99902d0f \u00b7 output point_3d: null",
+  "err_px": null,
+  "raw": "```json\n[{\"point_3d\": null, \"label\": \"occluded\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    608.0,
+    183.9
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed29_full_ed4d77d5d616a3898320",
+  "caption": "4  Visible cut, model abstained",
+  "detail": "seed29_full_ed4d77d5d6 \u00b7 output point_3d: null",
+  "err_px": null,
+  "raw": "```json\n[{\"point_3d\": null, \"label\": \"occluded\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    515.5,
+    210.9
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed97_full_79db8c5346a9ef604da9",
+  "caption": "4  Visible cut, model abstained",
+  "detail": "seed97_full_79db8c5346 \u00b7 output point_3d: null",
+  "err_px": null,
+  "raw": "```json\n[{\"point_3d\": null, \"label\": \"occluded\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    651.9,
+    141.3
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed13_full_c3a1ecb687e85750828d",
+  "caption": "4  Visible cut, model abstained",
+  "detail": "seed13_full_c3a1ecb687 \u00b7 output point_3d: null",
+  "err_px": null,
+  "raw": "```json\n[{\"point_3d\": null, \"label\": \"occluded\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    279.5,
+    332.6
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed29_full_fe3e37b2af74e81ef541",
+  "caption": "5  Occluded, fabricated on the occluder",
+  "detail": "seed29_full_fe3e37b2af \u00b7 pred 0.46 m, petiole 0.51 m",
+  "err_px": null,
+  "raw": "```json\n[{\"point_3d\": [496.9, 400.5, 0.46], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  }
+ },
+ {
+  "id": "seed13_full_769d2ddc07d69cb9db5c",
+  "caption": "5  Occluded, fabricated on the occluder",
+  "detail": "seed13_full_769d2ddc07 \u00b7 pred 0.61 m, petiole 0.66 m",
+  "err_px": null,
+  "raw": "```json\n[{\"point_3d\": [195.0, 150.2, 0.57], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  }
+ },
+ {
+  "id": "seed29_full_7f9a037ee819c471094b",
+  "caption": "5  Occluded, fabricated elsewhere",
+  "detail": "seed29_full_7f9a037ee8 \u00b7 pred depth invalid",
+  "err_px": null,
+  "raw": "```json\n[{\"point_3d\": [623.2, 515.2, 0.52], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  }
+ },
+ {
+  "id": "seed13_full_dd49280ae64038bf942b",
+  "caption": "5  Occluded, fabricated elsewhere",
+  "detail": "seed13_full_dd49280ae6 \u00b7 pred depth 2.26 m",
+  "err_px": null,
+  "raw": "```json\n[{\"point_3d\": [633.8, 650.7, 0.6], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  }
+ },
+ {
+  "id": "seed97_full_703f93a49e1f40ba6c01",
+  "caption": "6  Hardest target, 85.8 px off",
+  "detail": "seed97_full_703f93a49e \u00b7 seed97/SubStem_50, 34 views",
+  "err_px": 85.80825987281176,
+  "raw": "```json\n[{\"point_3d\": [106.1, 615.2, 0.45], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    159.2,
+    200.3
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed97_full_d07521c1569361169f38",
+  "caption": "6  Hardest target, 83.4 px off",
+  "detail": "seed97_full_d07521c156 \u00b7 seed97/SubStem_50, 34 views",
+  "err_px": 83.39131754901103,
+  "raw": "```json\n[{\"point_3d\": [105.0, 490.2, 0.46], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    151.1,
+    144.3
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed97_full_51fd8ac2f1418aaeb32c",
+  "caption": "6  Hardest target, 79.2 px off",
+  "detail": "seed97_full_51fd8ac2f1 \u00b7 seed97/SubStem_50, 34 views",
+  "err_px": 79.18227682101596,
+  "raw": "```json\n[{\"point_3d\": [155.0, 490.2, 0.47], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    193.0,
+    150.2
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ },
+ {
+  "id": "seed97_full_e0b32d7ebbfa74654dc4",
+  "caption": "6  Hardest target, 73.4 px off",
+  "detail": "seed97_full_e0b32d7ebb \u00b7 seed97/SubStem_50, 34 views",
+  "err_px": 73.41667775212933,
+  "raw": "```json\n[{\"point_3d\": [155.2, 460.0, 0.45], \"label\": \"cut point\"}]\n```",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    191.7,
+    145.5
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  }
+ }
+]

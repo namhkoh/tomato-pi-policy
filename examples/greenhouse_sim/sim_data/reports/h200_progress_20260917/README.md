@@ -16,3 +16,8 @@ selections and frequencies in `figures/contact_*.json` and `figures/outcome_freq
 `labels.html`: how a label is built (petiole centreline, 10 mm cut point, 10-20 mm interval, query pixel, visible vs
 occluded decision), annotated training and validation frames with the target petiole mask, and what the model receives
 versus what it is scored against. Figures in `figures/label_anatomy_*.jpg` and `figures/model_input_vs_supervision.jpg`.
+
+`failures.html`: where hamster-01 struggles. 24-tile failure gallery (background misses, other-plant-part misses, near misses,
+wrong abstentions, fabricated points, hardest target), a table of where predicted pixels land by error band (native depth at the
+predicted pixel vs the query), the worst targets, and a 40-frame random stratified sample ordered by error. Selections and
+per-prediction analysis in `figures/failure_gallery.json`, `figures/wide_sample_40.json`, `figures/failure_analysis.json`.
