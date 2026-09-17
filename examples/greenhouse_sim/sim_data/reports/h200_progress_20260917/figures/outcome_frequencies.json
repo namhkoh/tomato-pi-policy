@@ -1,0 +1,44 @@
+{
+ "untrained": {
+  "counts": {
+   "A visible, correct <=5px": 0,
+   "B visible, 5-25px": 0,
+   "C visible, >25px": 0,
+   "D visible, wrongly abstained": 0,
+   "D2 visible, invalid": 1012,
+   "E occluded, correct abstention": 0,
+   "F occluded, fabricated point": 0,
+   "F2 occluded, invalid": 346
+  },
+  "visible": 1012,
+  "occluded": 346
+ },
+ "full-02": {
+  "counts": {
+   "A visible, correct <=5px": 48,
+   "B visible, 5-25px": 423,
+   "C visible, >25px": 251,
+   "D visible, wrongly abstained": 290,
+   "D2 visible, invalid": 0,
+   "E occluded, correct abstention": 167,
+   "F occluded, fabricated point": 179,
+   "F2 occluded, invalid": 0
+  },
+  "visible": 1012,
+  "occluded": 346
+ },
+ "hamster-01": {
+  "counts": {
+   "A visible, correct <=5px": 127,
+   "B visible, 5-25px": 611,
+   "C visible, >25px": 243,
+   "D visible, wrongly abstained": 31,
+   "D2 visible, invalid": 0,
+   "E occluded, correct abstention": 187,
+   "F occluded, fabricated point": 159,
+   "F2 occluded, invalid": 0
+  },
+  "visible": 1012,
+  "occluded": 346
+ }
+}

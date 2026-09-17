@@ -1,0 +1,222 @@
+[
+ {
+  "model": "UNTRAINED Qwen3-VL-8B",
+  "id": "seed29_full_fa540d7f0a842ab9f4e0",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    540.2,
+    154.8
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "pred": null,
+  "raw": "{\n  \"status\": \"abstain\",\n  \"cut_point_uv\": null,\n  \"visibility\": \"occluded\",\n  \"next_action\": \"inspect_cut_region\"\n}"
+ },
+ {
+  "model": "UNTRAINED Qwen3-VL-8B",
+  "id": "seed13_full_295702fd7bc0906d80eb",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    143.8,
+    81.3
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "pred": null,
+  "raw": "{\n  \"status\": \"abstain\",\n  \"cut_point_uv\": null,\n  \"visibility\": \"occluded\",\n  \"next_action\": \"inspect_cut_region\"\n}"
+ },
+ {
+  "model": "UNTRAINED Qwen3-VL-8B",
+  "id": "seed97_full_cd79e3ee96882992b3e0",
+  "truth": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  },
+  "pred": null,
+  "raw": "{\n  \"status\": \"abstain\",\n  \"cut_point_uv\": null,\n  \"visibility\": \"occluded\",\n  \"next_action\": \"inspect_cut_region\"\n}"
+ },
+ {
+  "model": "UNTRAINED Qwen3-VL-8B",
+  "id": "seed29_full_a7776df39ac340ad90a7",
+  "truth": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  },
+  "pred": null,
+  "raw": "{\n  \"status\": \"abstain\",\n  \"cut_point_uv\": null,\n  \"visibility\": \"occluded\",\n  \"next_action\": \"inspect_cut_region\"\n}"
+ },
+ {
+  "model": "Full FT v2 (RGB)",
+  "id": "seed29_full_fa540d7f0a842ab9f4e0",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    540.2,
+    154.8
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "pred": {
+   "status": "localized",
+   "cut_point_uv": [
+    522.09664,
+    183.702
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "raw": "{\"status\":\"localized\",\"cut_point_uv\":[615.68,450.25],\"visibility\":\"clear\",\"next_action\":\"inspect_cut_region\"}"
+ },
+ {
+  "model": "Full FT v2 (RGB)",
+  "id": "seed13_full_295702fd7bc0906d80eb",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    143.8,
+    81.3
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "pred": {
+   "status": "localized",
+   "cut_point_uv": [
+    144.60096000000001,
+    102.102
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "raw": "{\"status\":\"localized\",\"cut_point_uv\":[170.52,250.25],\"visibility\":\"clear\",\"next_action\":\"inspect_cut_region\"}"
+ },
+ {
+  "model": "Full FT v2 (RGB)",
+  "id": "seed97_full_cd79e3ee96882992b3e0",
+  "truth": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  },
+  "pred": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  },
+  "raw": "{\"status\":\"abstain\",\"cut_point_uv\":null,\"visibility\":\"occluded\",\"next_action\":\"change_viewpoint\"}"
+ },
+ {
+  "model": "Full FT v2 (RGB)",
+  "id": "seed29_full_a7776df39ac340ad90a7",
+  "truth": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  },
+  "pred": {
+   "status": "localized",
+   "cut_point_uv": [
+    399.00095999999996,
+    204.102
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "raw": "{\"status\":\"localized\",\"cut_point_uv\":[470.52,500.25],\"visibility\":\"clear\",\"next_action\":\"inspect_cut_region\"}"
+ },
+ {
+  "model": "hamster-01 (RGB-D)",
+  "id": "seed29_full_fa540d7f0a842ab9f4e0",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    540.2,
+    154.8
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "pred": {
+   "status": "localized",
+   "cut_point_uv": [
+    543.3136000000001,
+    157.20239999999998
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "raw": "```json\n[{\"point_3d\": [640.7, 385.3, 0.5], \"label\": \"cut point\"}]\n```"
+ },
+ {
+  "model": "hamster-01 (RGB-D)",
+  "id": "seed13_full_295702fd7bc0906d80eb",
+  "truth": {
+   "status": "localized",
+   "cut_point_uv": [
+    143.8,
+    81.3
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "pred": {
+   "status": "localized",
+   "cut_point_uv": [
+    135.3408,
+    102.204
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "raw": "```json\n[{\"point_3d\": [159.6, 250.5, 0.49], \"label\": \"cut point\"}]\n```"
+ },
+ {
+  "model": "hamster-01 (RGB-D)",
+  "id": "seed97_full_cd79e3ee96882992b3e0",
+  "truth": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  },
+  "pred": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  },
+  "raw": "```json\n[{\"point_3d\": null, \"label\": \"occluded\"}]\n```"
+ },
+ {
+  "model": "hamster-01 (RGB-D)",
+  "id": "seed29_full_a7776df39ac340ad90a7",
+  "truth": {
+   "status": "abstain",
+   "cut_point_uv": null,
+   "visibility": "occluded",
+   "next_action": "change_viewpoint"
+  },
+  "pred": {
+   "status": "localized",
+   "cut_point_uv": [
+    390.08,
+    203.5104
+   ],
+   "visibility": "clear",
+   "next_action": "inspect_cut_region"
+  },
+  "raw": "```json\n[{\"point_3d\": [460.0, 498.8, 0.45], \"label\": \"cut point\"}]\n```"
+ }
+]
