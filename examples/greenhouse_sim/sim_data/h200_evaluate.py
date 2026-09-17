@@ -71,12 +71,12 @@ def generate(args):
     target=output/f'predictions-shard-{args.shard_index}-of-{args.shard_count}.jsonl'
     if target.exists(): raise ValueError(f'{target} exists; choose a new run directory')
     tuned=args.tuned_model.resolve() if args.tuned_model else None
-    decimals=None;depth_input=False
+    decimals=None;depth_input=False;no_query=False
     if args.adapter or tuned:
         adapter=args.adapter.resolve() if args.adapter else None
         contract=json.loads(((adapter or tuned)/'grounding_adapter.json').read_text())
         if contract['coordinates']!=args.coordinates: raise ValueError('Adapter coordinate convention differs from request')
-        decimals=contract.get('coordinate_decimals');depth_input=bool(contract.get('depth_input'))
+        decimals=contract.get('coordinate_decimals');depth_input=bool(contract.get('depth_input'));no_query=not contract.get('query_pixel_given',True)
         processor=AutoProcessor.from_pretrained(str(adapter or tuned),local_files_only=True,trust_remote_code=False)
     else:
         adapter=None
@@ -90,14 +90,14 @@ def generate(args):
     versions={name:importlib.metadata.version(name) for name in ('torch','transformers','peft','accelerate')}
     from .qwen_coordinates import adapter_name
     header=dict(kind='header',split=args.split,model_path=str(model_path),adapter=str(adapter) if adapter else None,
-        tuned_model=str(tuned) if tuned else None,coordinate_decimals=decimals,depth_input=depth_input,
+        tuned_model=str(tuned) if tuned else None,coordinate_decimals=decimals,depth_input=depth_input,query_pixel_given=not no_query,
         coordinates=args.coordinates,coordinate_adapter=adapter_name(decimals) if args.coordinates=='normalized_1000' else 'canonical_task_v3_pixels',
         shard_index=args.shard_index,shard_count=args.shard_count,rows=len(rows),max_new_tokens=args.max_new_tokens,
         decoding='greedy',versions=versions)
     with open(target,'w') as handle:
         handle.write(json.dumps(header)+'\n')
         for n,row in enumerate(rows,1):
-            messages=model_messages(row,root,coordinates=args.coordinates,decimals=decimals,depth_input=depth_input)
+            messages=model_messages(row,root,coordinates=args.coordinates,decimals=decimals,depth_input=depth_input,no_query=no_query)
             assert [m['role'] for m in messages]==['system','user']
             inputs=processor.apply_chat_template(messages,tokenize=True,add_generation_prompt=True,
                 return_dict=True,return_tensors='pt').to('cuda')

@@ -29,11 +29,11 @@ class Rows:
 
 
 class Collator:
-    def __init__(self, root, processor, longest_edge, class_weights, status_weight):
-        self.root, self.processor, self.le, self.cw, self.sw = root, processor, longest_edge, class_weights, status_weight
+    def __init__(self, root, processor, longest_edge, class_weights, status_weight, query=True):
+        self.root, self.processor, self.le, self.cw, self.sw, self.query = root, processor, longest_edge, class_weights, status_weight, query
     def __call__(self, rows):
         if len(rows) != 1: raise ValueError('single-example microbatch only')
-        enc = cd.encode(rows[0], self.root, self.processor, self.le)
+        enc = cd.encode(rows[0], self.root, self.processor, self.le, query=self.query)
         enc['token_weights'] = cd.token_weights(enc['labels'], self.processor.tokenizer, rows[0], self.cw, self.sw)
         return dict(enc)
 
@@ -52,6 +52,7 @@ def main(argv=None):
     p.add_argument('--status-token-weight', type=float, default=1.); p.add_argument('--deepspeed', type=Path, default=None)
     p.add_argument('--seed', type=int, default=41); p.add_argument('--wandb-project', default=None); p.add_argument('--wandb-entity', default=None)
     p.add_argument('--run-name', default=None); p.add_argument('--save-total-limit', type=int, default=3)
+    p.add_argument('--no-query', action='store_true', help='Single-target variant: no query pixel in the prompt (requires data with exactly one true cut point per image)')
     a = p.parse_args(argv)
     os.environ['HF_HUB_OFFLINE'] = '1'; os.environ['TRANSFORMERS_OFFLINE'] = '1'
     import torch
@@ -73,12 +74,12 @@ def main(argv=None):
     train_rows = choose_rows(all_train, a.mode)
     counts = Counter(r['answer']['status'] for r in all_train)
     cw = {s: len(all_train) / (len(counts) * n) for s, n in counts.items()} if a.class_balance else None
-    collator = Collator(root, processor, a.longest_edge, cw, a.status_token_weight)
+    collator = Collator(root, processor, a.longest_edge, cw, a.status_token_weight, query=not a.no_query)
     samples = []
     for r in choose_rows(all_train, 'smoke'):
         enc = collator([r]); sup = enc['labels'] != -100
         text = processor.tokenizer.decode(enc['labels'][sup], skip_special_tokens=True).strip()
-        expected = cd.messages(r, *cd.load_frame(root, r)[1:], include_answer=True)[-1]['content'][0]['text']
+        expected = cd.messages(r, *cd.load_frame(root, r)[1:], include_answer=True, query=not a.no_query)[-1]['content'][0]['text']
         if text != expected: raise RuntimeError('Supervised tokens do not decode to the answer:\n' + text + '\n' + expected)
         samples.append(dict(id=r['id'], tokens=int(enc['input_ids'].shape[1]), supervised=int(sup.sum()), grid=enc['image_grid_thw'].tolist(),
                             weighted=int((enc['token_weights'] > (cw[r['answer']['status']] if cw else 1)).sum())))
@@ -144,17 +145,17 @@ def main(argv=None):
                               data_collator=collator, callbacks=[Guard()])
     trainer.model_accepts_loss_kwargs = False
     if state.is_main_process:
-        (output / 'run_contract.json').write_text(json.dumps(dict(mode=a.mode, base=str(model_path), contract=cd.CONTRACT, longest_edge=a.longest_edge,
+        (output / 'run_contract.json').write_text(json.dumps(dict(mode=a.mode, base=str(model_path), contract=cd.CONTRACT_NO_QUERY if a.no_query else cd.CONTRACT, query_pixel_given=not a.no_query, longest_edge=a.longest_edge,
             manifest_sha256=manifest_sha, class_weights=cw, status_token_weight=a.status_token_weight, learning_rate=a.learning_rate,
             vision_learning_rate=a.vision_learning_rate, epochs=a.epochs, effective_examples_per_step=state.num_processes * accum,
             trainable_parameters=sum(q.numel() for _, q in trainable), frozen_geometry_encoder=True, processor_samples=samples,
             train_ids=[r['id'] for r in train_rows], versions={n: importlib.metadata.version(n) for n in ('torch', 'transformers', 'deepspeed', 'accelerate')},
-            instruction=cd.INSTRUCTION, suffix=cd.SUFFIX), indent=1))
+            instruction=cd.INSTRUCTION_NO_QUERY if a.no_query else cd.INSTRUCTION, suffix=cd.SUFFIX), indent=1))
     result = trainer.train()
     trainer.save_model(str(output / 'model')); trainer.save_state()
     if state.is_main_process:
         processor.save_pretrained(output / 'model')
-        (output / 'model' / 'grounding_adapter.json').write_text(json.dumps(dict(contract=cd.CONTRACT, longest_edge=a.longest_edge, canonical_resolution=[848, 408],
+        (output / 'model' / 'grounding_adapter.json').write_text(json.dumps(dict(contract=cd.CONTRACT_NO_QUERY if a.no_query else cd.CONTRACT, query_pixel_given=not a.no_query, longest_edge=a.longest_edge, canonical_resolution=[848, 408],
             release_manifest_sha256=manifest_sha), indent=1))
         tracker = None
         if report:

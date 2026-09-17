@@ -70,13 +70,13 @@ def answer_token_weights(labels,tokenizer,row,class_weights=None,status_token_we
 
 class SingleImageCollator:
     """Batch one avoids unverified multi-image padding/grid concatenation."""
-    def __init__(self,root,processor,coordinates='normalized_1000',decimals=None,class_weights=None,status_token_weight=1.,depth_input=False):
+    def __init__(self,root,processor,coordinates='normalized_1000',decimals=None,class_weights=None,status_token_weight=1.,depth_input=False,no_query=False):
         self.root=root;self.processor=processor;self.coordinates=coordinates;self.decimals=decimals
-        self.class_weights=class_weights;self.status_token_weight=status_token_weight;self.depth_input=depth_input
+        self.class_weights=class_weights;self.status_token_weight=status_token_weight;self.depth_input=depth_input;self.no_query=no_query
     def __call__(self,rows):
         from .qwen_adapter import encode_supervised
         if len(rows)!=1: raise ValueError('Verified single-image microbatch only')
-        encoded=encode_supervised(rows[0],self.root,self.processor,maximum_tokens=2048,coordinates=self.coordinates,decimals=self.decimals,depth_input=self.depth_input)
+        encoded=encode_supervised(rows[0],self.root,self.processor,maximum_tokens=2048,coordinates=self.coordinates,decimals=self.decimals,depth_input=self.depth_input,no_query=self.no_query)
         if self.class_weights or self.status_token_weight!=1.:
             encoded['token_weights']=answer_token_weights(encoded['labels'],self.processor.tokenizer,rows[0],self.class_weights,self.status_token_weight)
         return encoded
@@ -98,6 +98,10 @@ def arguments(argv=None):
     parser.add_argument('--class-balance',action='store_true',help='Weight each example loss by inverse train-split status frequency')
     parser.add_argument('--status-token-weight',type=float,default=1.,help='Extra loss weight on answer tokens through the status value')
     parser.add_argument('--depth-input',action='store_true',help='RGB-D variant: native depth rendered as a second image (explicit experiment outside the RGB-only contract)')
+    # Single-target objective (2026-09-17) and learning-curve controls.
+    parser.add_argument('--no-query',action='store_true',help='Single-target variant: no query pixel in the prompt (data must have exactly one true cut point per image)')
+    parser.add_argument('--train-ids',type=Path,default=None,help='JSON file with a "train_ids" list: restrict --mode train to these train-split rows')
+    parser.add_argument('--max-steps',type=int,default=None,help='--mode train only: fixed optimizer-step budget instead of epochs')
     # Full-parameter fine-tuning (user-requested 2026-09-12) as an explicit alternative to the LoRA recipe.
     parser.add_argument('--method',choices=('lora','full'),default='lora',help='lora: language-attention LoRA (default recipe); full: every weight trainable')
     parser.add_argument('--deepspeed',type=Path,default=None,help='DeepSpeed JSON (ZeRO-2 recommended for --method full on 4xH200)')
@@ -177,16 +181,20 @@ def main(argv=None):
     processor=AutoProcessor.from_pretrained(str(model_path),local_files_only=True,trust_remote_code=False)
     all_train=list(read_jsonl(root/'splits/train.jsonl'))
     train_rows=choose_rows(all_train,args.mode)
+    if args.train_ids is not None:
+        if args.mode!='train': raise ValueError('--train-ids applies to --mode train')
+        keep=set(json.loads(args.train_ids.read_text())['train_ids']); train_rows=[r for r in all_train if r['id'] in keep]
+        if len(train_rows)!=len(keep): raise ValueError('Some --train-ids are not in the train split')
     counts=Counter(json.loads(r['messages'][2]['content'])['status'] for r in all_train)
     class_weights={s:len(all_train)/(len(counts)*n) for s,n in counts.items()} if args.class_balance else None
     # Exercise real template/image-grid/assistant-loss boundary before weights.
-    collator=SingleImageCollator(root,processor,args.coordinates,args.coordinate_decimals,class_weights,args.status_token_weight,args.depth_input)
+    collator=SingleImageCollator(root,processor,args.coordinates,args.coordinate_decimals,class_weights,args.status_token_weight,args.depth_input,args.no_query)
     processor_samples=[]
     for row in choose_rows(all_train,'smoke'):
         encoded=collator([row])
         n=int((encoded['labels']!=-100).sum())
         text=processor.tokenizer.decode(encoded['labels'][encoded['labels']!=-100],skip_special_tokens=True).strip()
-        expected=model_messages(row,root,include_answer=True,coordinates=args.coordinates,decimals=args.coordinate_decimals,depth_input=args.depth_input)[-1]['content'][0]['text']
+        expected=model_messages(row,root,include_answer=True,coordinates=args.coordinates,decimals=args.coordinate_decimals,depth_input=args.depth_input,no_query=args.no_query)[-1]['content'][0]['text']
         if json.loads(text)!=json.loads(expected):
             raise RuntimeError('Supervised tokens do not decode to exactly the dataset answer')
         processor_samples.append(dict(id=row['id'],tokens=encoded['input_ids'].shape[1],
@@ -266,7 +274,7 @@ def main(argv=None):
             if not self.seen: raise RuntimeError('Global gradient norm was never logged; cannot confirm finite gradients')
     guard=LoggedGradientGuard() if args.deepspeed else GradientGuard()
 
-    max_steps={'smoke':2,'overfit':100,'train':-1}[args.mode]
+    max_steps={'smoke':2,'overfit':100,'train':(args.max_steps if args.max_steps else -1)}[args.mode]
     report_to=[]
     if args.wandb_project:
         os.environ['WANDB_PROJECT']=args.wandb_project
@@ -281,7 +289,7 @@ def main(argv=None):
         gradient_checkpointing=True,gradient_checkpointing_kwargs={'use_reentrant':False},
         ddp_find_unused_parameters=False,ddp_timeout=7200,dataloader_num_workers=0,
         remove_unused_columns=False,label_names=['labels'],prediction_loss_only=True,
-        eval_strategy='epoch' if args.mode=='train' else 'no',save_strategy='epoch' if args.mode=='train' else 'no',
+        eval_strategy='epoch' if args.mode=='train' and not args.max_steps else 'no',save_strategy='epoch' if args.mode=='train' and not args.max_steps else 'no',
         save_total_limit=args.save_total_limit,save_only_model=args.method=='full',
         deepspeed=str(args.deepspeed) if args.deepspeed else None,
         logging_steps=1 if args.mode!='train' else 10,
@@ -301,7 +309,7 @@ def main(argv=None):
             train_ids=[r['id'] for r in train_rows],world_size=state.num_processes,
             coordinates=args.coordinates,coordinate_adapter=adapter_name(args.coordinate_decimals) if args.coordinates=='normalized_1000' else 'canonical_task_v3_pixels',
             coordinate_decimals=args.coordinate_decimals,class_weights=class_weights,status_token_weight=args.status_token_weight,
-            depth_input=DEPTH_INPUT if args.depth_input else None,
+            depth_input=DEPTH_INPUT if args.depth_input else None,query_pixel_given=not args.no_query,train_subset=str(args.train_ids) if args.train_ids else None,max_steps=args.max_steps,
             train_status_counts=dict(counts),effective_examples_per_step=state.num_processes*accumulation,
             trainable_parameters=sum(p.numel() for _,p in trainable),lora_targets=targets,method=args.method,
             vision_tower_parameters=sum(p.numel() for p in vision_parameters),vision_learning_rate=args.vision_learning_rate if args.method=='full' else None,
@@ -321,7 +329,7 @@ def main(argv=None):
         processor.save_pretrained(artifact)
         write_json(artifact/'grounding_adapter.json',dict(method=args.method,coordinates=args.coordinates,
             coordinate_adapter=adapter_name(args.coordinate_decimals) if args.coordinates=='normalized_1000' else 'canonical_task_v3_pixels',
-            coordinate_decimals=args.coordinate_decimals,depth_input=DEPTH_INPUT if args.depth_input else None,
+            coordinate_decimals=args.coordinate_decimals,depth_input=DEPTH_INPUT if args.depth_input else None,query_pixel_given=not args.no_query,
             canonical_resolution=[848,408],release_manifest_sha256=status[0]['manifest_sha256']))
         write_json(output/'completed.json',dict(state='completed_server_training_recipe',mode=args.mode,
             metrics=result.metrics,experiment_tracker=tracker,checkpoint_reload_verified=False,generation_accuracy_measured=False,

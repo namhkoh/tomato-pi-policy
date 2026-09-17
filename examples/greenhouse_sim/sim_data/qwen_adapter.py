@@ -16,7 +16,7 @@ from .training_export import read_jsonl,validate
 MODEL_ID='Qwen/Qwen3-VL-8B-Instruct'
 
 
-def model_messages(row,root,*,include_answer=False,coordinates='pixels',decimals=None,depth_input=False):
+def model_messages(row,root,*,include_answer=False,coordinates='pixels',decimals=None,depth_input=False,no_query=False):
     """The same prompt/RGB conversion for supervised training and inference."""
     turns=row.get('messages',[])
     require(len(turns)==3 and [t.get('role') for t in turns]==['system','user','assistant'],
@@ -45,21 +45,30 @@ def model_messages(row,root,*,include_answer=False,coordinates='pixels',decimals
     else:
         require(decimals is None,'Fixed decimals apply to normalized coordinates only')
         require(coordinates=='pixels','Unknown model coordinate convention')
+    if no_query:
+        # Single-target variant: drop the query pixel; the answer text is unchanged.
+        from .qwen_coordinates import NO_QUERY_SYSTEM_PROMPT,NO_QUERY_USER_TEXT
+        require(coordinates=='normalized_1000','The no-query variant uses normalized coordinates')
+        messages[0]['content']=[dict(type='text',text=NO_QUERY_SYSTEM_PROMPT)]
+        messages[1]['content']=[messages[1]['content'][0],dict(type='text',text=NO_QUERY_USER_TEXT)]
     if depth_input:
-        # Explicit RGB-D variant: native depth rendered as a second image + query depth text.
+        # Explicit RGB-D variant: native depth rendered as a second image (+ query depth text when a query is given).
         import re
-        from .depth_input import depth_image,query_depth_m,depth_sentence
+        from .depth_input import depth_image,query_depth_m,depth_sentence,DEPTH_NOTE
         user_text=messages[1]['content'][-1]['text']
-        match=re.match(r'The target petiole passes through (?:pixel|normalized coordinates) \(([0-9.]+), ([0-9.]+)\)\.',user_text)
-        require(match is not None,'Unrecognized query prompt for depth annotation')
-        query=[float(match.group(1)),float(match.group(2))]
-        if coordinates=='normalized_1000': query=[query[0]*848./1000.,query[1]*408./1000.]
+        if no_query: sentence=DEPTH_NOTE
+        else:
+            match=re.match(r'The target petiole passes through (?:pixel|normalized coordinates) \(([0-9.]+), ([0-9.]+)\)\.',user_text)
+            require(match is not None,'Unrecognized query prompt for depth annotation')
+            query=[float(match.group(1)),float(match.group(2))]
+            if coordinates=='normalized_1000': query=[query[0]*848./1000.,query[1]*408./1000.]
+            sentence=depth_sentence(query_depth_m(root,row['id'],query))
         messages[1]['content']=[messages[1]['content'][0],dict(type='image',image=depth_image(root,row['id'])),
-            dict(type='text',text=user_text+' '+depth_sentence(query_depth_m(root,row['id'],query)))]
+            dict(type='text',text=user_text+' '+sentence)]
     return messages
 
 
-def encode_supervised(row,root,processor,*,maximum_tokens=2048,coordinates='pixels',decimals=None,depth_input=False):
+def encode_supervised(row,root,processor,*,maximum_tokens=2048,coordinates='pixels',decimals=None,depth_input=False,no_query=False):
     """Mask every prompt/image token using a verified generation-prefix match.
 
     Two processor calls intentionally favor an auditable boundary over guessed
@@ -68,7 +77,7 @@ def encode_supervised(row,root,processor,*,maximum_tokens=2048,coordinates='pixe
     """
     import torch
     require(type(maximum_tokens) is int and maximum_tokens>0,'Invalid token budget')
-    messages=model_messages(row,root,include_answer=True,coordinates=coordinates,decimals=decimals,depth_input=depth_input)
+    messages=model_messages(row,root,include_answer=True,coordinates=coordinates,decimals=decimals,depth_input=depth_input,no_query=no_query)
     full=processor.apply_chat_template(messages,tokenize=True,return_dict=True,return_tensors='pt')
     prefix=processor.apply_chat_template(messages[:-1],tokenize=True,return_dict=True,
         return_tensors='pt',add_generation_prompt=True)

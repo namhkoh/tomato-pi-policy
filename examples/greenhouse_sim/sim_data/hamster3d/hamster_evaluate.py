@@ -26,10 +26,10 @@ def load(model_path):
     return proc, model
 
 
-def inputs_for(proc, model, root, row, longest_edge, text_override=None, add_generation_prompt=True):
+def inputs_for(proc, model, root, row, longest_edge, text_override=None, add_generation_prompt=True, query=True):
     import torch
     rgb, depth, valid = cd.load_frame(root, row); img, geo, dmap = cd.prepare(rgb, depth, longest_edge)
-    msgs = cd.messages(row)
+    msgs = cd.messages(row, query=query)
     text = text_override if text_override is not None else proc.apply_chat_template(msgs, tokenize=False, add_generation_prompt=add_generation_prompt)
     mi = proc(text=[text], images=[img], return_tensors='pt').to('cuda'); dt = next(model.parameters()).dtype
     for k, v in list(mi.items()):
@@ -51,14 +51,14 @@ def generate(a):
     import torch
     root = a.dataset.resolve(); out = a.output.resolve(); out.mkdir(parents=True, exist_ok=True)
     contract = json.loads((a.model / 'grounding_adapter.json').read_text()) if (a.model / 'grounding_adapter.json').exists() else {}
-    le = contract.get('longest_edge', a.longest_edge)
+    le = contract.get('longest_edge', a.longest_edge); query = contract.get('query_pixel_given', True)
     proc, model = load(a.model); rows = rows_for(root, a.split, a.shard_index, a.shard_count, a.limit, a.ids_file)
     target = out / f'predictions-shard-{a.shard_index}-of-{a.shard_count}.jsonl'
     if target.exists(): raise ValueError(f'{target} exists')
     with open(target, 'w') as fh:
-        fh.write(json.dumps(dict(kind='header', split=a.split, model=str(a.model), longest_edge=le, contract=cd.CONTRACT, shard_index=a.shard_index, shard_count=a.shard_count, rows=len(rows))) + '\n')
+        fh.write(json.dumps(dict(kind='header', split=a.split, model=str(a.model), longest_edge=le, contract=contract.get('contract', cd.CONTRACT), query_pixel_given=query, shard_index=a.shard_index, shard_count=a.shard_count, rows=len(rows))) + '\n')
         for n, row in enumerate(rows, 1):
-            mi, depth, valid = inputs_for(proc, model, root, row, le)
+            mi, depth, valid = inputs_for(proc, model, root, row, le, query=query)
             torch.cuda.synchronize(); t = time.perf_counter()
             with torch.inference_mode(): o = model.generate(**mi, max_new_tokens=a.max_new_tokens, do_sample=False, temperature=None, top_p=None)
             torch.cuda.synchronize(); lat = time.perf_counter() - t
@@ -117,12 +117,12 @@ def probe(a):
     import torch
     root = a.dataset.resolve(); out = a.output.resolve(); out.mkdir(parents=True, exist_ok=True)
     contract = json.loads((a.model / 'grounding_adapter.json').read_text()) if (a.model / 'grounding_adapter.json').exists() else {}
-    le = contract.get('longest_edge', a.longest_edge); proc, model = load(a.model); tok = proc.tokenizer
+    le = contract.get('longest_edge', a.longest_edge); query = contract.get('query_pixel_given', True); proc, model = load(a.model); tok = proc.tokenizer
     rows = rows_for(root, a.split, a.shard_index, a.shard_count, a.limit, a.ids_file)
     prefix_text = '```json\n[{"point_3d":'
     with open(out / f'probe-shard-{a.shard_index}-of-{a.shard_count}.jsonl', 'w') as fh:
         for n, row in enumerate(rows, 1):
-            base_text = proc.apply_chat_template(cd.messages(row), tokenize=False, add_generation_prompt=True)
+            base_text = proc.apply_chat_template(cd.messages(row, query=query), tokenize=False, add_generation_prompt=True)
             scores = {}
             for val in (' [', ' null'):
                 mi, _, _ = inputs_for(proc, model, root, row, le, text_override=base_text + prefix_text + val)

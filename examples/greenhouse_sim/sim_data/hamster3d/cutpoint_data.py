@@ -16,7 +16,14 @@ from hamster3d.inference.preprocessing import resize_to_target  # noqa: E402
 
 W, H = 848, 408
 CONTRACT = 'hamster3d_cutpoint_point3d.v1'
+CONTRACT_NO_QUERY = 'hamster3d_cutpoint_point3d_noquery.v1'
 SUFFIX = 'Report the point_3d location in JSON.'
+# Single-target variant (v2 data design, 2026-09-17): the image contains exactly one deleafable petiole,
+# so no query pixel is given; the model must find the stalk, trace it to the main stem and point to the cut.
+INSTRUCTION_NO_QUERY = ('Tomato plant seen from the robot head camera. Exactly one leaf-bearing petiole in this view is the deleafing target. '
+                        'Find it, trace it to its junction with the main stem, and if the junction and the cut region are visible, point to the '
+                        'nominal cut point 10 mm along the petiole from the junction, with its depth. If the cut region is hidden behind a leaf, '
+                        'fruit or stem, report it as occluded instead of guessing.')
 INSTRUCTION = ('Tomato plant seen from the robot head camera. The target petiole passes through the point ({x:.1f}, {y:.1f}); '
                'that is NOT the cut point. Trace the petiole to its junction with the main stem. If the junction and the cut '
                'region are visible, point to the nominal cut point 10 mm along the petiole from the junction, with its depth. '
@@ -52,13 +59,14 @@ def answer_text(row, depth, valid):
     return '```json\n' + body + '\n```'
 
 
-def user_text(row):
+def user_text(row, query=True):
+    if not query: return INSTRUCTION_NO_QUERY + '\n' + SUFFIX
     x, y = to_norm(*row['query_pixel_uv'])
     return INSTRUCTION.format(x=x, y=y) + '\n' + SUFFIX
 
 
-def messages(row, depth=None, valid=None, include_answer=False):
-    m = [{'role': 'user', 'content': [{'type': 'image'}, {'type': 'text', 'text': user_text(row)}]}]
+def messages(row, depth=None, valid=None, include_answer=False, query=True):
+    m = [{'role': 'user', 'content': [{'type': 'image'}, {'type': 'text', 'text': user_text(row, query)}]}]
     if include_answer: m.append({'role': 'assistant', 'content': [{'type': 'text', 'text': answer_text(row, depth, valid)}]})
     return m
 
@@ -73,12 +81,12 @@ def prepare(rgb, depth, longest_edge=640):
     return Image.fromarray(rgb_r), geo, torch.from_numpy(depth_r).float().unsqueeze(0)
 
 
-def encode(row, root, processor, longest_edge=640, maximum_tokens=2048):
+def encode(row, root, processor, longest_edge=640, maximum_tokens=2048, query=True):
     """Supervised encoding: labels on the assistant answer only, verified by prefix equality."""
     import torch
     rgb, depth, valid = load_frame(root, row)
     img, geo, dmap = prepare(rgb, depth, longest_edge)
-    full_m = messages(row, depth, valid, include_answer=True)
+    full_m = messages(row, depth, valid, include_answer=True, query=query)
     full_t = processor.apply_chat_template(full_m, tokenize=False, add_generation_prompt=False)
     pre_t = processor.apply_chat_template(full_m[:1], tokenize=False, add_generation_prompt=True)
     full = processor(text=[full_t], images=[img], return_tensors='pt')

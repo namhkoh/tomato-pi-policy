@@ -45,6 +45,16 @@ NORMALIZED_SYSTEM_PROMPT=(SYSTEM_PROMPT.replace(PIXEL_RULE,NORMALIZED_RULE)
              'cut_point_uv (a two-number normalized coordinate array or null)'))
 
 
+# Single-target (no-query) variant, 2026-09-17: the image contains exactly one deleafable petiole.
+NO_QUERY_SYSTEM_PROMPT=NORMALIZED_SYSTEM_PROMPT.replace(
+    'The user supplies a normalized query coordinate on the target petiole, NOT the cut point. Trace that petiole to its junction with the main stem. ',
+    'Exactly one leaf-bearing petiole in this view is the deleafing target. Find it and trace it to its junction with the main stem. ')
+if NO_QUERY_SYSTEM_PROMPT==NORMALIZED_SYSTEM_PROMPT: raise RuntimeError('No-query system prompt substitution failed; re-audit the prompt text')
+NO_QUERY_USER_TEXT=('Locate the nominal cut point of the deleafing target if its junction and cut region are visually distinguishable; '
+    'otherwise abstain. Use the original full image.')
+NO_QUERY_ADAPTER_SUFFIX='_noquery'
+
+
 def convert_point(point,*,to_normalized):
     if (not isinstance(point,list) or len(point)!=2
             or any(type(v) not in (int,float) or not math.isfinite(v) for v in point)):

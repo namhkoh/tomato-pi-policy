@@ -42,6 +42,7 @@ def probe(a):
     if a.tuned_model or a.adapter:
         contract=json.loads((src/'grounding_adapter.json').read_text())
         if contract.get('depth_input'): kw['depth_input']=True
+        if not contract.get('query_pixel_given',True): kw['no_query']=True
         if contract.get('coordinate_decimals') is not None: kw['decimals']=contract['coordinate_decimals']
     a.output.mkdir(parents=True,exist_ok=True); out=a.output/f'probe-shard-{a.shard_index}-of-{a.shard_count}.jsonl'
     with open(out,'w') as fh:
