@@ -382,3 +382,6 @@ examples/greenhouse_sim/sim_data/native848_scene_sweep_dataset_v1.py -text
 examples/greenhouse_sim/sim_data/test_native848_scene_sweep_dataset_v1.py -text
 examples/greenhouse_sim/sim_data/native848_delivery_bundle_v3.py -text
 examples/greenhouse_sim/sim_data/test_native848_delivery_bundle_v3.py -text
+
+examples/greenhouse_sim/sim_data/native848_scene_sweep_cached_annotation_v1.py -text
+examples/greenhouse_sim/sim_data/test_native848_scene_sweep_cached_annotation_v1.py -text
