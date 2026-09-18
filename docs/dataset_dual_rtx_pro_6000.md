@@ -1,5 +1,7 @@
 # Dataset capture on two RTX PRO 6000 Blackwell GPUs
 
+For a four-L40S server and the now-published, verified Hugging Face asset bundle, see the [four NVIDIA L40S guide](dataset_four_l40s.md).
+
 Prepared September 18, 2026. Repository baseline: `a8baa2f` on `koh-dev/sim-data`. Current local runtime: Isaac Sim **6.0.1** on Windows. This guide covers capture and dataset preparation; training is separate.
 
 **Recommended layout:** two persistent Isaac Sim processes, each assigned one physical GPU and a disjoint camera queue. Each process loads the complete labeled greenhouse once per batch. CPU processes annotate completed batches; one coordinator reviews, deduplicates and publishes accepted samples.

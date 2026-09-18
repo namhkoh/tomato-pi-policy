@@ -2,6 +2,8 @@
 
 Dual-GPU migration: [capture guide for two RTX PRO 6000 Blackwells](docs/dataset_dual_rtx_pro_6000.md). It documents hardware requirements, asset transfer, required launcher changes, benchmarking and accepted-image accounting. Concurrent capture on these GPUs is not yet implemented or qualified.
 
+Four-GPU alternative: [capture guide for four NVIDIA L40S GPUs](docs/dataset_four_l40s.md), including the verified private Hugging Face asset download, four-worker design and qualification steps. The multi-GPU launcher and Linux adaptation remain pending.
+
 **User reconfirmation, September 17:** Keep exactly one eligible petiole in view. The proposed nearest-visible-reachable selection rule was explicitly declined. Continue full144 populated scenes and distinct actual camera poses; any reachable or unresolved eligible alternative holds the frame. This governs all future preparation and annotation.
 
 ## Active delivery - September 18, 16:00 KST
