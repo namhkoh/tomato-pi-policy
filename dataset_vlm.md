@@ -4,33 +4,43 @@
 
 ## Active delivery - September 18, 16:00 KST
 
-The user requests 10,000 images by 16:00. Latest instructions allow distinct views and specifically 3-4 varied camera angles, with counts reported per plant. The old strict two-view cap is superseded. Prioritize different plant shapes and target identities. Keep all 144 complete unpruned labeled plants, and inspect images for visible background vines.
+The user requests 10,000 images by 16:00. Latest instructions allow distinct views, including 3-4 varied camera angles, with counts reported per plant. The old strict two-view cap is superseded. Prioritize different plant shapes and target identities. All 144 complete unpruned labeled plants remain present; background vines must also be visible in the actual images.
 
-### Current verified total: 443 images
+### Published verified total: 470 images
 
-- Original release: 438 images, 13 original plants, 20 source targets; 342 TRAIN / 82 VAL / 14 TEST.
-- Generated supplement: 5 TRAIN images, from two donor-derived geometries (101: 1 view; 103: 4 views). These add no independent donors.
-- Combined: 347 TRAIN / 82 VAL / 14 TEST, 13 original plants and 15 geometry identities. A unified delivery bundle is being assembled without copying the sensor assets again.
-- Latest original release: `C:/Users/USER/tomato-vlm-data-20260917/training_exports/tomato_cutpoint_848x408_fullgreenhouse_joint438_backlog39_20260918_v1`.
-- Generated supplement: `C:/Users/USER/tomato-vlm-data-20260917/training_exports/tomato_cutpoint_848x408_generated_supplement5_20260918_v1`.
-- `data/sim_data/training_exports/DATASET_DELIVERY_STATUS.json` holds current component paths, counts, and counts per original plant. The 26-image release remains a historical diversity-capped subset, not the total usable data.
+- Original release: 438 images from 13 original donor plants and 20 source targets; 342 TRAIN / 82 VAL / 14 TEST.
+- Generated components: 32 TRAIN images from nine donor-derived geometries: 101 (1), 103 first variant (4), 41 (3), 47 (4), 53 (4), 103 three-subtree variant (4), 19 (4), 67 (4), and 43 (4). These create no independent donors and preserve original proximal cut geometry.
+- Total: 374 TRAIN / 82 VAL / 14 TEST, 13 original donors, 22 geometry identities. The broad diversity shortage remains unresolved.
+- The published bundle contains 470 images at `C:/Users/USER/tomato-vlm-data-20260917/training_exports/tomato_cutpoint_848x408_delivery470_20260918_v1`. `data/sim_data/training_exports/LATEST_DATASET_VLM.json` is the authoritative published path; `DATASET_DELIVERY_STATUS.json` records counts by donor and target.
+- Original source release: `C:/Users/USER/tomato-vlm-data-20260917/training_exports/tomato_cutpoint_848x408_fullgreenhouse_joint438_backlog39_20260918_v1`.
+- Generated data resides in named checkpoints under `C:/Users/USER/tomato-vlm-data-20260917/dataset_checkpoints/` and supplements under `training_exports/`. Reference bundles require their component folders to remain present. Use the loader named in each bundle README.
+- The historical 26-image release was a two-per-original-plant subset, not the total usable dataset.
 
-### Requirements and active collection
+### Required task and current work
 
-Native 848x408 RGB and aligned metric depth, exactly one eligible petiole without a query cue, a precise 9mm cut from its main-stem attachment, clear proximal surface/junction/first-leaf context, and actual robot camera/workspace checks remain required. Preserve original donor splits. Never count raw captures, previews, candidates or generated assets as released images. Seed41/SubStem38 remains excluded; new seed41 work targets SubStem45.
+Native 848x408 RGB, aligned float32 optical-Z depth and validity, sensor calibration, exactly one eligible petiole with no query cue, and one precise 9mm cut from the main-stem attachment. Keep clear proximal surface/junction/first-leaf context and actual robot camera/workspace checks. Preserve donor train/validation/test lineage. Never count raw captures, previews, candidates or generated assets as released images. Seed41/SubStem38 remains excluded; released generated41 targets SubStem45.
 
-- New seed41 morphology: three distinct angles currently in native capture, all authored-mesh ray prechecks passed. Native collision, full annotation, visual review and export remain necessary.
-- New seed47 morphology: choosing four compatible accepted-source camera angles from the larger source plan; no cross-scene-plan mixing.
-- New seed103 morphology: changes three petiole/leaf subtrees and uses the four previously qualified camera poses. Fresh native checks remain necessary.
-- Faster render representation: preserves all background shapes/materials and all 144 plants; merges only distant components proved outside both actual arm workspaces. Two saved test frames passed exact retained-petiole annotation comparison. Finite overlay installation passed a real generated-scene CPU check. Production capture/consumer integration is in progress; there is no new throughput claim yet.
+- Generated19, 67 and 43: all four views per morphology passed native capture, full annotation, actual visual QA and export. They are included in published470. All owned native processes have closed successfully; no capture process is currently active.
+- Recent example figures and direct original RGB/annotation links: `data/sim_data/diagnostics/dataset_examples_20260918_1553/README.md`.
+- Remaining scalable-renderer work: `data/sim_data/diagnostics/native848_persistent_renderer_readonly_audit_20260918_v1/REPORT.md` gives eight concrete implementation steps. This is a read-only design, not an implemented persistent collector.
+- Generated17 held on a numerical transverse-basis guard; frozen generator unchanged. Generated89 held on the frozen petiole length envelope. Donor29 is validation and is not eligible for the TRAIN-only generator.
+- Root alone launches native GPU processes serially. Automated checks apply per image; inspect actual native RGB, junction/first-leaf context for each target/view group and every flagged alternative. Reject exact and near repeats. Generated geometry identity and original donor identity remain separate. No training/remote launch is requested.
 
-Actual generated capture101 and capture103 completed with 1 and 4 frames respectively. Full annotation and actual native-image/junction/first-leaf review passed. Existing numerical rules were retained. The finite batch reader v3 fixes an old three-anchor limit and callback-clock bookkeeping; its numerical helper functions are imported unchanged from v2. Background vines are visible, but some downward103 views show substantial floor; prefer less-downward views with more foliage.
+### Measured throughput and remaining engineering problem
 
-The 10,000-image target is not met and cannot be reached by 16:00 at measured throughput: ordinary production requests still take about12-14 seconds, before initialization, annotation and rejects. Far-background test requests took about4.1 seconds but do not establish accepted production throughput. Continue useful collection without weakening acceptance or claiming new independent plants from donor-derived variants.
+Replicator already supplies synchronized RGB, optical-Z and instance IDs. Writer persistence is approximately 0.08 seconds per frame. Ordinary production requests take about 11-14 seconds; a completed generated19 four-view owner run took 414.1 seconds including scene preparation, warmup and verification.
 
-Root alone launches native GPU workers. Freeze completed capture/generator/annotation sources and preserve failed-attempt evidence. Use automated checks per image, actual visual review of target/view groups and flagged cases, and reject exact/near repeats. Keep generated geometry identity distinct from original donor identity. No training or remote server launch is requested.
+The new far-background representation preserves all 144 plant shapes/materials and original collision geometry, merging only distant components with positive exclusion from both actual arm workspaces. Four generated103 captures passed full annotation, actual visual review and typed export. Render requests took 3.7-4.4 seconds, but the whole owner run took 711.9 seconds: extra overlay preparation/verification outweighed render savings for four-image batches. This is a comparison of different generated donor scenes, not a controlled same-scene total-latency experiment. Use the established producer for the remaining small batches. Evidence: `data/sim_data/diagnostics/native848_fast103_vs_standard19_measured_timing_20260918_v1/result.json`.
 
-## Active generator repair - September 18
+**Persistent cross-morphology rendering is not implemented.** The current producer reloads and verifies the greenhouse for each generated foreground. The next substantial speed improvement must retain the greenhouse between variants while refreshing each foreground's geometry, collision checks, component-ID mapping and annotations. Faster individual render requests alone do not solve this.
+
+The 10,000-image target is not met and cannot be reached by 16:00 at measured throughput. Continue useful collection without weakening acceptance or labeling donor-derived variants as independent plants. Some downward views retain substantial floor; prioritize less-downward accepted cameras with more visible vines. Local cleanup commit `e5b5e7d` preserved 31 source/documentation files and all pinned source bytes; later additive adapters require a final cleanup commit.
+
+### Historical record below
+
+The remaining dated sections preserve earlier trials, failures and decisions. Their old counts, active-process statements and two-view caps are historical; the active delivery section and current published pointer above take precedence.
+
+## Historical generator repair - September 18
 
 The shortage of genuinely diverse usable samples is **not resolved**. The current diversity-capped release is still 26 images / 13 original plants / 16 targets. Generated assets and camera proposals do not increase that count.
 

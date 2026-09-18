@@ -337,3 +337,7 @@ examples/greenhouse_sim/sim_data/procedural_petiole_controlled_v4.py -text
 examples/greenhouse_sim/sim_data/test_native848_delivery_bundle_v1.py -text
 examples/greenhouse_sim/sim_data/test_native848_generated_dataset_v1.py -text
 examples/greenhouse_sim/sim_data/test_procedural_petiole_controlled_v4.py -text
+examples/greenhouse_sim/sim_data/native848_delivery_bundle_v2.py -text
+examples/greenhouse_sim/sim_data/native848_generated_delegated_export_v2.py -text
+examples/greenhouse_sim/sim_data/test_native848_delivery_bundle_v2.py -text
+examples/greenhouse_sim/sim_data/test_native848_generated_delegated_export_v2.py -text
