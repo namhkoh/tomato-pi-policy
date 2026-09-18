@@ -1,6 +1,8 @@
 # Dataset capture on four NVIDIA L40S GPUs
 
-Current collective25k campaign: [machine-specific execution runbook](dataset_thor1_runbook.md) and [shared capture/annotation contract](dataset_multihost_runbook.md). Use the new host config and coordinator before production.
+**Current server coordination:** use [independent server collection](dataset_independent_servers.md); no shared network service is needed during capture. Linux native qualification is still required.
+
+Current collective25k campaign: [machine-specific execution runbook](dataset_thor1_runbook.md) and [shared capture/annotation contract](dataset_multihost_runbook.md). Use the host config and independent host-local ledger before production.
 
 Prepared September 18, 2026. This guide extends the [two-RTX-PRO-6000 guide](dataset_dual_rtx_pro_6000.md) to a four-L40S server. The source collection uses Isaac Sim **6.0.1**. The shared asset bundle was published and independently downloaded, hash-checked and extracted successfully.
 
@@ -63,7 +65,7 @@ Use one persistent headless Isaac Sim process per physical GPU, each holding a c
 | worker 2 | Third selected L40S UUID | Distinct camera subset C | Dedicated batch directory and log |
 | worker 3 | Fourth selected L40S UUID | Distinct camera subset D | Dedicated batch directory and log |
 
-One coordinator reserves candidate IDs, balances donor/target coverage and merges accepted results. CPU processes annotate only completed immutable batches. GPU capture of the next batch can overlap annotation of the previous batch. A single publisher performs global duplicate checks and updates delivery totals.
+One host-local ledger reserves candidate IDs across the four workers; the host queue balances donor/target coverage. CPU processes annotate only completed immutable batches. GPU capture of the next batch can overlap annotation of the previous batch. A single publisher performs global duplicate checks and updates delivery totals.
 
 NVIDIA's [multi-GPU guidance](https://docs.isaacsim.omniverse.nvidia.com/6.0.0/reference_material/sim_performance_optimization_handbook.html#multi-gpu-support) relates rendering scaling to camera count and notes that additional GPUs do not reduce USD scene load time. Keeping scenes resident avoids repeated setup. Do not assume four cards produce four times the end-to-end accepted-image rate.
 
@@ -72,7 +74,7 @@ NVIDIA's [multi-GPU guidance](https://docs.isaacsim.omniverse.nvidia.com/6.0.0/r
 Apply the ownership, isolation and provenance requirements in [section 4 of the shared guide](dataset_dual_rtx_pro_6000.md#4-required-launcher-changes), with **four slots** instead of two:
 
 1. Add an explicit renderer-device and physics-device selection to a new launcher/request contract. Map each selection to a physical GPU UUID/PCI address. Renderer, CUDA and `nvidia-smi` indices need not match.
-2. Replace the single host-wide owner with one coordinator and one lease per GPU. Authenticate owned siblings during admission and closure. Retain failure evidence and release a lease only after its child exits.
+2. Replace the single host-wide owner with one host-local ledger and one lease per GPU. Authenticate owned siblings during admission and closure. Retain failure evidence and release a lease only after its child exits.
 3. Isolate output directories, writable runtime state and logs. Share assets read-only. Confirm shared shader/runtime-cache behavior during qualification. Retain task-scoped telemetry handling.
 4. Implement Linux process ownership and replace the hardcoded Windows runtime path if using Linux. Map `workspace/` and `external_dataset/` explicitly. Regenerate destination-specific requests/profile bindings without modifying old receipts or bypassing verification.
 5. Extend typed capture/annotation/export adapters to recognize the new producer and GPU contract. Existing consumers require exact source hashes; do not edit frozen production sources in place.

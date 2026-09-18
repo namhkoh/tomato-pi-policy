@@ -1,5 +1,7 @@
 # Shared collection contract: 25,000 samples by Saturday
 
+**Server update, September 19:** thor1 and thor3 now use [independent host-local ledgers](dataset_independent_servers.md), with global duplicate checks at final merge. Their old mandatory shared-coordinator steps below are superseded. Local5090 retains its existing coordinator. This changes coordination only; native Linux qualification remains required.
+
 Planning deadline: **2026-09-19 23:59 Asia/Seoul**. Target: **at least 25,000 globally distinct, accepted samples collectively**, including the existing verified release. The starting release has 491 images. Generated assets, proposals, raw frames, preview controls, and duplicate or quality holds do not increment that total. This is a delivery target, not a measured capacity guarantee.
 
 Start with the machine-specific instructions: [thor1 / four L40S](dataset_thor1_runbook.md), [thor3 / two RTX PRO 6000](dataset_thor3_runbook.md). Local collection uses [local5090.json](../configs/dataset_capture/local5090.json).
@@ -59,7 +61,9 @@ python scripts/dataset_multihost_pipeline.py --config "$HOST_CONFIG" check-backg
 
 This structural check does not replace native pixel coverage. Each accepted image must visibly contain background vines, have at least 40% background-plant coverage under the current exporter, and zero unknown pixels/targets.
 
-## 4. Use ONE coordinator for all machines
+## 4. Original central mode (retained for local5090)
+
+**thor1/thor3 use the [offline ledger commands](dataset_independent_servers.md#3-initialize-a-host-local-ledger), not this section.** The commands below document the existing central mode only.
 
 One coordinator serializes reservations in a SQLite database on its **local disk**. All seven GPU workers contact that same service. Do not run separate copied databases on the servers. Stop production if the coordinator is unreachable; there is no local fallback or automatic claim expiry.
 

@@ -1,5 +1,13 @@
 # VLM dataset collection and generation — execution handoff
 
+## Current handoff ? September 19, independent servers
+
+- Published release: **493 accepted images**, at `C:/Users/USER/tomato-vlm-data-20260917/training_exports/tomato_cutpoint_848x408_delivery493_20260919_v1`. Live pointers in `data/sim_data/training_exports` remain authoritative.
+- thor1 and thor3 can use **independent host-local ledgers**; no shared coordinator connection is required. Read [the current independent-server guide](docs/dataset_independent_servers.md). Final cross-host duplicate checks are mandatory before counting the merged release.
+- Source localization and offline reservations are implemented and tested. **Native Linux capture/annotation qualification remains unfinished; neither remote server has reported production collection.**
+- Keep full144 labeled plants, native848x408 RGB-D, exactly one eligible9mm cut point and all existing quality/review checks. The shared goal remains25,000 by Saturday23:59KST; no verified throughput currently supports a delivery guarantee.
+
+
 ## Current goal: collective Saturday delivery
 
 Deliver at least **25,000 globally distinct accepted samples collectively by Saturday, September 19, 2026, 23:59 KST** (planning cutoff). This supersedes the older Friday/10k target below. At September 18, 22:37 KST, the published total is **492**, leaving **24,508** additional accepted samples. Live counts and paths are in `data/sim_data/training_exports/LATEST_DATASET_VLM.json` and `DATASET_DELIVERY_STATUS.json`; proposals, raw frames, controls, duplicates and review holds do not count.

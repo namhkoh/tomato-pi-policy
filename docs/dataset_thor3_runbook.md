@@ -1,5 +1,7 @@
 # thor3 — two RTX PRO6000 collection runbook
 
+**Current execution mode: [independent server collection](dataset_independent_servers.md). No connection to the Windows PC or shared coordinator is required.** The independent guide supersedes coordinator setup/reservation steps below; all image, annotation and Linux qualification requirements still apply.
+
 **Shared goal: at least 25,000 accepted distinct samples collectively by Saturday 2026-09-19, 23:59 KST.** Follow the [shared contract](dataset_multihost_runbook.md) for complete sensor outputs, populated backgrounds, annotation, duplicates and final counts.
 
 ## Exact assignment
@@ -37,10 +39,10 @@ thor3 reported no active production collection; its current task was a two-image
 
    Generation and 9mm evidence do not establish native visibility or a unique answer. Rebuild the full scene census/catalogue for generated geometry; preserve all 143 other complete plants. Rotate among the assigned donor/target combinations and 3–4 meaningful view angles, rejecting near repeats.
 
-4. Use the **same coordinator** as thor1/local5090. Set `DATASET_COORDINATOR_URL` and `DATASET_COORDINATOR_TOKEN`; reserve before rendering and record completion afterward. Do not copy the database and start another service.
-5. Original sweep workers use the shared preparation CLI with `WORKER_ID=0` or `1` and unique output directories. Generated workers use the shared `native848_multihost_generated_v1 --reserve` command. Its whole-batch assignment may select a different worker; launch only on that worker and only after every candidate receives a grant.
+4. Initialize one **host-local offline ledger** for this server using the [independent collection guide](dataset_independent_servers.md#3-initialize-a-host-local-ledger). No shared URL/token or SSH connection is needed. All GPUs on this host share this ledger; do not copy the live local5090 database.
+5. Reserve fresh requests through `scripts/dataset_offline_shard.py reserve-raw` or `reserve-generated`, using this host's ledger and worker IDs. Follow the exact commands in the independent guide. Keep the returned task/claim IDs, use fresh outputs, and launch only the assigned worker when `capture_request_eligible` is true.
 6. Finish the existing two-image preview on GPU 0 through Isaac Sim Replicator. Validate native 848×408 RGB, aligned float32 optical-Z depth in metres, validity, instance IDs/mapping, camera calibration and actual robot/collision/workspace evidence. Check full 144 background coverage and compare annotation against the shared controls. Mark these frames as excluded controls.
 7. After native owner/GPU/annotation parity passes, launch two persistent workers on verified distinct physical GPU UUIDs. Preserve the 8-subframe baseline profile until a faster setting is separately qualified. Keep the populated stage/render product/writer resident across its assigned batch.
-8. Run the common locked annotation command after successful native closure, record coordinator duplicate results, perform group/flagged-case visual review and provide reviewed exports to the single publisher. Report accepted samples/hour and counts per donor/target/morphology each hour.
+8. Run the common locked annotation command after successful native closure, record local ledger duplicate results and mark global merge pending, perform group/flagged-case visual review and provide reviewed exports to the single publisher. Report accepted samples/hour and counts per donor/target/morphology each hour.
 
-**Before bulk launch, the thor3 agent must record:** the tested Linux command, both physical GPU UUIDs, shared toolchain hash, coordinator connection, successful preview/closure/annotation parity receipts, exact output directory and measured accepted-image rate. The goal is 25k collectively; duplicate or merely rendered frames never satisfy that goal.
+**Before bulk launch, the thor3 agent must record:** the tested Linux command, both physical GPU UUIDs, shared toolchain hash, local offline ledger path, successful preview/closure/annotation parity receipts, exact output directory and measured accepted-image rate. The goal is 25k collectively; duplicate or merely rendered frames never satisfy that goal.

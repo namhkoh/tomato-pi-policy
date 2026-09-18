@@ -405,3 +405,11 @@ examples/greenhouse_sim/sim_data/native848_multihost_generated_complete_v1.py -t
 examples/greenhouse_sim/sim_data/test_native848_multihost_generated_complete_v1.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 examples/greenhouse_sim/sim_data/native848_persistent_reviewed_export_v2.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 examples/greenhouse_sim/sim_data/native848_persistent_reviewed_export_v2_test.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+
+scripts/dataset_linux_preview.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+scripts/dataset_linux_preview_test.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+scripts/dataset_offline_shard.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+scripts/dataset_offline_shard_test.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+# Preserve the qualified exporter bytes, including its inherited final blank line.
+examples/greenhouse_sim/sim_data/native848_persistent_reviewed_export_v3.py -text whitespace=blank-at-eol,-blank-at-eof,space-before-tab,cr-at-eol
+examples/greenhouse_sim/sim_data/native848_persistent_reviewed_export_v3_test.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

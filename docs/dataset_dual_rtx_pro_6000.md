@@ -1,5 +1,7 @@
 # Dataset capture on two RTX PRO 6000 Blackwell GPUs
 
+**Current server coordination:** use [independent server collection](dataset_independent_servers.md); no shared network service is needed during capture. Linux native qualification is still required.
+
 Current collective25k campaign: [machine-specific execution runbook](dataset_thor3_runbook.md) and [shared capture/annotation contract](dataset_multihost_runbook.md). Use the new host config and coordinator before production.
 
 For a four-L40S server and the now-published, verified Hugging Face asset bundle, see the [four NVIDIA L40S guide](dataset_four_l40s.md).
