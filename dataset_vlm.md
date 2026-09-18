@@ -17,6 +17,14 @@ The user requests 10,000 images by 16:00. Latest instructions allow distinct vie
 - All prior490 entries and sensor bytes are preserved; the reference bundle uses loader native848_delivery_bundle_v3. Exact decoded-RGB and within-geometry camera duplicate checks pass across491. The released set still has13original donors and20source targets; target-diversity shortage remains unresolved. Exact decoded-RGB and within-geometry camera duplicate checks passed. `data/sim_data/training_exports/LATEST_DATASET_VLM.json` is authoritative; counts per donor/target are in `DATASET_DELIVERY_STATUS.json`.
 - The latest11 additions passed actual native capture, full-scene annotation, visual review and export. Their background-plant coverage is59.96-64.65%, with zero unknown pixels. The repeated control frame is excluded.
 
+### Local continuation - September 18
+
+The user requests continued collection on this machine. The local RTX 5090 is available; published total remains **491**. CPU preparation is now searching new target/view combinations and additional donor-derived full-plant morphologies. GPU capture has not yet restarted. Keep all native image, robot, full-greenhouse, single-answer, duplicate and visual-review checks.
+
+The source-mesh prefilter was checked against all 17 saved aisle frames: it identified all 14 ambiguous frames and retained the sole unique passing frame; 1,164 predicted clear probe owners/depths agreed with saved native data. It remains a proposal ranking tool, not acceptance. The first 256 prospective proposals produced only two candidates, both the already heavily represented seed103/SubStem42, so that small repetitive bank was not launched.
+
+The nominal petiole-diameter estimate falsely rejects some native detail passes (9 of 96 strict target passes in the saved 72-frame audit). New proposal preparation uses that estimate for ranking only; exact 12-pixel projected support and the native 8-pixel mask-width requirement remain unchanged. The complete native ambiguity check remains authoritative.
+
 ### Main workflow: one varied greenhouse, capture first, annotate afterward
 
 Use one fixed fully populated greenhouse across many distinct robot-camera poses. Retain native848x408 RGB, aligned optical-Z depth, validity, calibration and renderer IDs for offline annotation. Do not require a previously accepted camera view. Verify actual robot/FK/floor/collision/workspace before saving; perform visibility, complete-scene9mm annotation, competing-answer checks, duplicate checks and target/view-group visual review afterward. Exactly one eligible petiole remains required. Do not start further ordinary2-4-frame scene reloads as the main collection path.
