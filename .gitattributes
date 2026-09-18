@@ -351,3 +351,24 @@ examples/greenhouse_sim/sim_data/native848_persistent_foreground_v1_test.py -tex
 examples/greenhouse_sim/sim_data/native848_persistent_generated_9mm_v1.py -text
 examples/greenhouse_sim/sim_data/test_native848_persistent_generated_9mm_v1.py -text
 examples/greenhouse_sim/sim_data/test_native848_persistent_generated_lifecycle_v1.py -text
+
+examples/greenhouse_sim/sim_data/native848_persistent_experimental_9mm_v1.py -text
+examples/greenhouse_sim/sim_data/native848_persistent_experimental_capture_v1.py -text
+examples/greenhouse_sim/sim_data/native848_persistent_experimental_export_v1.py -text
+examples/greenhouse_sim/sim_data/native848_persistent_experimental_export_v1_test.py -text
+examples/greenhouse_sim/sim_data/native848_persistent_experimental_plan_v1.py -text
+examples/greenhouse_sim/sim_data/native848_persistent_far_overlay_v1.py -text
+examples/greenhouse_sim/sim_data/native848_persistent_far_overlay_v1_test.py -text
+examples/greenhouse_sim/sim_data/native848_persistent_far_population_v1.py -text
+examples/greenhouse_sim/sim_data/native848_persistent_far_population_v1_test.py -text
+examples/greenhouse_sim/sim_data/native848_persistent_reviewed_export_v1.py -text
+examples/greenhouse_sim/sim_data/native848_persistent_reviewed_export_v1_test.py -text
+examples/greenhouse_sim/sim_data/native848_persistent_shortwarm_9mm_v1.py -text
+examples/greenhouse_sim/sim_data/native848_persistent_shortwarm_capture_v1.py -text
+examples/greenhouse_sim/sim_data/native848_persistent_shortwarm_plan_v1.py -text
+examples/greenhouse_sim/sim_data/native848_scene_sweep_9mm_v1.py -text
+examples/greenhouse_sim/sim_data/native848_scene_sweep_9mm_v1_test.py -text
+examples/greenhouse_sim/sim_data/native848_scene_sweep_capture_v1.py -text
+examples/greenhouse_sim/sim_data/test_native848_persistent_experimental_v1.py -text
+examples/greenhouse_sim/sim_data/test_native848_persistent_shortwarm_v1.py -text
+examples/greenhouse_sim/sim_data/test_native848_scene_sweep_capture_v1.py -text
