@@ -1,5 +1,7 @@
 # Dataset capture on four NVIDIA L40S GPUs
 
+Current collective25k campaign: [machine-specific execution runbook](dataset_thor1_runbook.md) and [shared capture/annotation contract](dataset_multihost_runbook.md). Use the new host config and coordinator before production.
+
 Prepared September 18, 2026. This guide extends the [two-RTX-PRO-6000 guide](dataset_dual_rtx_pro_6000.md) to a four-L40S server. The source collection uses Isaac Sim **6.0.1**. The shared asset bundle was published and independently downloaded, hash-checked and extracted successfully.
 
 **Hardware is suitable; the four-worker launcher is not implemented or qualified yet.** The existing capture owner is Windows-specific and serial. Downloading the bundle supplies the assets and source code; Linux path/runtime adaptation and explicit GPU ownership are still required. The implementation checklist below is for the agent preparing the server.

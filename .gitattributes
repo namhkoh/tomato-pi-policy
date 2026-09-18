@@ -385,3 +385,19 @@ examples/greenhouse_sim/sim_data/test_native848_delivery_bundle_v3.py -text
 
 examples/greenhouse_sim/sim_data/native848_scene_sweep_cached_annotation_v1.py -text
 examples/greenhouse_sim/sim_data/test_native848_scene_sweep_cached_annotation_v1.py -text
+
+# Shared cross-host coordination and its exact-byte source locks.
+configs/dataset_capture/*.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+scripts/dataset_capture_coordinator.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+scripts/dataset_capture_coordinator_test.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+scripts/dataset_multihost_pipeline.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+scripts/dataset_multihost_pipeline_test.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+examples/greenhouse_sim/sim_data/native848_geometry_identity_v1.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+examples/greenhouse_sim/sim_data/native848_multihost_sweep_v1.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+examples/greenhouse_sim/sim_data/native848_multihost_generated_v1.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+examples/greenhouse_sim/sim_data/test_native848_geometry_identity_v1.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+examples/greenhouse_sim/sim_data/test_native848_multihost_sweep_v1.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+examples/greenhouse_sim/sim_data/test_native848_multihost_generated_v1.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+configs/dataset_capture/*.jsonl -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+examples/greenhouse_sim/sim_data/native848_multihost_complete_v1.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+examples/greenhouse_sim/sim_data/test_native848_multihost_complete_v1.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

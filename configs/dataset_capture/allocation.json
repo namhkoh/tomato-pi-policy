@@ -1,0 +1,33 @@
+{
+  "schema": "greenhouse.multihost_capture_allocation.v1",
+  "campaign_id": "diverse9mm_20260918_multihost_v1",
+  "hosts": {
+    "local5090": [
+      "seed19_full",
+      "seed41_full",
+      "seed67_full",
+      "seed103_full"
+    ],
+    "thor1": [
+      "seed7_full",
+      "seed11_full",
+      "seed43_full",
+      "seed47_full",
+      "seed73_full",
+      "seed101_full"
+    ],
+    "thor3": [
+      "seed17_full",
+      "seed23_full",
+      "seed53_full",
+      "seed71_full",
+      "seed83_full",
+      "seed89_full"
+    ]
+  },
+  "allocation_sha256": "42672fc6626f7e8882de8b6b484d55f3e290028d8fe979a0f92f0791be8fc228",
+  "ownership_scope": "Foreground original donor lineage including all generated descendants; all144 background plants remain present.",
+  "heldout_rule": "All new collection in this campaign is TRAIN. Preserve existing original donor-level validation/test assignments.",
+  "control_rule": "Preview controls do not enter production completion or accepted totals.",
+  "migration_rule": "Do not change donor ownership or seed ranges independently on a server."
+}

@@ -1,0 +1,71 @@
+{
+  "schema": "greenhouse.multihost_capture_config.v1",
+  "campaign_id": "diverse9mm_20260918_multihost_v1",
+  "allocation_sha256": "42672fc6626f7e8882de8b6b484d55f3e290028d8fe979a0f92f0791be8fc228",
+  "coordinator_url_env": "DATASET_COORDINATOR_URL",
+  "coordinator_token_env": "DATASET_COORDINATOR_TOKEN",
+  "fail_closed": true,
+  "automatic_claim_expiry": false,
+  "resolution": [
+    848,
+    408
+  ],
+  "cut_offset_m": 0.009,
+  "exactly_one_eligible_petiole": true,
+  "query_input": false,
+  "fully_labeled_plant_count": 144,
+  "full_unpruned_plants": true,
+  "minimum_background_plant_fraction": 0.4,
+  "native_mask_width_minimum_px": 8,
+  "projected_cut_support_minimum_px": 12,
+  "preferred_views_per_geometry": [
+    3,
+    4
+  ],
+  "split": "train",
+  "training_approved": false,
+  "host_id": "thor1",
+  "worker_count": 4,
+  "gpu_model": "NVIDIA L40S",
+  "allowed_foreground_families": [
+    "seed7_full",
+    "seed11_full",
+    "seed43_full",
+    "seed47_full",
+    "seed73_full",
+    "seed101_full"
+  ],
+  "new_morphology_seed_range": [
+    2000000,
+    2999999
+  ],
+  "output_namespace": "captures/diverse9mm_20260918_multihost_v1/thor1",
+  "control_outputs_excluded": true,
+  "worker_assignment": "int(task_id,16) % worker_count",
+  "renderer_device_binding": "Must be verified against physical GPU UUID by the server launcher",
+  "target_total_accepted_images": 25000,
+  "planning_deadline_local": "2026-09-19T23:59:00+09:00",
+  "generator": {
+    "entry_point": "scripts/dataset_multihost_pipeline.py generate",
+    "module": "sim_data.procedural_petiole_controlled_v4",
+    "mode": "intact_plant_controlled_subtrees",
+    "amplitude_m": 0.025,
+    "seed_effect": "Two or more explicit subtree-direction controls; seed alone is not uniqueness proof",
+    "generation_does_not_grant_training_approval": true
+  },
+  "background": {
+    "populator": "sim_data.native848_fully_labeled_scene_v1.populate_labeled",
+    "policy": "round_robin_sorted_same_split_pool_by_original_slot_order",
+    "complete_labeled_slots": 144,
+    "remove_plants": false,
+    "independent_background_layout_per_host": false,
+    "visibility_checked_in_native_images": true
+  },
+  "annotation": {
+    "entry_point": "scripts/dataset_multihost_pipeline.py annotate",
+    "toolchain_lock": "configs/dataset_capture/toolchain.lock.json",
+    "recompute_after_every_geometry_change": true,
+    "complete_scene_competing_petioles": true,
+    "host_specific_threshold_changes": false
+  }
+}

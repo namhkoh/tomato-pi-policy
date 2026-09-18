@@ -1,5 +1,7 @@
 # Dataset capture on two RTX PRO 6000 Blackwell GPUs
 
+Current collective25k campaign: [machine-specific execution runbook](dataset_thor3_runbook.md) and [shared capture/annotation contract](dataset_multihost_runbook.md). Use the new host config and coordinator before production.
+
 For a four-L40S server and the now-published, verified Hugging Face asset bundle, see the [four NVIDIA L40S guide](dataset_four_l40s.md).
 
 Prepared September 18, 2026. Repository baseline: `a8baa2f` on `koh-dev/sim-data`. Current local runtime: Isaac Sim **6.0.1** on Windows. This guide covers capture and dataset preparation; training is separate.

@@ -1,12 +1,27 @@
 # VLM dataset collection and generation — execution handoff
 
+## Current goal: collective Saturday delivery
+
+Deliver at least **25,000 globally distinct accepted samples collectively by Saturday, September 19, 2026, 23:59 KST** (planning cutoff). This supersedes the older Friday/10k target below. Published total remains **491**, leaving **24,509** additional accepted samples. Counts exclude proposals, raw frames, controls, duplicates and review holds.
+
+- [thor1: four L40S runbook](docs/dataset_thor1_runbook.md), config `configs/dataset_capture/thor1.json`: foreground donors 7,11,43,47,73,101; generator seeds 2,000,000-2,999,999.
+- [thor3: two RTX PRO6000 runbook](docs/dataset_thor3_runbook.md), config `configs/dataset_capture/thor3.json`: foreground donors 17,23,53,71,83,89; generator seeds 3,000,000-3,999,999.
+- Local RTX5090 config `configs/dataset_capture/local5090.json`: donors 19,41,67,103; seeds 1,000,000-1,999,999.
+- [Shared execution contract](docs/dataset_multihost_runbook.md): Isaac Sim Replicator RGB, aligned optical-Z depth, validity, instance IDs, calibration, robot evidence; all144 complete labeled background plants; one eligible petiole and9mm cut point; common679-file numerical toolchain lock; global duplicate controls and per-group visual review.
+- The initial background layout is shared. Different generator seeds alone do not prove complete scene or image uniqueness. Fresh background geometry requires a new complete census/catalogue and qualification.
+- Both servers reported no production collection: thor1 was installing Isaac Sim, thor3 preparing a two-image Linux preview. The Linux owner/GPU/provenance adapter remains a prerequisite. Root SSH connections failed; nothing was deployed remotely.
+- A single local coordinator is running on loopback127.0.0.1:8769. It was initialized from559 existing unique images (491accepted+68raw-only). The committed portable baseline is `configs/dataset_capture/baseline_inventory.jsonl`. Runtime receipt: `data/sim_data/diagnostics/native848_multihost_coordinator_20260918_v2/service.json`. Remote connections are not configured; never start independent copied coordinators.
+- The first coordinated local batch completed six RGB-D captures with no duplicate holds; none passed all annotation/background criteria. The accepted total remains 491. Output: `C:/Users/USER/tomato-vlm-data-20260917/diagnostics/fixed144_multihost_mesh6_native_20260918_v1`. The next 16 views across four generated donor19 morphologies are reserved and launching at `C:/Users/USER/tomato-vlm-data-20260917/diagnostics/generated19_multihost16_native_20260918_v1`.
+- 12 new generated morphologies / 44 views across donors 19, 67, 41 passed CPU preparation and have distinct content identities. Native capture/annotation/review remains pending. The actual generator CLI examples for thor1 seed43/2000000 and thor3 seed53/3000000 both closed0 locally; this is geometry qualification, not native Linux acceptance.
+
+
 Dual-GPU migration: [capture guide for two RTX PRO 6000 Blackwells](docs/dataset_dual_rtx_pro_6000.md). It documents hardware requirements, asset transfer, required launcher changes, benchmarking and accepted-image accounting. Concurrent capture on these GPUs is not yet implemented or qualified.
 
 Four-GPU alternative: [capture guide for four NVIDIA L40S GPUs](docs/dataset_four_l40s.md), including the verified private Hugging Face asset download, four-worker design and qualification steps. The multi-GPU launcher and Linux adaptation remain pending.
 
 **User reconfirmation, September 17:** Keep exactly one eligible petiole in view. The proposed nearest-visible-reachable selection rule was explicitly declined. Continue full144 populated scenes and distinct actual camera poses; any reachable or unresolved eligible alternative holds the frame. This governs all future preparation and annotation.
 
-## Active delivery - September 18, 16:00 KST
+## Previous delivery target - September 18, 16:00 KST (superseded)
 
 The user requests 10,000 images by 16:00. Latest instructions allow distinct views, including 3-4 varied camera angles, with counts reported per plant. The old strict two-view cap is superseded. Prioritize different plant shapes and target identities. All 144 complete unpruned labeled plants remain present; background vines must also be visible in the actual images.
 
@@ -19,7 +34,7 @@ The user requests 10,000 images by 16:00. Latest instructions allow distinct vie
 
 ### Local continuation - September 18
 
-The user requests continued collection on this machine. The local RTX 5090 is available; published total remains **491**. CPU preparation is now searching new target/view combinations and additional donor-derived full-plant morphologies. GPU capture has not yet restarted. Keep all native image, robot, full-greenhouse, single-answer, duplicate and visual-review checks.
+The user requests continued collection on this machine. The local RTX 5090 is available; published total remains **491**. CPU preparation is now searching new target/view combinations and additional donor-derived full-plant morphologies. GPU capture has restarted; see the current Saturday delivery section above. Keep all native image, robot, full-greenhouse, single-answer, duplicate and visual-review checks.
 
 The source-mesh prefilter was checked against all 17 saved aisle frames: it identified all 14 ambiguous frames and retained the sole unique passing frame; 1,164 predicted clear probe owners/depths agreed with saved native data. It remains a proposal ranking tool, not acceptance. The first 256 prospective proposals produced only two candidates, both the already heavily represented seed103/SubStem42, so that small repetitive bank was not launched.
 
