@@ -1,5 +1,34 @@
 # Component-based plant generator: static VLM pilot
 
+## Current result ? 18 September, generated capture trial
+
+The original growth generator is still absent. The controlled generator now supports curved donor centerlines while preserving the complete proximal30mm mesh and original capsule knots. An actual seed53/SubStem41 variant generated and replayed successfully; its9mm point/radius and all10 shared junction vertices were preserved. Twenty portable regression tests in `test_procedural_proximal_shear_v1.py` pass. This is a controlled donor-derived modification, not a newly independent plant family or an approved diverse release.
+
+Use `prepare_controlled_views_v1.py --camera-plan PATH --sample-id ID --directory GENERATED --output FRESH` to reuse an authenticated camera exactly. Fresh generated geometry replaces the old target geometry; clearance, reach, visibility and ambiguity still require new evaluation. The actual seed53 full144 CPU rehearsal passed with143 background plants unchanged. Its native capture/annotation trial is tracked at the top of `dataset_vlm.md`.
+
+
+## Verified proximal-preserving control (September 18)
+
+`procedural_petiole_controlled_v3.py` and `procedural_petiole_controlled_catalogue_v3.py` now provide actual generated donor7/SubStem44 and donor11/SubStem45 assets with the original first30mm surface and9mm cut geometry preserved. `procedural_proximal_shear_v1.py` fixes the attachment gap found in v2. `native848_controlled_9mm_evidence_v2.py` replays the source-surface, centerline/radius and shared-junction correspondence.
+
+These two25mm controls are donor-derived geometry experiments. They are not new independent plant families or accepted training images. Native visibility, exactly-one eligibility, realism and meaningful morphology diversity remain separate checks. The older whole-plant warp changed local junction appearance too little to approve bulk generation. See [the current handoff](../../../dataset_vlm.md) and [Replicator collection audit](REPLICATOR_COLLECTION.md).
+
+## Current generator entry points (September 18, 2026)
+
+The repository already contains two working donor-derived geometry generators:
+
+- `plant_variant_usd.py`: rotate and uniformly scale connected petiole/leaf subtrees.
+- `procedural_petiole_v2.py`: curve and relocate petioles, transporting attached leaf blades.
+
+The new `plant_morphology_generator_v1.py` extends these shared asset-writing primitives with a coherent whole-plant deformation. It changes stem bend and vertical node spacing while mapping every organ, attachment, mesh and centerline together. Original donor identity and dataset split are retained. This is a static morphology generator, not a reconstruction of the unavailable upstream growth generator.
+
+The current collection target is native **848x408 RGB-D**, **9mm** from the attachment along the petiole, **one eligible petiole per image**, no query cue, and a fully populated greenhouse. Generated morphology must be visually and geometrically distinct before receiving a two-view quota. The older pilot settings below are historical, not the current collection contract.
+
+The whole-plant extension is under a bounded two-variant geometry experiment. It has not produced accepted native training samples. Its inflated capsule radii bound a warped proxy; they are not a certified visible petiole diameter. Native surface/visibility, complete-scene ambiguity, reach and actual visual review remain required.
+
+See [DATASET_PIPELINE.md](DATASET_PIPELINE.md) for current entry points, dataset pointers and the generated-scene integration boundary. The user-authorized execution record is [dataset_vlm.md](../../../dataset_vlm.md).
+
+
 ## Scope
 
 Implemented on `koh-dev/sim-data` as `petiole_similarity_pilot.v1`.
