@@ -42,7 +42,7 @@ These donor numbers name existing plant shapes. They are not random generation s
 
 The generator command is executable and uses `procedural_petiole_controlled_v4`. It keeps the complete unpruned donor plant and deforms explicitly chosen petiole/leaf subtrees while protecting the proximal cut geometry. Different seeds choose direction controls. Generator qualification and content hashes do not establish visual novelty: compare actual images, cap each geometry at approximately 3–4 meaningful camera angles, and prioritize new target identities.
 
-The common CLI takes a **fresh, destination-authenticated** `--source-plan` and its actual SHA256. Example commands are in each server runbook. `--recipe-only` writes the proposed recipe without generating geometry. Without that flag, the command generates the actual assets and current 9mm geometry evidence; failure remains a hold. Never lower a geometry threshold or silently search until an arbitrary seed passes.
+The common CLI takes a **fresh, destination-authenticated** `--source-plan` and its actual SHA256. The bundled reference is `workspace/data/sim_data/collection_plans/clear_capture_20260915_orbit_v1/plan.json` in `request_dependencies_v1`; it contains historical bindings. The server agent must create the destination-authenticated plan from the extracted assets and record its new path/hash before setting `LOCALIZED_SOURCE_PLAN` and `SOURCE_PLAN_SHA256`. Example commands are in each server runbook. `--recipe-only` writes the proposed recipe without generating geometry. Without that flag, the command generates the actual assets and current 9mm geometry evidence; failure remains a hold. Never lower a geometry threshold or silently search until an arbitrary seed passes.
 
 ## 3. Background generation and scene identity
 
@@ -124,7 +124,16 @@ python -m sim_data.native848_multihost_complete_v1 \
   --output "$NEW_COMPLETION_DIR"
 ```
 
-This version supports the original raw-sweep authority only; generated/persistent and Linux producers require their corresponding typed adapters. The client API is `Client.finish(reservation, rgb_metrics(rgb_path))`. Do not substitute that low-level call for authenticating a completed native job. Exact decoded-RGB repeats are held globally. dHash distance ≤6 creates a **review hold**, not automatic acceptance or deletion. No duplicate-held frame enters the final delivery. Completion only means capture accounting; `training_approved` remains false.
+For a completed ordinary generated persistent batch, use the separate typed adapter against the **whole batch**, not an individual segment:
+
+```bash
+python -m sim_data.native848_multihost_generated_complete_v1 \
+  --config "$HOST_CONFIG" --capture "$COMPLETED_BATCH/capture" \
+  --reservation "$NEW_RESERVATION_DIR/reservation_gate.json" \
+  --output "$NEW_COMPLETION_DIR"
+```
+
+Add `--verify-only` to authenticate the closed owner, all segments, actual scene geometry/poses, source pins and RGB without contacting the coordinator. Experimental batches/replay controls are not supported by this completion version. Both completion adapters currently authenticate the Windows producer contracts; Linux producers require a corresponding typed adapter. The client API is `Client.finish(reservation, rgb_metrics(rgb_path))`. Do not substitute that low-level call for authenticating a completed native job. Exact decoded-RGB repeats are held globally. dHash distance ≤6 creates a **review hold**, not automatic acceptance or deletion. No duplicate-held frame enters the final delivery. Completion only means capture accounting; `training_approved` remains false.
 
 ## 6. Shared annotation and acceptance
 
@@ -170,7 +179,7 @@ At Friday 22:00 KST, approximately 26 hours remain: the campaign needs about **9
 ## Validation at handoff
 
 - Coordinator: 25 tests covering actual HTTP, concurrent reservations, restart, baseline aliases, split/host ownership and duplicates.
-- Geometry identity/original-sweep adapter: 20 tests. Generated persistent adapter: 13 tests. Shared generator/annotation wrapper: 13 tests. Raw completion adapter: 9 tests.
+- Geometry identity/original-sweep adapter: 20 tests. Generated persistent adapter: 13 tests. Shared generator/annotation wrapper: 13 tests. Raw completion adapter: 9 tests. Generated completion adapter: 16 tests, including 15 core checks that do not require local dataset fixtures.
 - Both server-specific generator examples ran successfully locally, producing complete geometry and reconstructed 9mm evidence. They are not Linux capture validation.
 - The shared annotation CLI replayed a saved 17-frame batch with exact scientific parity: all 188,156 target evaluations and 77,469 alternative assessments matched, including cut coordinates and ambiguity decisions. Background, coverage and metadata outputs matched byte-for-byte.
 - The first coordinated local batch saved six RGB-D frames and completed all six claims with zero duplicate holds. None met all acceptance criteria, so the verified total remains 491. Raw throughput cannot stand in for accepted throughput.
