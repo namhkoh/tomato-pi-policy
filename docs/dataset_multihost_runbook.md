@@ -155,6 +155,8 @@ Every accepted image requires:
 5. Full populated-background and zero-unknown checks; `seed41_full/SubStem_38` remains excluded.
 6. Global duplicate checks, distinct-view assessment, and actual visual review of each target/view group and all flagged alternatives.
 
+The reviewed Windows baseline persistent export entry point is `native848_persistent_reviewed_export_v2.materialize`. It fixes the current producer binding and authenticated snapshot-path handling while preserving the existing label, background, review and model-input checks. It still requires the actual review and completed-job evidence; a successful annotation alone is not an export. Server-native provenance needs the corresponding additive export adapter.
+
 Store annotations separately from model inputs. Preserve original donor train/validation/test lineage. Both servers must run a shared small control set and compare target IDs, cut coordinates, depth convention, visibility/ambiguity decisions and reject reasons before scaling. Controls are diagnostic and excluded from totals.
 
 ## 7. Collective progress and deadline
@@ -179,7 +181,7 @@ At Friday 22:00 KST, approximately 26 hours remain: the campaign needs about **9
 ## Validation at handoff
 
 - Coordinator: 25 tests covering actual HTTP, concurrent reservations, restart, baseline aliases, split/host ownership and duplicates.
-- Geometry identity/original-sweep adapter: 20 tests. Generated persistent adapter: 13 tests. Shared generator/annotation wrapper: 13 tests. Raw completion adapter: 9 tests. Generated completion adapter: 16 tests, including 15 core checks that do not require local dataset fixtures.
+- Geometry identity/original-sweep adapter: 20 tests. Generated persistent adapter: 13 tests. Shared generator/annotation wrapper: 13 tests. Raw completion adapter: 9 tests. Generated completion adapter: 16 tests, including 15 core checks that do not require local dataset fixtures. Reviewed persistent export compatibility: 23 tests.
 - Both server-specific generator examples ran successfully locally, producing complete geometry and reconstructed 9mm evidence. They are not Linux capture validation.
 - The shared annotation CLI replayed a saved 17-frame batch with exact scientific parity: all 188,156 target evaluations and 77,469 alternative assessments matched, including cut coordinates and ambiguity decisions. Background, coverage and metadata outputs matched byte-for-byte.
 - The first coordinated local batch saved six RGB-D frames and completed all six claims with zero duplicate holds. None met all acceptance criteria, so the verified total remains 491. Raw throughput cannot stand in for accepted throughput.
