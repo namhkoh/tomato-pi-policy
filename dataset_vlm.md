@@ -2,6 +2,34 @@
 
 **User reconfirmation, September 17:** Keep exactly one eligible petiole in view. The proposed nearest-visible-reachable selection rule was explicitly declined. Continue full144 populated scenes and distinct actual camera poses; any reachable or unresolved eligible alternative holds the frame. This governs all future preparation and annotation.
 
+## Active delivery - September 18, 16:00 KST
+
+The user requests 10,000 images by 16:00. Latest instructions allow distinct views and specifically 3-4 varied camera angles, with counts reported per plant. The old strict two-view cap is superseded. Prioritize different plant shapes and target identities. Keep all 144 complete unpruned labeled plants, and inspect images for visible background vines.
+
+### Current verified total: 443 images
+
+- Original release: 438 images, 13 original plants, 20 source targets; 342 TRAIN / 82 VAL / 14 TEST.
+- Generated supplement: 5 TRAIN images, from two donor-derived geometries (101: 1 view; 103: 4 views). These add no independent donors.
+- Combined: 347 TRAIN / 82 VAL / 14 TEST, 13 original plants and 15 geometry identities. A unified delivery bundle is being assembled without copying the sensor assets again.
+- Latest original release: `C:/Users/USER/tomato-vlm-data-20260917/training_exports/tomato_cutpoint_848x408_fullgreenhouse_joint438_backlog39_20260918_v1`.
+- Generated supplement: `C:/Users/USER/tomato-vlm-data-20260917/training_exports/tomato_cutpoint_848x408_generated_supplement5_20260918_v1`.
+- `data/sim_data/training_exports/DATASET_DELIVERY_STATUS.json` holds current component paths, counts, and counts per original plant. The 26-image release remains a historical diversity-capped subset, not the total usable data.
+
+### Requirements and active collection
+
+Native 848x408 RGB and aligned metric depth, exactly one eligible petiole without a query cue, a precise 9mm cut from its main-stem attachment, clear proximal surface/junction/first-leaf context, and actual robot camera/workspace checks remain required. Preserve original donor splits. Never count raw captures, previews, candidates or generated assets as released images. Seed41/SubStem38 remains excluded; new seed41 work targets SubStem45.
+
+- New seed41 morphology: three distinct angles currently in native capture, all authored-mesh ray prechecks passed. Native collision, full annotation, visual review and export remain necessary.
+- New seed47 morphology: choosing four compatible accepted-source camera angles from the larger source plan; no cross-scene-plan mixing.
+- New seed103 morphology: changes three petiole/leaf subtrees and uses the four previously qualified camera poses. Fresh native checks remain necessary.
+- Faster render representation: preserves all background shapes/materials and all 144 plants; merges only distant components proved outside both actual arm workspaces. Two saved test frames passed exact retained-petiole annotation comparison. Finite overlay installation passed a real generated-scene CPU check. Production capture/consumer integration is in progress; there is no new throughput claim yet.
+
+Actual generated capture101 and capture103 completed with 1 and 4 frames respectively. Full annotation and actual native-image/junction/first-leaf review passed. Existing numerical rules were retained. The finite batch reader v3 fixes an old three-anchor limit and callback-clock bookkeeping; its numerical helper functions are imported unchanged from v2. Background vines are visible, but some downward103 views show substantial floor; prefer less-downward views with more foliage.
+
+The 10,000-image target is not met and cannot be reached by 16:00 at measured throughput: ordinary production requests still take about12-14 seconds, before initialization, annotation and rejects. Far-background test requests took about4.1 seconds but do not establish accepted production throughput. Continue useful collection without weakening acceptance or claiming new independent plants from donor-derived variants.
+
+Root alone launches native GPU workers. Freeze completed capture/generator/annotation sources and preserve failed-attempt evidence. Use automated checks per image, actual visual review of target/view groups and flagged cases, and reject exact/near repeats. Keep generated geometry identity distinct from original donor identity. No training or remote server launch is requested.
+
 ## Active generator repair - September 18
 
 The shortage of genuinely diverse usable samples is **not resolved**. The current diversity-capped release is still 26 images / 13 original plants / 16 targets. Generated assets and camera proposals do not increase that count.
