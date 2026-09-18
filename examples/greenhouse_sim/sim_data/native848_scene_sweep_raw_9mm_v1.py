@@ -19,14 +19,14 @@ from .native848_bulk_workspace_v1 import BulkWorkspace
 from .native848_bulk_plan_v1 import check_profile
 from .native848_pair_audit_v2 import verify_camera
 from .native_greenhouse_pair import assert_same_camera
-from . import native848_scene_sweep_capture_v1 as producer
+from . import native848_scene_sweep_raw_capture_v1 as producer
 from . import native848_pilot_annotation_v16 as original
 from . import native848_fully_labeled_coverage_v3 as coverage
 from . import native848_all_petiole_9mm_v2 as labels
 from . import native848_unique9mm_ambiguity_v3 as ambiguity
 from . import background_scoring_v1 as background
 
-SCHEMA='greenhouse.native848_scene_sweep_9mm_evaluation.v1'
+SCHEMA='greenhouse.native848_scene_sweep_raw_9mm_evaluation.v1'
 FROZEN={original.__file__:'c3b709eba54f0ca65e23251165ea1021d4c203019369ee9aad3f089e756b2fc3',
     coverage.__file__:'8ca7167e0973f297bc23c129484e0e379794f713dcc1bdb104ceceb6adfc9536',
     labels.__file__:'c5704371017b9f5943664e8a4d156d5e7f2e6d71f8b48ef8e5f4efee01ae13c1',
@@ -58,6 +58,22 @@ def unique(rows,key):
     indexed={r[key]:r for r in rows};require(len(indexed)==len(rows),'Duplicate '+key);return indexed
 
 
+def validate_native_workspace(receipt,record,expected_pass):
+    """Authenticate a native gating receipt, without treating proposal hints as labels."""
+    require(receipt['schema']=='greenhouse.native848_bulk_workspace.v1'
+        and receipt['target_id']==record['target_id']
+        and receipt['per_frame_camera_FK_verified'] is True
+        and receipt['per_frame_cached_solution_FK_verified'] is expected_pass
+        and receipt['result']['workspace_passed'] is expected_pass
+        and receipt['scope']=='kinematic_position_workspace_and_stationary_other_arm_screen'
+        and all(receipt[k] is False for k in ('full_scene_arm_collision_checked','approach_path_checked','physical_cut_approved','training_approved')),
+        'Wrong native9mm workspace identity, status or scope')
+    actual=np.asarray(receipt['nominal_world_m'],float);expected=np.asarray(record['pilot_9mm_geometry']['nominal']['world_m'],float)
+    require(actual.shape==expected.shape==(3,) and np.isfinite(actual).all() and np.isfinite(expected).all()
+        and np.allclose(actual,expected,atol=1e-9,rtol=0),'Native workspace used a different9mm target')
+    h=receipt['solve_input_sha256'];require(isinstance(h,str) and len(h)==64 and all(c in '0123456789abcdef' for c in h),'Missing actual workspace input fingerprint')
+
+
 def validate_ledger(result,records,observations,profile):
     """Authenticate every scheduled decision and the single writer's global clock."""
     planned=unique(records,'sample_id');frames=unique(result['frames'],'observation_id')
@@ -65,8 +81,16 @@ def validate_ledger(result,records,observations,profile):
     require(not(set(frames)&set(holds)) and set(frames)|set(holds)==set(planned)
         and names==[r['sample_id'] for r in records if r['sample_id'] in frames]
         and names==list(frames),'Complete ordered capture/hold partition required')
-    require(all(h['reason']=='whole_robot_scene_collision' and h['screen']['passed'] is False for h in holds.values()),
-        'Only actual collision holds supported')
+    for name,hold in holds.items():
+        if hold['reason']=='whole_robot_scene_collision':
+            require(hold['screen']['passed'] is False,'A passed collision screen cannot hold a pose')
+        elif hold['reason']=='9mm_workspace':validate_native_workspace(hold['workspace'],planned[name],False)
+        else:require(False,'Unsupported raw native hold')
+    for obs in observations:
+        validate_native_workspace(obs['actual_workspace_9mm'],planned[obs['sample_id']],True)
+        require(obs['robot_snapshot']['source_body_orientation_preserved'] is False
+            and obs['robot_snapshot']['pose_sampling']=='new_body_orbit_and_head_fk_v1',
+            'New body-orbit capture cannot claim inherited source orientation')
     steps=list(profile['warmup_steps'])+[profile['request_subframes']]*len(observations)
     require(result['request_count']==result['callback_count']==len(result['requests'])==len(steps)
         and result['warmup_requests']==result['requests'][:len(profile['warmup_steps'])],
@@ -140,6 +164,14 @@ def authenticate_capture(capture,read,local):
     require(context['schema']==producer.CONTEXT_SCHEMA and context['request']==complete['request']
         and context['native_identity']==complete['native_identity'] and context['profile']==request['profile']
         and context['scene_anchor']==request['scene_anchor'],'Common context authority differs')
+    require(context['proposal_stage_scene_collision_pending'] is True
+        and context['native_collision_and_workspace_validated_before_each_saved_frame'] is True,
+        'Numeric proposals and actual native gate must be distinguished')
+    stats=result['workspace_stats'];verify_bindings(stats['source_bindings'])
+    require(all(context['source_bindings'].get(path)==h for path,h in stats['source_bindings'].items()),
+        'Native workspace solver sources absent from closing context union')
+    require(stats['checked_frames']==len(result['frames'])+sum(h['reason']=='9mm_workspace' for h in result['holds']),
+        'Native workspace accounting omitted a saved or held pose')
     observations=[]
     for frame in result['frames']:
         observation=read(frame,within=capture/'frames')
@@ -262,7 +294,6 @@ def evaluate_capture(capturepath,output):
             annotation['single_target_automated_candidate']=bool(strict and not banned)
             annotation['state']='unique_candidate_pending_actual_full_frame_visual_review' if strict and not banned else 'held_not_proven_single_eligible_target'
             save_json(folder/'sample.json',metadata);save_json(folder/'annotation.json',annotation)
-            # The frozen ambiguity evaluator consumes the exact JSON wire objects.
             metadata=read_json(folder/'sample.json');annotation=read_json(folder/'annotation.json')
             assessment=assess_frame(metadata,annotation,checker,metadata_pin=local(folder/'sample.json'),annotation_pin=local(folder/'annotation.json'))
             save_json(folder/'ambiguity.json',assessment)

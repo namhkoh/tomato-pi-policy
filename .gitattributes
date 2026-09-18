@@ -372,3 +372,13 @@ examples/greenhouse_sim/sim_data/native848_scene_sweep_capture_v1.py -text
 examples/greenhouse_sim/sim_data/test_native848_persistent_experimental_v1.py -text
 examples/greenhouse_sim/sim_data/test_native848_persistent_shortwarm_v1.py -text
 examples/greenhouse_sim/sim_data/test_native848_scene_sweep_capture_v1.py -text
+
+examples/greenhouse_sim/sim_data/native848_scene_sweep_raw_capture_v1.py -text
+examples/greenhouse_sim/sim_data/native848_scene_sweep_raw_9mm_v1.py -text
+examples/greenhouse_sim/sim_data/native848_scene_sweep_raw_9mm_v1_test.py -text
+examples/greenhouse_sim/sim_data/test_native848_scene_sweep_raw_capture_v1.py -text
+examples/greenhouse_sim/sim_data/test_native848_scene_sweep_coverage_contract_v1.py -text
+examples/greenhouse_sim/sim_data/native848_scene_sweep_dataset_v1.py -text
+examples/greenhouse_sim/sim_data/test_native848_scene_sweep_dataset_v1.py -text
+examples/greenhouse_sim/sim_data/native848_delivery_bundle_v3.py -text
+examples/greenhouse_sim/sim_data/test_native848_delivery_bundle_v3.py -text
