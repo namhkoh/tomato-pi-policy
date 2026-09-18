@@ -341,3 +341,13 @@ examples/greenhouse_sim/sim_data/native848_delivery_bundle_v2.py -text
 examples/greenhouse_sim/sim_data/native848_generated_delegated_export_v2.py -text
 examples/greenhouse_sim/sim_data/test_native848_delivery_bundle_v2.py -text
 examples/greenhouse_sim/sim_data/test_native848_generated_delegated_export_v2.py -text
+
+examples/greenhouse_sim/sim_data/background_scoring_v1.py -text
+examples/greenhouse_sim/sim_data/test_background_scoring_v1.py -text
+examples/greenhouse_sim/sim_data/native848_persistent_capture_v1.py -text
+examples/greenhouse_sim/sim_data/native848_persistent_capture_v1_test.py -text
+examples/greenhouse_sim/sim_data/native848_persistent_foreground_v1.py -text
+examples/greenhouse_sim/sim_data/native848_persistent_foreground_v1_test.py -text
+examples/greenhouse_sim/sim_data/native848_persistent_generated_9mm_v1.py -text
+examples/greenhouse_sim/sim_data/test_native848_persistent_generated_9mm_v1.py -text
+examples/greenhouse_sim/sim_data/test_native848_persistent_generated_lifecycle_v1.py -text
